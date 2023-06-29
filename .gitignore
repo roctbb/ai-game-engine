@@ -4,3 +4,4 @@ venv
 tests/.pytest_cache
 socket/node_modules
 sessions/*
+migrations
