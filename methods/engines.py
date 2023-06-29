@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from config import DEBUG, HOME
@@ -17,12 +18,12 @@ def run_engine(session):
     if session.engine_pid:
         stop_engine(session)
 
-    session.engine_pid = get_pid(session.game.code)
+    session.engine_pid = get_pid(session.game.code, session.description)
 
     if DEBUG:
         print(f" - running engine for session [{session.id} / {session.game.code}] with PID [{session.engine_pid}]")
 
 
-def get_pid(code):
-    process = subprocess.Popen(['python3', f'{HOME}/games/{code}/engine.py'])
+def get_pid(code, description):
+    process = subprocess.Popen(['python3', f'{HOME}/games/{code}/engine.py', json.dumps(description)])
     return process.pid

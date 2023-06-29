@@ -1,13 +1,17 @@
 import json
 import time
 import redis
+import sys
 
 r = redis.Redis(decode_responses=True)
 
-for i in range(100):
+session_description = json.loads(sys.argv[1])
 
+print(session_description)
+
+for i in range(100):
     message = {
-        "session_id": 1,
+        "session_id": session_description.get('session_id'),
         "data": {},
         "type": "frame"
     }
