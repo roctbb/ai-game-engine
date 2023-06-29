@@ -1,21 +1,24 @@
-import json
 import time
-import redis
-import sys
+import sdk
+import random
 
-r = redis.Redis(decode_responses=True)
+engine = sdk.GameEngineClient()
 
-session_description = json.loads(sys.argv[1])
+choices = ["tic", "tac", "toe"]
 
-print(session_description)
-
+engine.start()
 for i in range(100):
-    message = {
-        "session_id": session_description.get('session_id'),
-        "data": {},
-        "type": "frame"
-    }
+    frame = []
 
-    r.publish("game_engine_notifications", json.dumps(message))
-    print("sent")
+    for team in engine.teams:
+        player = team["players"][0]
+
+        frame.append({
+            "player": player["name"],
+            "choice": random.choice(choices)
+        })
+
+    engine.send_frame(frame)
     time.sleep(1)
+
+engine.end()

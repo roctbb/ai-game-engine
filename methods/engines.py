@@ -25,5 +25,6 @@ def run_engine(session):
 
 
 def get_pid(code, description):
+    print(' '.join(['python3', f'{HOME}/games/{code}/engine.py', "'" + json.dumps(description) + "'"]))
     process = subprocess.Popen(['python3', f'{HOME}/games/{code}/engine.py', json.dumps(description)])
     return process.pid

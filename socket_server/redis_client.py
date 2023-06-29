@@ -28,18 +28,19 @@ def process_message(message, socket_server):
             socket_server.emit("event", json.dumps(message.get('data')), room=f"session_{session_id}")
 
 
-def redis_client(socket_server):
-    r = redis.Redis(decode_responses=True)
-    p = r.pubsub()
-    p.subscribe('game_engine_notifications')
+def redis_client(socket_server, app):
+    with app.app_context():
+        r = redis.Redis(decode_responses=True)
+        p = r.pubsub()
+        p.subscribe('game_engine_notifications')
 
-    print("connected to Redis")
+        print("connected to Redis")
 
-    while True:
-        message = p.get_message()
-        if message:
-            print(message)
-            if message.get('type') == 'message':
-                data = json.loads(message.get('data'))
-                process_message(data, socket_server)
-        socket_server.sleep(0.1)
+        while True:
+            message = p.get_message()
+            if message:
+                print(message)
+                if message.get('type') == 'message':
+                    data = json.loads(message.get('data'))
+                    process_message(data, socket_server)
+            socket_server.sleep(0.1)

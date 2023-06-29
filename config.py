@@ -9,4 +9,4 @@ PORT = 1234
 
 DEBUG = True
 
-HOME = "/Users/roctbb/PycharmProjects/ai-game-engine/"
+HOME = "/Users/roctbb/PycharmProjects/ai-game-engine"
