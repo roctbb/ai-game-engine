@@ -85,11 +85,11 @@ def mark_ended(session):
     db.session.commit()
 
 
-def store_message(session, message):
-    if not session.record:
-        session.record = [message]
+def store_for_replay(session, message):
+    if not session.replay:
+        session.replay = [message]
     else:
-        new_record = session.record[:]
+        new_record = session.replay[:]
         new_record.append(message)
-        session.record = new_record
+        session.replay = new_record
     db.session.commit()

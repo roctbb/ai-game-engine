@@ -7,7 +7,7 @@ def process_message(message, socket_server):
     session_id = message.get('session_id')
 
     session = get_session_by_id(session_id)
-    store_message(session, message)
+    store_for_replay(session, message)
 
     if message.get('type') == 'frame':
         socket_server.emit("frame", json.dumps(message.get('data')), room=f"session_{session_id}")
