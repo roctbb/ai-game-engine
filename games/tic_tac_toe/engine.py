@@ -45,10 +45,12 @@ def game():
             "field": field
         }
 
+
+        engine.send_frame(frame)
+
         if no_moves(field):
             break
 
-        engine.send_frame(frame)
         time.sleep(1)
 
     engine.end()
