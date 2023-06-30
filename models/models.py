@@ -49,6 +49,7 @@ class Session(db.Model):
     state = db.Column(db.String(128), nullable=True)
     stats = db.Column(db.JSON, nullable=True)
     description = db.Column(db.JSON, nullable=True)
+    record = db.Column(db.JSON, nullable=True)
     engine_pid = db.Column(db.Integer, nullable=True)
     created_on = db.Column(db.DateTime, server_default=db.func.now())
     updated_on = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())

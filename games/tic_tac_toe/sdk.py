@@ -27,15 +27,16 @@ class RedisClient:
         self.__redis = redis.Redis(decode_responses=True)
         self.__session_id = session_id
 
-    def __pack_message(self, type, data):
+    def __pack_message(self, type, data, elapsed_time):
         return json.dumps({
             "session_id": self.__session_id,
             "data": data,
-            "type": type
+            "type": type,
+            "elapsed": round(elapsed_time, 2)
         })
 
-    def send_message(self, type, data={}):
-        self.__redis.publish("game_engine_notifications", self.__pack_message(type, data))
+    def send_message(self, type, elapsed_time, data={}):
+        self.__redis.publish("game_engine_notifications", self.__pack_message(type, data, elapsed_time))
 
 
 class GameEngineTeam:
@@ -61,24 +62,29 @@ class GameEngineClient:
         self.teams = [GameEngineTeam(team_description) for team_description in self.__description.get('teams')]
 
         self.__redis_client = RedisClient(self.session_id)
+        self.__start_time = 0
+
+    def __elapsed(self):
+        return time.time() - self.__start_time
 
     def send_event(self, event, description={}):
-        self.__redis_client.send_message("event", {
+        self.__redis_client.send_message("event", self.__elapsed(), {
             "type": event,
             "description": description
         })
 
     def start(self):
+        self.__start_time = time.time()
         self.send_event("started")
 
     def end(self):
         self.send_event("ended")
 
     def send_frame(self, frame):
-        self.__redis_client.send_message("frame", frame)
+        self.__redis_client.send_message("frame", self.__elapsed(), frame)
 
     def send_stats(self, stats):
-        self.__redis_client.send_message("stats", stats)
+        self.__redis_client.send_message("stats", self.__elapsed(), stats)
 
 
 def __proccess_wrapper(module, function_name, return_dict, args):
