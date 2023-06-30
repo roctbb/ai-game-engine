@@ -45,7 +45,7 @@ def __generate_description(session):
 
 
 def create_session(game, teams):
-    if not game or len(teams) != game.team_number:
+    if not game or (len(teams) != game.team_number and game.team_number != -1):
         raise IncorrectNumberOfTeams
 
     for team in teams:
