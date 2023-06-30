@@ -6,6 +6,7 @@ from blueprints import *
 from socket_server import socketio, redis_client
 
 app.register_blueprint(games_blueprint, url_prefix='/games')
+app.register_blueprint(stats_blueprint, url_prefix='/stats')
 
 if __name__ == '__main__':
     socketio.init_app(app)

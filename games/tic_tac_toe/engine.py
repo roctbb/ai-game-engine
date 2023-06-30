@@ -5,6 +5,7 @@ import sdk
 
 def game():
     engine = sdk.GameEngineClient()
+    stats = sdk.GameEngineStats(engine.teams, ["Количество ходов"])
 
     field = [
         [0] * 5,
@@ -39,6 +40,8 @@ def game():
 
         step += 1
 
+        stats.add_value(current_player, "Количество ходов", 1)
+
         frame = {
             "players": {
                 "-1": players[0].name,
@@ -48,6 +51,7 @@ def game():
         }
 
         engine.send_frame(frame)
+        engine.send_stats(stats)
 
         if no_moves(field):
             break

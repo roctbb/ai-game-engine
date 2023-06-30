@@ -7,7 +7,8 @@ function GeSdk() {
     }
 
     this.socket.emit('subscribe', {
-        "session_id": this.session_id
+        "session_id": this.session_id,
+        "mode": "game"
     })
 
     this.socket.on('frame', (message) => {

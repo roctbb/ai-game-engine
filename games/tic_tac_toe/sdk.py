@@ -42,12 +42,14 @@ class RedisClient:
 class GameEngineTeam:
     def __init__(self, description):
         self.name = description.get('name')
+        self.id = description.get('id')
         self.players = [GameEnginePlayer(player_description) for player_description in description.get('players')]
 
 
 class GameEnginePlayer:
     def __init__(self, description):
         self.name = description.get('name')
+        self.id = description.get('id')
         self.script = ScriptWrapper(description.get('script'))
 
 
@@ -84,7 +86,70 @@ class GameEngineClient:
         self.__redis_client.send_message("frame", self.__elapsed(), frame)
 
     def send_stats(self, stats):
-        self.__redis_client.send_message("stats", self.__elapsed(), stats)
+        self.__redis_client.send_message("stats", self.__elapsed(), stats.get_table())
+
+
+class GameEngineStats:
+    def __init__(self, teams, params):
+        self.__teams = teams
+        self.__players = {}
+        self.__params = []
+
+        self.set_params(params)
+
+    def set_params(self, params):
+        self.__params = params
+
+        for team in self.__teams:
+            for player in team.players:
+                self.__players[player.id] = {
+                    param: 0 for param in params
+                }
+
+    def set_value(self, player, param, value):
+        if param in self.__params:
+            self.__players[player.id][param] = value
+
+    def get_value(self, player, param):
+        if param in self.__params:
+            return self.__players[player.id][param]
+
+    def add_value(self, player, param, value):
+        self.set_value(player, param, self.get_value(player, param) + value)
+
+    def get_table(self):
+        rows = []
+
+        rows.append({
+            "type": "header",
+            "cols": [" "] + self.__params
+        })
+
+        for team in self.__teams:
+            if len(team.players) > 1:
+                sums = [0] * len(self.__params)
+
+                for i, param in enumerate(self.__params):
+                    for player in team.players:
+                        sums[i] += self.__players[player.id][param]
+
+                rows.append({
+                    "type": "subheader",
+                    "cols": [team.name] + sums
+                })
+
+            for player in team.players:
+                row = [0] * len(self.__params)
+
+                for i, param in enumerate(self.__params):
+                    row[i] += self.__players[player.id][param]
+
+                rows.append({
+                    "type": "row",
+                    "cols": [player.name] + row
+                })
+
+        return rows
 
 
 def __proccess_wrapper(module, function_name, return_dict, args):
@@ -111,7 +176,6 @@ def timeout_run(timeout, module, function_name, args):
             args=[module, function_name, return_dict, args],
         )
 
-        s = time.time()
         thread.start()
         thread.join(timeout=timeout)
         thread.terminate()
@@ -125,17 +189,3 @@ def timeout_run(timeout, module, function_name, args):
         raise return_dict['exception']
 
     return return_dict["result"]
-
-
-def measured(func):
-    def wrapper(*args, **kwargs):
-        start = time.time()
-
-        func(*args, **kwargs)
-
-        end = time.time()
-
-        print(func.__name__, "took", round(end - start, 1), "seconds")
-
-    wrapper.__name__ = func.__name__
-    return wrapper

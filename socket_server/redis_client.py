@@ -14,7 +14,7 @@ def process_message(message, socket_server):
 
     if message.get('type') == 'stats':
         update_session_stats(session, message.get('data'))
-        socket_server.emit("update", json.dumps(message.get('data')), room=f"stats_{session_id}")
+        socket_server.emit("stats", json.dumps(message.get('data')), room=f"stats_{session_id}")
 
     if message.get('type') == 'event':
         event = message.get('data', {})

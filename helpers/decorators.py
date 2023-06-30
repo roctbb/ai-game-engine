@@ -2,7 +2,7 @@ from models import *
 from flask import request, abort
 
 
-def requires_game(func):
+def requires_session(func):
     def wrapper(session_id, *args, **kwargs):
         session_id = request.view_args.get('session_id')
 
@@ -14,7 +14,7 @@ def requires_game(func):
         if not game_session:
             abort(404)
 
-        return func(game_session.game, *args, **kwargs)
+        return func(game_session, *args, **kwargs)
 
     wrapper.__name__ = func.__name__
     return wrapper

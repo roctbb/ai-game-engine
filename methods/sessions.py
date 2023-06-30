@@ -30,9 +30,11 @@ def __generate_description(session):
         "session_id": session.id,
         "teams": [
             {
+                "id": team.id,
                 "name": team.name,
                 "players": [
                     {
+                        "id": player.id,
                         "name": player.name,
                         "script": f"{path}/player_{player.id}.py"
                     } for player in team.players

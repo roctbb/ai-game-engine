@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Статистика игры "{{ game_session.game.name }}" (# {{ game_session.id }})</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"
+            integrity="sha384-/KNQL8Nu5gCHLqwqfQjA689Hhoqgi2S84SNUxC3roTe4EhJ9AfLkp8QiQcU8AMzI"
+            crossorigin="anonymous"></script>
+    <script src="/static/stats.js"></script>
+</head>
+<body>
+<h1>Статистика игры "{{ game_session.game.name }}"</h1>
+<h4>Сессия # {{ game_session.id }}</h4>
+<div id="stats">
+
+</div>
+</body>
+</html>
