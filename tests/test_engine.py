@@ -20,3 +20,11 @@ def test_can_create_engine():
         stop_engine(session)
 
         time.sleep(6)
+
+def test_load_script():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("test", "/Users/roctbb/PycharmProjects/ai-game-engine/sessions/session_17/player_1.py")
+    foo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foo)
+    foo.make_choice()

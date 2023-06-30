@@ -1,27 +1,23 @@
-function get_session_id() {
-    let url_parts = location.pathname.split('/')
-    let session_id = parseInt(url_parts[2])
+function GeSdk() {
+    this.socket = io.connect()
+    this.session_id = parseInt(location.pathname.split('/')[2])
 
-    return session_id
+    this.socket.emit('subscribe', {
+        "session_id": this.session_id
+    })
+
+    this.socket.on('frame', (message) => {
+        let frame = JSON.parse(message)
+        if (this.on_frame) {
+            this.on_frame(frame)
+        }
+    })
 }
 
-let on_frame = undefined
-
-function subscribe_to_frame(frame_callback) {
-    on_frame = frame_callback
+GeSdk.prototype.subscribe_to_frame = function (frame_callback) {
+    this.on_frame = frame_callback
 }
 
-let socket = io.connect();
 
-socket.emit('subscribe', {
-    "session_id": get_session_id()
-})
 
-socket.on('frame', function (message) {
-    let frame = JSON.parse(message)
-
-    if (on_frame) {
-        on_frame(frame)
-    }
-})
 
