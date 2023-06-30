@@ -1,4 +1,5 @@
 import time
+from multiprocessing import Manager, Process
 
 from manage import app
 from methods import *
@@ -28,3 +29,4 @@ def test_load_script():
     foo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(foo)
     foo.make_choice()
+

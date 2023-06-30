@@ -1,7 +1,25 @@
+import time
 import redis
 import json
 import sys
 from importlib.machinery import SourceFileLoader
+from multiprocessing import Process, Manager
+
+
+class ScriptWrapper:
+    def __init__(self, path):
+        self.__path = path
+
+    def __getattribute__(self, attribute):
+        if '__' not in attribute:
+            module = self.__load_module()
+            return getattr(module, attribute)
+        else:
+            return super().__getattribute__(attribute)
+
+    def __load_module(self):
+        name = self.__path.split('/')[-1].rstrip(".py")
+        return SourceFileLoader(name, self.__path).load_module()
 
 
 class RedisClient:
@@ -20,6 +38,18 @@ class RedisClient:
         self.__redis.publish("game_engine_notifications", self.__pack_message(type, data))
 
 
+class GameEngineTeam:
+    def __init__(self, description):
+        self.name = description.get('name')
+        self.players = [GameEnginePlayer(player_description) for player_description in description.get('players')]
+
+
+class GameEnginePlayer:
+    def __init__(self, description):
+        self.name = description.get('name')
+        self.script = ScriptWrapper(description.get('script'))
+
+
 class GameEngineClient:
     def __init__(self):
         if len(sys.argv) > 1:
@@ -28,7 +58,7 @@ class GameEngineClient:
             self.__description = json.loads(input())
 
         self.session_id = self.__description.get('session_id')
-        self.teams = self.__description.get('teams')
+        self.teams = [GameEngineTeam(team_description) for team_description in self.__description.get('teams')]
 
         self.__redis_client = RedisClient(self.session_id)
 
@@ -50,5 +80,42 @@ class GameEngineClient:
     def send_stats(self, stats):
         self.__redis_client.send_message("stats", stats)
 
-    def load_script(self, name, path):
-        return SourceFileLoader(name, path).load_module()
+
+def __proccess_wrapper(module, function_name, return_dict, args):
+    try:
+        return_dict['result'] = getattr(module, function_name)(*args)
+    except Exception as e:
+        return_dict['exception'] = e
+
+    return_dict['finished'] = True
+
+
+def timeout_run(timeout, module, function_name, args):
+    with Manager() as manager:
+
+        return_dict = manager.dict()
+
+        return_dict['result'] = None
+        return_dict['exception'] = None
+        return_dict['finished'] = False
+
+        thread = Process(
+            target=__proccess_wrapper,
+            name="ABC",
+            args=[module, function_name, return_dict, args],
+        )
+
+        s = time.time()
+        thread.start()
+        thread.join(timeout=timeout)
+        thread.terminate()
+
+        return_dict = dict(return_dict)
+
+    if not return_dict['finished']:
+        raise TimeoutError
+
+    if return_dict['exception']:
+        raise return_dict['exception']
+
+    return return_dict["result"]
