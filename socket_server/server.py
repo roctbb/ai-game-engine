@@ -1,6 +1,9 @@
+import json
+
 from flask_socketio import SocketIO
-from flask_socketio import join_room, leave_room, send
-import redis
+from flask_socketio import join_room, send
+from methods import get_session_by_id
+from flask import request
 
 socketio = SocketIO(cors_allowed_origins='*')
 
@@ -15,6 +18,15 @@ def subscribe_to_frames(data):
     if not session_id:
         return
 
-    join_room(f"session_{session_id}")
-    socketio.emit("hello", "test", room=f"session_{session_id}")
-    print("joined to room", f"session_{session_id}")
+    try:
+        session = get_session_by_id(session_id)
+
+        if session.state == "ended":
+            socketio.emit("replay", json.dumps(session.replay), to=request.sid)
+            print("sent replay to", request.sid)
+        else:
+            join_room(f"session_{session_id}")
+            socketio.emit("hello", "test", room=f"session_{session_id}")
+            print("joined to room", f"session_{session_id}")
+    except:
+        pass

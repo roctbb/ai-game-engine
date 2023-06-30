@@ -24,6 +24,8 @@ def game():
 
     step = 0
     while True:
+        start = time.time()
+
         current_player = players[step % 2]
         x, y = sdk.timeout_run(0.4, current_player.script, "make_choice", (deepcopy(field), current_player.role))
 
@@ -45,12 +47,13 @@ def game():
             "field": field
         }
 
-
         engine.send_frame(frame)
 
         if no_moves(field):
             break
 
+        end = time.time()
+        print(f"Step {step} took {round(end - start, 1)} seconds")
         time.sleep(1)
 
     engine.end()

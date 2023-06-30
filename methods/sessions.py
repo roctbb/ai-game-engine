@@ -50,7 +50,7 @@ def create_session(game, teams):
         if team.game_id != game.id or len(team.players) != game.team_size:
             raise IncorrectTeam
 
-    session = Session(state="created", game_id=game.id, record=[])
+    session = Session(state="created", game_id=game.id, replay=[])
 
     db.session.add(session)
     db.session.commit()
@@ -76,12 +76,13 @@ def get_session_by_id(session_id):
 
 
 def mark_started(session):
-    session.status = "started"
+    session.replay = []
+    session.state = "started"
     db.session.commit()
 
 
 def mark_ended(session):
-    session.status = "ended"
+    session.state = "ended"
     db.session.commit()
 
 

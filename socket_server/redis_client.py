@@ -20,7 +20,7 @@ def process_message(message, socket_server):
         event = message.get('data', {})
 
         if event.get('type') == 'ended':
-            mark_started(session)
+            mark_ended(session)
             stop_engine(session)
 
         if event.get('type') == 'started':

@@ -125,3 +125,17 @@ def timeout_run(timeout, module, function_name, args):
         raise return_dict['exception']
 
     return return_dict["result"]
+
+
+def measured(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+
+        func(*args, **kwargs)
+
+        end = time.time()
+
+        print(func.__name__, "took", round(end - start, 1), "seconds")
+
+    wrapper.__name__ = func.__name__
+    return wrapper
