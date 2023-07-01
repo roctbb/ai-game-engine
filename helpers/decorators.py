@@ -1,5 +1,18 @@
 from models import *
-from flask import request, abort
+from flask import request, abort, session, redirect
+
+
+def requires_auth(func):
+    def wrapper(*args, **kwargs):
+        if not session.get('login'):
+            return redirect('/login')
+        user = User.query.filter_by(login=session.get('login')).first()
+        if not user:
+            return redirect('/login')
+        return func(user, *args, **kwargs)
+
+    wrapper.__name__ = func.__name__
+    return wrapper
 
 
 def requires_session(func):

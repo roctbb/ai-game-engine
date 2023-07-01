@@ -88,6 +88,11 @@ def mark_ended(session):
     db.session.commit()
 
 
+def set_winner(session, team):
+    session.winner_id = team.user_id
+    db.session.commit()
+
+
 def store_for_replay(session, message):
     if not session.replay:
         session.replay = [message]
@@ -96,3 +101,22 @@ def store_for_replay(session, message):
         new_record.append(message)
         session.replay = new_record
     db.session.commit()
+
+
+def grab_sessions(user):
+    teams = user.teams
+
+    sessions = []
+    for team in teams:
+        sessions.extend(team.sessions)
+
+    sessions = list(set(sessions))
+
+    sessions.sort(key=lambda s: s.created_on)
+    return sessions
+
+
+def get_sessions(state=None):
+    if not state:
+        return Session.query.all()
+    return Session.query.filter_by(state=state).all()

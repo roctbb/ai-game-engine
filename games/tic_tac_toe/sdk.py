@@ -75,6 +75,9 @@ class GameEngineClient:
             "description": description
         })
 
+    def set_winner(self, team):
+        self.send_event("winner", {"team_id": team.id})
+
     def start(self):
         self.__start_time = time.time()
         self.send_event("started")

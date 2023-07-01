@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+    <div class="clearfix">
+        <div class="float-start">
+            <h3 class="mb-4">{{ title }}</h3>
+        </div>
+        <div class="float-end">
+            <a href="/sessions/create" class="btn btn-sm btn-primary">Создать</a>
+        </div>
+    </div>
+    {% for game_session in sessions %}
+        <div class="card my-1">
+            <div class="card-body">
+                <div class="clearfix">
+                    <div class="float-start">{{ game_session.game.name }} (#{{ game_session.id }})</div>
+                    <div class="float-end">
+                        {% if game_session.state != 'ended' %}
+                            <span class="text-muted me-1">Идет</span>
+                        {% else %}
+                            {% if not game_session.winner_id %}
+                                <span class="text-primary me-1">Завершена</span>
+                            {% else %}
+                                {% if game_session.winner_id == session.id %}
+                                    <span class="text-success me-1">Победа</span>
+                                {% else %}
+                                    <span class="text-danger me-1">Поражение</span>
+                                {% endif %}
+                            {% endif %}
+                        {% endif %}
+                        <a target="_blank" href="/games/{{ game_session.id }}"
+                           class="btn btn-sm btn-success me-1">Смотреть</a>
+                        <a target="_blank" href="/stats/{{ game_session.id }}" class="btn btn-sm btn-light me-1">Статистика</a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    {% endfor %}
+{% endblock %}

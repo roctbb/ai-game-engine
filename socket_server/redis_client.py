@@ -18,12 +18,18 @@ def process_message(message, socket_server):
 
     if message.get('type') == 'event':
         event = message.get('data', {})
+        event_type = event.get('type')
+        event_description = event.get('description', {})
 
-        if event.get('type') == 'ended':
+        if event_type == 'ended':
             mark_ended(session)
             stop_engine(session)
 
-        if event.get('type') == 'started':
+        if event_type == 'winner':
+            winner_team = get_team_by_id(event_description.get('team_id'))
+            set_winner(session, winner_team)
+
+        if event_type == 'started':
             mark_started(session)
 
         socket_server.emit("event", json.dumps(message.get('data')), room=f"session_{session_id}")
@@ -43,5 +49,9 @@ def redis_client(socket_server, app):
                 print(message)
                 if message.get('type') == 'message':
                     data = json.loads(message.get('data'))
-                    process_message(data, socket_server)
+                    try:
+                        process_message(data, socket_server)
+                    except Exception as e:
+                        print("Message processing exception:", e)
+
             socket_server.sleep(0.1)

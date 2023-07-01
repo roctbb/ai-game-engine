@@ -1,10 +1,11 @@
 from models import User, db
 from .exceptions import *
 import hashlib
+from flask import session
 
 
 def hash(password):
-    return hashlib.md5(password.encode())
+    return hashlib.md5(password.encode()).hexdigest()
 
 
 def create_user(login, password):
@@ -20,6 +21,29 @@ def create_user(login, password):
     db.session.commit()
 
     return user
+
+
+def find_user(login, password):
+    if not login or not password:
+        raise InsufficientData
+
+    user = User.query.filter_by(login=login).first()
+    if not user:
+        raise NotFound
+
+    if user.password != hash(password):
+        raise IncorrectPassword
+
+    return user
+
+
+def authorize(user):
+    session['login'] = user.login
+    session['id'] = user.id
+
+
+def deauthorize():
+    session.clear()
 
 
 def get_user(login):

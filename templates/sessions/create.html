@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Создание сессии{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col col-md-6 col-lg-4">
+            <form method="post">
+                {% if not game %}
+                    <div class="mb-3">
+                        <label class="form-label">Игра</label>
+                        <select class="form-control" name="game_id">
+                            {% for game in games %}
+                                <option value="{{ game.id }}">{{ game.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Выбрать команды</button>
+                {% else %}
+
+                    <div class="mb-3">
+                        <input type="hidden" name="game_id" value="{{ game.id }}">
+                        <label class="form-label">Команды</label>
+                        <select class="form-control" name="teams" multiple>
+                            {% for team in game.teams %}
+                                <option value="{{ team.id }}">{{ team.name }} ({{ team.user.login }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+
+                    <button type="submit" class="btn btn-primary">Запуск</button>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+{% endblock %}
