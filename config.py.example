@@ -10,3 +10,5 @@ PORT = 1234
 DEBUG = False
 
 HOME = "/var/www/ai-game-engine"
+
+SECRET_KEY = 'secter!'

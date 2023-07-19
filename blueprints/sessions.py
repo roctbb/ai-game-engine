@@ -55,5 +55,6 @@ def create(user):
         run_engine(game_session)
 
         return redirect('/sessions')
-    except:
+    except Exception as e:
+        print(e)
         return render_template('sessions/create.html', game=selected_game, error="Ошибка запуска")
