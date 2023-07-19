@@ -2,8 +2,9 @@ import json
 
 from flask_socketio import SocketIO
 from flask_socketio import join_room
-from methods import get_session_by_id
 from flask import request
+
+from methods import get_session_by_id
 
 socketio = SocketIO(cors_allowed_origins='*')
 
@@ -29,6 +30,7 @@ def subscribe_to_frames(data):
                 join_room(f"session_{session_id}")
                 socketio.emit("hello", "test", room=f"session_{session_id}")
                 print("joined to room", f"session_{session_id}")
+                
         if data.get('mode') == 'stats':
             socketio.emit("stats", json.dumps(session.stats), to=request.sid)
             join_room(f"stats_{session_id}")

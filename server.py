@@ -1,9 +1,9 @@
-from flask import redirect
 from manage import *
 from config import *
 from blueprints import *
 from helpers import *
-from socket_server import socketio, redis_client
+from socket_server import socketio
+from redis_client import redis_client
 
 app.register_blueprint(games_blueprint, url_prefix='/games')
 app.register_blueprint(stats_blueprint, url_prefix='/stats')

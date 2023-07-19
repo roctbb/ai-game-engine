@@ -1,31 +1,11 @@
-import os
+import json 
+
 from config import *
 from .exceptions import *
 from models import Session, db
 
-
-def session_path(session):
-    return f'{HOME}/sessions/session_{session.id}'
-
-
-def __write_player(path, player):
-    with open(f"{path}/player_{player.id}.py", mode='w') as file:
-        file.write(player.script)
-
-
-def __write_player_files(session):
-    path = session_path(session)
-    os.mkdir(path)
-
-    for team in session.teams:
-        for player in team.players:
-            __write_player(path, player)
-
-
 def __generate_description(session):
-    path = session_path(session)
-
-    return {
+    return json.dumps({
         "session_id": session.id,
         "teams": [
             {
@@ -35,15 +15,17 @@ def __generate_description(session):
                     {
                         "id": player.id,
                         "name": player.name,
-                        "script": f"{path}/player_{player.id}.py"
+                        "script": player.script if player.script else ''
                     } for player in team.players
                 ]
             } for team in session.teams
         ]
-    }
+    })
 
 
 def create_session(game, teams):
+    from redis_client import redis
+    
     if not game or (len(teams) != game.team_number and game.team_number != -1):
         raise IncorrectNumberOfTeams
 
@@ -59,10 +41,11 @@ def create_session(game, teams):
     for team in teams:
         session.teams.append(team)
 
-    __write_player_files(session)
     session.description = __generate_description(session)
-
+    
     db.session.commit()
+    
+    redis.set(f'session-{session.id}', session.description)
 
     return session
 

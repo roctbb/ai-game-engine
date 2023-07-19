@@ -1,6 +1,9 @@
-import redis
 import json
+from redis import Redis
+
 from methods import *
+
+redis = Redis(decode_responses=True)
 
 
 def process_message(message, socket_server):
@@ -37,8 +40,7 @@ def process_message(message, socket_server):
 
 def redis_client(socket_server, app):
     with app.app_context():
-        r = redis.Redis(decode_responses=True)
-        p = r.pubsub()
+        p = redis.pubsub()
         p.subscribe('game_engine_notifications')
 
         print("connected to Redis")
@@ -49,9 +51,9 @@ def redis_client(socket_server, app):
                 print(message)
                 if message.get('type') == 'message':
                     data = json.loads(message.get('data'))
-                    try:
-                        process_message(data, socket_server)
-                    except Exception as e:
-                        print("Message processing exception:", e)
+                    #try:
+                    process_message(data, socket_server)
+                    #except Exception as e:
+                        # print("Message processing exception:", e)
 
             socket_server.sleep(0.1)
