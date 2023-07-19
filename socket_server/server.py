@@ -1,7 +1,7 @@
 import json
 
 from flask_socketio import SocketIO
-from flask_socketio import join_room, send
+from flask_socketio import join_room
 from methods import get_session_by_id
 from flask import request
 

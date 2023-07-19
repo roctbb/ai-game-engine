@@ -1,4 +1,3 @@
-import json
 from flask import redirect
 from manage import *
 from config import *

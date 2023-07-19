@@ -1,5 +1,4 @@
 import os
-import subprocess
 from config import *
 from .exceptions import *
 from models import Session, db
