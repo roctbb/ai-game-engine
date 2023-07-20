@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Добавление игрока{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col col-md-6 col-lg-4">
+            <form method="post">
+                <div class="mb-3">
+                    <label class="form-label">Имя игрока</label>
+                    <input name="player_name" type="text" class="form-control" value="{{ player_name }}">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Код</label><br/>
+                    <textarea class="form-label" rows="10" cols="45" name="script"></textarea>
+                </div>
+                               
+                <button type="submit" class="btn btn-primary">Добавить игрока</button>
+            </form>
+        </div>
+    </div>
+{% endblock %}
