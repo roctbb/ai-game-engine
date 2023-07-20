@@ -5,3 +5,4 @@ tests/.pytest_cache
 sessions/*
 migrations
 config.py
+__pycache__

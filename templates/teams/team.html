@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Команда {{ team.name }}{% endblock %}
+
+{% block content %}
+    <div class="clearfix">
+        <div class="float-start">
+            <h3 class="mb-4">Команда {{ team.name }}</h3>
+        </div>
+        {% if not is_full %}
+        <div class="float-end">
+            <a href="/teams/add_player" class="btn btn-sm btn-primary">Добавить игрока</a>
+        </div>
+        {% endif %}
+    </div>
+    {% for player in team.players %}
+        <div class="card my-1">
+            <div class="card-body">
+                <div class="clearfix">
+                    <div class="float-start">
+                        {{ player.name }} (#{{ player.id }})
+                    </div>
+
+                    <div class="float-end">
+                        <a href="/teams/{{ team.id }}/delete/{{player.id}}" class="btn btn-sm btn-success me-1">Удалить</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+{% endblock %}

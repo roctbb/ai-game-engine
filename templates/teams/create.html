@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Создание команды{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col col-md-6 col-lg-4">
+            <form method="post">
+                <div class="mb-3">
+                    <label class="form-label">Имя команды</label>
+                    <input name="team_name" type="text" class="form-control" value="{{ team_name }}">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Игра</label>
+                    <select class="form-control" name="game_id">
+                        {% for game in games %}
+                            <option value="{{ game.id }}">{{ game.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Создать команду</button>
+            </form>
+        </div>
+    </div>
+{% endblock %}

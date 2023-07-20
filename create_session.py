@@ -2,7 +2,7 @@ import sys
 import time
 from models import *
 from manage import *
-from methods import get_session_by_id, run_engine, create_session
+from methods import run_engine, create_session
 
 with app.app_context():
     code = sys.argv[1]

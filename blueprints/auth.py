@@ -1,6 +1,5 @@
 from flask import Blueprint
 from flask import render_template, request, redirect
-from helpers import requires_session
 from methods import *
 
 auth_blueprint = Blueprint('auth', __name__)

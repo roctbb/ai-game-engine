@@ -1,6 +1,9 @@
-import redis
 import json
+from redis import Redis
+
 from methods import *
+
+redis = Redis(decode_responses=True)
 
 
 def process_message(message, socket_server):
@@ -37,8 +40,7 @@ def process_message(message, socket_server):
 
 def redis_client(socket_server, app):
     with app.app_context():
-        r = redis.Redis(decode_responses=True)
-        p = r.pubsub()
+        p = redis.pubsub()
         p.subscribe('game_engine_notifications')
 
         print("connected to Redis")

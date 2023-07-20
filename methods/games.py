@@ -1,5 +1,5 @@
 from .exceptions import *
-from models import Game, db
+from models import Game
 
 
 def get_game_by_id(game_id):

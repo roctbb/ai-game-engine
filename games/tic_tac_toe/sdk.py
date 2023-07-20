@@ -2,13 +2,16 @@ import time
 import redis
 import json
 import sys
-from importlib.machinery import SourceFileLoader
+
+from types import ModuleType
+from importlib import import_module
 from multiprocessing import Process, Manager
 
 
 class ScriptWrapper:
-    def __init__(self, path):
-        self.__path = path
+    def __init__(self, name, code):
+        self.__name = name
+        self.__code = code
 
     def __getattribute__(self, attribute):
         if '__' not in attribute:
@@ -18,8 +21,12 @@ class ScriptWrapper:
             return super().__getattribute__(attribute)
 
     def __load_module(self):
-        name = self.__path.split('/')[-1].rstrip(".py")
-        return SourceFileLoader(name, self.__path).load_module()
+        module = ModuleType(self.__name)
+        exec(self.__code, module.__dict__)
+
+        sys.modules[self.__name] = module
+
+        return import_module(self.__name)
 
 
 class RedisClient:
@@ -37,6 +44,9 @@ class RedisClient:
 
     def send_message(self, type, elapsed_time, data={}):
         self.__redis.publish("game_engine_notifications", self.__pack_message(type, data, elapsed_time))
+        
+    def get_description(self):
+        return json.loads(self.__redis.get(f'session-{self.__session_id}'))
 
 
 class GameEngineTeam:
@@ -49,21 +59,19 @@ class GameEngineTeam:
 class GameEnginePlayer:
     def __init__(self, description):
         self.name = description.get('name')
-        self.id = description.get('id')
-        self.script = ScriptWrapper(description.get('script'))
+        self.id = description.get('id')        
+        self.script = ScriptWrapper(f'{self.name}_{self.id}', description.get('script'))
 
 
 class GameEngineClient:
     def __init__(self):
-        if len(sys.argv) > 1:
-            self.__description = json.loads(sys.argv[1])
-        else:
-            self.__description = json.loads(input())
+        self.__redis_client = RedisClient(int(sys.argv[1]))
+        
+        self.__description = self.__redis_client.get_description()
 
         self.session_id = self.__description.get('session_id')
         self.teams = [GameEngineTeam(team_description) for team_description in self.__description.get('teams')]
 
-        self.__redis_client = RedisClient(self.session_id)
         self.__start_time = 0
 
     def __elapsed(self):

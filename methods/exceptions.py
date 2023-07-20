@@ -14,6 +14,10 @@ class IncorrectTeam(Exception):
     pass
 
 
+class IncorrectPlayer(Exception):
+    pass
+
+
 class NotFound(Exception):
     pass
 
