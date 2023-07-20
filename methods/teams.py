@@ -34,8 +34,11 @@ def is_owner(team_id, user_id):
     return get_team_by_id(team_id).user_id == user_id
 
 
-def add_player():
-    pass
+def create_player(team_id, name, script):
+    player = Player(name=name, team_id=team_id, script=script)
+
+    db.session.add(player)
+    db.session.commit()
 
 
 def delete_player(team_id, player_id):
