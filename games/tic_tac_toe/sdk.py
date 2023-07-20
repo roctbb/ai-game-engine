@@ -60,7 +60,7 @@ class GameEnginePlayer:
     def __init__(self, description):
         self.name = description.get('name')
         self.id = description.get('id')        
-        self.script = ScriptWrapper(f'{self.name}_{self.id}', description.get('code'))
+        self.script = ScriptWrapper(f'{self.name}_{self.id}', description.get('script'))
 
 
 class GameEngineClient:
