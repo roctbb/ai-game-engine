@@ -29,5 +29,5 @@ def run_engine(session):
 
 def create_process(session_id, code):
     print(' '.join(['python3', f'games/{code}/engine.py', str(session_id)]))
-    process = subprocess.Popen(['python', f'games/{code}/engine.py', str(session_id)])
+    process = subprocess.Popen(['python3', f'games/{code}/engine.py', str(session_id)])
     return process.pid

@@ -51,9 +51,9 @@ def redis_client(socket_server, app):
                 print(message)
                 if message.get('type') == 'message':
                     data = json.loads(message.get('data'))
-                    #try:
-                    process_message(data, socket_server)
-                    #except Exception as e:
-                        # print("Message processing exception:", e)
+                    try:
+                        process_message(data, socket_server)
+                    except Exception as e:
+                        print("Message processing exception:", e)
 
             socket_server.sleep(0.1)
