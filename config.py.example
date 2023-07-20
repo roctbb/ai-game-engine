@@ -4,9 +4,12 @@ DB_HOST = "localhost"
 DB_PORT = 5432
 DB_DATABASE = "game-engine"
 
-HOST = "127.0.0.1"
-PORT = 1234
+REDIS_HOST = "172.28.1.4"
+REDIS_PORT = 6379
+
+HOST = "0.0.0.0"
+PORT = 4000
 
 DEBUG = False
 
-SECRET_KEY = 'secter!'
+SECRET_KEY = "secret!"
