@@ -30,8 +30,8 @@ class ScriptWrapper:
 
 
 class RedisClient:
-    def __init__(self, session_id, host):
-        self.__redis = redis.Redis(host=host, decode_responses=True)
+    def __init__(self, session_id, host, port):
+        self.__redis = redis.Redis(host=host, port=port, decode_responses=True)
         self.__session_id = session_id
 
     def __pack_message(self, type, data, elapsed_time):
@@ -67,7 +67,7 @@ class GameEngineClient:
     def __init__(self):
         args = json.loads(sys.argv[1])
         
-        self.__redis_client = RedisClient(args['session_id'], args['redis_host'])
+        self.__redis_client = RedisClient(args['session_id'], args['redis_host'], args['redis_port'])
         
         self.__description = self.__redis_client.get_description()
 
