@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ge_sdk"
+version = "1.0.0"
+authors = [
+  { name="roctbb" },
+  { name="DeniIndenbom" }
+]
+
+description = "It's a SDK for ai-game-engine."
+requires-python = ">=3.6"
