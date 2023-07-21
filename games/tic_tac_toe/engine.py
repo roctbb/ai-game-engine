@@ -1,6 +1,6 @@
 import time
 from copy import deepcopy
-import sdk
+import ge_sdk as sdk
 
 
 def game():

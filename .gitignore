@@ -6,3 +6,5 @@ sessions/*
 migrations
 config.py
 __pycache__
+ge_sdk/dist
+ge_sdk/ge_sdk.egg-info

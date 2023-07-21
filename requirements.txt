@@ -10,3 +10,4 @@ eventlet
 gunicorn
 redis
 flask-cors
+build

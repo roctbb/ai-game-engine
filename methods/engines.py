@@ -1,6 +1,7 @@
+import json
 import os
 import subprocess
-from config import DEBUG
+from config import DEBUG, REDIS_HOST, REDIS_PORT
 from models import db
 
 
@@ -28,6 +29,5 @@ def run_engine(session):
 
 
 def create_process(session_id, code):
-    print(' '.join(['python3', f'games/{code}/engine.py', str(session_id)]))
-    process = subprocess.Popen(['python3', f'games/{code}/engine.py', str(session_id)])
+    process = subprocess.Popen(['python3', f'games/{code}/engine.py', json.dumps({'session_id':session_id, 'redis_host': REDIS_HOST, 'redis_port': REDIS_PORT})])
     return process.pid

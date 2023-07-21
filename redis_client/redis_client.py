@@ -1,9 +1,10 @@
 import json
 from redis import Redis
 
+from config import REDIS_HOST, REDIS_PORT
 from methods import *
 
-redis = Redis(decode_responses=True)
+redis = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 
 def process_message(message, socket_server):

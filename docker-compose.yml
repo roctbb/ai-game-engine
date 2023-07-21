@@ -1,0 +1,36 @@
+version: "3"
+
+services:
+
+  redis:
+    image: "redis"
+
+    command: redis-server
+
+    ports:
+      - 6379:6379
+
+    networks:
+      local-network:
+        ipv4_address: 172.28.1.4
+
+  game-engine:
+    build: ./
+
+    command: python3 server.py 
+    
+    ports:
+      - 4000:4000
+
+    depends_on:
+      - redis
+
+    networks:
+      - local-network
+
+networks:
+  local-network:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
