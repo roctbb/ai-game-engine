@@ -20,7 +20,7 @@ def game():
     players = []
 
     for player, role in zip([engine.teams[0].players[0], engine.teams[1].players[0]], (-1, 1)):
-        player.role = role
+        player.role = role # type: ignore
         players.append(player)
 
     step = 0
