@@ -2,7 +2,7 @@ from re import match
 from flask import Blueprint
 from flask import render_template, redirect, request
 from helpers import requires_auth
-from methods import get_teams_by_owner, get_team_by_id, get_games, get_game_by_id, create_team, is_owner, delete_player, create_player
+from methods import get_teams_by_owner, get_team_by_id, get_games, get_game_by_id, create_team, is_team_owner, delete_player, create_player
 
 teams_blueprint = Blueprint('teams', __name__)
 
@@ -58,7 +58,7 @@ def create(user):
 @teams_blueprint.route('/<int:team_id>/add_player', methods=['get'])
 @requires_auth
 def add_player_page(user, team_id):
-    if not is_owner(team_id, user.id):
+    if not is_team_owner(team_id, user.id):
         return redirect('/teams')
 
     return render_template('teams/add_player.html')
@@ -67,7 +67,7 @@ def add_player_page(user, team_id):
 @teams_blueprint.route('/<int:team_id>/add_player', methods=['post'])
 @requires_auth
 def add_player(user, team_id):
-    if not is_owner(team_id, user.id):
+    if not is_team_owner(team_id, user.id):
         return redirect('/teams')
 
     player_name = request.form.get('player_name')
@@ -90,7 +90,7 @@ def add_player(user, team_id):
 @teams_blueprint.route('/<int:team_id>/delete/<int:player_id>')
 @requires_auth
 def del_player(user, team_id, player_id):
-    if not is_owner(team_id, user.id):
+    if not is_team_owner(team_id, user.id):
         return redirect('/teams')
 
     try:

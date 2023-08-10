@@ -10,6 +10,7 @@ app.register_blueprint(docs_blueprint, url_prefix='/docs')
 app.register_blueprint(games_blueprint, url_prefix='/games')
 app.register_blueprint(stats_blueprint, url_prefix='/stats')
 app.register_blueprint(teams_blueprint, url_prefix='/teams')
+app.register_blueprint(lobby_blueprint, url_prefix='/lobby')
 app.register_blueprint(sessions_blueprint, url_prefix='/sessions')
 
 

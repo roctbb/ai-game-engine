@@ -18,6 +18,7 @@ class Game(db.Model):
     team_roles = db.Column(db.JSON, nullable=True)
 
     teams = db.relationship('Team', backref=backref('game', uselist=False), lazy=True)
+    lobby = db.relationship('Lobby', backref=backref('game', uselist=False), lazy=True)
     sessions = db.relationship('Session', backref=backref('game', uselist=False), lazy=True)
 
 
@@ -55,3 +56,11 @@ class Session(db.Model):
     updated_on = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
     winner_id = db.Column('team_id', db.Integer, db.ForeignKey('team.id'))
     teams = db.relationship('Team', secondary=team_session, backref='sessions')
+
+
+class Lobby(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"))
+    game_id = db.Column(db.Integer, db.ForeignKey('game.id', ondelete="CASCADE"))
+    description = db.Column(db.JSON, nullable=True)
+    

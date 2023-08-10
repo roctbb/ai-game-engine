@@ -47,9 +47,7 @@ def create(user):
         return render_template('sessions/create.html', game=selected_game)
 
     try:
-        teams = []
-        for team_id in teams_ids:
-            teams.append(get_team_by_id(team_id))
+        teams = [get_team_by_id(team_id) for team_id in teams_ids]
 
         game_session = create_session(selected_game, teams)
         run_engine(game_session)
