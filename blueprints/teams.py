@@ -1,6 +1,6 @@
 from re import match
 from flask import Blueprint
-from flask import render_template, redirect, request
+from flask import render_template, redirect, request, abort
 from helpers import requires_auth
 from methods import get_teams_by_owner, get_team_by_id, get_games, get_game_by_id, create_team, is_team_owner, delete_player, create_player
 
@@ -19,9 +19,9 @@ def team(user, team_id):
     try:
         team = get_team_by_id(team_id)
     except:
-        return redirect('/teams')
+        return abort(404)
 
-    if user.id != team.user_id:
+    if is_team_owner(team_id, user.id):
         return redirect('/teams')
 
     return render_template('teams/team.html', team=team)
@@ -58,8 +58,11 @@ def create(user):
 @teams_blueprint.route('/<int:team_id>/add_player', methods=['get'])
 @requires_auth
 def add_player_page(user, team_id):
-    if not is_team_owner(team_id, user.id):
-        return redirect('/teams')
+    try:
+        if not is_team_owner(team_id, user.id):
+            return redirect('/teams')
+    except:
+        return abort(404)
 
     return render_template('teams/add_player.html')
 
@@ -67,9 +70,17 @@ def add_player_page(user, team_id):
 @teams_blueprint.route('/<int:team_id>/add_player', methods=['post'])
 @requires_auth
 def add_player(user, team_id):
-    if not is_team_owner(team_id, user.id):
-        return redirect('/teams')
-
+    try:
+        if not is_team_owner(team_id, user.id):
+            return redirect('/teams')
+    except:
+        return abort(404)
+    
+    team = get_team_by_id(team_id)
+    
+    if len(team.players) == team.game.team_size:
+        return render_template('teams/add_player.html', error="Команда заполнена")
+        
     player_name = request.form.get('player_name')
     script = request.form.get('script')
 

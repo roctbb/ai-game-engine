@@ -75,7 +75,7 @@ def update(user, lobby_id):
     description = get_lobby_description(lobby_id)
     description[user.id] = team_id
 
-    if len(description) > get_game_by_id(get_lobby_game_id(lobby_id)).team_number:
+    if len(description) > get_lobby(lobby_id).game.team_number:
         return render_template('lobbies/lobby.html', lobbies=get_lobbies(), error='Лобби заполнено')
 
     set_lobby_description(lobby_id, description)
@@ -92,7 +92,7 @@ def start_session(user, lobby_id):
     teams_ids = get_lobby_teams_ids(lobby_id)
 
     try:
-        selected_game = get_game_by_id(get_lobby_game_id(lobby_id))
+        selected_game = get_lobby(lobby_id).game.id
         teams = [get_team_by_id(team_id) for team_id in teams_ids]
 
         game_session = create_session(selected_game, teams)
