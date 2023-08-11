@@ -27,10 +27,6 @@ def set_lobby_description(id, description):
     db.session.commit()
 
 
-def get_lobby_game_id(lobby_id):
-    return get_lobby(lobby_id).game_id
-
-
 def get_lobby_teams_ids(lobby_id):
     return [x[1] for x in get_lobby_description(lobby_id).items()]
 

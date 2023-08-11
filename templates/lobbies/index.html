@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}Список лобби{% endblock %}
+{% block title %}{{ title }}{% endblock %}
 
 {% block content %}
     <div class="clearfix">
         <div class="float-start">
-            <h3 class="mb-4">Список лобби</h3>
+            <h3 class="mb-4">{{ title }}</h3>
         </div>
         <div class="float-end">
             <a href="/lobby/create" class="btn btn-sm btn-primary">Создать</a>

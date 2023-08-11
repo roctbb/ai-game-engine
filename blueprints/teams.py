@@ -21,10 +21,10 @@ def team(user, team_id):
     except:
         return abort(404)
 
-    if is_team_owner(team_id, user.id):
+    if not is_team_owner(team_id, user.id):
         return redirect('/teams')
 
-    return render_template('teams/team.html', team=team)
+    return render_template('teams/team.html', team=team, is_full=(len(team.players) >= team.game.team_size))
 
 
 @teams_blueprint.route('/create', methods=['get'])
