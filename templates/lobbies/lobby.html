@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Лобби #{{ lobby_id }}{% endblock %}
+
+{% block content %}
+    {% if update %}
+        <div class="row">
+            <div class="col col-md-6 col-lg-4">
+                <form method="post">
+                    <label class="form-label">Команды</label>
+                    <select class="form-control" name="team_id">
+                        {% for team in teams %}
+                            <option value="{{ team.id }}">{{ team.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-primary">Выбрать команду</button>
+                </form>
+            </div>
+        </div>
+    {% else %}
+        <div class="clearfix">
+            <div class="float-start">
+                <h3 class="mb-4">Лобби</h3>
+            </div>
+            
+            <div class="float-end">
+                <a href="/lobby/{{ lobby_id }}/update" class="btn btn-sm btn-primary">
+                    {% if not team_added %}
+                    Добавить команду
+                    {% else %}
+                    Поменять команду
+                    {% endif %}
+                </a>
+                
+                {% if owner %}
+                <a href="/lobby/{{ lobby_id }}/start" class="btn btn-sm btn-success">Начать сессию</a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+                {% for team in teams %}
+                    <div class="card my-1">
+                        <div class="card-body">
+                            <div class="clearfix">
+                                <div class="float-start">
+                                    {{ team.name }} ({{ team.user.login }})
+                                </div>
+                                
+                                {% if owner %}
+                                <div class="float-end">
+                                    <a href="/lobby/{{ lobby_id }}/delete/{{ team.user.id }}" class="btn btn-sm btn-danger me-1">Удалить</a>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+{% endblock %}

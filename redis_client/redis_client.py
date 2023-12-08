@@ -49,7 +49,7 @@ def redis_client(socket_server, app):
         while True:
             message = p.get_message()
             if message:
-                print(message)
+                # print(message)
                 if message.get('type') == 'message':
                     data = json.loads(message.get('data'))
                     try:

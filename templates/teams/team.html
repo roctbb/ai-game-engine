@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Команда {{ team.name }}{% endblock %}
+{% block title %}Команда{{ team.name }}{% endblock %}
 
 {% block content %}
     <div class="clearfix">
@@ -9,6 +9,10 @@
         {% if not is_full %}
         <div class="float-end">
             <a href="/teams/{{team.id}}/add_player" class="btn btn-sm btn-primary">Добавить игрока</a>
+        </div>
+        {% else %}
+        <div class="float-end">
+            <button class="btn btn-sm btn-primary" disabled>Добавить игрока</button>
         </div>
         {% endif %}
     </div>

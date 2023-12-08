@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}Создание лобби{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col col-md-6 col-lg-4">
+            <form method="post">
+                <div class="mb-3">
+                    <label class="form-label">Игра</label>
+                    <select class="form-control" name="game_id">
+                        {% for game in games %}
+                            <option value="{{ game.id }}">{{ game.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Создать лобби</button>
+            </form>
+        </div>
+    </div>
+{% endblock %}

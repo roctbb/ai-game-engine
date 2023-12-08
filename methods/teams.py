@@ -30,7 +30,7 @@ def get_teams():
     return Team.query.all()
 
 
-def is_owner(team_id, user_id):
+def is_team_owner(team_id, user_id):
     return get_team_by_id(team_id).user_id == user_id
 
 
