@@ -3,7 +3,7 @@ from copy import deepcopy
 import ge_sdk as sdk
 
 
-def buildFrame(players, field, winner=None):
+def buildFrame(players, field, winner_value=None):
     frame = {
         "players": {
             "-1": players[0].name,
@@ -12,26 +12,78 @@ def buildFrame(players, field, winner=None):
         "field": field,
     }
 
-    if winner:
-        if winner == players[0]:
-            frame['winner'] = "-1"
-        if winner == players[1]:
-            frame['winner'] = "1"
+    if winner_value:
+        frame['winner'] = winner_value
 
     return frame
 
 
-def game():
-    engine = sdk.GameEngineClient()
-    stats = sdk.GameEngineStats(engine.teams, ["Количество ходов"])
-
-    field = [
+def createEmptyField():
+    return [
         [0] * 5,
         [0] * 5,
         [0] * 5,
         [0] * 5,
         [0] * 5
     ]
+
+
+def checkDirection(field, startX, startY, dX, dY, N, value):
+    number = 0
+
+    for i in range(N):
+        if field[startX + dX * i][startY + dY * i] == value:
+            number += 1
+        else:
+            number = 0
+
+        if number == 4:
+            return True
+
+    return False
+
+
+def checkLine(field, line, value):
+    return checkDirection(field, 0, line, 1, 0, 5, value)
+
+
+def checkColumn(field, column, value):
+    return checkDirection(field, column, 0, 0, 1, 5, value)
+
+
+def checkDiags(field, value):
+    result = True
+    result = result and checkDirection(field, 0, 0, 1, 1, 5, value)
+    result = result and checkDirection(field, 4, 0, -1, 1, 5, value)
+    result = result and checkDirection(field, 1, 0, 1, 1, 4, value)
+    result = result and checkDirection(field, 0, 1, 1, 1, 4, value)
+    result = result and checkDirection(field, 3, 0, -1, 1, 4, value)
+    result = result and checkDirection(field, 4, 1, -1, 1, 4, value)
+
+    return result
+
+
+def checkForWin(field):
+    for value in [1, -1]:
+        for i in range(5):
+            if checkLine(field, i, value) or checkColumn(field, i, value):
+                return value
+
+            if checkDiags(field, value):
+                return value
+
+    return 0
+
+
+def no_moves(field):
+    return not any([0 in row for row in field])
+
+
+def game():
+    engine = sdk.GameEngineClient()
+    stats = sdk.GameEngineStats(engine.teams, ["Количество ходов"])
+
+    field = createEmptyField()
 
     engine.start()
 
@@ -64,7 +116,7 @@ def game():
         engine.send_frame(frame)
         engine.send_stats(stats)
 
-        if no_moves(field):
+        if no_moves(field) or checkForWin(field):
             break
 
         end = time.time()
@@ -76,14 +128,10 @@ def game():
     else:
         engine.set_winner(engine.teams[1])
 
-    frame = buildFrame(players, field, current_player)
+    frame = buildFrame(players, field, checkForWin(field))
     engine.send_frame(frame)
 
     engine.end()
-
-
-def no_moves(field):
-    return not any([0 in row for row in field])
 
 
 if __name__ == "__main__":
