@@ -3,6 +3,24 @@ from copy import deepcopy
 import ge_sdk as sdk
 
 
+def buildFrame(players, field, winner=None):
+    frame = {
+        "players": {
+            "-1": players[0].name,
+            "1": players[1].name
+        },
+        "field": field,
+    }
+
+    if winner:
+        if winner == players[0]:
+            frame['winner'] = "-1"
+        if winner == players[1]:
+            frame['winner'] = "1"
+
+    return frame
+
+
 def game():
     engine = sdk.GameEngineClient()
     stats = sdk.GameEngineStats(engine.teams, ["Количество ходов"])
@@ -20,7 +38,7 @@ def game():
     players = []
 
     for player, role in zip([engine.teams[0].players[0], engine.teams[1].players[0]], (-1, 1)):
-        player.role = role # type: ignore
+        player.role = role  # type: ignore
         players.append(player)
 
     step = 0
@@ -42,14 +60,7 @@ def game():
 
         stats.add_value(current_player, "Количество ходов", 1)
 
-        frame = {
-            "players": {
-                "-1": players[0].name,
-                "1": players[1].name
-            },
-            "field": field
-        }
-
+        frame = buildFrame(players, field)
         engine.send_frame(frame)
         engine.send_stats(stats)
 
@@ -59,6 +70,14 @@ def game():
         end = time.time()
         print(f"Step {step} took {round(end - start, 1)} seconds")
         time.sleep(1)
+
+    if current_player == engine.teams[0].players[0]:
+        engine.set_winner(engine.teams[0])
+    else:
+        engine.set_winner(engine.teams[1])
+
+    frame = buildFrame(players, field, current_player)
+    engine.send_frame(frame)
 
     engine.end()
 

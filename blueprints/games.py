@@ -18,7 +18,7 @@ def get_stats(game_session):
     return render_template("stats/index.html", game_session=game_session)
 
 
-@games_blueprint.route('/<code>/static/<path>')
+@games_blueprint.route('/<code>/static/<path:path>')
 def get_static_file(code, path):
     return send_file(f'./games/{code}/frontend/static/{path}')
 
