@@ -14,7 +14,7 @@ class ScriptWrapper:
         self.__code = code
 
     def __getattribute__(self, attribute):
-        if '__' not in attribute:
+        if '__' not in attribute and attribute != "getCode":
             module = self.__load_module()
             return getattr(module, attribute)
         else:
@@ -27,6 +27,9 @@ class ScriptWrapper:
         sys.modules[self.__name] = module
 
         return import_module(self.__name)
+
+    def getCode(self):
+        return self.__code
 
 
 class RedisClient:
