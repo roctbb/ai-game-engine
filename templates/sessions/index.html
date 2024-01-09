@@ -34,6 +34,10 @@
                         <a target="_blank" href="/games/{{ game_session.id }}"
                            class="btn btn-sm btn-success me-1">Смотреть</a>
                         <a target="_blank" href="/stats/{{ game_session.id }}" class="btn btn-sm btn-light me-1">Статистика</a>
+                        {% if user and user == game_session.creator %}
+                            <a target="_blank" href="/sessions/{{ game_session.id }}/restart"
+                               class="btn btn-sm btn-primary me-1">Перезапуск</a>
+                        {% endif %}
                     </div>
                 </div>
 

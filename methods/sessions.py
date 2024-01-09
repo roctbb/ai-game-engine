@@ -1,8 +1,10 @@
-import json 
+import json
 
 from config import *
+from . import run_engine, stop_engine
 from .exceptions import *
 from models import Session, db
+
 
 def __generate_description(session):
     return json.dumps({
@@ -23,9 +25,9 @@ def __generate_description(session):
     })
 
 
-def create_session(game, teams):
+def create_session(game, teams, user):
     from redis_client import redis
-    
+
     if not game or (len(teams) != game.team_number and game.team_number != -1):
         raise IncorrectNumberOfTeams
 
@@ -33,7 +35,7 @@ def create_session(game, teams):
         if team.game_id != game.id or len(team.players) != game.team_size:
             raise IncorrectTeam
 
-    session = Session(state="created", game_id=game.id, replay=[])
+    session = Session(state="created", game_id=game.id, replay=[], created_by=user.id)
 
     db.session.add(session)
     db.session.commit()
@@ -42,11 +44,11 @@ def create_session(game, teams):
         session.teams.append(team)
 
     session.description = __generate_description(session)
-    
-    db.session.commit()
-    
-    redis.set(f'session-{session.id}', session.description)
 
+    db.session.commit()
+
+    redis.set(f'session-{session.id}', session.description)
+    run_engine(session)
     return session
 
 
@@ -57,6 +59,22 @@ def get_session_by_id(session_id):
         raise NotFound
 
     return session
+
+
+def restart_session(session):
+    session.state = "created"
+    session.winner_id = None
+    session.stats = []
+    session.replay = None
+
+    if session.engine_pid:
+        stop_engine(session)
+
+    run_engine(session)
+
+
+def can_restart_session(session, user):
+    return session.creator == user
 
 
 def mark_started(session):
