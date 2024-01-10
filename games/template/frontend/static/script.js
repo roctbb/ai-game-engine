@@ -18,6 +18,4 @@ function newFrame(frame) {
 }
 
 init()
-load_images().then(() => {
-    sdk.subscribe_to_frame(newFrame)
-})
+sdk.subscribe_to_frame(newFrame)

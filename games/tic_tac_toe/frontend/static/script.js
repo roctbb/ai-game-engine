@@ -116,6 +116,7 @@ function drawTable(ctx, field) {
 }
 
 function newFrame(frame) {
+    console.log(frame)
     const ctx = document.getElementById("field").getContext("2d");
     ctx.clearRect(0, 0, canvasW, canvasH);
 

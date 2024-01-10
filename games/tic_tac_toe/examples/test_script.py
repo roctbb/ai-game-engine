@@ -1,6 +1,3 @@
-import random
-
-
 def make_choice(field, role):
     available_positions = []
     for i in range(len(field)):
