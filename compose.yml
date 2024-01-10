@@ -23,7 +23,7 @@ services:
   game-engine:
     build: ./
     ports:
-      - 80:4000
+      - 4000:4000
     depends_on:
       - postgres
       - redis
