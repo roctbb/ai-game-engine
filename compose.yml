@@ -1,30 +1,32 @@
-version: "3"
-
 services:
-
   redis:
-    image: "redis"
-
+    image: redis:7-alpine
     command: redis-server
-
     ports:
       - 6379:6379
-
     networks:
       local-network:
         ipv4_address: 172.28.1.4
 
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: game-engine
+    ports:
+      - 5432:5432
+    networks:
+      local-network:
+        ipv4_address: 172.28.1.5
+
   game-engine:
     build: ./
-
-    command: python3 server.py 
-    
     ports:
-      - 4000:4000
-
+      - 80:4000
     depends_on:
+      - postgres
       - redis
-
     networks:
       - local-network
 
