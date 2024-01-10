@@ -24,7 +24,7 @@
                             {% if not game_session.winner_id %}
                                 <span class="text-primary me-1">Завершена</span>
                             {% else %}
-                                {% if game_session.winner_id == session.id %}
+                                {% if user and game_session.winner_id == user.id %}
                                     <span class="text-success me-1">Победа</span>
                                 {% else %}
                                     <span class="text-danger me-1">Поражение</span>
@@ -35,7 +35,7 @@
                            class="btn btn-sm btn-success me-1">Смотреть</a>
                         <a target="_blank" href="/stats/{{ game_session.id }}" class="btn btn-sm btn-light me-1">Статистика</a>
                         {% if user and user == game_session.creator %}
-                            <a target="_blank" href="/sessions/{{ game_session.id }}/restart"
+                            <a href="/sessions/{{ game_session.id }}/restart"
                                class="btn btn-sm btn-primary me-1">Перезапуск</a>
                         {% endif %}
                     </div>
