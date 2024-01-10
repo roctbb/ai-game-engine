@@ -177,7 +177,7 @@ def __proccess_wrapper(module, function_name, return_dict, args):
     return_dict['finished'] = True
 
 
-def timeout_run(timeout, module, function_name, args):
+def timeout_run(timeout, module, function_name, args, bypass_errors=True):
     with Manager() as manager:
 
         return_dict = manager.dict()
@@ -198,10 +198,13 @@ def timeout_run(timeout, module, function_name, args):
 
         return_dict = dict(return_dict)
 
-    if not return_dict['finished']:
+    if not return_dict['finished'] and not bypass_errors:
         raise TimeoutError
 
-    if return_dict['exception']:
+    if return_dict['exception'] and not bypass_errors:
         raise return_dict['exception']
+
+    if not return_dict['finished'] or return_dict['exception']:
+        return None
 
     return return_dict["result"]
