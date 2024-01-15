@@ -69,8 +69,8 @@ def checkForWin(field):
             if checkLine(field, i, value) or checkColumn(field, i, value):
                 return value
 
-            if checkDiags(field, value):
-                return value
+        if checkDiags(field, value):
+            return value
 
     return 0
 
@@ -123,10 +123,11 @@ def game():
         print(f"Step {step} took {round(end - start, 1)} seconds")
         time.sleep(1)
 
-    if current_player == engine.teams[0].players[0]:
-        engine.set_winner(engine.teams[0])
-    else:
-        engine.set_winner(engine.teams[1])
+    if not no_moves(field):
+        if current_player == engine.teams[0].players[0]:
+            engine.set_winner(engine.teams[0])
+        else:
+            engine.set_winner(engine.teams[1])
 
     frame = buildFrame(players, field, checkForWin(field))
     engine.send_frame(frame)

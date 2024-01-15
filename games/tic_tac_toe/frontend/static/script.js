@@ -60,7 +60,7 @@ function drawWinner(ctx, winner) {
         let winnerText = ""
         let winnerImage = undefined
 
-        if (winner === "-1") {
+        if (winner === -1) {
             winnerText = `Победил игрок 1!`
             winnerImage = cross_img
         } else {
