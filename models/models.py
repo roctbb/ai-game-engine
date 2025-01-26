@@ -10,6 +10,11 @@ team_session = db.Table('team_session',
                         db.Column('session_id', db.Integer, db.ForeignKey('session.id', ondelete="CASCADE"))
                         )
 
+team_lobby = db.Table('team_lobby',
+                      db.Column('team_id', db.Integer, db.ForeignKey('team.id', ondelete="CASCADE")),
+                      db.Column('lobby_id', db.Integer, db.ForeignKey('lobby.id', ondelete="CASCADE"))
+                      )
+
 
 class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -65,13 +70,16 @@ class Session(db.Model):
     created_by = db.Column('created_by', db.Integer, db.ForeignKey('user.id'))
     lobby_id = db.Column(db.Integer, db.ForeignKey('lobby.id', ondelete="CASCADE"), nullable=True)
 
-    creator = db.relationship('User', backref=backref('created_sessions', uselist=False), lazy=True, foreign_keys=[created_by])
-    winner = db.relationship('User', backref=backref('winned_sessions', uselist=False), lazy=True, foreign_keys=[winner_id])
+    creator = db.relationship('User', backref=backref('created_sessions', uselist=False), lazy=True,
+                              foreign_keys=[created_by])
+    winner = db.relationship('User', backref=backref('winned_sessions', uselist=False), lazy=True,
+                             foreign_keys=[winner_id])
     teams = db.relationship('Team', secondary=team_session, backref='sessions')
+
 
 class Lobby(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"))
     game_id = db.Column(db.Integer, db.ForeignKey('game.id', ondelete="CASCADE"))
-    description = db.Column(db.JSON, nullable=True)
-    
+    teams = db.relationship('Team', secondary=team_lobby, backref='lobbies')
+    is_started = db.Column(db.Boolean, nullable=False, server_default='false', default=False)

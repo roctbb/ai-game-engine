@@ -7,7 +7,7 @@
             <div class="col col-md-6 col-lg-4">
                 <form method="post">
                     <label class="form-label">Команды</label>
-                    <select class="form-control" name="team_id">
+                    <select class="form-select" name="team_id">
                         {% for team in teams %}
                             <option value="{{ team.id }}">{{ team.name }}</option>
                         {% endfor %}
@@ -30,9 +30,9 @@
                     Поменять команду
                     {% endif %}
                 </a>
-                
-                {% if owner %}
-                <a href="/lobby/{{ lobby_id }}/start" class="btn btn-sm btn-success">Начать сессию</a>
+
+                {% if team_added %}
+                    <a href="/lobby/{{ lobby_id }}/leave" class="btn btn-sm btn-danger">Покинуть</a>
                 {% endif %}
             </div>
         </div>

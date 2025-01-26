@@ -1,11 +1,12 @@
+from . import run_engine
 from .exceptions import *
 from models import *
 from .sessions import *
 from .teams import *
 
 
-def get_lobby(id):
-    lobby = Lobby.query.get(id)
+def get_lobby_by_id(lobby_id):
+    lobby = Lobby.query.get(lobby_id)
 
     if not lobby:
         raise NotFound
@@ -13,28 +14,12 @@ def get_lobby(id):
     return lobby
 
 
-def get_lobbies():
+def get_all_lobbies():
     return Lobby.query.all()
 
 
-def get_lobby_description(id):
-    return get_lobby(id).description
-
-
-def set_lobby_description(id, description):
-    lobby = Lobby.query.get(id)
-
-    lobby.description = description
-
-    db.session.commit()
-
-
-def get_lobby_teams_ids(lobby_id):
-    return [x[1] for x in get_lobby_description(lobby_id).items()]
-
-
-def is_lobby_owner(lobby_id, user_id):
-    return get_lobby(lobby_id).owner_id == user_id
+def is_lobby_owner(lobby, user_id):
+    return lobby.owner_id == user_id
 
 def try_run_lobby(lobby):
     selected_game = lobby.game
@@ -44,17 +29,35 @@ def try_run_lobby(lobby):
         game_session = create_session(selected_game, teams)
         run_engine(game_session)
 
-def create_lobby(owner_id, game_id):
-    lobby = Lobby(owner_id=owner_id, game_id=game_id)
+def create_lobby(owner, game):
+    lobby = Lobby(owner_id=owner.id, game_id=game.id)
 
     lobby.description = {}
 
     db.session.add(lobby)
     db.session.commit()
 
-    return lobby.id
+    return lobby
+
+def add_team(lobby, new_team):
+    if new_team in lobby.teams:
+        raise AlreadyExists
+    if new_team.game_id != lobby.game_id:
+        raise IncorrectTeam
+    if len(lobby.teams) == lobby.game.max_teams:
+        raise LobbyFull
+
+    lobby.teams = [team for team in lobby.teams if team.user_id != new_team.user_id]
+    lobby.teams.append(new_team)
+
+    db.session.commit()
+
+def leave_lobby(lobby, user):
+    lobby.teams = [team for team in lobby.teams if team.user_id != user.id]
+    db.session.commit()
+
 
 
 def delete_lobby(lobby_id):
-    db.session.delete(get_lobby(lobby_id))
+    db.session.delete(get_lobby_by_id(lobby_id))
     db.session.commit()

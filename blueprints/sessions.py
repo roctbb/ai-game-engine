@@ -42,9 +42,7 @@ def create(user):
 
     try:
         teams = [get_team_by_id(team_id) for team_id in teams_ids]
-
         game_session = create_session(selected_game, teams, user)
-
         return redirect(f'/games/{game_session.id}')
     except Exception as e:
         print(e)

@@ -20,7 +20,7 @@
                     <div class="mb-3">
                         <input type="hidden" name="game_id" value="{{ game.id }}">
                         <label class="form-label">Команды</label>
-                        <select class="form-control" name="teams" multiple>
+                        <select class="form-select" name="teams" multiple>
                             {% for team in game.teams %}
                                 <option value="{{ team.id }}">{{ team.name }} ({{ team.user.login }})</option>
                             {% endfor %}

@@ -28,7 +28,7 @@ def __generate_description(session):
 def create_session(game, teams, user=None):
     from redis_client import redis
 
-    if not game or (len(teams) != game.team_number and game.team_number != -1):
+    if not game or game.min_teams > len(teams) or len(teams) > game.max_teams:
         raise IncorrectNumberOfTeams
 
     for team in teams:

@@ -1,26 +1,33 @@
-class InsufficientData(Exception):
+class ExplainableException(Exception):
     pass
 
-
-class AlreadyExists(Exception):
-    pass
-
-
-class IncorrectNumberOfTeams(Exception):
-    pass
+class InsufficientData(ExplainableException):
+    text = "Недостаточно данных"
 
 
-class IncorrectTeam(Exception):
-    pass
+class AlreadyExists(ExplainableException):
+    text = "Уже существует"
 
 
-class IncorrectPlayer(Exception):
-    pass
+class IncorrectNumberOfTeams(ExplainableException):
+    text = "Неправильное число команд"
 
 
-class NotFound(Exception):
-    pass
+class IncorrectTeam(ExplainableException):
+    text = "Неподходящая команда"
 
 
-class IncorrectPassword(Exception):
-    pass
+class LobbyFull(ExplainableException):
+    text = "Лобби заполнено"
+
+
+class IncorrectPlayer(ExplainableException):
+    text = "Неподходящий игрок"
+
+
+class NotFound(ExplainableException):
+    text = "Не найдено"
+
+
+class IncorrectPassword(ExplainableException):
+    text = "Неверный пароль"
