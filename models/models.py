@@ -1,3 +1,5 @@
+from email.policy import default
+
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import backref
 
@@ -13,12 +15,15 @@ class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False)
     code = db.Column(db.String(128), nullable=False)
-    team_size = db.Column(db.Integer, nullable=False, default=1)
-    team_number = db.Column(db.Integer, nullable=False, default=2)
-    team_roles = db.Column(db.JSON, nullable=True)
+
+    min_teams = db.Column(db.Integer, nullable=False, default=2)
+    max_teams = db.Column(db.Integer, nullable=False, default=2)
+
+    min_team_players = db.Column(db.Integer, nullable=False, default=1)
+    max_team_players = db.Column(db.Integer, nullable=False, default=1)
 
     teams = db.relationship('Team', backref=backref('game', uselist=False), lazy=True)
-    lobby = db.relationship('Lobby', backref=backref('game', uselist=False), lazy=True)
+    lobbies = db.relationship('Lobby', backref=backref('game', uselist=False), lazy=True)
     sessions = db.relationship('Session', backref=backref('game', uselist=False), lazy=True)
 
 
@@ -26,6 +31,8 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     login = db.Column(db.String(128), nullable=False)
     password = db.Column(db.String(1024), nullable=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+
     teams = db.relationship('Team', backref=backref('user', uselist=False), lazy=True)
 
 
@@ -56,6 +63,7 @@ class Session(db.Model):
     updated_on = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
     winner_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_by = db.Column('created_by', db.Integer, db.ForeignKey('user.id'))
+    lobby_id = db.Column(db.Integer, db.ForeignKey('lobby.id', ondelete="CASCADE"), nullable=True)
 
     creator = db.relationship('User', backref=backref('created_sessions', uselist=False), lazy=True, foreign_keys=[created_by])
     winner = db.relationship('User', backref=backref('winned_sessions', uselist=False), lazy=True, foreign_keys=[winner_id])

@@ -24,7 +24,7 @@ def team(user, team_id):
     if not is_team_owner(team_id, user.id):
         return redirect('/teams')
 
-    return render_template('teams/team.html', team=team, is_full=(len(team.players) >= team.game.team_size))
+    return render_template('teams/team.html', team=team, is_full=(len(team.players) >= team.game.max_teams))
 
 
 @teams_blueprint.route('/create', methods=['get'])
@@ -78,7 +78,7 @@ def add_player(user, team_id):
     
     team = get_team_by_id(team_id)
     
-    if len(team.players) == team.game.team_size:
+    if len(team.players) > team.game.max_team_players:
         return render_template('teams/add_player.html', error="Команда заполнена")
         
     player_name = request.form.get('player_name')

@@ -4,10 +4,38 @@
 {% block content %}
     <div class="clearfix">
         <div class="float-start">
+            <h3 class="mb-4">Игры</h3>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        {% for game in games %}
+            <div class="col-sm-3">
+                <div class="card" style="width: 18rem;">
+                    <h5 class="card-header">{{ game.name }}</h5>
+
+                    <div class="card-body">
+                        <p class="card-text">
+                            Описание: (Пусто)<br/>
+                            Размер команды: от {{ game.min_team_players }} до {{ game.max_team_players }}<br/>
+                            Кол-во команд: {{ game.team_number }}
+                        </p>
+                        <a href="/docs/{{ game.code }}" class="btn btn-primary">Документация</a>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="clearfix">
+        <div class="float-start">
             <h3 class="mb-4">{{ title }}</h3>
         </div>
         <div class="float-end">
-            <a href="/lobby/create" class="btn btn-sm btn-primary">Создать</a>
+            <a href="/sessions/create" class="btn btn-sm btn-primary">Создать приватную игру</a>
+            {% if user.is_admin %}
+            <a href="/lobby/create" class="btn btn-sm btn-primary">Создать лобби</a>
+            {% endif %}
         </div>
     </div>
 

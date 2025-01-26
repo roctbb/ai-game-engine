@@ -1,5 +1,7 @@
 from .exceptions import *
 from models import *
+from .sessions import *
+from .teams import *
 
 
 def get_lobby(id):
@@ -34,6 +36,13 @@ def get_lobby_teams_ids(lobby_id):
 def is_lobby_owner(lobby_id, user_id):
     return get_lobby(lobby_id).owner_id == user_id
 
+def try_run_lobby(lobby):
+    selected_game = lobby.game
+    teams = lobby.teams
+
+    if len(teams) >= selected_game.min_teams:
+        game_session = create_session(selected_game, teams)
+        run_engine(game_session)
 
 def create_lobby(owner_id, game_id):
     lobby = Lobby(owner_id=owner_id, game_id=game_id)

@@ -6,12 +6,6 @@ from methods import *
 sessions_blueprint = Blueprint('sessions', __name__)
 
 
-@sessions_blueprint.route('/')
-@requires_auth
-def my(user):
-    return render_template('sessions/index.html', title="Мои игровые сессии", sessions=grab_sessions(user), user=user)
-
-
 @sessions_blueprint.route('/active')
 def active():
     sessions = get_sessions('started')

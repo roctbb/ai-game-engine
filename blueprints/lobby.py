@@ -9,7 +9,8 @@ lobby_blueprint = Blueprint('lobby', __name__)
 @lobby_blueprint.route('/')
 @requires_auth
 def active(user):
-    return render_template('lobbies/index.html', lobbies=get_lobbies(), title='Активные лобби')
+    return render_template('lobbies/index.html', lobbies=get_lobbies(), games=get_games(), user=user,
+                           title='Активные лобби')
 
 
 @lobby_blueprint.route('/<int:lobby_id>')
@@ -36,12 +37,16 @@ def index(user, lobby_id):
 @lobby_blueprint.route('/create', methods=['GET'])
 @requires_auth
 def create_page(user):
+    if not user.is_admin:
+        abort(403)
     return render_template('lobbies/create.html', games=get_games())
 
 
 @lobby_blueprint.route('/create', methods=['POST'])
 @requires_auth
 def create(user):
+    if not user.is_admin:
+        abort(403)
     game_id = request.form.get('game_id')
 
     try:
@@ -73,7 +78,8 @@ def update(user, lobby_id):
     except NotFound:
         return render_template('lobbies/lobby.html', lobby_id=lobby_id, update=True, error="Команда не найдена!")
     except IncorrectTeam:
-        return render_template('lobbies/lobby.html', lobby_id=lobby_id, update=True, error="Выберите корректную команду!")
+        return render_template('lobbies/lobby.html', lobby_id=lobby_id, update=True,
+                               error="Выберите корректную команду!")
 
     description = get_lobby_description(lobby_id)
     description[user.id] = team_id
