@@ -9,5 +9,5 @@ class Tree(Object):
         self.direction = random.choice(Direction.directions())
 
         self.properties = {
-            "life": 10,
+            "life": 3,
         }

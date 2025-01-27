@@ -6,5 +6,5 @@ class Wall(Object):
         super().__init__()
 
         self.properties = {
-            "life": 40,
+            "life": 10,
         }
