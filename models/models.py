@@ -74,6 +74,7 @@ class Session(db.Model):
                               foreign_keys=[created_by])
     winner = db.relationship('User', backref=backref('winned_sessions', uselist=False), lazy=True,
                              foreign_keys=[winner_id])
+    lobby = db.relationship('Lobby', backref=backref('sessions', uselist=False), lazy=True)
     teams = db.relationship('Team', secondary=team_session, backref='sessions')
 
 
