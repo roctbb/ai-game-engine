@@ -23,5 +23,4 @@ def index(user):
 if __name__ == '__main__':
     socketio.init_app(app)
     socketio.start_background_task(target=lambda: redis_client(socketio, app))
-    print("running socket", DEBUG)
     socketio.run(app, host=HOST, port=PORT, debug=DEBUG, allow_unsafe_werkzeug=True)

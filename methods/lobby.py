@@ -21,13 +21,23 @@ def get_all_lobbies():
 def is_lobby_owner(lobby, user_id):
     return lobby.owner_id == user_id
 
+
 def try_run_lobby(lobby):
     selected_game = lobby.game
     teams = lobby.teams
 
-    if len(teams) >= selected_game.min_teams:
+    try:
+        if len(teams) >= selected_game.min_teams:
+            raise IncorrectNumberOfTeams
+
         game_session = create_session(selected_game, teams)
         run_engine(game_session)
+        lobby.is_started = True
+    except:
+        lobby.is_started = False
+
+    db.session.commit()
+
 
 def create_lobby(owner, game):
     lobby = Lobby(owner_id=owner.id, game_id=game.id)
@@ -38,6 +48,7 @@ def create_lobby(owner, game):
     db.session.commit()
 
     return lobby
+
 
 def add_team(lobby, new_team):
     if new_team in lobby.teams:
@@ -52,10 +63,10 @@ def add_team(lobby, new_team):
 
     db.session.commit()
 
+
 def leave_lobby(lobby, user):
     lobby.teams = [team for team in lobby.teams if team.user_id != user.id]
     db.session.commit()
-
 
 
 def delete_lobby(lobby_id):

@@ -85,6 +85,11 @@ def mark_started(session):
 
 def mark_ended(session):
     session.state = "ended"
+
+    if session.lobby:
+        from .lobby import try_run_lobby
+        try_run_lobby(session.lobby)
+
     db.session.commit()
 
 
