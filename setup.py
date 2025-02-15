@@ -12,7 +12,10 @@ system('flask db upgrade')
 from server import app, Game, db
 
 with app.app_context():
-    game = Game(name='Tic Tac Toe', code='tic_tac_toe', team_number=2, team_size=1)
+    game = Game(name='Tic Tac Toe', code='tic_tac_toe')
+    db.session.add(game)
+
+    game = Game(name='Tanks', code='tanks', max_teams=15, min_teams=2)
     db.session.add(game)
     db.session.commit()
 

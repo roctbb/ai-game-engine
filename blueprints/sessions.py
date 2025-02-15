@@ -6,12 +6,6 @@ from methods import *
 sessions_blueprint = Blueprint('sessions', __name__)
 
 
-@sessions_blueprint.route('/')
-@requires_auth
-def my(user):
-    return render_template('sessions/index.html', title="Мои игровые сессии", sessions=grab_sessions(user), user=user)
-
-
 @sessions_blueprint.route('/active')
 def active():
     sessions = get_sessions('started')
@@ -48,9 +42,7 @@ def create(user):
 
     try:
         teams = [get_team_by_id(team_id) for team_id in teams_ids]
-
         game_session = create_session(selected_game, teams, user)
-
         return redirect(f'/games/{game_session.id}')
     except Exception as e:
         print(e)

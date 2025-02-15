@@ -6,7 +6,7 @@ from flask import request
 
 from methods import get_session_by_id
 
-socketio = SocketIO(cors_allowed_origins='*')
+socketio = SocketIO(cors_allowed_origins='*', async_mode='threading')
 
 
 @socketio.on('subscribe')

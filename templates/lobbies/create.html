@@ -7,7 +7,7 @@
             <form method="post">
                 <div class="mb-3">
                     <label class="form-label">Игра</label>
-                    <select class="form-control" name="game_id">
+                    <select class="form-select" name="game_id">
                         {% for game in games %}
                             <option value="{{ game.id }}">{{ game.name }}</option>
                         {% endfor %}

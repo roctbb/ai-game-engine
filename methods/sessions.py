@@ -25,17 +25,17 @@ def __generate_description(session):
     })
 
 
-def create_session(game, teams, user):
+def create_session(game, teams, user=None):
     from redis_client import redis
 
-    if not game or (len(teams) != game.team_number and game.team_number != -1):
+    if not game or game.min_teams > len(teams) or len(teams) > game.max_teams:
         raise IncorrectNumberOfTeams
 
     for team in teams:
-        if team.game_id != game.id or len(team.players) != game.team_size:
+        if team.game_id != game.id or len(team.players) < game.min_team_players or len(team.players) > game.max_team_players:
             raise IncorrectTeam
 
-    session = Session(state="created", game_id=game.id, replay=[], created_by=user.id)
+    session = Session(state="created", game_id=game.id, replay=[], created_by=user.id if user else None)
 
     db.session.add(session)
     db.session.commit()
@@ -85,6 +85,11 @@ def mark_started(session):
 
 def mark_ended(session):
     session.state = "ended"
+
+    if session.lobby:
+        from .lobby import try_run_lobby
+        try_run_lobby(session.lobby)
+
     db.session.commit()
 
 

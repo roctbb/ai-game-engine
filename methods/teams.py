@@ -20,11 +20,6 @@ def get_team_by_id(team_id):
     return team
 
 
-def get_teams_by_owner(user_id):
-    teams = Team.query.filter_by(user_id=user_id).all()
-
-    return teams
-
 
 def get_teams():
     return Team.query.all()
