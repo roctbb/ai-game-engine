@@ -1,38 +1,33 @@
 services:
   redis:
+    container_name: engine-redis
     image: redis:7-alpine
     command: redis-server
     ports:
       - 6379:6379
-    networks:
-      local-network:
-        ipv4_address: 172.28.1.4
 
   postgres:
+    container_name: engine-postgres
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: game-engine
     ports:
-      - 5432:5432
-    networks:
-      local-network:
-        ipv4_address: 172.28.1.5
+      - 5433:5432
 
   game-engine:
+    container_name: engine-server
     build: ./
+    command: sh /app/start.sh
+    environment:
+      DB_LOGIN: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: game-engine
+      DB_HOST: postgres
+      REDIS_HOST: redis
     ports:
       - 4000:4000
     depends_on:
       - postgres
       - redis
-    networks:
-      - local-network
-
-networks:
-  local-network:
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.28.0.0/16

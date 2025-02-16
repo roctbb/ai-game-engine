@@ -12,3 +12,4 @@ redis
 flask-cors
 build
 git+https://github.com/roctbb/ai-game-engine#subdirectory=ge_sdk
+python-dotenv

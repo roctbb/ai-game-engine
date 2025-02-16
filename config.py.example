@@ -1,15 +1,20 @@
-DB_LOGIN = "postgres"
-DB_PASSWORD = "postgres"
-DB_HOST = "172.28.1.5"
-DB_PORT = 5432
-DB_DATABASE = "game-engine"
+import os
+from dotenv import load_dotenv
 
-REDIS_HOST = "172.28.1.4"
-REDIS_PORT = 6379
+load_dotenv()
 
-HOST = "0.0.0.0"
-PORT = 4000
+DB_LOGIN = os.environ.get("DB_LOGIN", "postgres")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_PORT = os.environ.get("DB_PORT", 5432)
+DB_DATABASE = os.environ.get("DB_DATABASE", "ai-game-engine")
 
-DEBUG = False
+REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = os.environ.get("REDIS_PORT", 6379)
 
-SECRET_KEY = "secret!"
+HOST = os.environ.get("HOST", "127.0.0.1")
+PORT = os.environ.get("PORT", 4000)
+
+DEBUG = bool(os.environ.get("DEBUG", 1))
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "secret")

@@ -9,7 +9,7 @@ games_blueprint = Blueprint('games', __name__)
 @games_blueprint.route('/<int:session_id>')
 @requires_session
 def get_game(game_session):
-    return send_file(f'./games/{game_session.game.code}/frontend/index.html')
+    return send_file(f'games/{game_session.game.code}/frontend/index.html')
 
 
 @games_blueprint.route('/<int:session_id>/stats')
@@ -20,7 +20,7 @@ def get_stats(game_session):
 
 @games_blueprint.route('/<code>/static/<path:path>')
 def get_static_file(code, path):
-    return send_file(f'./games/{code}/frontend/static/{path}')
+    return send_file(f'games/{code}/frontend/static/{path}')
 
 
 @games_blueprint.route('/')
