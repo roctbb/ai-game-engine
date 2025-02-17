@@ -18,7 +18,9 @@ services:
 
   game-engine:
     container_name: engine-server
-    build: ./
+    build:
+      context: ./main_service
+      dockerfile: ./Dockerfile
     command: sh /app/start.sh
     environment:
       DB_LOGIN: postgres
