@@ -1,5 +1,6 @@
 from flask import Blueprint
 from flask import render_template
+
 from helpers import requires_session
 
 stats_blueprint = Blueprint('stats', __name__)

@@ -1,8 +1,8 @@
-from . import run_engine
-from .exceptions import *
 from models import *
 from .sessions import *
-from .teams import *
+
+__all__ = ['get_lobby_by_id', 'get_all_lobbies', 'is_lobby_owner', 'try_run_lobby', 'create_lobby', 'add_team',
+           'leave_lobby', 'delete_lobby']
 
 
 def get_lobby_by_id(lobby_id):
@@ -33,7 +33,7 @@ def try_run_lobby(lobby):
         game_session = create_session(selected_game, teams)
         run_engine(game_session)
         lobby.is_started = True
-    except:
+    except Exception:
         lobby.is_started = False
 
     db.session.commit()

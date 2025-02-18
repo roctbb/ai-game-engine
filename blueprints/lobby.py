@@ -1,7 +1,11 @@
 from flask import Blueprint
 from flask import render_template, redirect, request, abort
+
 from helpers import requires_auth
-from methods import *
+from methods.exceptions import *
+from methods.teams import get_team_by_id
+from methods.games import get_games, get_game_by_id
+from methods.lobby import *
 
 lobby_blueprint = Blueprint('lobby', __name__)
 
@@ -49,8 +53,8 @@ def create(user):
     game_id = request.form.get('game_id')
 
     try:
-        game = get_game_by_id(game_id)
-    except:
+        game = get_game_by_id(int(game_id))
+    except NotFound:
         return render_template('lobbies/create.html', games=get_games(), error="Выберите игру")
 
     lobby_id = create_lobby(user, game).id
@@ -68,12 +72,12 @@ def update_page(user, lobby_id):
 
 @lobby_blueprint.route('/<int:lobby_id>/update', methods=['POST'])
 @requires_auth
-def update(user, lobby_id):
+def update(*_, lobby_id):
     team_id = request.form.get('team_id')
 
     try:
         lobby = get_lobby_by_id(lobby_id)
-        team = get_team_by_id(team_id)
+        team = get_team_by_id(int(team_id))
 
         add_team(lobby, team)
 
@@ -85,11 +89,14 @@ def update(user, lobby_id):
 
 @lobby_blueprint.route('/<int:lobby_id>/delete/<int:id>', methods=['GET'])
 @requires_auth
-def delete_user(user, lobby_id, id):
+def delete_user(user, lobby_id, deleted_user_id):
     lobby = get_lobby_by_id(lobby_id)
 
     if not is_lobby_owner(lobby, user):
         return redirect(f'/{lobby_id}')
+
+    # Why is this feature not implemented here ?
+    # Someone has to implement it
 
     return redirect(f'/lobby/{lobby_id}')
 

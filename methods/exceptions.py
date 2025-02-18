@@ -1,5 +1,6 @@
 class ExplainableException(Exception):
-    pass
+    text = None
+
 
 class InsufficientData(ExplainableException):
     text = "Недостаточно данных"

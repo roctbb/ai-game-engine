@@ -1,7 +1,9 @@
+import hashlib
+
+from flask import session
+
 from models import User, db
 from .exceptions import *
-import hashlib
-from flask import session
 
 
 def hash(password):

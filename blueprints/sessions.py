@@ -1,7 +1,10 @@
 from flask import Blueprint
-from flask import render_template
+from flask import render_template, redirect, request
+
 from helpers import *
-from methods import *
+from methods.games import *
+from methods.sessions import *
+from methods.teams import get_team_by_id
 
 sessions_blueprint = Blueprint('sessions', __name__)
 
@@ -20,7 +23,7 @@ def archive():
 
 @sessions_blueprint.route('/create', methods=['get'])
 @requires_auth
-def create_page(user):
+def create_page(*_):
     games = get_games()
     return render_template('sessions/create.html', games=games)
 
@@ -33,7 +36,7 @@ def create(user):
 
     try:
         selected_game = get_game_by_id(game_id)
-    except:
+    except Exception:
         return render_template('sessions/create.html', games=games, error="Выберите игру")
 
     teams_ids = request.form.getlist('teams')
@@ -41,8 +44,9 @@ def create(user):
         return render_template('sessions/create.html', game=selected_game)
 
     try:
-        teams = [get_team_by_id(team_id) for team_id in teams_ids]
+        teams = [get_team_by_id(int(team_id)) for team_id in teams_ids]
         game_session = create_session(selected_game, teams, user)
+
         return redirect(f'/games/{game_session.id}')
     except Exception as e:
         print(e)

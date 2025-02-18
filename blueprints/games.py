@@ -1,7 +1,8 @@
 from flask import Blueprint
-from flask import send_file, render_template
+from flask import send_file, send_from_directory, render_template, abort
+
 from helpers import requires_session
-from methods import get_games
+from methods import get_game_by_code, NotFound
 
 games_blueprint = Blueprint('games', __name__)
 
@@ -20,9 +21,14 @@ def get_stats(game_session):
 
 @games_blueprint.route('/<code>/static/<path:path>')
 def get_static_file(code, path):
-    return send_file(f'games/{code}/frontend/static/{path}')
+    try:
+        get_game_by_code(code)
+    except NotFound:
+        abort(404)
+
+    return send_from_directory(f'./games/{code}/frontend/static/', path)
 
 
-@games_blueprint.route('/')
-def index():
-    return render_template('games/index.html', games=get_games())
+# @games_blueprint.route('/')
+# def index():
+#     return render_template('games/index.html', games=get_games())

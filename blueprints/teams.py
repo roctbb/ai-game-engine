@@ -4,6 +4,7 @@ from flask import Blueprint
 from flask import render_template, redirect, request, abort
 
 from helpers import requires_auth
+from methods import NotFound, IncorrectPlayer
 from methods import get_team_by_id, get_games, get_game_by_id, create_team, is_team_owner, delete_player, create_player
 
 teams_blueprint = Blueprint('teams', __name__)
@@ -20,7 +21,7 @@ def my(user):
 def team_info(user, team_id):
     try:
         team = get_team_by_id(team_id)
-    except Exception:
+    except NotFound:
         return abort(404)
 
     if not is_team_owner(team_id, user.id):
@@ -51,8 +52,8 @@ def create(user):
         return render_template('teams/create.html', games=get_games(), error="Имя не должно быть пустым")
 
     try:
-        selected_game = get_game_by_id(game_id)
-    except Exception:
+        selected_game = get_game_by_id(int(game_id))
+    except NotFound:
         return render_template('teams/create.html', games=get_games(), error="Выберите игру", team_name=team_name)
 
     create_team(team_name, user.id, selected_game.id)
@@ -66,7 +67,7 @@ def add_player_page(user, team_id):
     try:
         if not is_team_owner(team_id, user.id):
             return redirect('/teams')
-    except Exception:
+    except NotFound:
         return abort(404)
 
     return render_template('teams/add_player.html')
@@ -78,7 +79,7 @@ def add_player(user, team_id):
     try:
         if not is_team_owner(team_id, user.id):
             return redirect('/teams')
-    except Exception:
+    except NotFound:
         return abort(404)
 
     team = get_team_by_id(team_id)
@@ -111,7 +112,9 @@ def del_player(user, team_id, player_id):
 
     try:
         delete_player(team_id, player_id)
-    except Exception:
-        pass
+    except NotFound:
+        abort(404)
+    except IncorrectPlayer:
+        abort(400)
 
     return redirect(f'/teams/{team_id}')

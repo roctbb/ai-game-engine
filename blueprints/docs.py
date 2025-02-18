@@ -1,7 +1,7 @@
-from models import Game
-
 from flask import Blueprint
 from flask import send_file, abort
+
+from models import Game
 
 docs_blueprint = Blueprint('docs', __name__)
 
@@ -13,5 +13,5 @@ def get_docs(game_code):
 
     try:
         return send_file(f'./games/{game_code}/frontend/docs.html')
-    except:
+    except FileNotFoundError:
         abort(404)

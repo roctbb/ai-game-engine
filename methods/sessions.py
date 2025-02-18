@@ -49,6 +49,7 @@ def create_session(game, teams, user=None):
 
     redis.set(f'session-{session.id}', session.description)
     run_engine(session)
+
     return session
 
 
