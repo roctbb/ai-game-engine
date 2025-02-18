@@ -26,6 +26,7 @@ def make_login():
         return render_template("auth/login.html", error="Неправильный пароль", login=login)
 
     authorize(user)
+
     return redirect('/')
 
 
@@ -47,6 +48,7 @@ def register():
         return render_template("auth/register.html", error="Логин уже занят", login=login)
 
     authorize(user)
+
     return redirect('/')
 
 

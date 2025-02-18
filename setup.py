@@ -5,7 +5,8 @@ system('flask db init')
 system('flask db upgrade')
 
 # Add tic tac toe to database
-from server import app, Game, db
+from models import Game
+from server import app, db
 
 with app.app_context():
     if not Game.query.filter_by(code='tic_tac_toe').count():

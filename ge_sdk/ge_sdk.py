@@ -1,11 +1,12 @@
-import time
-import redis
 import json
 import sys
+import time
 
-from types import ModuleType
 from importlib import import_module
 from multiprocessing import Process, Manager
+from types import ModuleType
+
+import redis
 
 
 class ScriptWrapper:
@@ -37,17 +38,17 @@ class RedisClient:
         self.__redis = redis.Redis(host=host, port=port, decode_responses=True)
         self.__session_id = session_id
 
-    def __pack_message(self, type, data, elapsed_time):
+    def __pack_message(self, dtype, data, elapsed_time):
         return json.dumps({
             "session_id": self.__session_id,
             "data": data,
-            "type": type,
+            "type": dtype,
             "elapsed": round(elapsed_time, 2)
         })
 
-    def send_message(self, type, elapsed_time, data={}):
-        self.__redis.publish("game_engine_notifications", self.__pack_message(type, data, elapsed_time))
-        
+    def send_message(self, dtype, elapsed_time, data: dict = None):
+        self.__redis.publish("game_engine_notifications", self.__pack_message(dtype, data, elapsed_time))
+
     def get_description(self):
         return json.loads(self.__redis.get(f'session-{self.__session_id}'))
 
@@ -62,16 +63,16 @@ class GameEngineTeam:
 class GameEnginePlayer:
     def __init__(self, description):
         self.name = description.get('name')
-        self.id = description.get('id')        
+        self.id = description.get('id')
         self.script = ScriptWrapper(f'{self.name}_{self.id}', description.get('script'))
 
 
 class GameEngineClient:
     def __init__(self):
         args = json.loads(sys.argv[1])
-        
+
         self.__redis_client = RedisClient(args['session_id'], args['redis_host'], args['redis_port'])
-        
+
         self.__description = self.__redis_client.get_description()
 
         self.session_id = self.__description.get('session_id')
@@ -82,7 +83,7 @@ class GameEngineClient:
     def __elapsed(self):
         return time.time() - self.__start_time
 
-    def send_event(self, event, description={}):
+    def send_event(self, event, description: dict = None):
         self.__redis_client.send_message("event", self.__elapsed(), {
             "type": event,
             "description": description
@@ -134,12 +135,10 @@ class GameEngineStats:
         self.set_value(player, param, self.get_value(player, param) + value)
 
     def get_table(self):
-        rows = []
-
-        rows.append({
+        rows = [{
             "type": "header",
             "cols": [" "] + self.__params
-        })
+        }]
 
         for team in self.__teams:
             if len(team.players) > 1:
@@ -168,7 +167,7 @@ class GameEngineStats:
         return rows
 
 
-def __proccess_wrapper(module, function_name, return_dict, args):
+def __process_wrapper(module, function_name, return_dict, args):
     try:
         return_dict['result'] = getattr(module, function_name)(*args)
     except Exception as e:
@@ -187,7 +186,7 @@ def timeout_run(timeout, module, function_name, args, bypass_errors=True):
         return_dict['finished'] = False
 
         thread = Process(
-            target=__proccess_wrapper,
+            target=__process_wrapper,
             name="ABC",
             args=[module, function_name, return_dict, args],
         )

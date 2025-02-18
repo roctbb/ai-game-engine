@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "ge_sdk"
 version = "1.0.0"
 authors = [
-  { name="roctbb" },
-  { name="DeniIndenbom" }
+    { name = "roctbb" },
+    { name = "DeniIndenbom" }
 ]
 
 description = "It's a SDK for ai-game-engine."
