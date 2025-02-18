@@ -5,7 +5,7 @@ from redis import Redis
 from config import REDIS_HOST, REDIS_PORT
 from methods import *
 
-__all__ = ['redis_client']
+__all__ = ['redis_client', 'redis']
 
 redis = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 

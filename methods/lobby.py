@@ -5,7 +5,7 @@ __all__ = ['get_lobby_by_id', 'get_all_lobbies', 'is_lobby_owner', 'try_run_lobb
            'leave_lobby', 'delete_lobby']
 
 
-def get_lobby_by_id(lobby_id):
+def get_lobby_by_id(lobby_id: int) -> Lobby:
     lobby = Lobby.query.get(lobby_id)
 
     if not lobby:
@@ -14,15 +14,15 @@ def get_lobby_by_id(lobby_id):
     return lobby
 
 
-def get_all_lobbies():
+def get_all_lobbies() -> list[Lobby]:
     return Lobby.query.all()
 
 
-def is_lobby_owner(lobby, user_id):
+def is_lobby_owner(lobby: Lobby, user_id: int) -> bool:
     return lobby.owner_id == user_id
 
 
-def try_run_lobby(lobby):
+def try_run_lobby(lobby: Lobby):
     selected_game = lobby.game
     teams = lobby.teams
 
@@ -39,7 +39,7 @@ def try_run_lobby(lobby):
     db.session.commit()
 
 
-def create_lobby(owner, game):
+def create_lobby(owner: User, game: Game) -> Lobby:
     lobby = Lobby(owner_id=owner.id, game_id=game.id)
 
     lobby.description = {}
@@ -50,7 +50,7 @@ def create_lobby(owner, game):
     return lobby
 
 
-def add_team(lobby, new_team):
+def add_team(lobby: Lobby, new_team: Team):
     if new_team in lobby.teams:
         raise AlreadyExists
     if new_team.game_id != lobby.game_id:
@@ -64,11 +64,11 @@ def add_team(lobby, new_team):
     db.session.commit()
 
 
-def leave_lobby(lobby, user):
+def leave_lobby(lobby: Lobby, user: User):
     lobby.teams = [team for team in lobby.teams if team.user_id != user.id]
     db.session.commit()
 
 
-def delete_lobby(lobby_id):
+def delete_lobby(lobby_id: Lobby):
     db.session.delete(get_lobby_by_id(lobby_id))
     db.session.commit()

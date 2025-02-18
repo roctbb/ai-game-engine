@@ -3,12 +3,12 @@ import os
 import subprocess
 
 from config import DEBUG, REDIS_HOST, REDIS_PORT
-from models import db
+from models import db, Session
 
 __all__ = ['stop_engine', 'run_engine', 'create_process']
 
 
-def stop_engine(session):
+def stop_engine(session: Session):
     if DEBUG:
         print(
             f" - stopping engine for session [{session.id} / {session.game.code}] with PID [{session.engine_pid}]")
@@ -20,7 +20,7 @@ def stop_engine(session):
     db.session.commit()
 
 
-def run_engine(session):
+def run_engine(session: Session):
     if session.engine_pid:
         stop_engine(session)
 
@@ -31,9 +31,11 @@ def run_engine(session):
         print(f" - running engine for session [{session.id} / {session.game.code}] with PID [{session.engine_pid}]")
 
 
-def create_process(session_id, code):
+def create_process(session_id: int, code: str):
     session_params = json.dumps({'session_id': session_id, 'redis_host': REDIS_HOST, 'redis_port': REDIS_PORT})
     if DEBUG:
         print(f"- session params: {session_params}")
+
     process = subprocess.Popen(['python', f'games/{code}/engine.py', session_params])
+
     return process.pid
