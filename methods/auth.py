@@ -10,7 +10,7 @@ def hash(password):
     return hashlib.md5(password.encode()).hexdigest()
 
 
-def create_user(login, password):
+def create_user(login: str, password: str) -> User:
     if not login or not password:
         raise InsufficientData
 
@@ -25,7 +25,7 @@ def create_user(login, password):
     return user
 
 
-def find_user(login, password):
+def find_user(login: str, password: str) -> User:
     if not login or not password:
         raise InsufficientData
 
@@ -39,7 +39,7 @@ def find_user(login, password):
     return user
 
 
-def authorize(user):
+def authorize(user: User):
     session['login'] = user.login
     session['id'] = user.id
 
@@ -48,8 +48,12 @@ def deauthorize():
     session.clear()
 
 
-def get_user(login):
+def get_user(login: str) -> User:
     return User.query.filter_by(login=login).first()
+
+
+def get_user_by_id(user_id: int) -> User:
+    return User.query.filter_by(id=user_id).first()
 
 
 def delete_user(user):

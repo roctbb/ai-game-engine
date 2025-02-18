@@ -2,10 +2,11 @@ from flask import Blueprint
 from flask import render_template, redirect, request, abort
 
 from helpers import requires_auth
+from methods.auth import get_user_by_id
 from methods.exceptions import *
-from methods.teams import get_team_by_id
 from methods.games import get_games, get_game_by_id
 from methods.lobby import *
+from methods.teams import get_team_by_id
 
 lobby_blueprint = Blueprint('lobby', __name__)
 
@@ -41,6 +42,7 @@ def index(user, lobby_id):
 def create_page(user):
     if not user.is_admin:
         abort(403)
+
     return render_template('lobbies/create.html', games=get_games())
 
 
@@ -95,8 +97,12 @@ def delete_user(user, lobby_id, deleted_user_id):
     if not is_lobby_owner(lobby, user):
         return redirect(f'/{lobby_id}')
 
-    # Why is this feature not implemented here ?
-    # Someone has to implement it
+    try:
+        deleted_user = get_user_by_id(deleted_user_id)
+    except NotFound:
+        abort(404)
+
+    leave_lobby(lobby, deleted_user)
 
     return redirect(f'/lobby/{lobby_id}')
 
