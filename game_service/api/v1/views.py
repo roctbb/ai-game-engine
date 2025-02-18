@@ -20,7 +20,7 @@ async def get_browser_info() -> schemas.BrowserInfo:
     }
 
 @app_v1.get('/get_technical_info')
-async def get_technical_info() -> schemas.BrowserInfo:
+async def get_technical_info() -> schemas.TechnicalInfo:
     return {
         'current_step': 69,
         'game': 'tanks',

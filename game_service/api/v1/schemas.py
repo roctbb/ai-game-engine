@@ -2,15 +2,15 @@ from pydantic import BaseModel
 
 class BaseInfo(BaseModel):
     game: str
-    players: int = 0
-    is_started: bool = False
+    players: int
+    is_started: bool
 
 class HealthCheck(BaseModel):
     status: str
 
 class BrowserInfo(BaseInfo):
     name: str
-    max_players: int = 1
+    max_players: int
 
 class TechnicalInfo(BaseInfo):
-    current_step: int = 1
+    current_step: int
