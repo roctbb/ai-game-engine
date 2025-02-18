@@ -1,5 +1,6 @@
 .idea
 .vscode
+.venv
 server/config.py
 venv
 tests/.pytest_cache
