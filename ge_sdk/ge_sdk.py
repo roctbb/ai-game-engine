@@ -1,35 +1,51 @@
+import asyncio
 import json
 import sys
 import time
-
 from importlib import import_module
-from multiprocessing import Process, Manager
 from types import ModuleType
 
 import redis
+
+from .isolation import restricted_globals
+
+__all__ = [
+    'ScriptWrapper',
+    'RedisClient',
+    'GameEngineTeam',
+    'GameEnginePlayer',
+    'GameEngineClient',
+    'GameEngineStats',
+    'timeout_run',
+]
 
 
 class ScriptWrapper:
     def __init__(self, name, code):
         self.__name = name
         self.__code = code
+        self.__module = self.__load_module()
 
     def __getattribute__(self, attribute):
-        if '__' not in attribute and attribute != "getCode":
-            module = self.__load_module()
-            return getattr(module, attribute)
+        if '__' not in attribute and attribute != 'get_code':
+            return getattr(self.__module, attribute)
         else:
             return super().__getattribute__(attribute)
 
     def __load_module(self):
         module = ModuleType(self.__name)
-        exec(self.__code, module.__dict__)
+
+        exec(self.__code, restricted_globals, module.__dict__)
 
         sys.modules[self.__name] = module
 
         return import_module(self.__name)
 
-    def getCode(self):
+    def __del__(self):
+        if self.__name in sys.modules:
+            del sys.modules[self.__name]
+
+    def get_code(self):
         return self.__code
 
 
@@ -40,14 +56,14 @@ class RedisClient:
 
     def __pack_message(self, dtype, data, elapsed_time):
         return json.dumps({
-            "session_id": self.__session_id,
-            "data": data,
-            "type": dtype,
-            "elapsed": round(elapsed_time, 2)
+            'session_id': self.__session_id,
+            'data': data,
+            'type': dtype,
+            'elapsed': round(elapsed_time, 2)
         })
 
     def send_message(self, dtype, elapsed_time, data: dict = None):
-        self.__redis.publish("game_engine_notifications", self.__pack_message(dtype, data, elapsed_time))
+        self.__redis.publish('game_engine_notifications', self.__pack_message(dtype, data, elapsed_time))
 
     def get_description(self):
         return json.loads(self.__redis.get(f'session-{self.__session_id}'))
@@ -84,26 +100,26 @@ class GameEngineClient:
         return time.time() - self.__start_time
 
     def send_event(self, event, description: dict = None):
-        self.__redis_client.send_message("event", self.__elapsed(), {
-            "type": event,
-            "description": description
+        self.__redis_client.send_message('event', self.__elapsed(), {
+            'type': event,
+            'description': description
         })
 
     def set_winner(self, team):
-        self.send_event("winner", {"team_id": team.id})
+        self.send_event('winner', {'team_id': team.id})
 
     def start(self):
         self.__start_time = time.time()
-        self.send_event("started")
+        self.send_event('started')
 
     def end(self):
-        self.send_event("ended")
+        self.send_event('ended')
 
     def send_frame(self, frame):
-        self.__redis_client.send_message("frame", self.__elapsed(), frame)
+        self.__redis_client.send_message('frame', self.__elapsed(), frame)
 
     def send_stats(self, stats):
-        self.__redis_client.send_message("stats", self.__elapsed(), stats.get_table())
+        self.__redis_client.send_message('stats', self.__elapsed(), stats.get_table())
 
 
 class GameEngineStats:
@@ -136,8 +152,8 @@ class GameEngineStats:
 
     def get_table(self):
         rows = [{
-            "type": "header",
-            "cols": [" "] + self.__params
+            'type': 'header',
+            'cols': [' '] + self.__params
         }]
 
         for team in self.__teams:
@@ -149,8 +165,8 @@ class GameEngineStats:
                         sums[i] += self.__players[player.id][param]
 
                 rows.append({
-                    "type": "subheader",
-                    "cols": [team.name] + sums
+                    'type': 'subheader',
+                    'cols': [team.name] + sums
                 })
 
             for player in team.players:
@@ -160,45 +176,32 @@ class GameEngineStats:
                     row[i] += self.__players[player.id][param]
 
                 rows.append({
-                    "type": "row",
-                    "cols": [player.name] + row
+                    'type': 'row',
+                    'cols': [player.name] + row
                 })
 
         return rows
 
 
-def __process_wrapper(module, function_name, return_dict, args):
+def __process_wrapper(module, function_name, args):
     try:
-        return_dict['result'] = getattr(module, function_name)(*args)
+        result = getattr(module, function_name)(*args)
     except Exception as e:
-        return_dict['exception'] = e
-
-    return_dict['finished'] = True
+        return {'result': None, 'exception': e, 'finished': True}
+    return {'result': result, 'exception': None, 'finished': True}
 
 
 def timeout_run(timeout, module, function_name, args, bypass_errors=True):
-    with Manager() as manager:
-
-        return_dict = manager.dict()
-
-        return_dict['result'] = None
-        return_dict['exception'] = None
-        return_dict['finished'] = False
-
-        thread = Process(
-            target=__process_wrapper,
-            name="ABC",
-            args=[module, function_name, return_dict, args],
-        )
-
-        thread.start()
-        thread.join(timeout=timeout)
-        thread.terminate()
-
-        return_dict = dict(return_dict)
+    try:
+        return_dict = asyncio.run(asyncio.wait_for(
+            asyncio.to_thread(__process_wrapper, module, function_name, args),
+            timeout=timeout
+        ))
+    except asyncio.TimeoutError:
+        return_dict = {'result': None, 'exception': None, 'finished': False}
 
     if not return_dict['finished'] and not bypass_errors:
-        raise TimeoutError
+        raise TimeoutError('Function execution timed out')
 
     if return_dict['exception'] and not bypass_errors:
         raise return_dict['exception']
@@ -206,4 +209,4 @@ def timeout_run(timeout, module, function_name, args, bypass_errors=True):
     if not return_dict['finished'] or return_dict['exception']:
         return None
 
-    return return_dict["result"]
+    return return_dict['result']

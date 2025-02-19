@@ -11,7 +11,7 @@ gunicorn
 redis~=5.2.1
 flask-cors~=5.0.0
 build
-git+https://github.com/roctbb/ai-game-engine#subdirectory=ge_sdk
+./ge_sdk/
 python-dotenv~=1.0.1
 SQLAlchemy~=2.0.38
 Flask-Migrate~=4.1.0

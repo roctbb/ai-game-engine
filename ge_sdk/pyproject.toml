@@ -4,11 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ge_sdk"
-version = "1.0.0"
+version = "1.1.0"
 authors = [
     { name = "roctbb" },
     { name = "DeniIndenbom" }
 ]
-
 description = "It's a SDK for ai-game-engine."
 requires-python = ">=3.6"
+
+[tool.setuptools]
+py-modules = ["ge_sdk", "isolation"]

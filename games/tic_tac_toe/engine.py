@@ -101,7 +101,7 @@ def game():
         current_player = players[step % 2]
         try:
             x, y = sdk.timeout_run(
-                10,
+                0.4,
                 current_player.script,
                 "make_choice",
                 (deepcopy(field), current_player.role),
