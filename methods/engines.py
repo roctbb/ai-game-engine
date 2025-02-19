@@ -34,7 +34,7 @@ def run_engine(session: Session):
 def create_process(session_id: int, code: str):
     session_params = json.dumps({'session_id': session_id, 'redis_host': REDIS_HOST, 'redis_port': REDIS_PORT})
     if DEBUG:
-        print(f"- session params: {session_params}")
+        print(f" - session params: {session_params}")
 
     process = subprocess.Popen(['python', f'games/{code}/engine.py', session_params])
 

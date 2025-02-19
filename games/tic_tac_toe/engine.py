@@ -1,5 +1,6 @@
 import time
 from copy import deepcopy
+
 import ge_sdk as sdk
 
 
@@ -28,11 +29,11 @@ def createEmptyField():
     ]
 
 
-def checkDirection(field, startX, startY, dX, dY, N, value):
+def checkDirection(field, start_x, start_y, d_x, d_y, n, value):
     number = 0
 
-    for i in range(N):
-        if field[startX + dX * i][startY + dY * i] == value:
+    for i in range(n):
+        if field[start_x + d_x * i][start_y + d_y * i] == value:
             number += 1
         else:
             number = 0
@@ -98,7 +99,16 @@ def game():
         start = time.time()
 
         current_player = players[step % 2]
-        x, y = sdk.timeout_run(0.4, current_player.script, "make_choice", (deepcopy(field), current_player.role))
+        try:
+            x, y = sdk.timeout_run(
+                10,
+                current_player.script,
+                "make_choice",
+                (deepcopy(field), current_player.role),
+                bypass_errors=False
+            )
+        except TimeoutError:
+            break
 
         if x < 0 or x > 4 or y < 0 or y > 4:
             continue
