@@ -5,5 +5,5 @@ app = Celery('tasks', backend='redis://localhost', broker='redis://localhost')
 
 @app.task
 def send(code, function, args, timeout):
-    result = sandbox_run.start_execute(code, function, [args], timeout)
+    result = sandbox_run.start_execute(code, function, [args], timeout).raw_json
     return result
