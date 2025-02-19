@@ -304,11 +304,9 @@ def game():
             frame["winner"] = "bottom"
 
         engine.send_frame(frame)
-
+        time.sleep(2)
         if frame.get("winner"):
             break
-    
-    time.sleep(2)
     # TODO: указать, какая команда победила
     # engine.set_winner(engine.teams[0])
 

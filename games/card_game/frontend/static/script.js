@@ -23,6 +23,7 @@ function loadImages() {
             }
         }
         imageNames.push("BACK")
+        imageNames.push("GROUND")
 
         // Load each image
         imageNames.forEach((imageName) => {
@@ -37,8 +38,12 @@ function clearScreen(ctx) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
+function drawBackground(ctx) {
+    ctx.drawImage(images['GROUND'], 0, 0, canvas.width, canvas.height);
+}
+
 function drawPlayersAndScores(ctx, players, scores, hands, discards, wins) {
-    ctx.font = "24px serif";
+    ctx.font = "24px myFirstFont";
 
     const topName = `Игрок 1: ${players['top']}`
     const bottomName = `Игрок 2: ${players['bottom']}`
@@ -75,14 +80,23 @@ function drawPlayersAndScores(ctx, players, scores, hands, discards, wins) {
     ctx.fillText(bottomDiscards, canvas.width-BDW-70, canvas.height-94);
 }
 
-function drawChoices(ctx, cards, cardsChosen) {
+function drawChoices(ctx, cards, cardsChosen, animStep) {
     for (var i = 0; i < cards['top'].length; i++) {
-        ctx.drawImage(images[cards['top'][i]], canvas.width/2+(i-4)*80, 70, 70, 100);
+        if (cardsChosen['top'].includes(cards['top'][i])){
+            ctx.drawImage(images[cards['top'][i]], canvas.width/2+(i-4)*80, 70+animStep, 70, 100);
+        }
+        else{
+            ctx.drawImage(images[cards['top'][i]], canvas.width/2+(i-4)*80, 70, 70, 100);
+        }
         // toDraw.push(images[cards[i]])
     }
     for (var i = 0; i < cards['bottom'].length; i++) {
-        ctx.drawImage(images[cards['bottom'][i]], canvas.width/2+(i-4)*80, canvas.height-170, 70, 100);
-        // toDraw.push(images[cards[i]])
+        if (cardsChosen['bottom'].includes(cards['bottom'][i])){
+            ctx.drawImage(images[cards['bottom'][i]], canvas.width/2+(i-4)*80, canvas.height-170-animStep, 70, 100);
+        }
+        else{
+            ctx.drawImage(images[cards['bottom'][i]], canvas.width/2+(i-4)*80, canvas.height-170, 70, 100);
+        }
     }
 }
 
@@ -113,14 +127,19 @@ function init() {
 
 }
 
-function newFrame(frame) {
+async function newFrame(frame) {
     let ctx = canvas.getContext("2d");
 
-    clearScreen(ctx)
-    console.log(frame)
-    drawPlayersAndScores(ctx, frame['players'], frame['points'], frame['handsLeft'], frame['discardsLeft'], frame['wins'])
-    drawChoices(ctx, frame['cardsInHand'], frame['cardsChosen'])
-    drawWinner(ctx, frame['winner'], frame['players'])
+    console.log(frame);
+    // await new Promise(resolve => setTimeout(resolve, 1000));
+    for (let _ = 0; _ < 100; _++) {
+        clearScreen(ctx);
+        // drawBackground(ctx);
+        drawPlayersAndScores(ctx, frame['players'], frame['points'], frame['handsLeft'], frame['discardsLeft'], frame['wins']);
+        drawChoices(ctx, frame['cardsInHand'], frame['cardsChosen'], _);
+        drawWinner(ctx, frame['winner'], frame['players']);
+        await new Promise(resolve => setTimeout(resolve, 1));
+    }
 }
 
 init()
