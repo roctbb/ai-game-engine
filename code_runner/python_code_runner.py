@@ -46,14 +46,22 @@ def _deserialize_args(ser: dict[str, typing.Any]) -> typing.Any:
         raise ValueError('Unable to deserialize data')
 
 class PythonCodeRunner(CodeRunner):
+    def __init__(self, code: str, base_url: str):
+        '''
+        base_url inn format = https://container-name:port/api/v2/piston
+        '''
+
+        super.__init__(code)
+
+        self.client = pyston.PystonClient(base_url=base_url)
+        pyston.PystonClient()
+
     def run(self, 
         func: str,
         timeout: float = 0.5,
         args: tuple[typing.Any] = (),
     ) -> tuple[typing.Any]:
         assert isinstance(args, tuple)
-
-        client = pyston.PystonClient()
 
         runner_code = f'''
 try:
@@ -83,7 +91,7 @@ except Exception as e:
         except RuntimeError:
             loop = asyncio.new_event_loop()
 
-        output = loop.run_until_complete(client.execute(
+        output = loop.run_until_complete(self.client.execute(
             'python',
             [runner_file, code_file],
             run_timeout=timeout
