@@ -35,7 +35,10 @@ class ScriptWrapper:
     def __load_module(self):
         module = ModuleType(self.__name)
 
-        exec(self.__code, restricted_globals, module.__dict__)
+        try:
+            exec(self.__code, restricted_globals, module.__dict__)
+        except Exception as e:
+            raise RuntimeError(f'Failed to load module {self.__name}: {str(e)}')
 
         sys.modules[self.__name] = module
 
