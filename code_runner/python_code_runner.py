@@ -1,9 +1,10 @@
-from .code_runner import CodeRunner
+from code_runner import CodeRunner
 import typing
 import inspect
 import pyston
 import json
 import asyncio
+import traceback
 
 def _serialize_args(arg: typing.Any, depth: int = 5) -> dict[str, typing.Any]:
     if depth == 0:
@@ -20,6 +21,10 @@ def _serialize_args(arg: typing.Any, depth: int = 5) -> dict[str, typing.Any]:
         return {'type': 'str', 'value': str(arg)}
     elif isinstance(arg, list):
         return {'type': 'list', 'value': [
+            _serialize_args(a, depth=(depth - 1)) for a in arg
+        ]}
+    elif isinstance(arg, tuple):
+        return {'type': 'tuple', 'value': [
             _serialize_args(a, depth=(depth - 1)) for a in arg
         ]}
     elif isinstance(arg, dict):
@@ -39,6 +44,9 @@ def _deserialize_args(ser: dict[str, typing.Any]) -> typing.Any:
         if ser['type'] == 'list': return [
             _deserialize_args(a) for a in ser['value']
         ]
+        if ser['type'] == 'tuple': return [
+            _deserialize_args(a) for a in ser['value']
+        ]
         if ser['type'] == 'dict': return {
             k: _deserialize_args(v) for k, v, in ser['value']
         }
@@ -48,29 +56,29 @@ def _deserialize_args(ser: dict[str, typing.Any]) -> typing.Any:
 class PythonCodeRunner(CodeRunner):
     def __init__(self, code: str, base_url: str):
         '''
-        base_url inn format = https://container-name:port/api/v2/piston
+        base_url inn format = http://container-name:port/api/v2/piston
         '''
 
-        super.__init__(code)
+        super().__init__(code)
+        self.base_url = base_url
 
-        self.client = pyston.PystonClient(base_url=base_url)
-        pyston.PystonClient()
-
-    def run(self, 
+    async def run(self, 
         func: str,
         timeout: float = 0.5,
         args: tuple[typing.Any] = (),
     ) -> tuple[typing.Any]:
         assert isinstance(args, tuple)
 
+        self.client = pyston.PystonClient()
+
         runner_code = f'''
 try:
     import json
     import traceback
 
-    { inspect.get_source(_serialize_args) }
+    { inspect.getsource(_serialize_args) }
 
-    { inspect.get_source(_deserialize_args) }
+    { inspect.getsource(_deserialize_args) }
 
     from code_file import { func }
 
@@ -83,19 +91,15 @@ except Exception as e:
 '''
         
         code_file = pyston.File(self.code, filename='code_file.py')
-        runner_file = pyston.File(runner_code, filename='runner_file.py')
+        runner_file = pyston.File(runner_code, filename='runner_file.py')   
 
-        loop = None
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-
-        output = loop.run_until_complete(self.client.execute(
+        output = await self.client.execute(
             'python',
             [runner_file, code_file],
             run_timeout=timeout
-        ))
+        )
+
+        print(repr(output), '!!!')
 
         try:
             output_dict = json.loads(output)
@@ -105,5 +109,18 @@ except Exception as e:
             else:
                 return (False, _deserialize_args(output_dict))
         except Exception:
-            return (True, 'Unable to deserealize data')
-        
+            return (True, 'Unable to deserealize data', traceback.format_exc())
+
+EXAMPLE_CODE = '''
+def func(a, b):
+    return a + b
+'''
+
+if __name__ == '__main__':
+    runner = PythonCodeRunner(
+        EXAMPLE_CODE,
+        'http://127.0.0.1:3000/api/v2/piston'
+    )
+
+    loop = asyncio.get_event_loop()
+    print(loop.run_until_complete(runner.run('func', timeout=0.5, args=(1, 2))))
