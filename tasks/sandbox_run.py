@@ -14,7 +14,7 @@ async def execute(code, func, args, timeout):
         [runner_file, code_file],
         run_timeout=timeout
     )
-    return output
+    return output.raw_json['run']['output']
 
 def start_execute(code, func, args, timeout):
     loop = asyncio.new_event_loop()
