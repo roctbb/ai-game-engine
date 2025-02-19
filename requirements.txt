@@ -14,3 +14,4 @@ build
 git+https://github.com/roctbb/ai-game-engine#subdirectory=ge_sdk
 python-dotenv
 aiopyston
+celery
