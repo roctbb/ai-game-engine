@@ -24,19 +24,101 @@ def cardNum(card):
 def cardSuit(card):
     return int(card.split("-")[1])
 
-# def isPair()
+def isPair(cards):
+    nums = [cardNum(card) for card in cards]
+    for num in set(nums):
+        if nums.count(num) == 2:
+            return [card for card in cards if cardNum(card) == num]
+    return []
+
+def isTwoPair(cards):
+    nums = [cardNum(card) for card in cards]
+    pairs = []
+    for num in set(nums):
+        if nums.count(num) == 2:
+            pairs.append(num)
+    if len(pairs) >= 2:
+        return [card for card in cards if cardNum(card) in pairs]
+    return []
+
+def isThreeOfAKind(cards):
+    nums = [cardNum(card) for card in cards]
+    for num in set(nums):
+        if nums.count(num) == 3:
+            return [card for card in cards if cardNum(card) == num]
+    return []
+
+def isStraight(cards):
+    nums = sorted([cardNum(card) for card in cards])
+    if all(nums[i] + 1 == nums[i+1] for i in range(len(nums)-1)):
+        return cards
+    return []
+
+def isFlush(cards):
+    suits = [cardSuit(card) for card in cards]
+    if all(s == suits[0] for s in suits):
+        return cards
+    return []
+
+def isFullHouse(cards):
+    nums = [cardNum(card) for card in cards]
+    three = None
+    two = None
+    for num in set(nums):
+        if nums.count(num) == 3:
+            three = num
+        elif nums.count(num) == 2:
+            two = num
+    if three and two:
+        return [card for card in cards if cardNum(card) == three or cardNum(card) == two]
+    return []
+
+def isFourOfAKind(cards):
+    nums = [cardNum(card) for card in cards]
+    for num in set(nums):
+        if nums.count(num) == 4:
+            return [card for card in cards if cardNum(card) == num]
+    return []
+
+def isStraightFlush(cards):
+    if isStraight(cards) and isFlush(cards):
+        return cards
+    return []
+
+def isRoyalFlush(cards):
+    nums = sorted([cardNum(card) for card in cards])
+    if nums == [10, 11, 12, 13, 14] and isFlush(cards):
+        return cards
+    return []
+
+def summCards(crds):
+    summ = 0
+    for i in crds:
+        summ += cardCost(i)
+    return summ
 
 def countScore(crds):
-    if len(crds) == 1:
-        return cardCost(crds[0]) + 5
-    if len(crds) == 2:
-        return max(cardCost(crds[0]), cardCost(crds[1])) + 5
-    if len(crds) == 3:
-        return max(cardCost(crds[0]), cardCost(crds[1]), cardCost(crds[2])) + 5
-    if len(crds) == 4:
-        return max(cardCost(crds[0]), cardCost(crds[1]), cardCost(crds[2]), cardCost(crds[3])) + 5
-    if len(crds) == 5:
-        return max(cardCost(crds[0]), cardCost(crds[1]), cardCost(crds[2]), cardCost(crds[3]), cardCost(crds[4])) + 5
+    if isRoyalFlush(crds):
+        return (100 + summCards(isRoyalFlush(crds))) * 8
+    elif isStraightFlush(crds):
+        return (100 + summCards(isStraightFlush(crds))) * 8
+    elif isFourOfAKind(crds):
+        return (60 + summCards(isFourOfAKind(crds))) * 7
+    elif isFullHouse(crds):
+        return (40 + summCards(isFullHouse(crds))) * 4
+    elif isFlush(crds):
+        return (35 + summCards(isFlush(crds))) * 4
+    elif isStraight(crds):
+        return (30 + summCards(isStraight(crds))) * 4
+    elif isThreeOfAKind(crds):
+        return (30 + summCards(isThreeOfAKind(crds))) * 3
+    elif isTwoPair(crds):
+        return (20 + summCards(isTwoPair(crds))) * 2
+    elif isPair(crds):
+        return (10 + summCards(isPair(crds))) * 2
+    else:
+        highest_card = max(crds, key=lambda card: cardCost(card))
+        return cardCost(highest_card) + 5
 
 def dataReset(data):
     for key in list(data.keys()):
