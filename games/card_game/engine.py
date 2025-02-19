@@ -111,11 +111,8 @@ def game():
         
         if moves:
             topAnswer = sdk.timeout_run(4, players[0].script, "make_choice", (data["top"]["handCards"], data["top"]["deck"], data["top"]["discards"], data["top"]["hands"], moves), bypass_errors=False)
-            print(topAnswer)
         else:
             topAnswer = {"action": "wait", "cards": []}
-        # print(topAnswer["action"])
-        print(data["top"])
         if topAnswer["action"] == "play":
             data["top"]["hands"] -= 1
             data["top"]["points"] += countScore(topAnswer["cards"])
@@ -130,11 +127,9 @@ def game():
         
         if moves:
             bottomAnswer = sdk.timeout_run(4, players[0].script, "make_choice", (data["bottom"]["handCards"], data["bottom"]["deck"], data["bottom"]["discards"], data["bottom"]["hands"], moves), bypass_errors=False)
-            print(bottomAnswer)
         else:
             bottomAnswer = {"action": "wait", "cards": []}
 
-        print(data["bottom"])
         if bottomAnswer["action"] == "play":
             data["bottom"]["hands"] -= 1
             data["bottom"]["points"] += countScore(bottomAnswer["cards"])
@@ -167,6 +162,14 @@ def game():
                 "top": topAnswer["cards"],
                 "bottom": bottomAnswer["cards"]
             },
+            "handsLeft": {
+                "top": data["top"]["hands"],
+                "bottom": data["bottom"]["hands"]
+            }, 
+            "discardsLeft": {
+                "top": data["top"]["discards"],
+                "bottom": data["bottom"]["discards"]
+            }, 
             "action":{ # discard/play/wait
                 "top": topAnswer["action"],
                 "bottom": bottomAnswer["action"]
@@ -182,10 +185,10 @@ def game():
         data["top"]["handCards"] = newHand
 
         newHand = []
-        for i in data["top"]["handCards"]:
-            if not (i in topAnswer["cards"]):
+        for i in data["bottom"]["handCards"]:
+            if not (i in bottomAnswer["cards"]):
                 newHand.append(i)
-        data["top"]["handCards"] = newHand
+        data["bottom"]["handCards"] = newHand
         
         if data["top"]["hands"] == 0 and data["bottom"]["hands"] == 0:
             if data["top"]["points"]>data["bottom"]["points"]:
