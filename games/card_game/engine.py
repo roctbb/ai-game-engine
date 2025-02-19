@@ -1,5 +1,6 @@
 import ge_sdk as sdk
 import random
+import time
 
 def getCards(deck, amount):
     hand = []
@@ -50,14 +51,16 @@ def isThreeOfAKind(cards):
 
 def isStraight(cards):
     nums = sorted([cardNum(card) for card in cards])
-    if all(nums[i] + 1 == nums[i+1] for i in range(len(nums)-1)):
-        return cards
+    if len(cards) >= 5:
+        if all(nums[i] + 1 == nums[i+1] for i in range(len(nums)-1)):
+            return cards
     return []
 
 def isFlush(cards):
     suits = [cardSuit(card) for card in cards]
-    if all(s == suits[0] for s in suits):
-        return cards
+    if len(cards) >= 5:
+        if all(s == suits[0] for s in suits):
+            return cards
     return []
 
 def isFullHouse(cards):
@@ -81,8 +84,9 @@ def isFourOfAKind(cards):
     return []
 
 def isStraightFlush(cards):
-    if isStraight(cards) and isFlush(cards):
-        return cards
+    if len(cards) >= 5:
+        if isStraight(cards) and isFlush(cards):
+            return cards
     return []
 
 def isRoyalFlush(cards):
@@ -99,25 +103,35 @@ def summCards(crds):
 
 def countScore(crds):
     if isRoyalFlush(crds):
+        print(1)
         return (100 + summCards(isRoyalFlush(crds))) * 8
     elif isStraightFlush(crds):
+        print(isStraightFlush(crds))
         return (100 + summCards(isStraightFlush(crds))) * 8
     elif isFourOfAKind(crds):
+        print(3)
         return (60 + summCards(isFourOfAKind(crds))) * 7
     elif isFullHouse(crds):
+        print(4)
         return (40 + summCards(isFullHouse(crds))) * 4
     elif isFlush(crds):
+        print(5)
         return (35 + summCards(isFlush(crds))) * 4
     elif isStraight(crds):
+        print(6)
         return (30 + summCards(isStraight(crds))) * 4
     elif isThreeOfAKind(crds):
+        print(7)
         return (30 + summCards(isThreeOfAKind(crds))) * 3
     elif isTwoPair(crds):
+        print(8)
         return (20 + summCards(isTwoPair(crds))) * 2
     elif isPair(crds):
+        print(9)
         return (10 + summCards(isPair(crds))) * 2
     else:
         highest_card = max(crds, key=lambda card: cardCost(card))
+        # print(cardCost(highest_card) + 5)
         return cardCost(highest_card) + 5
 
 def dataReset(data):
@@ -237,12 +251,12 @@ def game():
                 "bottom": data["bottom"]["points"]
             }, 
             "cardsInHand": {
-                "top": data["top"]["handCards"], 
-                "bottom": data["bottom"]["handCards"]
+                "top": sorted(data["top"]["handCards"], key=lambda card: (cardNum(card), cardSuit(card))), 
+                "bottom": sorted(data["bottom"]["handCards"], key=lambda card: (cardNum(card), cardSuit(card)))
             }, 
             "cardsChosen": {
-                "top": topAnswer["cards"],
-                "bottom": bottomAnswer["cards"]
+                "top": sorted(topAnswer["cards"], key=lambda card: (cardNum(card), cardSuit(card))),
+                "bottom": sorted(bottomAnswer["cards"], key=lambda card: (cardNum(card), cardSuit(card)))
             },
             "handsLeft": {
                 "top": data["top"]["hands"],
@@ -258,6 +272,7 @@ def game():
             },
             "round": rplayed
         }
+
 
 
         newHand = []
@@ -292,7 +307,8 @@ def game():
 
         if frame.get("winner"):
             break
-
+    
+    time.sleep(2)
     # TODO: указать, какая команда победила
     # engine.set_winner(engine.teams[0])
 
