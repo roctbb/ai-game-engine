@@ -14,7 +14,10 @@ lobby_blueprint = Blueprint('lobby', __name__)
 @lobby_blueprint.route('/')
 @requires_auth
 def active(user):
-    return render_template('lobbies/index.html', lobbies=get_all_lobbies(), games=get_games(), user=user,
+    return render_template('lobbies/index.html',
+                           lobbies=get_all_lobbies(),
+                           games=get_games(),
+                           user=user,
                            title='Активные лобби')
 
 
@@ -34,7 +37,7 @@ def index(user, lobby_id):
                            teams=teams,
                            owner=is_lobby_owner(lobby, user),
                            team_added=team_added,
-                           update=False)
+                           is_ready=is_lobby_ready(lobby))
 
 
 @lobby_blueprint.route('/create', methods=['GET'])
@@ -70,32 +73,37 @@ def update_page(user, lobby_id):
     lobby = get_lobby_by_id(lobby_id)
     teams = list(team for team in user.teams if team.game_id == lobby.game_id)
 
-    return render_template('lobbies/lobby.html', lobby_id=lobby_id, update=True, teams=teams)
+    return render_template('lobbies/update.html', lobby_id=lobby_id, teams=teams)
 
 
 @lobby_blueprint.route('/<int:lobby_id>/update', methods=['POST'])
 @requires_auth
-def update(*_, lobby_id):
+def update(user, lobby_id):
     team_id = request.form.get('team_id')
 
     try:
         lobby = get_lobby_by_id(lobby_id)
         team = get_team_by_id(int(team_id))
 
+        team_added = any(team.user_id == user.id for team in lobby.teams)
+
+        if team_added:
+            leave_lobby(lobby, user)
+
         add_team(lobby, team)
     except ExplainableException as e:
-        return render_template('lobbies/lobby.html', lobby_id=lobby_id, update=True, error=e.text)
+        return render_template('lobbies/update.html', lobby_id=lobby_id, error=e.text)
 
     return redirect(f'/lobby/{lobby_id}')
 
 
-@lobby_blueprint.route('/<int:lobby_id>/delete/<int:id>', methods=['GET'])
+@lobby_blueprint.route('/<int:lobby_id>/delete/<int:deleted_user_id>', methods=['GET'])
 @requires_auth
 def delete_user(user, lobby_id, deleted_user_id):
     lobby = get_lobby_by_id(lobby_id)
 
     if not is_lobby_owner(lobby, user):
-        return redirect(f'/{lobby_id}')
+        return redirect(f'lobby/{lobby_id}')
 
     try:
         deleted_user = get_user_by_id(deleted_user_id)
@@ -114,3 +122,19 @@ def leave_the_lobby(user, lobby_id):
     leave_lobby(lobby, user)
 
     return redirect(f'/')
+
+
+@lobby_blueprint.route('/<int:lobby_id>/launch>', methods=['GET'])
+@requires_auth
+def launch_the_lobby(user, lobby_id):
+    lobby = get_lobby_by_id(lobby_id)
+
+    if not (is_lobby_owner(lobby, user) and is_lobby_ready(lobby)):
+        return redirect(f'/lobby/{lobby_id}')
+
+    try:
+        session_id = try_run_lobby(lobby)
+
+        return redirect(f'/game/{session_id}' if session_id > -1 else f'/lobby/{lobby_id}')
+    except IncorrectNumberOfTeams:
+        return redirect(f'/lobby/{lobby_id}')

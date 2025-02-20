@@ -24,7 +24,7 @@ def __generate_description(session: Session) -> str:
     })
 
 
-def create_session(game: Game, teams: list[Team], user=None) -> Session:
+def create_session(game: Game, teams: list[Team], user: User = None) -> Session:
     from redis_client import redis
 
     if not game or game.min_teams > len(teams) or len(teams) > game.max_teams:

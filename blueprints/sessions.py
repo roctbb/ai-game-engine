@@ -35,7 +35,7 @@ def create(user):
     games = get_games()
 
     try:
-        selected_game = get_game_by_id(game_id)
+        selected_game = get_game_by_id(int(game_id))
     except Exception:
         return render_template('sessions/create.html', games=games, error='Выберите игру')
 

@@ -1,8 +1,15 @@
 from models import *
 from .sessions import *
 
-__all__ = ['get_lobby_by_id', 'get_all_lobbies', 'is_lobby_owner', 'try_run_lobby', 'create_lobby', 'add_team',
-           'leave_lobby', 'delete_lobby']
+__all__ = ['get_lobby_by_id',
+           'get_all_lobbies',
+           'is_lobby_owner',
+           'is_lobby_ready',
+           'try_run_lobby',
+           'create_lobby',
+           'add_team',
+           'leave_lobby',
+           'delete_lobby']
 
 
 def get_lobby_by_id(lobby_id: int) -> Lobby:
@@ -18,11 +25,15 @@ def get_all_lobbies() -> list[Lobby]:
     return Lobby.query.all()
 
 
-def is_lobby_owner(lobby: Lobby, user_id: int) -> bool:
-    return lobby.owner_id == user_id
+def is_lobby_owner(lobby: Lobby, user: User) -> bool:
+    return lobby.owner_id == user.id
 
 
-def try_run_lobby(lobby: Lobby):
+def is_lobby_ready(lobby: Lobby) -> bool:
+    return len(lobby.teams) >= lobby.game.min_teams
+
+
+def try_run_lobby(lobby: Lobby) -> int:
     selected_game = lobby.game
     teams = lobby.teams
 
@@ -35,8 +46,11 @@ def try_run_lobby(lobby: Lobby):
         lobby.is_started = True
     except Exception:
         lobby.is_started = False
+        game_session = None
 
     db.session.commit()
+
+    return game_session.id if game_session else -1
 
 
 def create_lobby(owner: User, game: Game) -> Lobby:
@@ -55,7 +69,7 @@ def add_team(lobby: Lobby, new_team: Team):
         raise AlreadyExists
     if new_team.game_id != lobby.game_id:
         raise IncorrectTeam
-    if len(lobby.teams) == lobby.game.max_teams:
+    if len(lobby.teams) >= lobby.game.max_teams:
         raise LobbyFull
 
     lobby.teams = [team for team in lobby.teams if team.user_id != new_team.user_id]
