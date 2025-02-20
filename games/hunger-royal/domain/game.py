@@ -192,25 +192,25 @@ class Game:
         if decision == Decision.GO_LEFT:
             for _ in range(speed):
                 if self.can_move(Point(x - 1, y)):
-                    if (Point(x - 1, y) == 2 and player.inventory.has("YellowKey")) or (Point(x - 1, y) == 6 and player.inventory.has("PinkKey")) or (Point(x - 1, y) == 9 and player.inventory.has("BlueKey")):
+                    if (Point(x - 1, y) == 2 and player.inventory.has("YellowKey")) or (Point(x - 1, y) == 6 and player.inventory.has("PinkKey")) or (Point(x - 1, y) == 9 and player.inventory.has("BlueKey")) or Point not in [2,6,9]:
                         new_point = Point(x - 1, y)
 
         elif decision == Decision.GO_RIGHT:
             for _ in range(speed):
                 if self.can_move(Point(x + 1, y)):
-                    if (Point(x - 1, y) == 2 and player.inventory.has("YellowKey")) or (Point(x - 1, y) == 6 and player.inventory.has("PinkKey")) or (Point(x - 1, y) == 9 and player.inventory.has("BlueKey")):
+                    if (Point(x + 1, y) == 2 and player.inventory.has("YellowKey")) or (Point(x + 1, y) == 6 and player.inventory.has("PinkKey")) or (Point(x + 1, y) == 9 and player.inventory.has("BlueKey")) or Point not in [2,6,9]:
                         new_point = Point(x + 1, y)
 
         if decision == Decision.GO_UP:
             for _ in range(speed):
                 if self.can_move(Point(x, y - 1)):
-                    if (Point(x - 1, y) == 2 and player.inventory.has("YellowKey")) or (Point(x - 1, y) == 6 and player.inventory.has("PinkKey")) or (Point(x - 1, y) == 9 and player.inventory.has("BlueKey")):
+                    if (Point(x, y-1) == 2 and player.inventory.has("YellowKey")) or (Point(x, y-1) == 6 and player.inventory.has("PinkKey")) or (Point(x, y-1) == 9 and player.inventory.has("BlueKey")):
                         new_point = Point(x, y - 1)
 
         elif decision == Decision.GO_DOWN:
             for _ in range(speed):
                 if self.can_move(Point(x, y + 1)):
-                    if (Point(x - 1, y) == 2 and player.inventory.has("YellowKey")) or (Point(x - 1, y) == 6 and player.inventory.has("PinkKey")) or (Point(x - 1, y) == 9 and player.inventory.has("BlueKey")):
+                    if (Point(x, y + 1) == 2 and player.inventory.has("YellowKey")) or (Point(x, y + 1) == 6 and player.inventory.has("PinkKey")) or (Point(x, y + 1) == 9 and player.inventory.has("BlueKey")) or Point not in [2,6,9]:
                         new_point = Point(x, y + 1)
 
         if new_point:
