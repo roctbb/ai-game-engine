@@ -5,18 +5,12 @@ from domain.player import Player
 class BlueKey(Item):
     def __init__(self):
         super().__init__()
-
-    def apply(self, object: Player):
-        object.boosters.append(Booster("OpenTheDoor_blue", True, 150))
+        self.type = "BlueKey"
 class YellowKey(Item):
     def __init__(self):
         super().__init__()
-
-    def apply(self, object: Player):
-        object.boosters.append(Booster("OpenTheDoor_yellow", True, 150))
+        self.type = "YellowKey"
 class PinkKey(Item):
     def __init__(self):
         super().__init__()
-
-    def apply(self, object: Player):
-        object.boosters.append(Booster("OpenTheDoor_pink", True, 150))
+        self.type = "PinkKey"

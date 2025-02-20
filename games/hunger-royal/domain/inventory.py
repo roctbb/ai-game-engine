@@ -23,3 +23,10 @@ class Inventory:
 
         self._items.remove(item)
         return item
+    
+    def has(self, title: str) -> Optional[Item]:
+        try:
+            item = next(item for item in self._items if item.type == title)
+        except Exception as e:
+            return False
+        return True

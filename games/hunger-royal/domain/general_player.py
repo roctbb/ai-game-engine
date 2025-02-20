@@ -15,12 +15,10 @@ class GeneralPlayer(Object):
         self.properties = {
             'speed': 1,
             'power': 1,
+            'damage_range':1,
             'life': 5,
             'fire_distance': 10,
-            'max_lifes':5,
-            'speed_upgrade':False,
-            'damage_upgrade':False
-
+            'max_lifes':5
         }
 
         self.history = []
