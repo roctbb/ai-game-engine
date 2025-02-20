@@ -182,47 +182,6 @@ class GameEngineStats:
         return rows
 
 
-def __proccess_wrapper(module, function_name, return_dict, args):
-    try:
-        return_dict['result'] = getattr(module, function_name)(*args)
-    except Exception as e:
-        return_dict['exception'] = e
-
-    return_dict['finished'] = True
-
-
-def timeout_run(timeout, module, function_name, args, bypass_errors=True):
-    with Manager() as manager:
-
-        return_dict = manager.dict()
-
-        return_dict['result'] = None
-        return_dict['exception'] = None
-        return_dict['finished'] = False
-
-        thread = Process(
-            target=__proccess_wrapper,
-            name="ABC",
-            args=[module, function_name, return_dict, args],
-        )
-
-        thread.start()
-        thread.join(timeout=timeout)
-        thread.terminate()
-
-        return_dict = dict(return_dict)
-
-    if not return_dict['finished'] and not bypass_errors:
-        raise TimeoutError
-
-    if return_dict['exception'] and not bypass_errors:
-        raise return_dict['exception']
-
-    if not return_dict['finished'] or return_dict['exception']:
-        return None
-
-    return return_dict["result"]
-
 app = Celery('tasks', backend="redis://localhost", broker="redis://localhost")
 
 @app.task
