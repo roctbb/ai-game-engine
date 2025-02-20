@@ -5,8 +5,10 @@ from server import app, Game, db
 title = input("Enter short game title (a-z, _):")
 prepared_title = title.strip().replace(' ', '_')
 
-team_number = int(input("How many teams would you like:"))
-team_size = int(input("Enter team size:"))
+min_teams = int(input('Минимальное число команд: '))
+max_teams = int(input('Максимальное число команд: '))
+min_team_players = int(input('Минимальное число игроков в команде: '))
+max_team_players = int(input('Максимальное число игроков в команде: '))
 
 with app.app_context():
     shutil.copytree('./games/template', './games/{}'.format(prepared_title))
@@ -21,7 +23,7 @@ with app.app_context():
             with open(filepath, 'w') as file:
                 file.write(filedata)
 
-    game = Game(name=prepared_title, code=prepared_title, team_number=team_number, team_size=team_size)
+    game = Game(name=prepared_title, code=prepared_title, min_teams=min_teams, max_teams=max_teams, min_team_players=min_team_players, max_team_players=max_team_players)
     db.session.add(game)
     db.session.commit()
 

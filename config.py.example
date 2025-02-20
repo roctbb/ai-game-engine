@@ -12,7 +12,7 @@ DB_DATABASE = os.environ.get("DB_DATABASE", "ai-game-engine")
 REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = os.environ.get("REDIS_PORT", 6379)
 
-HOST = os.environ.get("HOST", "127.0.0.1")
+HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = os.environ.get("PORT", 4000)
 
 DEBUG = bool(os.environ.get("DEBUG", 1))
