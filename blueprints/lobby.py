@@ -69,6 +69,7 @@ def create(user):
 def update_page(user, lobby_id):
     lobby = get_lobby_by_id(lobby_id)
     teams = list(team for team in user.teams if team.game_id == lobby.game_id)
+
     return render_template('lobbies/lobby.html', lobby_id=lobby_id, update=True, teams=teams)
 
 
@@ -82,7 +83,6 @@ def update(*_, lobby_id):
         team = get_team_by_id(int(team_id))
 
         add_team(lobby, team)
-
     except ExplainableException as e:
         return render_template('lobbies/lobby.html', lobby_id=lobby_id, update=True, error=e.text)
 
