@@ -28,7 +28,9 @@ services:
 
   game-engine:
     container_name: engine-server
-    build: ./
+    build:
+      context: ./main_service
+      dockerfile: ./Dockerfile
     command: sh /app/start.sh
     environment:
       DB_LOGIN: postgres
@@ -58,3 +60,18 @@ services:
       - ./volumes/piston/packages:/piston/packages
     tmpfs:
       - /tmp:exec
+
+  rabbitmq:
+    image: rabbitmq:3.10.7-management
+    hostname: rabbitmq
+    restart: always
+    environment:
+      - RABBITMQ_DEFAULT_USER=rmuser
+      - RABBITMQ_DEFAULT_PASS=rmpassword
+      - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit log_levels [{connection,error},{default,error}] disk_free_limit 2147483648
+    volumes:
+      - ./volumes/rabbitmq/data:/var/lib/rabbitmq
+    ports:
+      - 15672:15672
+    expose:
+      - 5672:5672

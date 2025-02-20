@@ -9,4 +9,4 @@ __pycache__
 ge_sdk/dist
 ge_sdk/ge_sdk.egg-info
 volumes/piston/packages
-volumes/rabbitmq
+volumes/rabbitmq/data
