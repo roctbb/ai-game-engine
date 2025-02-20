@@ -43,18 +43,18 @@ def create(user):
     game_id = request.form.get('game_id')
 
     if not team_name:
-        return render_template('teams/create.html', games=get_games(), error="Введите имя команды")
+        return render_template('teams/create.html', games=get_games(), error='Введите имя команды')
 
     if not game_id:
-        return render_template('teams/create.html', games=get_games(), error="Выберите игру", team_name=team_name)
+        return render_template('teams/create.html', games=get_games(), error='Выберите игру', team_name=team_name)
 
     if not match(r'^(?!\s*$).+', team_name):
-        return render_template('teams/create.html', games=get_games(), error="Имя не должно быть пустым")
+        return render_template('teams/create.html', games=get_games(), error='Имя не должно быть пустым')
 
     try:
         selected_game = get_game_by_id(int(game_id))
     except NotFound:
-        return render_template('teams/create.html', games=get_games(), error="Выберите игру", team_name=team_name)
+        return render_template('teams/create.html', games=get_games(), error='Выберите игру', team_name=team_name)
 
     create_team(team_name, user.id, selected_game.id)
 
@@ -85,19 +85,19 @@ def add_player(user, team_id):
     team = get_team_by_id(team_id)
 
     if len(team.players) >= team.game.max_team_players:
-        return render_template('teams/add_player.html', error="Команда заполнена")
+        return render_template('teams/add_player.html', error='Команда заполнена')
 
     player_name = request.form.get('player_name')
     script = request.form.get('script')
 
     if not player_name:
-        return render_template('teams/add_player.html', error="Введите имя команды")
+        return render_template('teams/add_player.html', error='Введите имя команды')
 
     if not match(r'^(?!\s*$).+', player_name):
-        return render_template('teams/add_player.html', error="Имя не должно быть пустым")
+        return render_template('teams/add_player.html', error='Имя не должно быть пустым')
 
     if not script or not match(r'^(?!\s*$).+', script):
-        return render_template('teams/add_player.html', error="Введите код", player_name=player_name)
+        return render_template('teams/add_player.html', error='Введите код', player_name=player_name)
 
     create_player(team_id, player_name, script)
 

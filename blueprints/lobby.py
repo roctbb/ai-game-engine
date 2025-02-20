@@ -57,7 +57,7 @@ def create(user):
     try:
         game = get_game_by_id(int(game_id))
     except NotFound:
-        return render_template('lobbies/create.html', games=get_games(), error="Выберите игру")
+        return render_template('lobbies/create.html', games=get_games(), error='Выберите игру')
 
     lobby_id = create_lobby(user, game).id
 
