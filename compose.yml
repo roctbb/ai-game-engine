@@ -47,3 +47,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+
+  piston-1:
+    build:
+      context: ./
+      dockerfile: ./volumes/piston/Dockerfile
+    restart: always
+    privileged: true
+    ports:
+      - 3000:2000
+    volumes:
+      - ./volumes/piston/packages:/piston/packages
+    tmpfs:
+      - /tmp:exec
