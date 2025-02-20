@@ -2,6 +2,9 @@ import time
 import redis
 import json
 import sys
+from celery import Celery
+import pyston
+from code_runner.python_code_runner import PythonCodeRunner
 
 from types import ModuleType
 from importlib import import_module
@@ -12,6 +15,7 @@ class ScriptWrapper:
     def __init__(self, name, code):
         self.__name = name
         self.__code = code
+        self.__response = None
 
     def __getattribute__(self, attribute):
         if '__' not in attribute and attribute != "getCode":
@@ -30,6 +34,16 @@ class ScriptWrapper:
 
     def getCode(self):
         return self.__code
+    
+    def run_code(self, code, function, args, timeout):
+        self.__response = send_code.delay(code, function, args, timeout)
+    
+    def get_result(self):
+        if self.__response is None: return None
+        try:
+            return self.__response.get(timeout=1)
+        except TimeoutError:
+            return None
 
 
 class RedisClient:
@@ -208,3 +222,11 @@ def timeout_run(timeout, module, function_name, args, bypass_errors=True):
         return None
 
     return return_dict["result"]
+
+app = Celery('tasks', backend="redis://localhost", broker="redis://localhost")
+
+@app.task
+def send_code(code, function, args, timeout):
+    code_runner = PythonCodeRunner(code, "http://127.0.0.1:2000/api/v2/")
+    result = code_runner.run(function, timeout, (args))
+    return result
