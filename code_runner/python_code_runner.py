@@ -41,12 +41,13 @@ def _deserialize_args(ser: dict[str, typing.Any]) -> typing.Any:
         if ser['type'] == 'float': return float(ser['value'])
         if ser['type'] == 'bool': return bool(ser['value'])
         if ser['type'] == 'str': return str(ser['value'])
+        if ser['type'] == 'Exception': return str(ser['value'])
         if ser['type'] == 'list': return [
             _deserialize_args(a) for a in ser['value']
         ]
-        if ser['type'] == 'tuple': return [
+        if ser['type'] == 'tuple': return tuple([
             _deserialize_args(a) for a in ser['value']
-        ]
+        ])
         if ser['type'] == 'dict': return {
             k: _deserialize_args(v) for k, v, in ser['value']
         }
@@ -56,7 +57,7 @@ def _deserialize_args(ser: dict[str, typing.Any]) -> typing.Any:
 class PythonCodeRunner(CodeRunner):
     def __init__(self, code: str, base_url: str):
         '''
-        base_url inn format = http://container-name:port/api/v2/piston
+        base_url inn format = http://container-name:port/api/v2/piston/
         '''
 
         super().__init__(code)
@@ -69,16 +70,18 @@ class PythonCodeRunner(CodeRunner):
     ) -> tuple[typing.Any]:
         assert isinstance(args, tuple)
 
-        self.client = pyston.PystonClient()
+        # 'http://127.0.0.1:3000/api/v2/piston/'
+        self.client = pyston.PystonClient(base_url=self.base_url)
 
         runner_code = f'''
 try:
     import json
     import traceback
+    import typing
 
-    { inspect.getsource(_serialize_args) }
+    { inspect.getsource(_serialize_args).replace('\t', '    ').replace('\n', '\n    ') }
 
-    { inspect.getsource(_deserialize_args) }
+    { inspect.getsource(_deserialize_args).replace('\t', '    ').replace('\n', '\n    ') }
 
     from code_file import { func }
 
@@ -99,27 +102,31 @@ except Exception as e:
             run_timeout=timeout
         )
 
-        print(repr(output), '!!!')
+        await self.client.close_session()
 
         try:
-            output_dict = json.loads(output)
+            output_dict = json.loads(str(output))
 
             if output_dict['type'] == 'exception':
                 return (True, output_dict['value'])
             else:
+                return_things = _deserialize_args(output_dict)
+                if not isinstance(return_things, tuple):
+                    return (False, tuple([return_things]))
                 return (False, _deserialize_args(output_dict))
         except Exception:
-            return (True, 'Unable to deserealize data', traceback.format_exc())
+            return (True, traceback.format_exc())
 
 EXAMPLE_CODE = '''
 def func(a, b):
-    return a + b
+    return (a + b)
 '''
 
+# some code for debug
 if __name__ == '__main__':
     runner = PythonCodeRunner(
         EXAMPLE_CODE,
-        'http://127.0.0.1:3000/api/v2/piston'
+        'http://127.0.0.1:2000/api/v2/'
     )
 
     loop = asyncio.get_event_loop()
