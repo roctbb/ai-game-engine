@@ -5,11 +5,16 @@
     <div class="container-lg py-5">
         <div class="row justify-content-center">
             <div class="col-12 col-md-8 col-lg-6">
-                <div class="card shadow-sm border-0">
+                <div class="card border-primary shadow-lg">
                     <div class="card-header bg-primary text-white py-3">
                         <h2 class="h4 mb-0">
                             <i class="bi bi-plus-circle me-2"></i>Создание сессии
                         </h2>
+                        {% if not game %}
+                            <small class="d-block mt-1 fs-6 fw-light">Выберите игру из списка доступных</small>
+                        {% else %}
+                            <small class="d-block mt-1 fs-6 fw-light">Выберите команды из списка доступных</small>
+                        {% endif %}
                     </div>
                     <div class="card-body p-4">
                         <form method="post" class="needs-validation" novalidate>
@@ -17,7 +22,7 @@
                                 <!-- Game Selection -->
                                 <div class="mb-4">
                                     <label for="gameSelect" class="form-label fw-semibold">Выберите игру</label>
-                                    <select class="form-select form-select-lg" id="gameSelect" name="game_id" required>
+                                    <select class="form-select" id="gameSelect" name="game_id" required>
                                         <option value="" selected disabled hidden>Доступные игры</option>
                                         {% for game in games %}
                                             <option value="{{ game.id }}">{{ game.name }}</option>
@@ -28,10 +33,13 @@
                                     </div>
                                 </div>
 
-                                <div class="d-grid">
-                                    <button type="submit" class="btn btn-primary btn-lg py-3">
+                                <div class="d-grid gap-3">
+                                    <button type="submit" class="btn btn-primary py-2">
                                         <i class="bi bi-arrow-right-circle me-2"></i>Выбрать команды
                                     </button>
+                                    <a href="/lobby" class="btn btn-outline-secondary btn-hover-scale">
+                                        <i class="bi bi-arrow-left-circle me-2"></i>Вернуться к списку
+                                    </a>
                                 </div>
                             {% else %}
                                 <!-- Team Selection -->
@@ -39,7 +47,7 @@
 
                                 <div class="mb-4">
                                     <label for="teamSelect" class="form-label fw-semibold">Выберите команды</label>
-                                    <select class="form-select form-select-lg" id="teamSelect" name="teams" multiple
+                                    <select class="form-select" id="teamSelect" name="teams" multiple
                                             required>
                                         {% for team in game.teams %}
                                             <option value="{{ team.id }}">
@@ -57,7 +65,7 @@
                                 </div>
 
                                 <div class="d-grid">
-                                    <button type="submit" class="btn btn-success btn-lg py-3">
+                                    <button type="submit" class="btn btn-success py-3">
                                         <i class="bi bi-play-circle me-2"></i>Запустить сессию
                                     </button>
                                 </div>
