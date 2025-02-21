@@ -2,9 +2,8 @@ import time
 import redis
 import json
 import sys
-
-from types import ModuleType
-from importlib import import_module
+import pika
+import uuid
 from multiprocessing import Process, Manager
 
 
@@ -167,44 +166,73 @@ class GameEngineStats:
 
         return rows
 
+class CodeRunnerClient:
+    def __init__(self):
+        self.connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host='localhost'))
 
-def __proccess_wrapper(module, function_name, return_dict, args):
-    try:
-        return_dict['result'] = getattr(module, function_name)(*args)
-    except Exception as e:
-        return_dict['exception'] = e
+        self.channel = self.connection.channel()
 
-    return_dict['finished'] = True
+        result = self.channel.queue_declare(queue='', exclusive=True)
+        self.callback_queue = result.method.queue
+
+        self.channel.basic_consume(
+            queue=self.callback_queue,
+            on_message_callback=self.on_response,
+            auto_ack=True)
+
+        self.response = None
+        self.corr_id = None
+
+    def on_response(self, ch, method, props, body):
+        if self.corr_id == props.correlation_id:
+            self.response = body
+
+    def call(self, code, function_name, args, timeout):
+        self.response = None
+        self.corr_id = str(uuid.uuid4())
+        self.channel.basic_publish(
+            exchange='',
+            routing_key='rpc_queue',
+            properties=pika.BasicProperties(
+                reply_to=self.callback_queue,
+                correlation_id=self.corr_id,
+            ),
+            body=json.dumps(code, function_name, timeout, args))
+
+    def get_response(self):
+        while self.response is None:
+            self.connection.process_data_events(time_limit=None)
+        return json.loads(self.response)
 
 
-def timeout_run(timeout, module, function_name, args, bypass_errors=True):
-    with Manager() as manager:
-
-        return_dict = manager.dict()
-
-        return_dict['result'] = None
-        return_dict['exception'] = None
-        return_dict['finished'] = False
-
-        thread = Process(
-            target=__proccess_wrapper,
-            name="ABC",
-            args=[module, function_name, return_dict, args],
-        )
-
-        thread.start()
-        thread.join(timeout=timeout)
-        thread.terminate()
-
-        return_dict = dict(return_dict)
-
-    if not return_dict['finished'] and not bypass_errors:
-        raise TimeoutError
-
-    if return_dict['exception'] and not bypass_errors:
-        raise return_dict['exception']
-
-    if not return_dict['finished'] or return_dict['exception']:
-        return None
-
-    return return_dict["result"]
+def timeout_run(timeout, code, function_name, args, bypass_errors=True):
+    code_runner = CodeRunnerClient()
+    code_runner.call(code, function_name, args, timeout)
+    out = code_runner.await_response()
+     
+    if out[0]:
+        if bypass_errors:
+            return None
+        else:
+            raise out[1]
+    else:
+        return out[1]
+    
+def run_multiple(timeout, codes, function_name, args):
+    result_recivers = []
+    results = []
+    for code in codes:
+        code_runner = CodeRunnerClient()
+        code_runner.call(code, function_name, args, timeout)
+        result_recivers.append(code_runner)
+    while True:
+        flag = True
+        for i in result_recivers:
+            if i.self_response is None:
+                flag = False
+        if flag:
+            break
+    for i in result_recivers:
+        results.append(i.get_response())
+    return results
