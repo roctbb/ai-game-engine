@@ -2,36 +2,88 @@
 {% block title %}Создание сессии{% endblock %}
 
 {% block content %}
-    <div class="row">
-        <div class="col col-md-6 col-lg-4">
-            <form method="post">
-                {% if not game %}
-                    <div class="mb-3">
-                        <label class="form-label">Игра</label>
-                        <select class="form-select" name="game_id">
-                            {% for game in games %}
-                                <option value="{{ game.id }}">{{ game.name }}</option>
-                            {% endfor %}
-                        </select>
+    <div class="container-lg py-5">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-primary text-white py-3">
+                        <h2 class="h4 mb-0">
+                            <i class="bi bi-plus-circle me-2"></i>Создание сессии
+                        </h2>
                     </div>
+                    <div class="card-body p-4">
+                        <form method="post" class="needs-validation" novalidate>
+                            {% if not game %}
+                                <!-- Game Selection -->
+                                <div class="mb-4">
+                                    <label for="gameSelect" class="form-label fw-semibold">Выберите игру</label>
+                                    <select class="form-select form-select-lg" id="gameSelect" name="game_id" required>
+                                        <option value="" selected disabled hidden>Доступные игры</option>
+                                        {% for game in games %}
+                                            <option value="{{ game.id }}">{{ game.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="invalid-feedback">
+                                        Пожалуйста, выберите игру.
+                                    </div>
+                                </div>
 
-                    <button type="submit" class="btn btn-primary">Выбрать команды</button>
-                {% else %}
-                    <div class="mb-3">
-                        <input type="hidden" name="game_id" value="{{ game.id }}">
-                        <label class="form-label">Команды</label>
-                        <select class="form-select" name="teams" multiple>
-                            {% for team in game.teams %}
-                                <option value="{{ team.id }}">{{ team.name }} ({{ team.user.login }})</option>
-                            {% endfor %}
-                        </select>
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary btn-lg py-3">
+                                        <i class="bi bi-arrow-right-circle me-2"></i>Выбрать команды
+                                    </button>
+                                </div>
+                            {% else %}
+                                <!-- Team Selection -->
+                                <input type="hidden" name="game_id" value="{{ game.id }}">
+
+                                <div class="mb-4">
+                                    <label for="teamSelect" class="form-label fw-semibold">Выберите команды</label>
+                                    <select class="form-select form-select-lg" id="teamSelect" name="teams" multiple
+                                            required>
+                                        {% for team in game.teams %}
+                                            <option value="{{ team.id }}">
+                                                {{ team.name }} ({{ team.user.login }})
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="invalid-feedback">
+                                        Пожалуйста, выберите хотя бы одну команду.
+                                    </div>
+                                    <small class="form-text text-muted">
+                                        Удерживайте <kbd>Ctrl</kbd> (Windows) или <kbd>Cmd</kbd> (Mac) для выбора
+                                        нескольких команд.
+                                    </small>
+                                </div>
+
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-success btn-lg py-3">
+                                        <i class="bi bi-play-circle me-2"></i>Запустить сессию
+                                    </button>
+                                </div>
+                            {% endif %}
+                        </form>
                     </div>
-
-
-                    <button type="submit" class="btn btn-primary">Запуск</button>
-                {% endif %}
-            </form>
+                </div>
+            </div>
         </div>
     </div>
 
+    {% block scripts %}
+        <script>
+            // Form validation
+            document.addEventListener('DOMContentLoaded', () => {
+                const forms = document.querySelectorAll('.needs-validation');
+                forms.forEach(form => {
+                    form.addEventListener('submit', event => {
+                        if (!form.checkValidity()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                        form.classList.add('was-validated');
+                    }, false);
+                });
+            });
+        </script>
+    {% endblock %}
 {% endblock %}

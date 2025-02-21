@@ -1,34 +1,65 @@
 {% extends 'base.html' %}
-{% block title %}Команда{{ team.name }}{% endblock %}
+{% block title %}Команда {{ team.name }}{% endblock %}
 
 {% block content %}
-    <div class="clearfix">
-        <div class="float-start">
-            <h3 class="mb-4">Команда {{ team.name }}</h3>
-        </div>
-        {% if not is_full %}
-        <div class="float-end">
-            <a href="/teams/{{team.id}}/add_player" class="btn btn-sm btn-primary">Добавить игрока</a>
-        </div>
-        {% else %}
-        <div class="float-end">
-            <button class="btn btn-sm btn-primary" disabled>Добавить игрока</button>
-        </div>
-        {% endif %}
-    </div>
-    {% for player in team.players %}
-        <div class="card my-1">
-            <div class="card-body">
-                <div class="clearfix">
-                    <div class="float-start">
-                        {{ player.name }} (#{{ player.id }})
-                    </div>
-
-                    <div class="float-end">
-                        <a href="/teams/{{ team.id }}/delete/{{player.id}}" class="btn btn-sm btn-danger me-1">Удалить</a>
-                    </div>
-                </div>
+    <div class="container-lg py-4">
+        <!-- Header Section -->
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
+            <h2 class="h3 mb-0">
+                <i class="bi bi-people-fill me-2"></i>Команда: {{ team.name }}
+            </h2>
+            <div>
+                {% if not is_full %}
+                    <a href="/teams/{{ team.id }}/add_player" class="btn btn-primary">
+                        <i class="bi bi-person-plus me-2"></i>Добавить игрока
+                    </a>
+                {% else %}
+                    <button class="btn btn-primary" disabled>
+                        <i class="bi bi-person-plus me-2"></i>Добавить игрока
+                    </button>
+                    <small class="text-muted d-block mt-1">Команда заполнена</small>
+                {% endif %}
             </div>
         </div>
-    {% endfor %}
+
+        <!-- Players List -->
+        <div class="row g-3">
+            {% for player in team.players %}
+                <div class="col-12">
+                    <div class="card shadow-sm">
+                        <div class="card-body py-3">
+                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                                <!-- Player Info -->
+                                <div class="mb-2 mb-md-0">
+                                    <h4 class="h5 mb-1">
+                                        {{ player.name }} <span class="text-muted">#{{ player.id }}</span>
+                                    </h4>
+                                    <div class="text-muted small">
+                                        <i class="bi bi-person me-1"></i>
+                                        Участник команды
+                                    </div>
+                                </div>
+
+                                <!-- Actions -->
+                                <div class="d-flex gap-2">
+                                    <a href="/teams/{{ team.id }}/delete/{{ player.id }}"
+                                       class="btn btn-danger btn-sm"
+                                       aria-label="Удалить игрока {{ player.name }}"
+                                       onclick="return confirm('Вы уверены, что хотите удалить игрока {{ player.name }}?')">
+                                        <i class="bi bi-trash me-2"></i>Удалить
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>В команде пока нет игроков.
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
 {% endblock %}

@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}{% if not register %}Вход{% else %}Регистрация{% endif %}{% endblock %}
+
+{% block content %}
+    <div class="container py-4">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-primary text-white py-2">
+                        <h2 class="h5 mb-0">
+                            <i class="bi bi-box-arrow-in-right me-1"></i>
+                            {% if not register %}Вход{% else %}Регистрация{% endif %}
+                        </h2>
+                    </div>
+                    <div class="card-body p-3">
+                        <form method="post" class="needs-validation" novalidate>
+                            <!-- Login Field -->
+                            <div class="mb-3">
+                                <label for="login" class="form-label fw-semibold">Логин</label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="login"
+                                       name="login"
+                                       value="{{ login }}"
+                                       placeholder="Введите логин"
+                                       required>
+                                <div class="invalid-feedback">
+                                    Пожалуйста, введите логин.
+                                </div>
+                            </div>
+
+                            <!-- Password Field -->
+                            <div class="mb-3">
+                                <label for="password" class="form-label fw-semibold">Пароль</label>
+                                <input type="password"
+                                       class="form-control"
+                                       id="password"
+                                       name="password"
+                                       placeholder="Введите пароль"
+                                       required>
+                                <div class="invalid-feedback">
+                                    Пожалуйста, введите пароль.
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    {% if not register %}
+                                        <i class="bi bi-box-arrow-in-right me-1"></i>Вход
+                                    {% else %}
+                                        <i class="bi bi-person-plus me-1"></i>Регистрация
+                                    {% endif %}
+                                </button>
+                            </div>
+
+                            <!-- Switch Between Login and Registration -->
+                            <div class="text-center mt-2">
+                                {% if not register %}
+                                    <p class="mb-0 small">
+                                        Нет аккаунта? <a href="/register"
+                                                         class="text-decoration-none">Зарегистрируйтесь</a>.
+                                    </p>
+                                {% else %}
+                                    <p class="mb-0 small">
+                                        Уже есть аккаунт? <a href="/login" class="text-decoration-none">Войдите</a>.
+                                    </p>
+                                {% endif %}
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% block scripts %}
+        <script>
+            // Form validation
+            document.addEventListener('DOMContentLoaded', () => {
+                const forms = document.querySelectorAll('.needs-validation');
+                forms.forEach(form => {
+                    form.addEventListener('submit', event => {
+                        if (!form.checkValidity()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                        form.classList.add('was-validated');
+                    }, false);
+                });
+            });
+        </script>
+    {% endblock %}
+{% endblock %}

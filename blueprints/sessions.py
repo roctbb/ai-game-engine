@@ -10,15 +10,17 @@ sessions_blueprint = Blueprint('sessions', __name__)
 
 
 @sessions_blueprint.route('/active')
-def active():
+@requires_auth
+def active(user):
     sessions = get_sessions('started')
-    return render_template('sessions/index.html', sessions=sessions, title='Активные сессии')
+    return render_template('sessions/index.html', user=user, sessions=sessions, title='Активные сессии')
 
 
 @sessions_blueprint.route('/archive')
-def archive():
+@requires_auth
+def archive(user):
     sessions = get_sessions('ended')
-    return render_template('sessions/index.html', sessions=sessions, title='Завершенные сессии')
+    return render_template('sessions/index.html', user=user, sessions=sessions, title='Завершенные сессии')
 
 
 @sessions_blueprint.route('/create', methods=['get'])
@@ -61,4 +63,4 @@ def get_stats(user, session_id):
     if can_restart_session(session, user):
         restart_session(session)
 
-    return redirect('/sessions')
+    return redirect('/sessions/active')

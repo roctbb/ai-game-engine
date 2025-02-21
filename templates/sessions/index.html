@@ -2,46 +2,83 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-    <div class="clearfix">
-        <div class="float-start">
-            <h3 class="mb-4">{{ title }}</h3>
-        </div>
-
-        <div class="float-end">
-            <a href="/lobby" class="btn btn-sm btn-primary">Лобби</a>
-            <a href="/sessions/create" class="btn btn-sm btn-primary">Создать</a>
-        </div>
-    </div>
-    {% for game_session in sessions %}
-        <div class="card my-1">
-            <div class="card-body">
-                <div class="clearfix">
-                    <div class="float-start">{{ game_session.game.name }} (#{{ game_session.id }})</div>
-                    <div class="float-end">
-                        {% if game_session.state != 'ended' %}
-                            <span class="text-muted me-1">Идет</span>
-                        {% else %}
-                            {% if not game_session.winner_id %}
-                                <span class="text-primary me-1">Завершена</span>
-                            {% else %}
-                                {% if user and game_session.winner_id == user.id %}
-                                    <span class="text-success me-1">Победа</span>
-                                {% else %}
-                                    <span class="text-danger me-1">Поражение</span>
-                                {% endif %}
-                            {% endif %}
-                        {% endif %}
-                        <a target="_blank" href="/games/{{ game_session.id }}"
-                           class="btn btn-sm btn-success me-1">Смотреть</a>
-                        <a target="_blank" href="/stats/{{ game_session.id }}" class="btn btn-sm btn-light me-1">Статистика</a>
-                        {% if user and user == game_session.creator %}
-                            <a href="/sessions/{{ game_session.id }}/restart"
-                               class="btn btn-sm btn-primary me-1">Перезапуск</a>
-                        {% endif %}
-                    </div>
-                </div>
-
+    <div class="container-lg py-4">
+        <!-- Header Section -->
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
+            <h2 class="h3 mb-0">{{ title }}</h2>
+            <div class="d-flex gap-2">
+                <a href="/lobby" class="btn btn-primary">
+                    <i class="bi bi-people me-2"></i>Лобби
+                </a>
+                <a href="/sessions/create" class="btn btn-outline-primary">
+                    <i class="bi bi-plus-circle me-2"></i>Создать
+                </a>
             </div>
         </div>
-    {% endfor %}
+
+        <!-- Sessions List -->
+        <div class="row g-3">
+            {% for game_session in sessions %}
+                <div class="col-12">
+                    <div class="card shadow-sm">
+                        <div class="card-body py-3">
+                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                                <!-- Session Info -->
+                                <div class="mb-2 mb-md-0">
+                                    <h4 class="h5 mb-1">
+                                        {{ game_session.game.name }} <span
+                                            class="text-muted">#{{ game_session.id }}</span>
+                                    </h4>
+                                    <div class="text-muted small">
+                                        <i class="bi bi-clock me-1"></i>
+                                        Состояние:
+                                        {% if game_session.state != 'ended' %}
+                                            <span class="text-success">Идет</span>
+                                        {% else %}
+                                            {% if not (game_session.winner_id and user) %}
+                                                <span class="text-primary">Завершена</span>
+                                            {% else %}
+                                                {% if game_session.winner_id == user.id %}
+                                                    <span class="text-success">Победа</span>
+                                                {% else %}
+                                                    <span class="text-danger">Поражение</span>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <!-- Actions -->
+                                <div class="d-flex gap-2">
+                                    <a target="_blank" href="/games/{{ game_session.id }}"
+                                       class="btn btn-success btn-sm"
+                                       aria-label="Смотреть игру {{ game_session.id }}">
+                                        <i class="bi bi-eye me-2"></i>Смотреть
+                                    </a>
+                                    <a target="_blank" href="/stats/{{ game_session.id }}"
+                                       class="btn btn-outline-secondary btn-sm"
+                                       aria-label="Статистика игры {{ game_session.id }}">
+                                        <i class="bi bi-bar-chart me-2"></i>Статистика
+                                    </a>
+                                    {% if user and user == game_session.creator %}
+                                        <a href="/sessions/{{ game_session.id }}/restart"
+                                           class="btn btn-primary btn-sm"
+                                           aria-label="Перезапустить игру {{ game_session.id }}">
+                                            <i class="bi bi-arrow-repeat me-2"></i>Перезапуск
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>Нет активных игровых сессий.
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
 {% endblock %}

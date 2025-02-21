@@ -2,28 +2,56 @@
 {% block title %}Мои команды{% endblock %}
 
 {% block content %}
-    <div class="clearfix">
-        <div class="float-start">
-            <h3 class="mb-4">Мои команды</h3>
-        </div>
-        <div class="float-end">
-            <a href="/teams/create" class="btn btn-sm btn-primary">Создать</a>
-        </div>
-    </div>
-
-    {% for team in teams %}
-    <div class="card my-1">
-        <div class="card-body">
-            <div class="clearfix">
-                <div class="float-start">
-                    {{ team.name }} (#{{ team.id }})
-                </div>
-                <div class="float-end">
-                    <a href="/teams/{{ team.id }}" class="btn btn-sm btn-success me-1">Подробнее</a>
-                </div>
+    <div class="container-lg py-4">
+        <!-- Header Section -->
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
+            <h2 class="h3 mb-0">
+                <i class="bi bi-people-fill me-2"></i>Мои команды
+            </h2>
+            <div>
+                <a href="/teams/create" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-2"></i>Создать команду
+                </a>
             </div>
         </div>
-    </div>
-    {% endfor %}
 
+        <!-- Teams List -->
+        <div class="row g-3">
+            {% for team in teams %}
+                <div class="col-12">
+                    <div class="card shadow-sm">
+                        <div class="card-body py-3">
+                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                                <!-- Team Info -->
+                                <div class="mb-2 mb-md-0">
+                                    <h4 class="h5 mb-1">
+                                        {{ team.name }} <span class="text-muted">#{{ team.id }}</span>
+                                    </h4>
+                                    <div class="text-muted small">
+                                        <i class="bi bi-person me-1"></i>
+                                        Участники: {{ team.members|length }}
+                                    </div>
+                                </div>
+
+                                <!-- Actions -->
+                                <div class="d-flex gap-2">
+                                    <a href="/teams/{{ team.id }}"
+                                       class="btn btn-success btn-sm"
+                                       aria-label="Подробнее о команде {{ team.name }}">
+                                        <i class="bi bi-info-circle me-2"></i>Подробнее
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>У вас пока нет команд. Создайте новую команду!
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
 {% endblock %}

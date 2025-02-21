@@ -2,25 +2,80 @@
 {% block title %}Создание команды{% endblock %}
 
 {% block content %}
-    <div class="row">
-        <div class="col col-md-6 col-lg-4">
-            <form method="post">
-                <div class="mb-3">
-                    <label class="form-label">Имя команды</label>
-                    <input name="team_name" type="text" class="form-control" value="{{ team_name }}">
+    <div class="container-lg py-5">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-primary text-white py-3">
+                        <h2 class="h4 mb-0">
+                            <i class="bi bi-people-fill me-2"></i>Создание команды
+                        </h2>
+                    </div>
+                    <div class="card-body p-4">
+                        <form method="post" class="needs-validation" novalidate>
+                            <!-- Team Name Field -->
+                            <div class="mb-4">
+                                <label for="teamName" class="form-label fw-semibold">Имя команды</label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="teamName"
+                                       name="team_name"
+                                       value="{{ team_name }}"
+                                       placeholder="Введите название команды"
+                                       required>
+                                <div class="invalid-feedback">
+                                    Пожалуйста, введите название команды.
+                                </div>
+                            </div>
+
+                            <!-- Game Selection Field -->
+                            <div class="mb-4">
+                                <label for="gameSelect" class="form-label fw-semibold">Выберите игру</label>
+                                <select class="form-select form-select-lg"
+                                        id="gameSelect"
+                                        name="game_id"
+                                        required>
+                                    <option value="" selected disabled hidden>Выберите игру</option>
+                                    {% for game in games %}
+                                        <option value="{{ game.id }}"
+                                                {% if request.args.get('game_id')|int == game.id %}selected{% endif %}>
+                                            {{ game.name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <div class="invalid-feedback">
+                                    Пожалуйста, выберите игру.
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg py-3">
+                                    <i class="bi bi-check-circle me-2"></i>Создать команду
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-                
-                <div class="mb-3">
-                    <label class="form-label">Игра</label>
-                    <select class="form-select" name="game_id">
-                        {% for game in games %}
-                            <option value="{{ game.id }}">{{ game.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                
-                <button type="submit" class="btn btn-primary">Создать команду</button>
-            </form>
+            </div>
         </div>
     </div>
+
+    {% block scripts %}
+        <script>
+            // Form validation
+            document.addEventListener('DOMContentLoaded', () => {
+                const forms = document.querySelectorAll('.needs-validation');
+                forms.forEach(form => {
+                    form.addEventListener('submit', event => {
+                        if (!form.checkValidity()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                        form.classList.add('was-validated');
+                    }, false);
+                });
+            });
+        </script>
+    {% endblock %}
 {% endblock %}

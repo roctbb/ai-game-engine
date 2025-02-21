@@ -73,6 +73,8 @@ def restart_session(session: Session):
 
     run_engine(session)
 
+    db.session.commit()
+
 
 def can_restart_session(session: Session, user: User) -> bool:
     return session.creator == user
