@@ -31,6 +31,7 @@ RMQ_QUEUE = 'code_queue'
 
 channel = connection.channel()
 channel.queue_declare(queue=RMQ_QUEUE)
+channel.queue_declare(queue='code_queue_callback')
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)

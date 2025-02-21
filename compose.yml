@@ -56,6 +56,7 @@ services:
       dockerfile: ./volumes/piston/Dockerfile
     restart: always
     privileged: true
+    hostname: piston-1
     ports:
       - 3000:2000
     volumes:
@@ -78,6 +79,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      piston-1:
+        condition: service_started
 
   rabbitmq:
     image: rabbitmq:3.10.7-management
@@ -91,7 +94,6 @@ services:
       - ./volumes/rabbitmq/data:/var/lib/rabbitmq
     ports:
       - 15672:15672
-    expose:
       - 5672:5672
     healthcheck:
       test: rabbitmq-diagnostics -q ping
