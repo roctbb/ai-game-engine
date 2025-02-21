@@ -2,7 +2,7 @@
 .vscode
 server/config.py
 venv
-tests/.pytest_cache
+ge_sdk/tests/.pytest_cache
 sessions/*
 config.py
 __pycache__

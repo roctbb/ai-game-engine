@@ -1,4 +1,3 @@
-from .isolation import restricted_globals
 from .ge_sdk import (
     ScriptWrapper,
     RedisClient,
@@ -8,6 +7,7 @@ from .ge_sdk import (
     GameEngineStats,
     timeout_run
 )
+from .isolation import restricted_globals
 
 __all__ = [
     'ScriptWrapper',

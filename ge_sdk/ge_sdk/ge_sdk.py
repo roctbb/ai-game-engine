@@ -1,5 +1,5 @@
-import asyncio
 import json
+import multiprocessing
 import sys
 import time
 from importlib import import_module
@@ -8,6 +8,9 @@ from types import ModuleType
 import redis
 
 from .isolation import restricted_globals
+
+if sys.platform == 'win32':
+    multiprocessing.freeze_support()
 
 __all__ = [
     'ScriptWrapper',
@@ -24,11 +27,10 @@ class ScriptWrapper:
     def __init__(self, name, code):
         self.__name = name
         self.__code = code
-        self.__module = self.__load_module()
 
     def __getattribute__(self, attribute):
         if '__' not in attribute and attribute != 'get_code':
-            return getattr(self.__module, attribute)
+            return getattr(self.__load_module(), attribute)
         else:
             return super().__getattribute__(attribute)
 
@@ -186,22 +188,26 @@ class GameEngineStats:
         return rows
 
 
-def __process_wrapper(module, function_name, args):
+def __process_wrapper(queue: multiprocessing.Queue, module, function_name: str, args: tuple):
     try:
         result = getattr(module, function_name)(*args)
+        queue.put({'result': result, 'exception': None, 'finished': True})
     except Exception as e:
-        return {'result': None, 'exception': e, 'finished': True}
-    return {'result': result, 'exception': None, 'finished': True}
+        queue.put({'result': None, 'exception': e, 'finished': True})
 
 
-def timeout_run(timeout, module, function_name, args, bypass_errors=True):
-    try:
-        return_dict = asyncio.run(asyncio.wait_for(
-            asyncio.to_thread(__process_wrapper, module, function_name, args),
-            timeout=timeout
-        ))
-    except asyncio.TimeoutError:
+def timeout_run(timeout: float, module: ScriptWrapper, function_name: str, args: tuple, bypass_errors: bool = False):
+    queue = multiprocessing.Queue()
+    process = multiprocessing.Process(target=__process_wrapper, args=(queue, module, function_name, args))
+    process.start()
+    process.join(timeout=timeout)
+
+    if process.is_alive():
+        process.terminate()
+        process.join()
         return_dict = {'result': None, 'exception': None, 'finished': False}
+    else:
+        return_dict = queue.get() if not queue.empty() else {'result': None, 'exception': None, 'finished': True}
 
     if not return_dict['finished'] and not bypass_errors:
         raise TimeoutError('Function execution timed out')

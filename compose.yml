@@ -4,7 +4,7 @@ services:
     image: redis:7-alpine
     command: redis-server
     ports:
-      - 6379:6379
+      - "6379:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
@@ -19,9 +19,9 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: game-engine
     ports:
-      - 5432:5432
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "/usr/local/bin/pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "/usr/local/bin/pg_isready -U postgres" ]
       interval: 5s
       timeout: 10s
       retries: 120
@@ -29,7 +29,7 @@ services:
   game-engine:
     container_name: engine-server
     build: ./
-    command: sh /app/start.sh
+    command: bash -c "python3 ./setup.py && python3 ./server.py"
     environment:
       DB_LOGIN: postgres
       DB_PASSWORD: postgres
@@ -37,7 +37,7 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
     ports:
-      - 4000:4000
+      - "4000:4000"
     volumes:
       - ./:/app
     depends_on:
