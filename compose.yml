@@ -47,6 +47,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      rabbitmq:
+        condition: service_started
 
   piston-1:
     build:
@@ -60,6 +62,19 @@ services:
       - ./volumes/piston/packages:/piston/packages
     tmpfs:
       - /tmp:exec
+
+  worker-1:
+    build:
+      context: ./code_runner
+      dockerfile: ./Dockerfile
+    restart: always
+    environment:
+      - RMQ_USERNAME=rmuser
+      - RMQ_PASSWORD=rmpassword
+      - RMQ_HOSTNAME=rabbitmq
+      - RMQ_PORT=15672
+      - PYSTON_HOSTNAME=piston-1
+      - PYSTON_PORT=3000
 
   rabbitmq:
     image: rabbitmq:3.10.7-management

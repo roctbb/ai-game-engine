@@ -40,7 +40,7 @@ def run_solution(ch, method, props, body):
 
     runner_obj = runner.PythonCodeRunner(
         parsed_body.code,
-        Settings().pyston_hostname,
+        f'http://{Settings().pyston_hostname}:{Settings().pyston_port}/api/v2/',
     )
 
     loop = asyncio.new_event_loop()

@@ -7,3 +7,4 @@ class Settings(pydantic_settings.BaseSettings):
     rmq_port: int
 
     pyston_hostname: str
+    pyston_port: int
