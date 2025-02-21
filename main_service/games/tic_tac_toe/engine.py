@@ -1,7 +1,6 @@
 import time
 from copy import deepcopy
 import ge_sdk as sdk
-import celery
 import redis
 
 

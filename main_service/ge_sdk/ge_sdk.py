@@ -4,9 +4,7 @@ import json
 import sys
 import pika
 import uuid
-
-from types import ModuleType
-from importlib import import_module
+from multiprocessing import Process, Manager
 
 
 class ScriptWrapper:
@@ -31,6 +29,7 @@ class ScriptWrapper:
 
     def getCode(self):
         return self.__code
+
 
 class RedisClient:
     def __init__(self, session_id, host, port):
@@ -237,19 +236,3 @@ def run_multiple(timeout, codes, function_name, args):
     for i in result_recivers:
         results.append(i.get_response())
     return results
-
-
-    
-
-
-
-
-    
-
-'''app = Celery('tasks', backend="redis://localhost", broker="redis://localhost")
-
-@app.task
-def send_code(code, function, args, timeout):
-    code_runner = PythonCodeRunner(code, "http://127.0.0.1:2000/api/v2/")
-    result = code_runner.run(function, timeout, (args))
-    return result'''
