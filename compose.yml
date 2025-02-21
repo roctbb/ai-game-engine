@@ -41,7 +41,7 @@ services:
     ports:
       - 4000:4000
     volumes:
-      - ./:/app
+      - ./main_service:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,7 +63,7 @@ services:
     tmpfs:
       - /tmp:exec
 
-  worker-1:
+  worker:
     build:
       context: ./code_runner
       dockerfile: ./Dockerfile
@@ -72,9 +72,12 @@ services:
       - RMQ_USERNAME=rmuser
       - RMQ_PASSWORD=rmpassword
       - RMQ_HOSTNAME=rabbitmq
-      - RMQ_PORT=15672
+      - RMQ_PORT=5672
       - PYSTON_HOSTNAME=piston-1
       - PYSTON_PORT=3000
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:3.10.7-management
@@ -90,3 +93,8 @@ services:
       - 15672:15672
     expose:
       - 5672:5672
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 5s
+      timeout: 5s
+      retries: 10
