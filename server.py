@@ -1,3 +1,5 @@
+from functools import partial
+
 from flask import redirect
 
 from blueprints import *
@@ -23,5 +25,7 @@ def index(*_):
 
 if __name__ == '__main__':
     socketio.init_app(app)
-    socketio.start_background_task(target=lambda: redis_client(socketio, app))
+    socketio.start_background_task(
+        target=partial(redis_client, socketio, app)
+    )
     socketio.run(app, host=HOST, port=PORT, debug=DEBUG, allow_unsafe_werkzeug=True)

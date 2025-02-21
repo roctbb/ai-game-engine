@@ -6,6 +6,8 @@ from flask_socketio import join_room
 
 from methods import get_session_by_id, NotFound
 
+__all__ = ['socketio', 'subscribe_to_frames']
+
 socketio = SocketIO(cors_allowed_origins='*', async_mode='threading')
 
 

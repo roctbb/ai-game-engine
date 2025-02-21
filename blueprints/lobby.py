@@ -124,10 +124,13 @@ def leave_the_lobby(user, lobby_id):
     return redirect(f'/')
 
 
-@lobby_blueprint.route('/<int:lobby_id>/launch>', methods=['GET'])
+@lobby_blueprint.route('/<int:lobby_id>/launch', methods=['GET'])
 @requires_auth
 def launch_the_lobby(user, lobby_id):
-    lobby = get_lobby_by_id(lobby_id)
+    try:
+        lobby = get_lobby_by_id(lobby_id)
+    except NotFound:
+        abort(404)
 
     if not (is_lobby_owner(lobby, user) and is_lobby_ready(lobby)):
         return redirect(f'/lobby/{lobby_id}')

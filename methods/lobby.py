@@ -38,7 +38,7 @@ def try_run_lobby(lobby: Lobby) -> int:
     teams = lobby.teams
 
     try:
-        if len(teams) >= selected_game.min_teams:
+        if len(teams) > selected_game.min_teams:
             raise IncorrectNumberOfTeams
 
         game_session = create_session(selected_game, teams)
