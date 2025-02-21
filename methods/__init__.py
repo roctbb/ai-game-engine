@@ -36,6 +36,7 @@ from .games import (
 from .lobby import (
     get_lobby_by_id,
     get_all_lobbies,
+    get_active_lobbies,
     is_lobby_owner,
     is_lobby_ready,
     try_run_lobby,

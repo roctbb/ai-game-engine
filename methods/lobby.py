@@ -3,6 +3,7 @@ from .sessions import *
 
 __all__ = ['get_lobby_by_id',
            'get_all_lobbies',
+           'get_active_lobbies',
            'is_lobby_owner',
            'is_lobby_ready',
            'try_run_lobby',
@@ -23,6 +24,10 @@ def get_lobby_by_id(lobby_id: int) -> Lobby:
 
 def get_all_lobbies() -> list[Lobby]:
     return Lobby.query.all()
+
+
+def get_active_lobbies() -> list[Lobby]:
+    return Lobby.query.filter_by(is_started=False).all()
 
 
 def is_lobby_owner(lobby: Lobby, user: User) -> bool:

@@ -29,4 +29,4 @@ if __name__ == '__main__':
     socketio.start_background_task(
         target=partial(redis_client, socketio, app)
     )
-    socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host=HOST, port=PORT, debug=DEBUG, allow_unsafe_werkzeug=True)
