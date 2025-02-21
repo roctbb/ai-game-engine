@@ -201,7 +201,7 @@ class CodeRunnerClient:
             ),
             body=json.dumps(code, function_name, timeout, args))
 
-    def await_response(self):
+    def get_response(self):
         while self.response is None:
             self.connection.process_data_events(time_limit=None)
         return json.loads(self.response)
@@ -220,7 +220,29 @@ def timeout_run(timeout, code, function_name, args, bypass_errors=True):
     else:
         return out[1]
     
-def 
+def run_multiple(timeout, codes, function_name, args):
+    result_recivers = []
+    results = []
+    for code in codes:
+        code_runner = CodeRunnerClient()
+        code_runner.call(code, function_name, args, timeout)
+        result_recivers.append(code_runner)
+    while True:
+        flag = True
+        for i in result_recivers:
+            if i.self_response is None:
+                flag = False
+        if flag:
+            break
+    for i in result_recivers:
+        results.append(i.get_response())
+    return results
+
+
+    
+
+
+
 
     
 
