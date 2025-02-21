@@ -138,6 +138,6 @@ def launch_the_lobby(user, lobby_id):
     try:
         session_id = try_run_lobby(lobby)
 
-        return redirect(f'/game/{session_id}' if session_id > -1 else f'/lobby/{lobby_id}')
+        return redirect(f'/games/{session_id}' if session_id > -1 else f'/lobby/{lobby_id}')
     except IncorrectNumberOfTeams:
         return redirect(f'/lobby/{lobby_id}')

@@ -42,7 +42,6 @@ def try_run_lobby(lobby: Lobby) -> int:
             raise IncorrectNumberOfTeams
 
         game_session = create_session(selected_game, teams)
-        run_engine(game_session)
         lobby.is_started = True
     except Exception:
         lobby.is_started = False

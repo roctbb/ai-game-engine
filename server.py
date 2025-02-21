@@ -3,8 +3,9 @@ from functools import partial
 from flask import redirect
 
 from blueprints import *
-from helpers import *
-from manage import *
+from config import HOST, PORT, DEBUG
+from helpers import requires_auth
+from manage import app
 from redis_client import redis_client
 from socket_server import socketio
 
@@ -28,4 +29,4 @@ if __name__ == '__main__':
     socketio.start_background_task(
         target=partial(redis_client, socketio, app)
     )
-    socketio.run(app, host=HOST, port=PORT, debug=DEBUG, allow_unsafe_werkzeug=True)
+    socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)
