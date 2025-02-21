@@ -1,4 +1,4 @@
-from code_runner import CodeRunner
+from .code_runner import CodeRunner
 import typing
 import inspect
 import pyston
@@ -73,15 +73,18 @@ class PythonCodeRunner(CodeRunner):
         # 'http://127.0.0.1:3000/api/v2/piston/'
         self.client = pyston.PystonClient(base_url=self.base_url)
 
+        _serialize_args_code = inspect.getsource(_serialize_args).replace('\t', '    ').replace('\n', '\n    ')
+        _deserialize_args_code = inspect.getsource(_deserialize_args).replace('\t', '    ').replace('\n', '\n    ')
+
         runner_code = f'''
 try:
     import json
     import traceback
     import typing
 
-    { inspect.getsource(_serialize_args).replace('\t', '    ').replace('\n', '\n    ') }
+    { _serialize_args_code }
 
-    { inspect.getsource(_deserialize_args).replace('\t', '    ').replace('\n', '\n    ') }
+    { _deserialize_args_code }
 
     from code_file import { func }
 

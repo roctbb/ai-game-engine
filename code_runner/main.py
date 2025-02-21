@@ -6,15 +6,24 @@ import asyncio
 import logging
 from settings import Settings
 
-logger = logging.getLogger(__name__)
+print('!!!')
+
 logging.basicConfig(
     format="[%(asctime)s] %(levelname)s:\t %(message)s"
 )
+
+logger = logging.Logger('mainLogger')
+logger.setLevel(logging.DEBUG)
 
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(
         host=Settings().rmq_hostname,
         port=Settings().rmq_port,
+        virtual_host='/',
+        credentials=pika.PlainCredentials(
+            Settings().rmq_username,
+            Settings().rmq_password,
+        )
     )
 )
 
@@ -22,6 +31,9 @@ RMQ_QUEUE = 'code_queue'
 
 channel = connection.channel()
 channel.queue_declare(queue=RMQ_QUEUE)
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 class BodyProps(pydantic.BaseModel):
     code: str
@@ -34,23 +46,29 @@ class ReturnProps(pydantic.BaseModel):
     return_list: list[typing.Any] = []
 
 def run_solution(ch, method, props, body):
-    parsed_body = BodyProps.model_validate(body)
+    logger.info('Running code')
 
-    logging.info('Running code')
+    try:
+        parsed_body = BodyProps.model_validate_json(body)
+    except pydantic.ValidationError as e:
+        for error in e.errors():
+            logger.error(error)
+        return
 
     runner_obj = runner.PythonCodeRunner(
         parsed_body.code,
         f'http://{Settings().pyston_hostname}:{Settings().pyston_port}/api/v2/',
     )
 
-    loop = asyncio.new_event_loop()
+    loop = asyncio.get_event_loop()
     result = loop.run_until_complete(
         runner_obj.run(
             parsed_body.func,
             parsed_body.timeout,
-            parsed_body.args,
+            tuple(parsed_body.args),
         )
     )
+    loop.close()
 
     serialized_result = ReturnProps(
         error=result[0], 
@@ -67,7 +85,7 @@ def run_solution(ch, method, props, body):
     )
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
-    logging.info('Code ran successfully')
+    logger.info('Code ran successfully')
 
 channel.basic_qos(prefetch_count=1)
 channel.basic_consume(
@@ -75,6 +93,8 @@ channel.basic_consume(
     on_message_callback=run_solution,
 )
 
-logging.info('Basic logging')
+logger.info('Basic logging')
 
 channel.start_consuming()
+
+loop.close()
