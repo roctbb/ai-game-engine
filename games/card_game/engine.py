@@ -5,9 +5,8 @@ import time
 def getCards(deck, amount):
     hand = []
     for i in range(amount):
-        rnd = random.randint(0, len(deck)-1)
-        hand.append(deck[rnd])
-        deck.pop(rnd)
+        hand.append(deck[0])
+        deck.pop(0)
     return hand, deck
 
 def cardCost(card):
@@ -135,20 +134,26 @@ def countScore(crds):
         return cardCost(highest_card) + 5
 
 def dataReset(data):
+    cards = [f"{_+2}-{suit+1}" for _ in range(13) for suit in range(4)]
+    random.shuffle(cards)
     for key in list(data.keys()):
         data[key]["points"] = 0
         data[key]["hands"] = 4
         data[key]["discards"] = 3
-        data[key]["deck"] = [f"{_+2}-{suit+1}" for _ in range(13) for suit in range(4)]
+        data[key]["deck"] = cards.copy()
         data[key]["handCards"] = []
     return data
         
 
 def game():
     engine = sdk.GameEngineClient()
+    stats = sdk.GameEngineStats(engine.teams, ["Рук сыграно", "Рук скинуто", "Карт сыграно", "Самая дорогая рука"])
 
+    
     engine.start()
 
+    
+    
     # engine.teams - команды
 
     # team = engine.teams[0]
@@ -178,7 +183,11 @@ def game():
             "hands": 4,
             "discards": 3, 
             "deck": baseCards, 
-            "handCards": []
+            "handCards": [], 
+            "handsPlayed": 0, 
+            "handsDiscarded": 0, 
+            "cardsPlayed": 0,
+            "richiestHand": 0
         }, 
         "bottom": {
             "points": 0,
@@ -186,10 +195,15 @@ def game():
             "hands": 4,
             "discards": 3, 
             "deck": baseCards, 
-            "handCards": []
+            "handCards": [], 
+            "handsPlayed": 0, 
+            "handsDiscarded": 0, 
+            "cardsPlayed": 0,
+            "richiestHand": 0
         }
     }
 
+    data = dataReset(data)
     while True:
         players = [engine.teams[0].players[0], engine.teams[1].players[0]]
 
@@ -211,9 +225,16 @@ def game():
             topAnswer = {"action": "wait", "cards": []}
         if topAnswer["action"] == "play":
             data["top"]["hands"] -= 1
-            data["top"]["points"] += countScore(topAnswer["cards"])
+            data["top"]["handsPlayed"] += 1
+            sc = countScore(topAnswer["cards"])
+            if sc > data["top"]["richiestHand"]:
+                data["top"]["richiestHand"] = sc
+            data["top"]["points"] += sc
         elif topAnswer["action"] == "discard":
+            data["top"]["handsDiscarded"] += 1
             data["top"]["discards"] -= 1
+        data["top"]["cardsPlayed"] += len(topAnswer["cards"])
+            
 
         moves = []
         if data["bottom"]["hands"]>0:
@@ -228,10 +249,18 @@ def game():
 
         if bottomAnswer["action"] == "play":
             data["bottom"]["hands"] -= 1
-            data["bottom"]["points"] += countScore(bottomAnswer["cards"])
+            data["bottom"]["handsPlayed"] += 1
+            sc = countScore(bottomAnswer["cards"])
+            if sc > data["bottom"]["richiestHand"]:
+                data["bottom"]["richiestHand"] = sc
+            data["bottom"]["points"] += sc
         elif bottomAnswer["action"] == "discard":
+            data["bottom"]["handsDiscarded"] += 1
             data["bottom"]["discards"] -= 1
+        data["bottom"]["cardsPlayed"] += len(bottomAnswer["cards"])
 
+        data["top"]["handCards"] = sorted(data["top"]["handCards"], key=lambda card: (cardNum(card), cardSuit(card)))
+        data["bottom"]["handCards"] = sorted(data["bottom"]["handCards"], key=lambda card: (cardNum(card), cardSuit(card)))
 
         frame = {
             "players": {
@@ -251,13 +280,17 @@ def game():
                 "bottom": data["bottom"]["points"]
             }, 
             "cardsInHand": {
-                "top": sorted(data["top"]["handCards"], key=lambda card: (cardNum(card), cardSuit(card))), 
-                "bottom": sorted(data["bottom"]["handCards"], key=lambda card: (cardNum(card), cardSuit(card)))
+                "top": data["top"]["handCards"], 
+                "bottom": data["bottom"]["handCards"]
             }, 
             "cardsChosen": {
-                "top": sorted(topAnswer["cards"], key=lambda card: (cardNum(card), cardSuit(card))),
-                "bottom": sorted(bottomAnswer["cards"], key=lambda card: (cardNum(card), cardSuit(card)))
+                "top": topAnswer["cards"],
+                "bottom": bottomAnswer["cards"]
             },
+            "cardsScores": {
+                "top": [cardCost(_) for _ in data["top"]["handCards"]],
+                "bottom": [cardCost(_) for _ in data["bottom"]["handCards"]]
+            }, 
             "handsLeft": {
                 "top": data["top"]["hands"],
                 "bottom": data["bottom"]["hands"]
@@ -306,6 +339,15 @@ def game():
         engine.send_frame(frame)
         time.sleep(2)
         if frame.get("winner"):
+            stats.add_value(players[1], "Рук сыграно", data["bottom"]["handsPlayed"])
+            stats.add_value(players[1], "Рук скинуто", data["bottom"]["handsDiscarded"])
+            stats.add_value(players[1], "Карт сыграно", data["bottom"]["cardsPlayed"])
+            stats.add_value(players[1], "Самая дорогая рука", data["bottom"]["richiestHand"])
+            stats.add_value(players[0], "Рук сыграно", data["top"]["handsPlayed"])
+            stats.add_value(players[0], "Рук скинуто", data["top"]["handsDiscarded"])
+            stats.add_value(players[0], "Карт сыграно", data["top"]["cardsPlayed"])
+            stats.add_value(players[0], "Самая дорогая рука", data["top"]["richiestHand"])
+            engine.send_stats(stats)
             break
     # TODO: указать, какая команда победила
     # engine.set_winner(engine.teams[0])

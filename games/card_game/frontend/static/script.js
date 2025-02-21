@@ -42,8 +42,9 @@ function drawBackground(ctx) {
     ctx.drawImage(images['GROUND'], 0, 0, canvas.width, canvas.height);
 }
 
-function drawPlayersAndScores(ctx, players, scores, hands, discards, wins) {
+function drawPlayersAndScores(ctx, players, scores, hands, discards, wins, cardsLeft) {
     ctx.font = "24px myFirstFont";
+    ctx.fillStyle = 'black';
 
     const topName = `Игрок 1: ${players['top']}`
     const bottomName = `Игрок 2: ${players['bottom']}`
@@ -59,6 +60,9 @@ function drawPlayersAndScores(ctx, players, scores, hands, discards, wins) {
 
     const topWins = `Побед: ${wins['top']}`
     const bottomWins = `Побед: ${wins['bottom']}`
+
+    const topCards = `${cardsLeft['top']}/52`
+    const bottomCards = `${cardsLeft['bottom']}/52`
 
     const BDW = ctx.measureText(bottomDiscards).width;
     const TDW = ctx.measureText(topDiscards).width;
@@ -78,9 +82,19 @@ function drawPlayersAndScores(ctx, players, scores, hands, discards, wins) {
 
     ctx.fillText(bottomHands, canvas.width-BHW-70, canvas.height-54);
     ctx.fillText(bottomDiscards, canvas.width-BDW-70, canvas.height-94);
+
+
+    ctx.font = "16px myFirstFont";
+    ctx.measureText(bottomCards).width;
+    
+    
+    ctx.fillText(topCards, canvas.width/2+(5)*80 - (ctx.measureText(topCards).width-70)/2, 65);
+    ctx.fillText(bottomCards, canvas.width/2+(5)*80 - (ctx.measureText(bottomCards).width-70)/2, canvas.height-175);
 }
 
 function drawChoices(ctx, cards, cardsChosen, animStep) {
+    ctx.drawImage(images['BACK'], canvas.width/2+(5)*80, 70, 70, 100);
+    ctx.drawImage(images['BACK'], canvas.width/2+(5)*80, canvas.height-170, 70, 100);
     for (var i = 0; i < cards['top'].length; i++) {
         if (cardsChosen['top'].includes(cards['top'][i])){
             ctx.drawImage(images[cards['top'][i]], canvas.width/2+(i-4)*80, 70+animStep, 70, 100);
@@ -104,7 +118,7 @@ function drawWinner(ctx, winner, players) {
     if (winner) {
         winner = players[winner]
 
-        ctx.font = "48px serif";
+        ctx.font = "48px myFirstFont";
         ctx.fillStyle = 'green';
 
         const text = `Победитель: ${winner}`
@@ -132,10 +146,10 @@ async function newFrame(frame) {
 
     console.log(frame);
     // await new Promise(resolve => setTimeout(resolve, 1000));
-    for (let _ = 0; _ < 100; _++) {
+    for (let _ = 0; _ < 50; _++) {
         clearScreen(ctx);
         // drawBackground(ctx);
-        drawPlayersAndScores(ctx, frame['players'], frame['points'], frame['handsLeft'], frame['discardsLeft'], frame['wins']);
+        drawPlayersAndScores(ctx, frame['players'], frame['points'], frame['handsLeft'], frame['discardsLeft'], frame['wins'], frame['cardsLeft']);
         drawChoices(ctx, frame['cardsInHand'], frame['cardsChosen'], _);
         drawWinner(ctx, frame['winner'], frame['players']);
         await new Promise(resolve => setTimeout(resolve, 1));
