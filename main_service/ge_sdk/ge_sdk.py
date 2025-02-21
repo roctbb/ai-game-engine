@@ -4,19 +4,15 @@ import json
 import sys
 import pika
 import uuid
-import pyston
-from code_runner.python_code_runner import PythonCodeRunner
 
 from types import ModuleType
 from importlib import import_module
-from multiprocessing import Process, Manager
 
 
 class ScriptWrapper:
     def __init__(self, name, code):
         self.__name = name
         self.__code = code
-        self.__response = None
 
     def __getattribute__(self, attribute):
         if '__' not in attribute and attribute != "getCode":
@@ -35,21 +31,6 @@ class ScriptWrapper:
 
     def getCode(self):
         return self.__code
-    
-    def run_code(self, code, function, args, timeout):
-        self.__response = send_code.delay(code, function, args, timeout)
-    
-    def get_result(self):
-        if self.__response is None: return None
-        try:
-            out = self.__response.get(timeout=1)
-            if out[0]:
-                raise out[1]
-            else:
-                return out[1]
-        except TimeoutError:
-            return None
-
 
 class RedisClient:
     def __init__(self, session_id, host, port):
@@ -208,7 +189,7 @@ class CodeRunnerClient:
         if self.corr_id == props.correlation_id:
             self.response = body
 
-    def call(self, n):
+    def call(self, code, function_name, args, timeout):
         self.response = None
         self.corr_id = str(uuid.uuid4())
         self.channel.basic_publish(
@@ -218,16 +199,19 @@ class CodeRunnerClient:
                 reply_to=self.callback_queue,
                 correlation_id=self.corr_id,
             ),
-            body=str(n))
+            body=json.dumps(code, function_name, timeout, args))
+
+    def await_response(self):
         while self.response is None:
             self.connection.process_data_events(time_limit=None)
-        return int(self.response)
+        return json.loads(self.response)
 
 
-def timeout_run(timeout, module, function_name, args, bypass_errors=True):
-    response = send_code.delay(module, function_name, args, timeout)
-    
-    out = response.get(timeout=3)
+def timeout_run(timeout, code, function_name, args, bypass_errors=True):
+    code_runner = CodeRunnerClient()
+    code_runner.call(code, function_name, args, timeout)
+    out = code_runner.await_response()
+     
     if out[0]:
         if bypass_errors:
             return None
@@ -235,6 +219,8 @@ def timeout_run(timeout, module, function_name, args, bypass_errors=True):
             raise out[1]
     else:
         return out[1]
+    
+def 
 
     
 
