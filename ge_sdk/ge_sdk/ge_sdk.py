@@ -2,7 +2,6 @@ import json
 import multiprocessing
 import sys
 import time
-from importlib import import_module
 from types import ModuleType
 
 import redis
@@ -42,13 +41,7 @@ class ScriptWrapper:
         except Exception as e:
             raise RuntimeError(f'Failed to load module {self.__name}: {str(e)}')
 
-        sys.modules[self.__name] = module
-
-        return import_module(self.__name)
-
-    def __del__(self):
-        if self.__name in sys.modules:
-            del sys.modules[self.__name]
+        return module
 
     def get_code(self):
         return self.__code
