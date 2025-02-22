@@ -2,7 +2,7 @@ import json
 import multiprocessing
 import sys
 import time
-from types import ModuleType
+from types import ModuleType, CodeType
 
 import redis
 
@@ -24,16 +24,22 @@ __all__ = [
 
 class ScriptWrapper:
     def __init__(self, name: str, code: str):
-        self.__name = name
-        self.__code = code
+        self.__name: str = name
+        self.__code: str = code
+
+        self.__code_obj: CodeType = compile(code, self.__name, 'exec')
 
     @property
     def name(self) -> str:
         return self.__name
 
     @property
-    def code(self):
+    def code(self) -> str:
         return self.__code
+
+    @property
+    def code_obj(self) -> CodeType:
+        return self.__code_obj
 
 
 class RedisClient:
@@ -174,7 +180,7 @@ def __load_module_from_script(script: ScriptWrapper):
     module = ModuleType(script.name)
 
     try:
-        exec(script.code, restricted_globals, module.__dict__)
+        exec(script.code_obj, restricted_globals, module.__dict__)
     except Exception as e:
         raise RuntimeError(f'Failed to load module {script.name}: {str(e)}')
 
