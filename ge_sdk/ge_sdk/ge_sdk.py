@@ -24,11 +24,11 @@ __all__ = [
 
 
 class ScriptWrapper:
-    def __init__(self, name, code):
+    def __init__(self, name: str, code: str):
         self.__name = name
         self.__code = code
 
-    def __getattribute__(self, attribute):
+    def __getattribute__(self, attribute: str):
         if '__' not in attribute and attribute != 'get_code':
             return getattr(self.__load_module(), attribute)
         else:
