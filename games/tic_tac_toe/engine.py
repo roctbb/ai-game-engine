@@ -101,7 +101,7 @@ def game():
         current_player = players[step % 2]
         try:
             x, y = sdk.timeout_run(
-                0.4,
+                5,
                 current_player.script,
                 "make_choice",
                 (deepcopy(field), current_player.role),
@@ -110,7 +110,7 @@ def game():
         except TimeoutError:
             print(f' - [{engine.session_id} / tic_tac_toe]: Timeout error')
             break
-        except Exception:
+        except Exception as e:
             print(f'- [{engine.session_id} / tic_tac_toe]: Script finished with errors')
             break
 
