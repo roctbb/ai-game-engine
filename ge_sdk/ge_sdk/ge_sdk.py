@@ -27,23 +27,12 @@ class ScriptWrapper:
         self.__name = name
         self.__code = code
 
-    def __getattribute__(self, attribute: str):
-        if '__' not in attribute and attribute != 'get_code':
-            return getattr(self.__load_module(), attribute)
-        else:
-            return super().__getattribute__(attribute)
+    @property
+    def name(self) -> str:
+        return self.__name
 
-    def __load_module(self):
-        module = ModuleType(self.__name)
-
-        try:
-            exec(self.__code, restricted_globals, module.__dict__)
-        except Exception as e:
-            raise RuntimeError(f'Failed to load module {self.__name}: {str(e)}')
-
-        return module
-
-    def get_code(self):
+    @property
+    def code(self):
         return self.__code
 
 
@@ -181,9 +170,23 @@ class GameEngineStats:
         return rows
 
 
-def __process_wrapper(queue: multiprocessing.Queue, module, function_name: str, args: tuple):
+def __load_module_from_script(script: ScriptWrapper):
+    module = ModuleType(script.name)
+
     try:
+        exec(script.code, restricted_globals, module.__dict__)
+    except Exception as e:
+        raise RuntimeError(f'Failed to load module {script.name}: {str(e)}')
+
+    return module
+
+
+def __process_wrapper(queue: multiprocessing.Queue, script, function_name: str, args: tuple):
+    try:
+        module = __load_module_from_script(script)
+
         result = getattr(module, function_name)(*args)
+
         queue.put({'result': result, 'exception': None, 'finished': True})
     except Exception as e:
         queue.put({'result': None, 'exception': e, 'finished': True})
