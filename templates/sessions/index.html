@@ -35,7 +35,7 @@
                                         {% if game_session.state != 'ended' %}
                                             <span class="text-success">Идет</span>
                                         {% else %}
-                                            {% if not (game_session.winner_id and user) %}
+                                            {% if not (game_session.winner_id and user.id == game_session.creator.id) %}
                                                 <span class="text-primary">Завершена</span>
                                             {% else %}
                                                 {% if game_session.winner_id == user.id %}
