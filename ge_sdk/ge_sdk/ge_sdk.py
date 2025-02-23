@@ -27,7 +27,10 @@ class ScriptWrapper:
         self.__name: str = name
         self.__code: str = code
 
-        self.__code_obj: CodeType = compile(code, self.__name, 'exec')
+        try:
+            self.__code_obj: CodeType | None = compile(code, self.__name, 'exec')
+        except SyntaxError:
+            self.__code_obj: CodeType | None = None
 
     @property
     def name(self) -> str:
@@ -177,6 +180,9 @@ class GameEngineStats:
 
 
 def __load_module_from_script(script: ScriptWrapper):
+    if script.code_obj is None:
+        raise RuntimeError(f'Compilation failed for {script.name}')
+
     module = ModuleType(script.name)
 
     try:
