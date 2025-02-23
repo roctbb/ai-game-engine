@@ -25,23 +25,3 @@ services:
       interval: 5s
       timeout: 10s
       retries: 120
-
-  game-engine:
-    container_name: engine-server
-    build: ./
-    command: bash -c "python3 ./setup.py && python3 ./server.py"
-    environment:
-      DB_LOGIN: postgres
-      DB_PASSWORD: postgres
-      DB_DATABASE: game-engine
-      DB_HOST: postgres
-      REDIS_HOST: redis
-    ports:
-      - "4000:4000"
-    volumes:
-      - ./:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started

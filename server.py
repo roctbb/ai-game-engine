@@ -1,9 +1,13 @@
-from manage import *
-from config import *
+from functools import partial
+
+from flask import redirect
+
 from blueprints import *
-from helpers import *
-from socket_server import socketio
+from config import HOST, PORT, DEBUG
+from helpers import requires_auth
+from manage import app
 from redis_client import redis_client
+from socket_server import socketio
 
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(docs_blueprint, url_prefix='/docs')
@@ -16,11 +20,15 @@ app.register_blueprint(sessions_blueprint, url_prefix='/sessions')
 
 @app.route('/')
 @requires_auth
-def index(user):
+def index(*_):
     return redirect('/lobby')
 
 
 if __name__ == '__main__':
     socketio.init_app(app)
-    socketio.start_background_task(target=lambda: redis_client(socketio, app))
+
+    socketio.start_background_task(
+        target=partial(redis_client, socketio, app)
+    )
+
     socketio.run(app, host=HOST, port=PORT, debug=DEBUG, allow_unsafe_werkzeug=True)

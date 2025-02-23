@@ -1,5 +1,8 @@
-from models import *
 from flask import request, abort, session, redirect
+
+from models import *
+
+__all__ = ['requires_auth', 'requires_session']
 
 
 def requires_auth(func):

@@ -1,12 +1,5 @@
-import json
-import time
-import redis
 from domain.game import Game
-from domain.maps.default import DefaultMap
-from domain.maps.big import BigMap
 from domain.maps.tanks import TankMap
-import time
-from copy import deepcopy
 import ge_sdk as sdk
 
 

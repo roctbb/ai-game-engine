@@ -11,6 +11,5 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_string
 app.config['SECRET_KEY'] = SECRET_KEY
 
 db.init_app(app)
-
 migrate = Migrate(app, db)
 CORS(app)

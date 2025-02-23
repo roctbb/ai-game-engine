@@ -1,12 +1,11 @@
 import json
 
-from config import *
+from models import db, Session, Team, Game, User
 from . import run_engine, stop_engine
 from .exceptions import *
-from models import Session, db
 
 
-def __generate_description(session):
+def __generate_description(session: Session) -> str:
     return json.dumps({
         "session_id": session.id,
         "teams": [
@@ -25,14 +24,15 @@ def __generate_description(session):
     })
 
 
-def create_session(game, teams, user=None):
+def create_session(game: Game, teams: list[Team], user: User = None) -> Session:
     from redis_client import redis
 
     if not game or game.min_teams > len(teams) or len(teams) > game.max_teams:
         raise IncorrectNumberOfTeams
 
     for team in teams:
-        if team.game_id != game.id or len(team.players) < game.min_team_players or len(team.players) > game.max_team_players:
+        if team.game_id != game.id or len(team.players) < game.min_team_players or len(
+                team.players) > game.max_team_players:
             raise IncorrectTeam
 
     session = Session(state="created", game_id=game.id, replay=[], created_by=user.id if user else None)
@@ -49,10 +49,11 @@ def create_session(game, teams, user=None):
 
     redis.set(f'session-{session.id}', session.description)
     run_engine(session)
+
     return session
 
 
-def get_session_by_id(session_id):
+def get_session_by_id(session_id: int) -> Session:
     session = Session.query.get(session_id)
 
     if not session:
@@ -61,7 +62,7 @@ def get_session_by_id(session_id):
     return session
 
 
-def restart_session(session):
+def restart_session(session: Session):
     session.state = "created"
     session.winner_id = None
     session.stats = []
@@ -72,18 +73,20 @@ def restart_session(session):
 
     run_engine(session)
 
+    db.session.commit()
 
-def can_restart_session(session, user):
+
+def can_restart_session(session: Session, user: User) -> bool:
     return session.creator == user
 
 
-def mark_started(session):
+def mark_started(session: Session):
     session.replay = []
     session.state = "started"
     db.session.commit()
 
 
-def mark_ended(session):
+def mark_ended(session: Session):
     session.state = "ended"
 
     if session.lobby:
@@ -93,22 +96,23 @@ def mark_ended(session):
     db.session.commit()
 
 
-def set_winner(session, team):
+def set_winner(session: Session, team: Team):
     session.winner_id = team.user_id
     db.session.commit()
 
 
-def store_for_replay(session, message):
+def store_for_replay(session: Session, message):
     if not session.replay:
         session.replay = [message]
     else:
         new_record = session.replay[:]
         new_record.append(message)
         session.replay = new_record
+
     db.session.commit()
 
 
-def grab_sessions(user):
+def grab_sessions(user: User) -> list[Session]:
     teams = user.teams
 
     sessions = []
@@ -121,7 +125,8 @@ def grab_sessions(user):
     return sessions
 
 
-def get_sessions(state=None):
+def get_sessions(state=None) -> list[Session]:
     if not state:
         return Session.query.all()
+
     return Session.query.filter_by(state=state).all()

@@ -1,4 +1,3 @@
-import sys
 import imp
 
 from domain.general_player import GeneralPlayer
