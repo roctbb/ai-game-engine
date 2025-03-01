@@ -1,0 +1,75 @@
+body {
+    background-color: #f8f9fa;
+}
+
+.stats-container {
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+    padding: 2.5rem;
+    margin-top: 2rem;
+}
+
+.stats-header {
+    margin-bottom: 2.5rem;
+    text-align: center;
+}
+
+.stats-header h1 {
+    font-size: 2.75rem;
+    font-weight: bold;
+    color: #343a40;
+}
+
+.stats-header h4 {
+    font-size: 1.5rem;
+    color: #6c757d;
+}
+
+.table thead th {
+    background-color: #343a40;
+    color: white;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+}
+
+.table tbody td {
+    font-size: 0.95rem;
+    color: #495057;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 0, 0, 0.075);
+    transition: background-color 0.2s ease;
+}
+
+.table-bordered {
+    border: 1px solid #dee2e6;
+}
+
+.table-bordered th,
+.table-bordered td {
+    border: 1px solid #dee2e6;
+}
+
+.badge {
+    font-size: 0.85rem;
+    padding: 0.5em 0.75em;
+}
+
+.badge-success {
+    background-color: #28a745;
+}
+
+.badge-danger {
+    background-color: #dc3545;
+}
+
+.badge-warning {
+    background-color: #ffc107;
+}

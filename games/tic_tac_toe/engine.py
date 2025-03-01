@@ -6,11 +6,11 @@ import ge_sdk as sdk
 
 def buildFrame(players, field, winner_value=None):
     frame = {
-        "players": {
-            "-1": players[0].name,
-            "1": players[1].name
+        'players': {
+            '-1': players[0].name,
+            '1': players[1].name
         },
-        "field": field,
+        'field': field,
     }
 
     if winner_value:
@@ -82,7 +82,7 @@ def no_moves(field):
 
 def game():
     engine = sdk.GameEngineClient()
-    stats = sdk.GameEngineStats(engine.teams, ["Количество ходов"])
+    stats = sdk.GameEngineStats(engine.teams, ['Количество ходов'])
 
     field = createEmptyField()
 
@@ -103,14 +103,14 @@ def game():
             x, y = sdk.timeout_run(
                 5,
                 current_player.script,
-                "make_choice",
+                'make_choice',
                 (deepcopy(field), current_player.role),
                 bypass_errors=False
             )
         except TimeoutError:
             print(f' - [{engine.session_id} / tic_tac_toe]: Timeout error')
             break
-        except Exception as e:
+        except Exception:
             print(f'- [{engine.session_id} / tic_tac_toe]: Script finished with errors')
             break
 
@@ -124,7 +124,7 @@ def game():
 
         step += 1
 
-        stats.add_value(current_player, "Количество ходов", 1)
+        stats.add_value(current_player, 'Количество ходов', 1)
 
         frame = buildFrame(players, field)
         engine.send_frame(frame)
@@ -134,7 +134,7 @@ def game():
             break
 
         end = time.time()
-        print(f"Step {step} took {round(end - start, 1)} seconds")
+        print(f'Step {step} took {round(end - start, 1)} seconds')
         time.sleep(1)
 
     if not no_moves(field):
@@ -149,5 +149,5 @@ def game():
     engine.end()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     game()
