@@ -6,7 +6,7 @@ from models import User, db
 from .exceptions import *
 
 
-def hash(password):
+def hash_password(password):
     return hashlib.md5(password.encode()).hexdigest()
 
 
@@ -17,7 +17,7 @@ def create_user(login: str, password: str) -> User:
     if User.query.filter_by(login=login).first():
         raise AlreadyExists
 
-    user = User(login=login, password=hash(password))
+    user = User(login=login, password=hash_password(password))
 
     db.session.add(user)
     db.session.commit()
@@ -33,7 +33,7 @@ def find_user(login: str, password: str) -> User:
     if not user:
         raise NotFound
 
-    if user.password != hash(password):
+    if user.password != hash_password(password):
         raise IncorrectPassword
 
     return user

@@ -1,6 +1,6 @@
 # Authentication
 from .auth import (
-    hash,
+    hash_password,
     create_user,
     find_user,
     authorize,
