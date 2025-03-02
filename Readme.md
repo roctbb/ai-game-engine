@@ -7,7 +7,7 @@ supports multiple games, real-time gameplay visualization, and comprehensive sta
 
 - Multi-game support with customizable game logic
 - Real-time game visualization using WebSocket communication
-- Player script execution in isolated environments
+- Player script execution in isolated processes
 - Team-based gameplay mechanics
 - Live statistics and replay functionality
 - Lobby system for game session management
@@ -27,19 +27,25 @@ supports multiple games, real-time gameplay visualization, and comprehensive sta
 ### Production Deployment
 
 1. Create `config.py` based on `config.py.example`
-2. Run for production:
+2. Run script `python create_game.py` to create a game
+3. Put your game files in `games/{game_name}/`
+4. Run for production:
 
 ```bash
 # Production deployment
 docker compose up -d
 ```
 
-- or for development:
+### Development Setup
+
+1. Create `config.py` based on `config.py.example`
+2. Run for development:
 
 ```bash
 # Development setup
 docker compose -f compose-dev.yml build
-python setup.py 
+python setup.py
+python create_game.py
 python server.py
 ```
 
