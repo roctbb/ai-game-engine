@@ -67,28 +67,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // Form validation
-            const forms = document.querySelectorAll('.needs-validation');
-            forms.forEach(form => {
-                form.addEventListener('submit', event => {
-                    if (!form.checkValidity()) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                    }
-                    form.classList.add('was-validated');
-                }, {passive: false});
-            });
-
-            // Team description display
-            const teamSelect = document.getElementById('teamSelect');
-            const teamDescription = document.getElementById('teamDescription');
-
-            teamSelect.addEventListener('change', () => {
-                const selectedOption = teamSelect.options[teamSelect.selectedIndex];
-                teamDescription.textContent = selectedOption.dataset.description || '';
-            });
-        });
-    </script>
+    <script src="/static/validation.js"></script>
 {% endblock %}

@@ -110,8 +110,9 @@ def game():
         except TimeoutError:
             print(f' - [{engine.session_id} / tic_tac_toe]: Timeout error')
             break
-        except Exception:
+        except Exception as e:
             print(f'- [{engine.session_id} / tic_tac_toe]: Script finished with errors')
+            print(e)
             break
 
         if x < 0 or x > 4 or y < 0 or y > 4:

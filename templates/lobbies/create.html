@@ -2,79 +2,55 @@
 {% block title %}Создание лобби{% endblock %}
 
 {% block content %}
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-12 col-md-8 col-lg-6">
-            <div class="card border-primary shadow-lg">
-                <div class="card-header bg-primary text-white py-3">
-                    <h2 class="h4 mb-0">
-                        <i class="bi bi-plus-circle me-2"></i>Новое лобби
-                        <small class="d-block mt-1 fs-6 fw-light">Выберите игру из списка доступных</small>
-                    </h2>
-                </div>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-6">
+                <div class="card border-primary shadow-lg">
+                    <div class="card-header bg-primary text-white py-3">
+                        <h2 class="h4 mb-0">
+                            <i class="bi bi-plus-circle me-2"></i>Новое лобби
+                            <small class="d-block mt-1 fs-6 fw-light">Выберите игру из списка доступных</small>
+                        </h2>
+                    </div>
 
-                <div class="card-body p-4">
-                    <form method="post" class="needs-validation" novalidate>
-                        <div class="mb-4">
-                            <label for="gameSelect" class="form-label fw-semibold">Выберите игру</label>
-                            <select class="form-select form-select-md"
-                                    id="gameSelect"
-                                    name="game_id"
-                                    required
-                                    aria-label="Выбор игры">
-                                <option value="" selected disabled hidden>Доступные игры</option>
-                                {% for game in games %}
-                                    <option value="{{ game.id }}" data-description="{{ game.description }}">
-                                        {{ game.name }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                            <div class="form-text mt-2" id="gameDescription"></div>
-                            <div class="invalid-feedback">
-                                Пожалуйста, выберите игру из списка
+                    <div class="card-body p-4">
+                        <form method="post" class="needs-validation" novalidate>
+                            <div class="mb-4">
+                                <label for="gameSelect" class="form-label fw-semibold">Выберите игру</label>
+                                <select class="form-select form-select-md"
+                                        id="gameSelect"
+                                        name="game_id"
+                                        required
+                                        aria-label="Выбор игры">
+                                    <option value="" selected disabled hidden>Доступные игры</option>
+                                    {% for game in games %}
+                                        <option value="{{ game.id }}" data-description="{{ game.description }}">
+                                            {{ game.name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text mt-2" id="gameDescription"></div>
+                                <div class="invalid-feedback">
+                                    Пожалуйста, выберите игру из списка
+                                </div>
                             </div>
-                        </div>
 
-                        <div class="d-grid gap-3">
-                            <button type="submit" class="btn btn-primary py-2">
-                                <i class="bi bi-controller me-2"></i>Создать лобби
-                            </button>
-                            <a href="/lobby" class="btn btn-outline-secondary btn-hover-scale">
-                                <i class="bi bi-arrow-left-circle me-2"></i>Вернуться к списку
-                            </a>
-                        </div>
-                    </form>
+                            <div class="d-grid gap-3">
+                                <button type="submit" class="btn btn-primary py-2">
+                                    <i class="bi bi-controller me-2"></i>Создать лобби
+                                </button>
+                                <a href="/lobby" class="btn btn-outline-secondary btn-hover-scale">
+                                    <i class="bi bi-arrow-left-circle me-2"></i>Вернуться к списку
+                                </a>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-    // Enhanced form validation with game description
-    document.addEventListener('DOMContentLoaded', () => {
-        // Bootstrap validation
-        const forms = document.querySelectorAll('.needs-validation');
-        forms.forEach(form => {
-            form.addEventListener('submit', event => {
-                if (!form.checkValidity()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                }
-                form.classList.add('was-validated');
-            }, false);
-        });
-
-        // Game description display
-        const gameSelect = document.getElementById('gameSelect');
-        const gameDescription = document.getElementById('gameDescription');
-
-        gameSelect.addEventListener('change', () => {
-            const selectedOption = gameSelect.options[gameSelect.selectedIndex];
-            gameDescription.textContent = selectedOption.dataset.description || '';
-        });
-    });
-</script>
+    <script src="/static/validation.js"></script>
 {% endblock %}

@@ -2,6 +2,7 @@
 .vscode
 server/config.py
 venv
+env
 ge_sdk/tests/.pytest_cache
 sessions/*
 config.py
