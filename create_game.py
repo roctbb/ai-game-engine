@@ -1,6 +1,8 @@
 import os
 import shutil
-from server import app, Game, db
+
+from models import db, Game
+from server import app
 
 title = input("Enter short game title (a-z, _):")
 prepared_title = title.strip().replace(' ', '_')
@@ -23,7 +25,8 @@ with app.app_context():
             with open(filepath, 'w') as file:
                 file.write(filedata)
 
-    game = Game(name=prepared_title, code=prepared_title, min_teams=min_teams, max_teams=max_teams, min_team_players=min_team_players, max_team_players=max_team_players)
+    game = Game(name=prepared_title, code=prepared_title, min_teams=min_teams, max_teams=max_teams,
+                min_team_players=min_team_players, max_team_players=max_team_players)
     db.session.add(game)
     db.session.commit()
 

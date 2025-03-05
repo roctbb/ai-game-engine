@@ -1,8 +1,11 @@
 import json
+
 from redis import Redis
 
 from config import REDIS_HOST, REDIS_PORT
 from methods import *
+
+__all__ = ['redis_client', 'redis']
 
 redis = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
@@ -14,11 +17,11 @@ def process_message(message, socket_server):
     store_for_replay(session, message)
 
     if message.get('type') == 'frame':
-        socket_server.emit("frame", json.dumps(message.get('data')), room=f"session_{session_id}")
+        socket_server.emit('frame', json.dumps(message.get('data')), room=f'session_{session_id}')
 
     if message.get('type') == 'stats':
         update_session_stats(session, message.get('data'))
-        socket_server.emit("stats", json.dumps(message.get('data')), room=f"stats_{session_id}")
+        socket_server.emit('stats', json.dumps(message.get('data')), room=f'stats_{session_id}')
 
     if message.get('type') == 'event':
         event = message.get('data', {})
@@ -36,7 +39,7 @@ def process_message(message, socket_server):
         if event_type == 'started':
             mark_started(session)
 
-        socket_server.emit("event", json.dumps(message.get('data')), room=f"session_{session_id}")
+        socket_server.emit('event', json.dumps(message.get('data')), room=f'session_{session_id}')
 
 
 def redis_client(socket_server, app):
@@ -44,17 +47,16 @@ def redis_client(socket_server, app):
         p = redis.pubsub()
         p.subscribe('game_engine_notifications')
 
-        print("connected to Redis")
+        print('connected to Redis')
 
         while True:
             message = p.get_message()
             if message:
-                # print(message)
                 if message.get('type') == 'message':
                     data = json.loads(message.get('data'))
                     try:
                         process_message(data, socket_server)
                     except Exception as e:
-                        print("Message processing exception:", e)
+                        print('Message processing exception:', e)
 
             socket_server.sleep(0.1)

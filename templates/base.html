@@ -4,16 +4,21 @@
     <meta charset="UTF-8">
     <title>GameEngine: {% block title %}{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
-            integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
-            crossorigin="anonymous"></script>
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Custom Head -->
+    {% block head %}{% endblock %}
 </head>
-<body>
-<nav class="navbar navbar-expand-lg bg-body-tertiary">
+<body class="d-flex flex-column min-vh-100">
+<!-- Navigation Bar -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
     <div class="container-fluid">
-        <a class="navbar-brand" href="/">GameEngine</a>
+        <a class="navbar-brand fw-bold" href="/">
+            <i class="bi bi-controller me-2"></i>GameEngine
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
                 aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
@@ -23,43 +28,89 @@
             <ul class="navbar-nav me-auto">
                 {% if session.login %}
                     <li class="nav-item">
-                        <a class="nav-link" href="/lobby">Лобби</a>
+                        <a class="nav-link" href="/lobby">
+                            <i class="bi bi-door-open me-1"></i>Лобби
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/teams">Мои команды</a>
+                        <a class="nav-link" href="/teams">
+                            <i class="bi bi-people me-1"></i>Мои команды
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/sessions/active">Играют сейчас</a>
+                        <a class="nav-link" href="/sessions/active">
+                            <i class="bi bi-play-circle me-1"></i>Играют сейчас
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/sessions/archive">Архив</a>
+                        <a class="nav-link" href="/sessions/archive">
+                            <i class="bi bi-archive me-1"></i>Архив
+                        </a>
                     </li>
                 {% else %}
                     <li class="nav-item">
-                        <a class="nav-link" href="/login">Вход</a>
+                        <a class="nav-link" href="/login">
+                            <i class="bi bi-box-arrow-in-right me-1"></i>Вход
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/register">Регистрация</a>
+                        <a class="nav-link" href="/register">
+                            <i class="bi bi-person-plus me-1"></i>Регистрация
+                        </a>
                     </li>
                 {% endif %}
             </ul>
+
             {% if session.login %}
                 <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/logout">Выход</a>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button"
+                           data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-person-circle me-1"></i>{{ session.login }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                            <li><a class="dropdown-item" href="/profile">
+                                <i class="bi bi-gear me-2"></i>Профиль
+                            </a></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
+                            <li><a class="dropdown-item text-danger" href="/logout">
+                                <i class="bi bi-box-arrow-left me-2"></i>Выход
+                            </a></li>
+                        </ul>
                     </li>
                 </ul>
             {% endif %}
         </div>
     </div>
 </nav>
-<div class="container py-3">
+
+<!-- Main Content -->
+<main class="container flex-grow-1 py-4">
     {% if error %}
-        <div class="alert alert-warning">
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
             {{ error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     {% endif %}
+
     {% block content %}{% endblock %}
-</div>
+</main>
+
+<!-- Footer -->
+<footer class="bg-light py-3 mt-auto">
+    <div class="container text-center">
+            <span class="text-muted">
+                &copy; 2025 GameEngine. Все права защищены.
+            </span>
+    </div>
+</footer>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
+        crossorigin="anonymous"></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

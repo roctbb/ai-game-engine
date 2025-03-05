@@ -1,41 +1,80 @@
-let socket = io.connect()
-let session_id = parseInt(location.pathname.split('/')[2])
+const socket = io.connect();
+const session_id = parseInt(location.pathname.split('/')[2]);
 
+// Subscribe to the game session stats
 socket.emit('subscribe', {
-    "session_id": session_id,
-    "mode": "stats"
-})
+    session_id: session_id,
+    mode: 'stats'
+});
 
+// Handle incoming stats data
 socket.on('stats', (message) => {
-    let rows = JSON.parse(message)
-    let html = "<table>"
+    try {
+        const rows = JSON.parse(message);
+        let html = '<table class="table table-striped table-bordered table-hover">';
 
-    let build_row = (block, cols) => {
-        let html = ""
+        // Function to build a table row
+        const buildRow = (block, cols) => {
+            let rowHtml = '';
 
-        cols.forEach((col) => {
-            html += "<" + block + ">" + col + "</" + block + ">"
-        })
+            cols.forEach((col) => {
+                // Replace empty or placeholder values with "Игрок" for headers
+                const cellContent = (col === ' ' && block === 'th') ? 'Игрок' : col;
 
-        return html
-    }
+                // Add badges for specific values (e.g., status or scores)
+                let cellValue = cellContent;
+                if (typeof cellContent === 'string') {
+                    if (cellContent.toLowerCase() === 'success') {
+                        cellValue = `<span class="badge bg-success">${cellContent}</span>`;
+                    } else if (cellContent.toLowerCase() === 'failed') {
+                        cellValue = `<span class="badge bg-danger">${cellContent}</span>`;
+                    } else if (cellContent.toLowerCase() === 'pending') {
+                        cellValue = `<span class="badge bg-warning">${cellContent}</span>`;
+                    }
+                }
 
-    rows.forEach((row) => {
-        html += "<tr>"
+                rowHtml += `<${block}>${cellValue}</${block}>`;
+            });
 
-        let block = "td"
-        if (row.type === 'header') {
-            block = "th"
+            return rowHtml;
+        };
+
+        // Separate header and body rows
+        const headerRows = rows.filter(row => row.type === 'header');
+        const bodyRows = rows.filter(row => row.type !== 'header');
+
+        // Build table header
+        if (headerRows.length > 0) {
+            html += '<thead>';
+            headerRows.forEach((row) => {
+                html += '<tr>';
+                html += buildRow('th', row.cols);
+                html += '</tr>';
+            });
+            html += '</thead>';
         }
-        html += build_row(block, row.cols)
-        html += "</tr>"
-    })
 
-    html += "</table>"
+        // Build table body
+        if (bodyRows.length > 0) {
+            html += '<tbody>';
+            bodyRows.forEach((row) => {
+                html += '<tr>';
+                html += buildRow('td', row.cols);
+                html += '</tr>';
+            });
+            html += '</tbody>';
+        }
 
-    document.getElementById("stats").innerHTML = html
-})
+        html += '</table>';
 
-
-
-
+        // Insert the table into the DOM
+        const statsElement = document.getElementById('stats');
+        if (statsElement) {
+            statsElement.innerHTML = html;
+        } else {
+            console.error('Element with id "stats" not found.');
+        }
+    } catch (error) {
+        console.error('Error parsing or rendering stats:', error);
+    }
+});

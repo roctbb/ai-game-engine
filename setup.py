@@ -5,7 +5,8 @@ system('flask db init')
 system('flask db upgrade')
 
 # Add tic tac toe to database
-from server import app, Game, db
+from models import Game, db
+from server import app
 
 with app.app_context():
     if not path.exists('config.py'):

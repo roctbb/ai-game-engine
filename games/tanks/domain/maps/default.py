@@ -1,6 +1,5 @@
 import imp
 import random
-import sys
 from domain.items.coin import Coin
 from domain.map import Map
 from domain.game import Game

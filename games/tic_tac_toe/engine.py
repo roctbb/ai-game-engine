@@ -1,15 +1,16 @@
 import time
 from copy import deepcopy
+
 import ge_sdk as sdk
 
 
 def buildFrame(players, field, winner_value=None):
     frame = {
-        "players": {
-            "-1": players[0].name,
-            "1": players[1].name
+        'players': {
+            '-1': players[0].name,
+            '1': players[1].name
         },
-        "field": field,
+        'field': field,
     }
 
     if winner_value:
@@ -28,11 +29,11 @@ def createEmptyField():
     ]
 
 
-def checkDirection(field, startX, startY, dX, dY, N, value):
+def checkDirection(field, start_x, start_y, d_x, d_y, n, value):
     number = 0
 
-    for i in range(N):
-        if field[startX + dX * i][startY + dY * i] == value:
+    for i in range(n):
+        if field[start_x + d_x * i][start_y + d_y * i] == value:
             number += 1
         else:
             number = 0
@@ -81,7 +82,7 @@ def no_moves(field):
 
 def game():
     engine = sdk.GameEngineClient()
-    stats = sdk.GameEngineStats(engine.teams, ["Количество ходов"])
+    stats = sdk.GameEngineStats(engine.teams, ['Количество ходов'])
 
     field = createEmptyField()
 
@@ -98,7 +99,21 @@ def game():
         start = time.time()
 
         current_player = players[step % 2]
-        x, y = sdk.timeout_run(0.4, current_player.script, "make_choice", (deepcopy(field), current_player.role))
+        try:
+            x, y = sdk.timeout_run(
+                5,
+                current_player.script,
+                'make_choice',
+                (deepcopy(field), current_player.role),
+                bypass_errors=False
+            )
+        except TimeoutError:
+            print(f' - [{engine.session_id} / tic_tac_toe]: Timeout error')
+            break
+        except Exception as e:
+            print(f'- [{engine.session_id} / tic_tac_toe]: Script finished with errors')
+            print(e)
+            break
 
         if x < 0 or x > 4 or y < 0 or y > 4:
             continue
@@ -110,7 +125,7 @@ def game():
 
         step += 1
 
-        stats.add_value(current_player, "Количество ходов", 1)
+        stats.add_value(current_player, 'Количество ходов', 1)
 
         frame = buildFrame(players, field)
         engine.send_frame(frame)
@@ -120,7 +135,7 @@ def game():
             break
 
         end = time.time()
-        print(f"Step {step} took {round(end - start, 1)} seconds")
+        print(f'Step {step} took {round(end - start, 1)} seconds')
         time.sleep(1)
 
     if not no_moves(field):
@@ -135,5 +150,5 @@ def game():
     engine.end()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     game()

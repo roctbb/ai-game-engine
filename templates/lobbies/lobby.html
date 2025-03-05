@@ -2,60 +2,78 @@
 {% block title %}Лобби #{{ lobby_id }}{% endblock %}
 
 {% block content %}
-    {% if update %}
-        <div class="row">
-            <div class="col col-md-6 col-lg-4">
-                <form method="post">
-                    <label class="form-label">Команды</label>
-                    <select class="form-select" name="team_id">
-                        {% for team in teams %}
-                            <option value="{{ team.id }}">{{ team.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit" class="btn btn-primary">Выбрать команду</button>
-                </form>
-            </div>
-        </div>
-    {% else %}
-        <div class="clearfix">
-            <div class="float-start">
-                <h3 class="mb-4">Лобби</h3>
-            </div>
-            
-            <div class="float-end">
-                <a href="/lobby/{{ lobby_id }}/update" class="btn btn-sm btn-primary">
-                    {% if not team_added %}
-                    Добавить команду
-                    {% else %}
-                    Поменять команду
-                    {% endif %}
-                </a>
-
-                {% if team_added %}
-                    <a href="/lobby/{{ lobby_id }}/leave" class="btn btn-sm btn-danger">Покинуть</a>
+    <div class="container-lg">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start mb-4 gap-3">
+            <div>
+                <h2 class="mb-1">Лобби #{{ lobby_id }}</h2>
+                {% if owner %}
+                    <span class="badge bg-primary">Вы создатель лобби</span>
                 {% endif %}
             </div>
-        </div>
-        <div class="row">
-            <div class="col">
-                {% for team in teams %}
-                    <div class="card my-1">
-                        <div class="card-body">
-                            <div class="clearfix">
-                                <div class="float-start">
-                                    {{ team.name }} ({{ team.user.login }})
-                                </div>
-                                
-                                {% if owner %}
-                                <div class="float-end">
-                                    <a href="/lobby/{{ lobby_id }}/delete/{{ team.user.id }}" class="btn btn-sm btn-danger me-1">Удалить</a>
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                {% endfor %}
+
+            <div class="d-flex flex-column flex-sm-row gap-2">
+                <div class="btn-group" role="group">
+                    {% if owner %}
+                        <a href="/lobby/{{ lobby_id }}/launch"
+                           class="btn btn-success {% if not is_ready %}disabled" aria-disabled="true"
+                           title="Не все участники готовы"{% endif %}>
+                            <i class="bi bi-play-circle me-2"></i>Запустить
+                        </a>
+                    {% endif %}
+
+                    <a href="/lobby/{{ lobby_id }}/update" class="btn btn-primary">
+                        <i class="bi bi-people-fill me-2"></i>
+                        {% if not team_added %}Добавить команду{% else %}Изменить команду{% endif %}
+                    </a>
+
+                    {% if team_added %}
+                        <a href="/lobby/{{ lobby_id }}/leave" class="btn btn-danger">
+                            <i class="bi bi-box-arrow-left me-2"></i>Покинуть
+                        </a>
+                    {% endif %}
+                </div>
             </div>
         </div>
-    {% endif %}
+
+        <div class="row">
+            <div class="col-12 col-lg-8">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">Участники лобби</h5>
+                    </div>
+
+                    <div class="card-body p-0">
+                        {% if teams %}
+                            <div class="list-group list-group-flush">
+                                {% for team in teams %}
+                                    <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-person-badge-fill text-muted me-3"></i>
+                                            <div>
+                                                <h6 class="mb-0">{{ team.name }}</h6>
+                                                <small class="text-muted">@{{ team.user.login }}</small>
+                                            </div>
+                                        </div>
+
+                                        {% if owner and not loop.first %}
+                                            <a href="/lobby/{{ lobby_id }}/delete/{{ team.user.id }}"
+                                               class="btn btn-sm btn-outline-danger"
+                                               title="Удалить из лобби">
+                                                <i class="bi bi-trash"></i>
+                                            </a>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center p-4">
+                                <div class="text-muted mb-3">Нет участников</div>
+                                <i class="bi bi-people display-6 text-secondary"></i>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}

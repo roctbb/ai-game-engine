@@ -2,22 +2,60 @@
 {% block title %}Добавление игрока{% endblock %}
 
 {% block content %}
-    <div class="row">
-        <div class="col col-md-6 col-lg-4">
-            <form method="post">
-                <div class="mb-3">
-                    <label class="form-label">Имя игрока</label>
-                    <input name="player_name" type="text" class="form-control" value="{{ player_name }}">
+    <div class="container-lg py-5">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-primary text-white py-3">
+                        <h2 class="h4 mb-0">
+                            <i class="bi bi-person-plus me-2"></i>Добавление игрока
+                        </h2>
+                    </div>
+                    <div class="card-body p-4">
+                        <form method="post" class="needs-validation" novalidate>
+                            <!-- Player Name Field -->
+                            <div class="mb-4">
+                                <label for="playerName" class="form-label fw-semibold">Имя игрока</label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="playerName"
+                                       name="player_name"
+                                       value="{{ player_name }}"
+                                       placeholder="Введите имя игрока"
+                                       required>
+                                <div class="invalid-feedback">
+                                    Пожалуйста, введите имя игрока.
+                                </div>
+                            </div>
+
+                            <!-- Code Field -->
+                            <div class="mb-4">
+                                <label for="codeField" class="form-label fw-semibold">Код</label>
+                                <textarea class="form-control"
+                                          id="codeField"
+                                          name="script"
+                                          rows="10"
+                                          placeholder="Введите код игрока"
+                                          required></textarea>
+                                <div class="invalid-feedback">
+                                    Пожалуйста, введите код игрока.
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary py-3">
+                                    <i class="bi bi-check-circle me-2"></i>Добавить игрока
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-                
-                <div class="mb-3">
-                    <label for="CodeField" class="form-label">Код</label>
-                    <br>
-                    <textarea id="CodeField" class="form-label" rows="10" cols="45" name="script"></textarea>
-                </div>
-                               
-                <button type="submit" class="btn btn-primary">Добавить игрока</button>
-            </form>
+            </div>
         </div>
     </div>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/validation.js"></script>
 {% endblock %}

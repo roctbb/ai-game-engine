@@ -2,9 +2,12 @@
 .vscode
 server/config.py
 venv
-tests/.pytest_cache
+env
+ge_sdk/tests/.pytest_cache
 sessions/*
 config.py
 __pycache__
 ge_sdk/dist
 ge_sdk/ge_sdk.egg-info
+/.env
+/ge_sdk/build/
