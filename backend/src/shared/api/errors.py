@@ -10,6 +10,7 @@ from shared.kernel import (
     ForbiddenError,
     InvariantViolationError,
     NotFoundError,
+    UnauthorizedError,
 )
 
 
@@ -17,6 +18,7 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     NotFoundError: 404,
     ConflictError: 409,
     InvariantViolationError: 422,
+    UnauthorizedError: 401,
     ForbiddenError: 403,
     ExternalServiceError: 503,
 }

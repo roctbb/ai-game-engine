@@ -32,6 +32,7 @@ def test_lobby_stream_emits_lobby_event(client, teacher_headers) -> None:
     with client.stream(
         "GET",
         f"/api/v1/lobbies/{lobby['lobby_id']}/stream?poll_interval_ms=10&max_events=1",
+        headers=teacher_headers,
     ) as response:
         assert response.status_code == 200
         payload = "".join(response.iter_text())
@@ -63,6 +64,7 @@ def test_lobbies_stream_emits_lobby_collection_event(client, teacher_headers) ->
     with client.stream(
         "GET",
         "/api/v1/lobbies/stream?poll_interval_ms=10&max_events=1",
+        headers=teacher_headers,
     ) as response:
         assert response.status_code == 200
         payload = "".join(response.iter_text())
@@ -95,6 +97,7 @@ def test_competition_stream_emits_competition_event(client, teacher_headers) -> 
     with client.stream(
         "GET",
         f"/api/v1/competitions/{competition['competition_id']}/stream?poll_interval_ms=10&max_events=1",
+        headers=teacher_headers,
     ) as response:
         assert response.status_code == 200
         payload = "".join(response.iter_text())

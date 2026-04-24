@@ -6,7 +6,7 @@ from fastapi import Depends, Header, Request
 
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
-from shared.kernel import ForbiddenError, InvariantViolationError
+from shared.kernel import ForbiddenError, UnauthorizedError
 
 
 def _extract_session_header(request: Request, explicit_header: str | None) -> str:
@@ -15,7 +15,10 @@ def _extract_session_header(request: Request, explicit_header: str | None) -> st
     fallback = request.headers.get('X-Dev-Session')
     if fallback:
         return fallback
-    raise InvariantViolationError('Не передан заголовок X-Session-Id')
+    query_session = request.query_params.get('session_id')
+    if query_session:
+        return query_session
+    raise UnauthorizedError('Не передан заголовок X-Session-Id')
 
 
 def get_current_session(

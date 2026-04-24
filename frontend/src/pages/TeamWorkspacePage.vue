@@ -1,23 +1,38 @@
 <template>
-  <section class="agp-grid">
-    <header>
-      <h1 class="h3 mb-1">Командный Workspace</h1>
-      <p class="text-muted mb-0">
-        <template v-if="canEditWorkspace">
-          Каноническая точка редактирования: сохранение кода обновляет `TeamSlotCode`, а запуски используют snapshot.
-        </template>
-        <template v-else>
-          Режим просмотра кода команды. Редактировать код может только капитан.
-        </template>
-      </p>
+  <section class="agp-grid workspace-page">
+    <header class="agp-card p-4 workspace-hero">
+      <div>
+        <div class="small text-muted text-uppercase fw-semibold">Team workspace</div>
+        <h1 class="h3 mb-1">Канонический код команды</h1>
+        <p class="text-muted mb-0">
+          <template v-if="canEditWorkspace">
+            Сохраняем `TeamSlotCode`, а запуски берут snapshot только при постановке run в очередь.
+          </template>
+          <template v-else>
+            Режим просмотра кода команды. Редактировать код может только капитан.
+          </template>
+        </p>
+      </div>
+      <div class="workspace-hero-stats">
+        <span class="agp-pill agp-pill--primary">слотов: {{ slotCount }}</span>
+        <span class="agp-pill" :class="emptySlotCount > 0 ? 'agp-pill--warning' : 'agp-pill--primary'">
+          пустых: {{ emptySlotCount }}
+        </span>
+        <span v-if="workspace" class="agp-pill agp-pill--neutral mono">team {{ shortTeamId }}</span>
+      </div>
     </header>
 
     <div v-if="isLoading" class="agp-card p-4 text-muted">Загрузка workspace...</div>
     <div v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</div>
 
-    <div v-else class="agp-grid agp-grid--2">
-      <aside class="agp-card p-3">
-        <h2 class="h6 mb-3">Слоты команды</h2>
+    <div v-else class="workspace-layout">
+      <aside class="agp-card p-3 workspace-slots">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+          <div>
+            <h2 class="h6 mb-1">Слоты команды</h2>
+            <div class="small text-muted">Роли, которые игра ожидает от команды.</div>
+          </div>
+        </div>
         <div class="d-flex flex-column gap-2">
           <button
             v-for="slot in workspace?.slot_states ?? []"
@@ -39,7 +54,7 @@
         </div>
       </aside>
 
-      <article class="agp-card p-3">
+      <article class="agp-card p-3 workspace-editor">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h2 class="h6 mb-0">Редактор слота `{{ selectedSlotKey || '—' }}`</h2>
           <div v-if="canEditWorkspace" class="d-flex gap-2">
@@ -100,6 +115,42 @@
           </template>
         </div>
       </article>
+
+      <aside class="agp-card p-3 workspace-inspector">
+        <h2 class="h6 mb-2">Инспектор состояния</h2>
+        <div class="workspace-inspector-row">
+          <span>Режим</span>
+          <strong>{{ canEditWorkspace ? 'редактирование' : 'просмотр' }}</strong>
+        </div>
+        <div class="workspace-inspector-row">
+          <span>Капитан</span>
+          <strong class="mono">{{ workspace?.captain_user_id }}</strong>
+        </div>
+        <div class="workspace-inspector-row">
+          <span>Версия</span>
+          <strong class="mono">{{ workspace?.version_id }}</strong>
+        </div>
+        <div class="workspace-inspector-row">
+          <span>Выбранный слот</span>
+          <strong class="mono">{{ selectedSlotKey || '—' }}</strong>
+        </div>
+        <div class="workspace-inspector-row">
+          <span>Состояние слота</span>
+          <strong>{{ selectedSlot ? slotStateLabel(selectedSlot.state) : '—' }}</strong>
+        </div>
+        <div class="workspace-callout mt-3">
+          <div class="fw-semibold mb-1">Что попадет в матч?</div>
+          <div class="small text-muted">
+            Если запуск создать сейчас, платформа зафиксирует текущие сохраненные ревизии слотов. Несохраненный текст в редакторе не является snapshot.
+          </div>
+        </div>
+        <div v-if="incompatibleSlotCount > 0" class="workspace-callout workspace-callout--warning mt-2">
+          <div class="fw-semibold mb-1">Есть несовместимые слоты</div>
+          <div class="small">
+            {{ incompatibleSlotCount }} слот(ов) больше не требуется текущей версией игры. Код виден, но не участвует в snapshot.
+          </div>
+        </div>
+      </aside>
     </div>
   </section>
 </template>
@@ -139,6 +190,26 @@ const selectedSlot = computed(() =>
 );
 const canEditWorkspace = computed(() => workspace.value?.captain_user_id === sessionStore.nickname);
 const selectedSlotDemoStrategies = computed(() => demoStrategiesBySlot.value[selectedSlotKey.value] ?? []);
+const slotCount = computed(() => workspace.value?.slot_states.length ?? 0);
+const emptySlotCount = computed(() => workspace.value?.slot_states.filter((slot) => slot.state === 'empty').length ?? 0);
+const incompatibleSlotCount = computed(
+  () => workspace.value?.slot_states.filter((slot) => slot.state === 'incompatible').length ?? 0
+);
+const shortTeamId = computed(() => {
+  const teamId = workspace.value?.team_id ?? '';
+  return teamId.length > 14 ? `${teamId.slice(0, 8)}…${teamId.slice(-4)}` : teamId;
+});
+
+function slotStateLabel(state: string): string {
+  const labels: Record<string, string> = {
+    filled: 'заполнен',
+    empty: 'пустой',
+    dirty: 'изменен',
+    locked: 'заблокирован',
+    incompatible: 'несовместим',
+  };
+  return labels[state] ?? state;
+}
 
 async function loadWorkspace(): Promise<void> {
   const teamId = String(route.params.teamId || '').trim();
@@ -275,11 +346,108 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.workspace-page {
+  gap: 0.9rem;
+}
+
+.workspace-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  background: #f8fafc;
+}
+
+.workspace-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.55fr) minmax(0, 1.35fr) minmax(18rem, 0.7fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.workspace-slots,
+.workspace-inspector {
+  position: sticky;
+  top: 0.85rem;
+}
+
+.workspace-editor {
+  min-width: 0;
+}
+
 .slot-selected {
   outline: 2px solid var(--agp-accent);
 }
 
 .demo-select {
   min-width: 190px;
+}
+
+.workspace-inspector-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  font-size: 0.86rem;
+}
+
+.workspace-inspector-row span {
+  color: var(--agp-muted);
+}
+
+.workspace-inspector-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.workspace-callout {
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 1rem;
+  background: rgba(240, 253, 250, 0.76);
+  padding: 0.8rem;
+}
+
+.workspace-callout--warning {
+  border-color: rgba(217, 119, 6, 0.26);
+  background: rgba(255, 251, 235, 0.88);
+  color: #8a4b0c;
+}
+
+@media (max-width: 1180px) {
+  .workspace-layout {
+    grid-template-columns: minmax(13rem, 0.55fr) minmax(0, 1fr);
+  }
+
+  .workspace-inspector {
+    grid-column: 1 / -1;
+    position: static;
+  }
+}
+
+@media (max-width: 820px) {
+  .workspace-hero {
+    flex-direction: column;
+  }
+
+  .workspace-hero-stats {
+    justify-content: flex-start;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-slots {
+    position: static;
+  }
 }
 </style>

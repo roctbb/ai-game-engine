@@ -1,5 +1,5 @@
 :root {
-  --agp-bg: linear-gradient(125deg, #eef7ff 0%, #f8fcf8 45%, #fff4ea 100%);
+  --agp-bg: #f4f7fb;
   --agp-surface: #ffffff;
   --agp-surface-soft: #f6f8fb;
   --agp-text: #1f2933;
@@ -232,9 +232,7 @@ pre,
   border: 0;
   border-bottom: 1px solid rgba(112, 232, 220, 0.28);
   border-radius: 0;
-  background:
-    linear-gradient(90deg, rgba(5, 13, 28, 0.97), rgba(9, 30, 45, 0.95) 62%, rgba(36, 25, 9, 0.94)),
-    #07101f;
+  background: #07101f;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(10px);
 }
@@ -459,13 +457,13 @@ pre,
 }
 
 .agp-icon-button--replay {
-  background: linear-gradient(135deg, #12a899, #16c2d2);
+  background: #12a899;
   box-shadow: 0 0 16px rgba(22, 194, 210, 0.28);
   color: #fff;
 }
 
 .agp-icon-button--play {
-  background: linear-gradient(135deg, #0f9f8e, #21d2b7);
+  background: #0f9f8e;
   box-shadow: 0 0 18px rgba(33, 210, 183, 0.32);
   color: #fff;
 }
@@ -568,9 +566,7 @@ pre,
   gap: 0;
   align-content: stretch;
   overflow: hidden;
-  background:
-    linear-gradient(135deg, rgba(5, 13, 28, 0.98), rgba(7, 23, 37, 0.94) 45%, rgba(36, 24, 10, 0.9)),
-    #06101f;
+  background: #06101f;
 }
 
 .agp-shortcuts-bar {
@@ -871,9 +867,7 @@ pre,
   justify-content: flex-end;
   gap: 0.35rem;
   border-bottom: 1px solid rgba(135, 226, 255, 0.16);
-  background:
-    linear-gradient(90deg, rgba(9, 24, 42, 0.82), rgba(18, 28, 42, 0.95)),
-    #111827;
+  background: #111827;
 }
 
 .agp-code-card .agp-code-editor {
@@ -922,9 +916,7 @@ pre,
   right: 0;
   width: min(32rem, 92vw);
   height: 100vh;
-  background:
-    linear-gradient(160deg, rgba(7, 18, 35, 0.98), rgba(8, 35, 45, 0.96) 58%, rgba(39, 26, 10, 0.94)),
-    #07101f;
+  background: #07101f;
   border-left: 1px solid rgba(135, 226, 255, 0.26);
   box-shadow: -22px 0 54px rgba(0, 0, 0, 0.42), inset 1px 0 0 rgba(255, 255, 255, 0.04);
   z-index: 40;
@@ -946,9 +938,7 @@ pre,
   overflow: auto;
   border: 1px solid rgba(135, 226, 255, 0.3);
   border-radius: 0.75rem;
-  background:
-    linear-gradient(145deg, rgba(7, 18, 35, 0.98), rgba(8, 37, 48, 0.96) 62%, rgba(39, 26, 10, 0.94)),
-    #07101f;
+  background: #07101f;
   color: #e9f7ff;
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.48), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
 }
@@ -1350,7 +1340,44 @@ pre,
     order: 3;
   }
 
-  .agp-score-grid {
+.agp-score-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.agp-login-page {
+  min-height: calc(100vh - 4.2rem);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: #f7fbff;
+}
+
+.agp-login-panel {
+  width: min(100%, 26rem);
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(15, 76, 117, 0.18);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1rem 2.5rem rgba(15, 23, 42, 0.12);
+}
+
+.agp-login-panel h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1.55rem;
+}
+
+.agp-login-kicker {
+  margin: 0 0 0.25rem;
+  color: #0f766e;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agp-login-form {
+  display: grid;
+  gap: 0.65rem;
 }

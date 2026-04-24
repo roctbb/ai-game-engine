@@ -6,7 +6,7 @@ import time
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.auth import require_roles
+from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event
@@ -82,7 +82,10 @@ def _to_response(competition: Competition) -> CompetitionResponse:
 
 
 @router.get("", response_model=list[CompetitionResponse])
-def list_competitions(container: ServiceContainer = Depends(get_container)) -> list[CompetitionResponse]:
+def list_competitions(
+    _session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> list[CompetitionResponse]:
     return [_to_response(item) for item in container.competition.list_competitions()]
 
 
@@ -108,6 +111,7 @@ def create_competition(
 @router.get("/{competition_id}", response_model=CompetitionResponse)
 def get_competition(
     competition_id: str,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> CompetitionResponse:
     return _to_response(container.competition.get_competition(competition_id))
@@ -135,6 +139,7 @@ def stream_competition(
     competition_id: str,
     poll_interval_ms: int = 1000,
     max_events: int = 0,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> StreamingResponse:
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
@@ -327,6 +332,7 @@ def set_entrant_ban(
 @router.get("/{competition_id}/runs", response_model=list[CompetitionRunItemResponse])
 def list_competition_runs(
     competition_id: str,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[CompetitionRunItemResponse]:
     return [
@@ -338,6 +344,7 @@ def list_competition_runs(
 @router.get("/{competition_id}/bracket", response_model=list[CompetitionRoundResponse])
 def get_competition_bracket(
     competition_id: str,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[CompetitionRoundResponse]:
     competition = container.competition.get_competition(competition_id)
@@ -347,6 +354,7 @@ def get_competition_bracket(
 @router.get("/{competition_id}/rounds", response_model=list[CompetitionRoundResponse])
 def get_competition_rounds(
     competition_id: str,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[CompetitionRoundResponse]:
     competition = container.competition.get_competition(competition_id)
@@ -356,6 +364,7 @@ def get_competition_rounds(
 @router.get("/{competition_id}/matches", response_model=list[CompetitionMatchResponse])
 def get_competition_matches(
     competition_id: str,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[CompetitionMatchResponse]:
     competition = container.competition.get_competition(competition_id)

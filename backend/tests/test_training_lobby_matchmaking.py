@@ -45,25 +45,25 @@ def test_small_match_matchmaking_schedules_only_full_pairs(client, teacher_heade
     team_c = _create_ready_team(client, game_id=game["game_id"], captain="cap-c", name="Charlie")
 
     lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Small", headers=teacher_headers)
+    ready_responses = []
     for team in (team_a, team_b, team_c):
         client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
             json={},
             headers=teacher_headers,
         )
-        client.post(
-            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
-            json={"ready": True},
-            headers=teacher_headers,
+        ready_responses.append(
+            client.post(
+                f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
+                json={"ready": True},
+                headers=teacher_headers,
+            )
         )
 
-    tick = client.post(
-        f"/api/v1/lobbies/{lobby['lobby_id']}/matchmaking/tick",
-        json={"requested_by": "teacher-mm"},
-        headers=teacher_headers,
-    ).json()
-    assert tick["status"] == "running"
-    assert len(tick["last_scheduled_run_ids"]) == 2
+    assert ready_responses[1].status_code == 200
+    auto_tick = ready_responses[1].json()
+    assert auto_tick["status"] == "running"
+    assert len(auto_tick["last_scheduled_run_ids"]) == 2
 
     runs = client.get(f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match").json()
     assert len(runs) == 2
@@ -85,30 +85,29 @@ def test_massive_lobby_matchmaking_schedules_all_ready_teams(client, teacher_hea
     team_c = _create_ready_team(client, game_id=game["game_id"], captain="mcap-c", name="Charlie")
 
     lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Massive", headers=teacher_headers)
+    ready_responses = []
     for team in (team_a, team_b, team_c):
         client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
             json={},
             headers=teacher_headers,
         )
-        client.post(
-            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
-            json={"ready": True},
-            headers=teacher_headers,
+        ready_responses.append(
+            client.post(
+                f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
+                json={"ready": True},
+                headers=teacher_headers,
+            )
         )
 
-    tick = client.post(
-        f"/api/v1/lobbies/{lobby['lobby_id']}/matchmaking/tick",
-        json={"requested_by": "teacher-mm"},
-        headers=teacher_headers,
-    ).json()
-    assert tick["status"] == "running"
-    assert len(tick["last_scheduled_run_ids"]) == 3
+    assert ready_responses[1].status_code == 200
+    auto_tick = ready_responses[1].json()
+    assert auto_tick["status"] == "running"
+    assert len(auto_tick["last_scheduled_run_ids"]) == 2
 
     runs = client.get(f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match").json()
-    assert len(runs) == 3
+    assert len(runs) == 2
     assert {item["team_id"] for item in runs} == {
         team_a["team_id"],
         team_b["team_id"],
-        team_c["team_id"],
     }

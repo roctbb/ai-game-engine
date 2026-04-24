@@ -4,23 +4,63 @@
       <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
         <div>
           <h1 class="h3 mb-2">Задачи</h1>
-          <p class="text-muted mb-0">Список доступных задач. Выберите нужную и переходите к решению.</p>
+          <p class="text-muted mb-0">
+            Учебный режим: решайте задачи, запускайте код в игровом мире и возвращайтесь к попыткам как к истории прогресса.
+          </p>
         </div>
         <div class="d-flex gap-2 flex-wrap align-items-start">
-          <span class="agp-pill agp-pill--primary">задач: {{ tasks.length }}</span>
+          <span class="agp-pill agp-pill--primary">показано: {{ filteredTasks.length }}/{{ tasks.length }}</span>
           <span class="agp-pill agp-pill--neutral">решено вами: {{ solvedByCurrentUserCount }}</span>
+          <span class="agp-pill agp-pill--neutral">тем: {{ topicOptions.length }}</span>
         </div>
       </div>
     </header>
+
+    <section class="agp-card p-3 tasks-filter-panel" aria-label="Фильтры задач">
+      <div>
+        <div class="small text-muted text-uppercase fw-semibold">Фильтры обучения</div>
+        <div class="fw-semibold">Найдите следующую задачу по теме, сложности и прогрессу</div>
+      </div>
+      <label class="tasks-filter-field">
+        <span class="form-label small mb-1">Тема</span>
+        <select v-model="selectedTopic" class="form-select form-select-sm">
+          <option value="">Все темы</option>
+          <option v-for="topic in topicOptions" :key="topic" :value="topic">{{ topic }}</option>
+        </select>
+      </label>
+      <label class="tasks-filter-field">
+        <span class="form-label small mb-1">Сложность</span>
+        <select v-model="selectedDifficulty" class="form-select form-select-sm">
+          <option value="">Любая</option>
+          <option v-for="difficulty in difficultyOptions" :key="difficulty" :value="difficulty">
+            {{ difficultyLabel(difficulty) }}
+          </option>
+        </select>
+      </label>
+      <label class="tasks-filter-field">
+        <span class="form-label small mb-1">Прогресс</span>
+        <select v-model="selectedProgress" class="form-select form-select-sm">
+          <option value="all">Все</option>
+          <option value="unsolved">Не решено</option>
+          <option value="solved">Решено</option>
+        </select>
+      </label>
+      <button class="btn btn-sm btn-outline-secondary tasks-filter-reset" :disabled="!hasActiveFilters" @click="resetFilters">
+        Сбросить
+      </button>
+    </section>
 
     <div class="tasks-layout">
       <section class="agp-grid">
         <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка задач...</article>
         <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
         <article v-else-if="tasks.length === 0" class="agp-card p-4 text-muted">Задачи пока не опубликованы.</article>
+        <article v-else-if="filteredTasks.length === 0" class="agp-card p-4 text-muted">
+          По выбранным фильтрам задач нет. Сбросьте фильтры или выберите другую тему.
+        </article>
 
         <div v-else class="tasks-list">
-          <article v-for="task in tasks" :key="task.game_id" class="agp-card p-3 task-row">
+          <article v-for="task in filteredTasks" :key="task.game_id" class="agp-card p-3 task-row">
             <div class="task-row-main">
               <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
                 <div class="d-flex flex-column gap-2">
@@ -48,6 +88,12 @@
                 </span>
                 <span>
                   Решили: <span class="mono">{{ task.solved_users }}</span>
+                </span>
+                <span>
+                  Успех: <span class="mono">{{ successRateLabel(task) }}</span>
+                </span>
+                <span>
+                  {{ task.has_score_model ? 'со счетом' : 'зачет/незачет' }}
                 </span>
               </div>
             </div>
@@ -112,6 +158,9 @@ const solvedSummary = ref<SingleTaskSolvedSummaryDto | null>(null);
 const isLoading = ref(false);
 const errorMessage = ref('');
 const summaryError = ref('');
+const selectedTopic = ref('');
+const selectedDifficulty = ref('');
+const selectedProgress = ref<'all' | 'solved' | 'unsolved'>('all');
 
 const currentUserKeys = computed(() => {
   const keys = [sessionStore.externalUserId, sessionStore.nickname]
@@ -131,6 +180,26 @@ const currentUserSolvedGameIds = computed(() => {
 });
 
 const solvedByCurrentUserCount = computed(() => currentUserSolvedGameIds.value.size);
+const topicOptions = computed(() =>
+  Array.from(new Set(tasks.value.flatMap((task) => task.topics))).sort((a, b) => a.localeCompare(b))
+);
+const difficultyOptions = computed(() =>
+  Array.from(new Set(tasks.value.map((task) => task.difficulty).filter((item): item is string => Boolean(item)))).sort(
+    (a, b) => difficultyOrder(a) - difficultyOrder(b) || a.localeCompare(b)
+  )
+);
+const hasActiveFilters = computed(() =>
+  Boolean(selectedTopic.value || selectedDifficulty.value || selectedProgress.value !== 'all')
+);
+const filteredTasks = computed(() =>
+  tasks.value.filter((task) => {
+    if (selectedTopic.value && !task.topics.includes(selectedTopic.value)) return false;
+    if (selectedDifficulty.value && task.difficulty !== selectedDifficulty.value) return false;
+    if (selectedProgress.value === 'solved' && !isSolvedTask(task.game_id)) return false;
+    if (selectedProgress.value === 'unsolved' && isSolvedTask(task.game_id)) return false;
+    return true;
+  })
+);
 
 const currentUserEntry = computed<SingleTaskSolvedSummaryEntryDto | null>(() => {
   const entries = solvedSummary.value?.entries ?? [];
@@ -154,6 +223,35 @@ function isCurrentUser(userId: string): boolean {
 
 function leaderboardUserLabel(userId: string): string {
   return isCurrentUser(userId) ? 'Вы' : userId;
+}
+
+function difficultyOrder(difficulty: string): number {
+  const order: Record<string, number> = {
+    easy: 1,
+    medium: 2,
+    hard: 3,
+  };
+  return order[difficulty] ?? 50;
+}
+
+function difficultyLabel(difficulty: string): string {
+  const labels: Record<string, string> = {
+    easy: 'легкая',
+    medium: 'средняя',
+    hard: 'сложная',
+  };
+  return labels[difficulty] ?? difficulty;
+}
+
+function successRateLabel(task: SingleTaskCatalogItemDto): string {
+  if (task.attempts_finished <= 0) return 'нет данных';
+  return `${Math.round((task.solved_users / task.attempts_finished) * 100)}%`;
+}
+
+function resetFilters(): void {
+  selectedTopic.value = '';
+  selectedDifficulty.value = '';
+  selectedProgress.value = 'all';
 }
 
 onMounted(async () => {
@@ -181,8 +279,22 @@ onMounted(async () => {
 }
 
 .tasks-head {
-  background:
-    linear-gradient(130deg, rgba(223, 247, 244, 0.62) 0%, rgba(255, 255, 255, 0.92) 44%, rgba(255, 241, 219, 0.48) 100%);
+  background: #f8fafc;
+}
+
+.tasks-filter-panel {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1fr) repeat(3, minmax(10rem, 0.62fr)) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.tasks-filter-field {
+  min-width: 0;
+}
+
+.tasks-filter-reset {
+  white-space: nowrap;
 }
 
 .tasks-layout {
@@ -281,6 +393,10 @@ onMounted(async () => {
 }
 
 @media (max-width: 1100px) {
+  .tasks-filter-panel {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .tasks-layout {
     grid-template-columns: 1fr;
   }
@@ -291,8 +407,16 @@ onMounted(async () => {
 }
 
 @media (max-width: 800px) {
+  .tasks-filter-panel {
+    grid-template-columns: 1fr;
+  }
+
   .task-row {
     grid-template-columns: 1fr;
+  }
+
+  .tasks-filter-reset {
+    width: 100%;
   }
 }
 </style>

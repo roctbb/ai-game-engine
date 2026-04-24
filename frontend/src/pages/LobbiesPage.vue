@@ -323,8 +323,7 @@ onUnmounted(() => {
 }
 
 .lobbies-simple-head {
-  background:
-    linear-gradient(130deg, rgba(223, 247, 244, 0.62) 0%, rgba(255, 255, 255, 0.92) 44%, rgba(255, 241, 219, 0.48) 100%);
+  background: #f8fafc;
 }
 
 .lobbies-filter-wrap {

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from app.auth import get_current_session
 from app.dependencies import ServiceContainer, get_container
+from identity.domain.model import AppSession, UserRole
+from shared.kernel import ForbiddenError
 from team_workspace.api.schemas import (
     CreateTeamRequest,
     TeamResponse,
@@ -16,6 +19,7 @@ router = APIRouter(prefix="/teams", tags=["team_workspace"])
 @router.get("", response_model=list[TeamResponse])
 def list_teams(
     game_id: str,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[TeamResponse]:
     teams = container.team_workspace.list_teams_by_game(game_id=game_id)
@@ -33,12 +37,18 @@ def list_teams(
 @router.post("", response_model=TeamResponse)
 def create_team(
     request: CreateTeamRequest,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> TeamResponse:
+    captain_user_id = (
+        request.captain_user_id
+        if session.role in {UserRole.TEACHER, UserRole.ADMIN}
+        else session.nickname
+    )
     team = container.team_workspace.create_team(
         game_id=request.game_id,
         name=request.name,
-        captain_user_id=request.captain_user_id,
+        captain_user_id=captain_user_id,
     )
     return TeamResponse(
         team_id=team.team_id,
@@ -53,11 +63,17 @@ def update_slot_code(
     team_id: str,
     slot_key: str,
     request: UpdateSlotCodeRequest,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> TeamResponse:
+    actor_user_id = (
+        request.actor_user_id
+        if session.role in {UserRole.TEACHER, UserRole.ADMIN}
+        else session.nickname
+    )
     team = container.team_workspace.update_slot_code(
         team_id=team_id,
-        actor_user_id=request.actor_user_id,
+        actor_user_id=actor_user_id,
         slot_key=slot_key,
         code=request.code,
     )
@@ -73,9 +89,12 @@ def update_slot_code(
 def get_workspace(
     team_id: str,
     version_id: str | None = None,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> TeamWorkspaceResponse:
     workspace = container.team_workspace.get_workspace_view(team_id=team_id, version_id=version_id)
+    if workspace.captain_user_id != session.nickname and session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
+        raise ForbiddenError("Просматривать workspace может только капитан, преподаватель или админ")
     return TeamWorkspaceResponse(
         team_id=workspace.team_id,
         game_id=workspace.game_id,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.auth import require_roles
+from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
 from game_catalog.api.schemas import (
     ActivateVersionRequest,
@@ -29,8 +29,8 @@ from game_catalog.infrastructure.manifest_loader import find_game_manifest_path,
 from identity.domain.model import UserRole
 from shared.kernel import ConflictError, InvariantViolationError
 
-router = APIRouter(prefix="/games", tags=["game_catalog"])
-progress_router = APIRouter(tags=["game_catalog"])
+router = APIRouter(prefix="/games", tags=["game_catalog"], dependencies=[Depends(get_current_session)])
+progress_router = APIRouter(tags=["game_catalog"], dependencies=[Depends(get_current_session)])
 
 
 def _map_game(game: object) -> GameResponse:

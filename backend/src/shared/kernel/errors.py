@@ -27,5 +27,9 @@ class ForbiddenError(DomainError):
     code = "forbidden"
 
 
+class UnauthorizedError(DomainError):
+    code = "unauthorized"
+
+
 class ExternalServiceError(DomainError):
     code = "external_service_error"

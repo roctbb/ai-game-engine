@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.auth import require_roles
+from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
 from execution.api.schemas import (
     AcceptRunRequest,
@@ -32,9 +32,9 @@ from execution.api.schemas import (
 )
 from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 from game_catalog.infrastructure.manifest_loader import GameManifest, find_game_manifest_path, load_game_manifest
-from identity.domain.model import UserRole
+from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event
-from shared.kernel import InvariantViolationError, NotFoundError
+from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
 
 router = APIRouter(tags=["execution"])
 _TERMINAL_RUN_STATUSES = {
@@ -119,16 +119,34 @@ def _resolve_renderer_asset_path(
     return candidate
 
 
+def _ensure_can_use_team(container: ServiceContainer, session: AppSession, team_id: str) -> None:
+    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
+        return
+    team = container.team_workspace.get_team(team_id)
+    if team.captain_user_id != session.nickname:
+        raise ForbiddenError("Запускать код этой команды может только капитан, преподаватель или админ")
+
+
+def _ensure_can_manage_run(container: ServiceContainer, session: AppSession, run: Run) -> None:
+    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
+        return
+    if run.requested_by != session.nickname:
+        raise ForbiddenError("Управлять этим запуском может только его автор, преподаватель или админ")
+
+
 @router.post("/runs", response_model=RunResponse)
 def create_run(
     request: CreateRunRequest,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
+    _ensure_can_use_team(container=container, session=session, team_id=request.team_id)
+    requested_by = request.requested_by if session.role in {UserRole.TEACHER, UserRole.ADMIN} else session.nickname
     run = container.execution.create_run(
         data=container.execution_create_run_input(
             team_id=request.team_id,
             game_id=request.game_id,
-            requested_by=request.requested_by,
+            requested_by=requested_by,
             run_kind=request.run_kind,
             lobby_id=request.lobby_id,
             version_id=request.version_id,
@@ -141,13 +159,16 @@ def create_run(
 def start_single_task_run(
     game_id: str,
     request: StartSingleTaskRunRequest,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
+    _ensure_can_use_team(container=container, session=session, team_id=request.team_id)
+    requested_by = request.requested_by if session.role in {UserRole.TEACHER, UserRole.ADMIN} else session.nickname
     run = container.execution.create_run(
         data=container.execution_create_run_input(
             team_id=request.team_id,
             game_id=game_id,
-            requested_by=request.requested_by,
+            requested_by=requested_by,
             run_kind=RunKind.SINGLE_TASK,
             lobby_id=None,
             version_id=None,
@@ -161,9 +182,11 @@ def start_single_task_run(
 def stop_single_task_run(
     game_id: str,
     request: StopSingleTaskRunRequest,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     run = container.execution.get_run(run_id=request.run_id)
+    _ensure_can_manage_run(container=container, session=session, run=run)
     if run.run_kind is not RunKind.SINGLE_TASK:
         raise InvariantViolationError("Остановка single_task доступна только для single_task попытки")
     if run.game_id != game_id:
@@ -183,13 +206,17 @@ def list_single_task_attempts(
     status: RunStatus | None = None,
     limit: int = 20,
     offset: int = 0,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[RunResponse]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
     runs = container.execution.list_runs(game_id=game_id, run_kind=RunKind.SINGLE_TASK)
     runs.sort(key=lambda run: run.created_at, reverse=True)
-    if requested_by is not None and requested_by.strip():
+    if session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
+        requested = session.nickname
+        runs = [run for run in runs if run.requested_by == requested]
+    elif requested_by is not None and requested_by.strip():
         requested = requested_by.strip()
         runs = [run for run in runs if run.requested_by == requested]
     if status is not None:
@@ -200,9 +227,11 @@ def list_single_task_attempts(
 @router.get("/single-task-attempts/{attempt_id}", response_model=RunResponse)
 def get_single_task_attempt(
     attempt_id: str,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     run = container.execution.get_run(run_id=attempt_id)
+    _ensure_can_manage_run(container=container, session=session, run=run)
     if run.run_kind is not RunKind.SINGLE_TASK:
         raise InvariantViolationError("attempt_id не относится к single_task попытке")
     return _run_response(run)
@@ -211,9 +240,11 @@ def get_single_task_attempt(
 @router.get("/single-task-attempts/{attempt_id}/logs", response_model=SingleTaskAttemptLogsResponse)
 def get_single_task_attempt_logs(
     attempt_id: str,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> SingleTaskAttemptLogsResponse:
     run = container.execution.get_run(run_id=attempt_id)
+    _ensure_can_manage_run(container=container, session=session, run=run)
     if run.run_kind is not RunKind.SINGLE_TASK:
         raise InvariantViolationError("attempt_id не относится к single_task попытке")
     result_payload = run.result_payload if isinstance(run.result_payload, dict) else {}
@@ -234,6 +265,7 @@ def list_runs(
     lobby_id: str | None = None,
     run_kind: RunKind | None = None,
     status: RunStatus | None = None,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[RunResponse]:
     runs = container.execution.list_runs(
@@ -247,12 +279,24 @@ def list_runs(
 
 
 @router.post("/runs/{run_id}/queue", response_model=RunResponse)
-def queue_run(run_id: str, container: ServiceContainer = Depends(get_container)) -> RunResponse:
+def queue_run(
+    run_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> RunResponse:
+    run = container.execution.get_run(run_id=run_id)
+    _ensure_can_manage_run(container=container, session=session, run=run)
     return _run_response(container.execution.queue_run(run_id=run_id))
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunResponse)
-def cancel_run(run_id: str, container: ServiceContainer = Depends(get_container)) -> RunResponse:
+def cancel_run(
+    run_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> RunResponse:
+    run = container.execution.get_run(run_id=run_id)
+    _ensure_can_manage_run(container=container, session=session, run=run)
     return _run_response(
         container.execution.cancel_run(
             run_id=run_id,

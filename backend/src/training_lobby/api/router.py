@@ -10,6 +10,7 @@ from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event
+from shared.kernel import ForbiddenError, InvariantViolationError
 from training_lobby.api.schemas import (
     CreateLobbyRequest,
     JoinLobbyRequest,
@@ -24,6 +25,14 @@ from training_lobby.domain.model import LobbyStatus
 
 router = APIRouter(prefix="/lobbies", tags=["training_lobby"])
 _TERMINAL_LOBBY_STATUSES = {LobbyStatus.CLOSED}
+
+
+def _ensure_can_control_team(container: ServiceContainer, session: AppSession, team_id: str) -> None:
+    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
+        return
+    team = container.team_workspace.get_team(team_id)
+    if team.captain_user_id != session.nickname:
+        raise ForbiddenError("Участник может управлять только своей командой")
 
 
 def _to_response(lobby: object) -> LobbyResponse:
@@ -53,7 +62,10 @@ def _to_response(lobby: object) -> LobbyResponse:
 
 
 @router.get("", response_model=list[LobbyResponse])
-def list_lobbies(container: ServiceContainer = Depends(get_container)) -> list[LobbyResponse]:
+def list_lobbies(
+    _session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> list[LobbyResponse]:
     return [_to_response(item) for item in container.training_lobby.list_lobbies()]
 
 
@@ -61,6 +73,7 @@ def list_lobbies(container: ServiceContainer = Depends(get_container)) -> list[L
 def stream_lobbies(
     poll_interval_ms: int = 1000,
     max_events: int = 0,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> StreamingResponse:
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
@@ -127,7 +140,11 @@ def create_lobby(
 
 
 @router.get("/{lobby_id}", response_model=LobbyResponse)
-def get_lobby(lobby_id: str, container: ServiceContainer = Depends(get_container)) -> LobbyResponse:
+def get_lobby(
+    lobby_id: str,
+    _session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> LobbyResponse:
     return _to_response(container.training_lobby.get_lobby(lobby_id))
 
 
@@ -136,6 +153,7 @@ def stream_lobby(
     lobby_id: str,
     poll_interval_ms: int = 1000,
     max_events: int = 0,
+    _session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> StreamingResponse:
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
@@ -198,9 +216,10 @@ def join_lobby(
     lobby_id: str,
     team_id: str,
     request: JoinLobbyRequest,
-    _session: AppSession = Depends(get_current_session),
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyResponse:
+    _ensure_can_control_team(container=container, session=session, team_id=team_id)
     lobby = container.training_lobby.join_team(
         lobby_id=lobby_id,
         team_id=team_id,
@@ -213,9 +232,10 @@ def join_lobby(
 def leave_lobby(
     lobby_id: str,
     team_id: str,
-    _session: AppSession = Depends(get_current_session),
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyResponse:
+    _ensure_can_control_team(container=container, session=session, team_id=team_id)
     return _to_response(container.training_lobby.leave_team(lobby_id=lobby_id, team_id=team_id))
 
 
@@ -224,16 +244,24 @@ def set_ready(
     lobby_id: str,
     team_id: str,
     request: SetReadyRequest,
-    _session: AppSession = Depends(get_current_session),
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyResponse:
-    return _to_response(
-        container.training_lobby.set_ready(
-            lobby_id=lobby_id,
-            team_id=team_id,
-            ready=request.ready,
-        )
+    _ensure_can_control_team(container=container, session=session, team_id=team_id)
+    lobby = container.training_lobby.set_ready(
+        lobby_id=lobby_id,
+        team_id=team_id,
+        ready=request.ready,
     )
+    if request.ready and lobby.kind.value == "training" and lobby.status == LobbyStatus.OPEN:
+        try:
+            lobby = container.training_lobby.run_matchmaking_cycle(
+                lobby_id=lobby_id,
+                requested_by=session.nickname,
+            )
+        except InvariantViolationError:
+            pass
+    return _to_response(lobby)
 
 
 @router.post("/{lobby_id}/status", response_model=LobbyResponse)

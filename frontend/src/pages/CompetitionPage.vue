@@ -1,18 +1,19 @@
 <template>
-  <section class="agp-grid">
-    <header class="d-flex justify-content-between align-items-start gap-3">
+  <section class="agp-grid competition-page">
+    <header class="agp-card p-4 competition-hero">
       <div>
-        <h1 class="h3 mb-1">Соревнование</h1>
+        <div class="small text-muted text-uppercase fw-semibold">Competition event</div>
+        <h1 class="h3 mb-1">{{ competition?.title || 'Соревнование' }}</h1>
         <p class="text-muted mb-0">
-          Конкретная сущность `Competition`: регистрация команд, старт, статусы и competition-run'ы.
+          Турнирный экран: регистрация команд, раунды, продвижение, replay и модерация в одном месте.
         </p>
       </div>
-      <div class="btn-group">
+      <div class="btn-group competition-view-toggle">
         <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'rounds' }" @click="view = 'rounds'">
-          Rounds
+          Раунды
         </button>
         <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'bracket' }" @click="view = 'bracket'">
-          Bracket
+          Сетка
         </button>
       </div>
     </header>
@@ -21,22 +22,43 @@
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="competition">
-      <article class="agp-card p-3">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <div>
-            <div class="fw-semibold">{{ competition.title }}</div>
-            <div class="small text-muted">
-              competition_id: <span class="mono">{{ competition.competition_id }}</span>
-              | status: <span class="mono">{{ competition.status }}</span>
-              | format: <span class="mono">{{ competition.format }}</span>
-              | live: <span class="mono">{{ competitionLiveMode }}</span>
+      <article class="agp-card p-3 competition-command-center">
+        <div class="competition-command-main">
+          <div class="competition-status-line">
+            <span class="agp-pill" :class="competitionStatusToneClass">{{ competitionStatusLabel }}</span>
+            <span class="agp-pill agp-pill--neutral">{{ competition.format }}</span>
+            <span class="agp-pill agp-pill--neutral">live: {{ competitionLiveLabel }}</span>
+          </div>
+          <div class="small text-muted mt-2">
+            id <span class="mono">{{ competition.competition_id }}</span> · версия <span class="mono">{{ shortVersionId }}</span>
+          </div>
+          <div v-if="competition.pending_reason" class="competition-warning mt-2">
+            <span class="fw-semibold">Ожидает решения:</span> {{ competition.pending_reason }}
+          </div>
+          <div class="competition-stat-grid mt-3">
+            <div class="competition-stat">
+              <span>участники</span>
+              <strong>{{ competition.entrants.length }}</strong>
             </div>
-            <div class="small text-muted">
-              match_size: <span class="mono">{{ competition.match_size }}</span>
-              | advancement_top_k: <span class="mono">{{ competition.advancement_top_k }}</span>
-              | tie_break_policy: <span class="mono">{{ competition.tie_break_policy }}</span>
+            <div class="competition-stat">
+              <span>готовы</span>
+              <strong>{{ readyEntrantsCount }}</strong>
+            </div>
+            <div class="competition-stat">
+              <span>забанены</span>
+              <strong>{{ bannedEntrantsCount }}</strong>
+            </div>
+            <div class="competition-stat">
+              <span>матч</span>
+              <strong>{{ competition.match_size }} → top-{{ competition.advancement_top_k }}</strong>
             </div>
           </div>
+          <div class="small mt-2" v-if="competition.winner_team_ids.length">
+            Победители:
+            <span class="mono">{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</span>
+          </div>
+        </div>
+        <div class="competition-actions">
           <div class="d-flex gap-2">
             <RouterLink
               v-if="competition"
@@ -49,31 +71,24 @@
               {{ isCreatingTeam ? 'Создание...' : 'Создать команду' }}
             </button>
             <button class="btn btn-sm btn-dark" :disabled="!canRegister" @click="registerSelectedTeam">
-              Register Team
+              Зарегистрировать
             </button>
             <button class="btn btn-sm btn-outline-primary" :disabled="!canStart" @click="startCurrentCompetition">
-              {{ isStarting ? 'Старт...' : 'Start' }}
+              {{ isStarting ? 'Старт...' : 'Старт' }}
             </button>
             <button class="btn btn-sm btn-outline-success" :disabled="!canAdvance" @click="advanceCurrentCompetition">
-              {{ isAdvancing ? 'Обработка...' : 'Advance Round' }}
+              {{ isAdvancing ? 'Обработка...' : 'Следующий раунд' }}
             </button>
             <button class="btn btn-sm btn-outline-warning" :disabled="!canPause" @click="pauseCurrentCompetition">
-              Pause
+              Пауза
             </button>
             <button class="btn btn-sm btn-outline-danger" :disabled="!canFinish" @click="finishCurrentCompetition">
-              Finish
+              Завершить
             </button>
           </div>
         </div>
         <div v-if="!canModerate" class="small text-warning-emphasis mt-2">
           Управление соревнованием и анти-плагиатом доступно только teacher/admin.
-        </div>
-        <div class="small mt-2" v-if="competition.pending_reason">
-          <span class="text-warning-emphasis">Pending:</span> {{ competition.pending_reason }}
-        </div>
-        <div class="small mt-1" v-if="competition.winner_team_ids.length">
-          Победители:
-          <span class="mono">{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</span>
         </div>
       </article>
 
@@ -531,6 +546,32 @@ const canSaveDraftSettings = computed(() => {
   return titleOk && matchSizeOk && topKOk;
 });
 const inspectedReplaySummary = computed(() => JSON.stringify(inspectedReplay.value?.summary ?? {}, null, 2));
+const readyEntrantsCount = computed(() => competition.value?.entrants.filter((entrant) => entrant.ready && !entrant.banned).length ?? 0);
+const bannedEntrantsCount = computed(() => competition.value?.entrants.filter((entrant) => entrant.banned).length ?? 0);
+const competitionStatusLabel = computed(() => {
+  const status = competition.value?.status;
+  if (status === 'draft') return 'черновик';
+  if (status === 'running') return 'идет';
+  if (status === 'paused') return 'пауза';
+  if (status === 'finished') return 'завершено';
+  return 'не загружено';
+});
+const competitionStatusToneClass = computed(() => {
+  const status = competition.value?.status;
+  if (status === 'running') return 'agp-pill--primary';
+  if (status === 'paused' || status === 'draft') return 'agp-pill--warning';
+  if (status === 'finished') return 'agp-pill--neutral';
+  return 'agp-pill--neutral';
+});
+const competitionLiveLabel = computed(() => {
+  if (competitionLiveMode.value === 'sse') return 'stream';
+  if (competitionLiveMode.value === 'polling') return 'fallback polling';
+  return 'ожидание';
+});
+const shortVersionId = computed(() => {
+  const versionId = competition.value?.game_version_id ?? '';
+  return versionId.length > 14 ? `${versionId.slice(0, 8)}…${versionId.slice(-4)}` : versionId;
+});
 
 function teamName(teamId: string): string {
   const found = teamsByGame.value.find((item) => item.team_id === teamId);
@@ -933,3 +974,95 @@ onUnmounted(() => {
   stopCompetitionLiveUpdates();
 });
 </script>
+
+<style scoped>
+.competition-page {
+  gap: 0.9rem;
+}
+
+.competition-hero,
+.competition-command-center {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.competition-hero {
+  background: #f8fafc;
+}
+
+.competition-view-toggle {
+  flex-shrink: 0;
+}
+
+.competition-command-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.competition-status-line,
+.competition-actions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.competition-actions {
+  flex: 0 1 28rem;
+}
+
+.competition-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.competition-stat {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 1rem;
+  background: rgba(248, 250, 252, 0.78);
+  padding: 0.75rem;
+}
+
+.competition-stat span {
+  display: block;
+  color: var(--agp-muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.competition-stat strong {
+  display: block;
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.competition-warning {
+  border: 1px solid rgba(217, 119, 6, 0.26);
+  border-radius: 0.9rem;
+  background: rgba(255, 251, 235, 0.88);
+  color: #8a4b0c;
+  padding: 0.65rem 0.8rem;
+}
+
+@media (max-width: 1080px) {
+  .competition-hero,
+  .competition-command-center {
+    flex-direction: column;
+  }
+
+  .competition-actions {
+    flex-basis: auto;
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .competition-stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+</style>

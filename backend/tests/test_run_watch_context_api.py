@@ -1,9 +1,10 @@
-def test_run_watch_context_returns_renderer_metadata(client) -> None:
-    games = client.get("/api/v1/games").json()
+def test_run_watch_context_returns_renderer_metadata(client, teacher_headers) -> None:
+    games = client.get("/api/v1/games", headers=teacher_headers).json()
     game = next(item for item in games if item["slug"] == "maze_escape_v1")
 
     team = client.post(
         "/api/v1/teams",
+        headers=teacher_headers,
         json={
             "game_id": game["game_id"],
             "name": "Watch Team",
@@ -13,6 +14,7 @@ def test_run_watch_context_returns_renderer_metadata(client) -> None:
 
     run = client.post(
         "/api/v1/runs",
+        headers=teacher_headers,
         json={
             "team_id": team["team_id"],
             "game_id": game["game_id"],
@@ -30,6 +32,13 @@ def test_run_watch_context_returns_renderer_metadata(client) -> None:
     assert payload["renderer_entrypoint"] == "renderer/index.html"
     assert payload["renderer_url"] == "/api/v1/renderers/maze_escape_v1/renderer/index.html"
     assert payload["renderer_protocol"] == "v1"
+
+
+def test_private_catalog_requires_session(client) -> None:
+    response = client.get("/api/v1/games", headers={"X-Test-No-Session": "1"})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
 
 
 def test_renderer_asset_endpoint_serves_renderer_files(client) -> None:

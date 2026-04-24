@@ -21,6 +21,7 @@ interface SessionState {
   role: UserRole;
   provider: AuthProvider;
   isAuthenticated: boolean;
+  isBootstrapped: boolean;
   options: AuthOptionsDto | null;
 }
 
@@ -31,6 +32,7 @@ const DEFAULT_SESSION: SessionState = {
   role: 'student',
   provider: 'dev',
   isAuthenticated: false,
+  isBootstrapped: false,
   options: null,
 };
 
@@ -47,16 +49,22 @@ export const useSessionStore = defineStore('session', {
   state: (): SessionState => ({ ...DEFAULT_SESSION }),
   actions: {
     async bootstrap(): Promise<void> {
-      this.options = await getAuthOptions();
-      const stored = getStoredSessionId();
-      if (!stored) {
-        return;
-      }
       try {
-        const session = await me();
-        applySession(this, session);
+        this.options = await getAuthOptions();
+        const stored = getStoredSessionId();
+        if (!stored) {
+          return;
+        }
+        try {
+          const session = await me();
+          applySession(this, session);
+        } catch {
+          clearStoredSessionId();
+        }
       } catch {
-        clearStoredSessionId();
+        this.options = { dev_login_enabled: false, geekclass_enabled: false };
+      } finally {
+        this.isBootstrapped = true;
       }
     },
 
@@ -80,7 +88,7 @@ export const useSessionStore = defineStore('session', {
         }
       }
       clearStoredSessionId();
-      this.$patch({ ...DEFAULT_SESSION, options: this.options });
+      this.$patch({ ...DEFAULT_SESSION, options: this.options, isBootstrapped: true });
     },
   },
 });

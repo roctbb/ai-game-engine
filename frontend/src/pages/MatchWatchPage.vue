@@ -1,6 +1,6 @@
 <template>
-  <section class="agp-grid agp-task-workspace agp-watch-page">
-    <header class="agp-task-header">
+  <section class="agp-grid agp-task-workspace agp-watch-page" :class="{ 'agp-watch-page--embedded': isEmbedded }">
+    <header v-if="!isEmbedded" class="agp-task-header">
       <div class="agp-task-header-main">
         <RouterLink to="/lobbies" class="agp-back-link" title="К лобби" aria-label="К лобби">←</RouterLink>
         <h1>{{ watchContext?.game_slug || 'Просмотр запуска' }}</h1>
@@ -111,7 +111,7 @@
           </details>
         </article>
 
-        <aside class="agp-card p-3 agp-watch-side-card">
+        <aside v-if="!isEmbedded" class="agp-card p-3 agp-watch-side-card">
           <h2 class="h6 mb-3">Состояние</h2>
           <div class="agp-watch-stat">
             <span class="text-muted small">Статус запуска</span>
@@ -306,6 +306,7 @@ interface ReplayFrameView {
 }
 
 const route = useRoute();
+const isEmbedded = computed(() => route.query.embed === '1');
 
 const watchContext = ref<RunWatchContextDto | null>(null);
 const run = ref<RunDto | null>(null);
@@ -399,6 +400,10 @@ const canStepBackward = computed(() => replayFrames.value.length > 0 && replayFr
 const canStepForward = computed(
   () => replayFrames.value.length > 0 && replayFrameIndex.value < replayFrames.value.length - 1,
 );
+const shouldAutoplayReplay = computed(() => isEmbedded.value || route.query.autoplay === '1');
+const isReplayAtLastFrame = computed(
+  () => replayFrames.value.length === 0 || replayFrameIndex.value >= replayFrames.value.length - 1,
+);
 
 function isTerminalStatus(status: RunDto['status']): boolean {
   return ['finished', 'failed', 'timeout', 'canceled'].includes(status);
@@ -466,7 +471,9 @@ function sendRendererStateAndResult(): void {
       frame: rendererFrame,
     },
   });
-  if (isTerminalStatus(run.value.status)) {
+  const canSendTerminalResult =
+    replay.value !== null ? isReplayAtLastFrame.value : !shouldAutoplayReplay.value;
+  if (isTerminalStatus(run.value.status) && canSendTerminalResult) {
     sendToRenderer({
       type: 'agp.renderer.result',
       payload:
@@ -597,8 +604,11 @@ async function ensureReplayLoaded(runId: string): Promise<void> {
     replay.value = await getRunReplay(runId);
     clampReplayFrameIndex();
     if (replayFrames.value.length > 0) {
-      replayFrameIndex.value = replayFrames.value.length - 1;
+      replayFrameIndex.value = shouldAutoplayReplay.value ? 0 : replayFrames.value.length - 1;
       sendRendererStateAndResult();
+      if (shouldAutoplayReplay.value && replayFrames.value.length > 1) {
+        startReplayPlayback();
+      }
     }
   } catch (error) {
     replayError.value = error instanceof Error ? error.message : 'Replay пока недоступен';
@@ -780,6 +790,24 @@ onUnmounted(() => {
 <style scoped>
 .agp-watch-columns {
   grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 0.8fr);
+}
+
+.agp-watch-page--embedded {
+  height: 100dvh;
+  background: #030712;
+}
+
+.agp-watch-page--embedded .agp-watch-columns {
+  height: 100dvh;
+  grid-template-columns: 1fr;
+}
+
+.agp-watch-page--embedded .agp-viewer-card {
+  border: 0;
+}
+
+.agp-watch-page--embedded .agp-viewer-card .agp-viewer-frame {
+  height: 100dvh !important;
 }
 
 .agp-watch-page .agp-viewer-card .agp-viewer-frame {

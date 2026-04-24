@@ -4,6 +4,12 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', redirect: '/tasks' },
+    {
+      path: '/login',
+      name: 'login',
+      meta: { public: true },
+      component: () => import('../pages/LoginPage.vue'),
+    },
     { path: '/tasks', name: 'tasks', component: () => import('../pages/TasksCatalogPage.vue') },
     { path: '/lobbies', name: 'lobbies', component: () => import('../pages/LobbiesPage.vue') },
     { path: '/lobbies/new', name: 'lobby-create', component: () => import('../pages/LobbyCreatePage.vue') },
@@ -11,7 +17,12 @@ export const router = createRouter({
     { path: '/workspace/:teamId', name: 'workspace', component: () => import('../pages/TeamWorkspacePage.vue') },
     { path: '/tasks/:gameId/run', name: 'task-run', component: () => import('../pages/TaskRunPage.vue') },
     { path: '/tasks/:gameId/attempts', name: 'task-attempts', component: () => import('../pages/SingleTaskAttemptsPage.vue') },
-    { path: '/runs/:runId/watch', name: 'run-watch', component: () => import('../pages/MatchWatchPage.vue') },
+    {
+      path: '/runs/:runId/watch',
+      name: 'run-watch',
+      meta: { public: true },
+      component: () => import('../pages/MatchWatchPage.vue'),
+    },
     { path: '/replays', name: 'replays', component: () => import('../pages/ReplayCatalogPage.vue') },
     { path: '/lobbies/:lobbyId', name: 'lobby', component: () => import('../pages/LobbyPage.vue') },
     { path: '/competitions/:competitionId', name: 'competition', component: () => import('../pages/CompetitionPage.vue') },

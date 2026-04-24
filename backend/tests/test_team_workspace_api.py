@@ -1,14 +1,27 @@
+def _auth_headers(client, nickname: str) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/dev-login",
+        json={"nickname": nickname, "role": "student"},
+    )
+    assert response.status_code == 200
+    return {"X-Session-Id": response.json()["session_id"]}
+
+
 def _create_maze_team(client, captain_user_id: str, name: str) -> dict:
-    games = client.get("/api/v1/games").json()
+    headers = _auth_headers(client, captain_user_id)
+    games = client.get("/api/v1/games", headers=headers).json()
     game = next(item for item in games if item["slug"] == "maze_escape_v1")
-    return client.post(
+    team = client.post(
         "/api/v1/teams",
+        headers=headers,
         json={
             "game_id": game["game_id"],
             "name": name,
             "captain_user_id": captain_user_id,
         },
     ).json()
+    team["_headers"] = headers
+    return team
 
 
 def test_workspace_endpoint_returns_slot_code_and_required_flag(client) -> None:
@@ -20,6 +33,7 @@ def test_workspace_endpoint_returns_slot_code_and_required_flag(client) -> None:
 
     client.put(
         f"/api/v1/teams/{team['team_id']}/slots/agent",
+        headers=team["_headers"],
         json={
             "actor_user_id": "captain-workspace",
             "code": "def make_move(state):\n    return 'right'\n",
@@ -27,13 +41,14 @@ def test_workspace_endpoint_returns_slot_code_and_required_flag(client) -> None:
     )
     client.put(
         f"/api/v1/teams/{team['team_id']}/slots/legacy_slot",
+        headers=team["_headers"],
         json={
             "actor_user_id": "captain-workspace",
             "code": "print('legacy')\n",
         },
     )
 
-    workspace = client.get(f"/api/v1/teams/{team['team_id']}/workspace")
+    workspace = client.get(f"/api/v1/teams/{team['team_id']}/workspace", headers=team["_headers"])
     assert workspace.status_code == 200
     payload = workspace.json()
     assert payload["team_id"] == team["team_id"]
@@ -62,6 +77,7 @@ def test_workspace_rejects_input_call_in_user_code(client) -> None:
 
     response = client.put(
         f"/api/v1/teams/{team['team_id']}/slots/agent",
+        headers=team["_headers"],
         json={
             "actor_user_id": "captain-input-guard",
             "code": "name = input('who?')\nprint(name)\n",
@@ -83,6 +99,7 @@ def test_workspace_rejects_builtins_input_alias_calls(client) -> None:
 
     via_module = client.put(
         f"/api/v1/teams/{team['team_id']}/slots/agent",
+        headers=team["_headers"],
         json={
             "actor_user_id": "captain-builtins-input",
             "code": "import builtins\nname = builtins.input('who?')\nprint(name)\n",
@@ -93,6 +110,7 @@ def test_workspace_rejects_builtins_input_alias_calls(client) -> None:
 
     via_import_alias = client.put(
         f"/api/v1/teams/{team['team_id']}/slots/agent",
+        headers=team["_headers"],
         json={
             "actor_user_id": "captain-builtins-input",
             "code": "from builtins import input as ask\nname = ask('who?')\nprint(name)\n",
@@ -103,6 +121,7 @@ def test_workspace_rejects_builtins_input_alias_calls(client) -> None:
 
     via_dynamic_import = client.put(
         f"/api/v1/teams/{team['team_id']}/slots/agent",
+        headers=team["_headers"],
         json={
             "actor_user_id": "captain-builtins-input",
             "code": "name = __import__('builtins').input('who?')\nprint(name)\n",
@@ -121,6 +140,7 @@ def test_workspace_allows_literal_input_text_in_invalid_code(client) -> None:
 
     response = client.put(
         f"/api/v1/teams/{team['team_id']}/slots/agent",
+        headers=team["_headers"],
         json={
             "actor_user_id": "captain-input-literal",
             "code": "def broken()\n    return 'right'  # input(\n",
@@ -129,7 +149,7 @@ def test_workspace_allows_literal_input_text_in_invalid_code(client) -> None:
 
     assert response.status_code == 200, response.json()
 
-    workspace = client.get(f"/api/v1/teams/{team['team_id']}/workspace")
+    workspace = client.get(f"/api/v1/teams/{team['team_id']}/workspace", headers=team["_headers"])
     assert workspace.status_code == 200, workspace.json()
     slot = next(item for item in workspace.json()["slot_states"] if item["slot_key"] == "agent")
     assert slot["state"] == "filled"

@@ -19,6 +19,23 @@ def container():
 @pytest.fixture()
 def client(container):
     with TestClient(app) as test_client:
+        login = test_client.post(
+            "/api/v1/auth/dev-login",
+            json={"nickname": "test-teacher", "role": "teacher"},
+        )
+        assert login.status_code == 200
+        default_session_id = login.json()["session_id"]
+        original_request = test_client.request
+
+        def request_with_default_session(method, url, **kwargs):
+            headers = dict(kwargs.pop("headers", {}) or {})
+            skip_session = headers.pop("X-Test-No-Session", "") == "1"
+            if not skip_session and "X-Session-Id" not in headers and "X-Dev-Session" not in headers:
+                headers["X-Session-Id"] = default_session_id
+            kwargs["headers"] = headers
+            return original_request(method, url, **kwargs)
+
+        test_client.request = request_with_default_session
         yield test_client
 
 

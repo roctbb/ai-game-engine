@@ -31,7 +31,14 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
         app.dependency_overrides[get_container] = lambda: container
 
         with TestClient(app) as client:
-            games = client.get('/api/v1/games').json()
+            login = client.post(
+                '/api/v1/auth/dev-login',
+                json={'nickname': 'captain-sql', 'role': 'teacher'},
+            )
+            assert login.status_code == 200
+            headers = {'X-Session-Id': login.json()['session_id']}
+
+            games = client.get('/api/v1/games', headers=headers).json()
             maze_game = next(item for item in games if item['slug'] == 'maze_escape_v1')
 
             team = client.post(
@@ -41,11 +48,13 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
                     'name': 'SQL Team',
                     'captain_user_id': 'captain-sql',
                 },
+                headers=headers,
             ).json()
 
             client.put(
                 f"/api/v1/teams/{team['team_id']}/slots/agent",
                 json={'actor_user_id': 'captain-sql', 'code': "print('sql mode')"},
+                headers=headers,
             )
 
             run = client.post(
@@ -56,9 +65,10 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
                     'requested_by': 'captain-sql',
                     'run_kind': 'single_task',
                 },
+                headers=headers,
             ).json()
 
-            queued = client.post(f"/api/v1/runs/{run['run_id']}/queue")
+            queued = client.post(f"/api/v1/runs/{run['run_id']}/queue", headers=headers)
             assert queued.status_code == 200
             assert queued.json()['status'] == 'queued'
             assert queued.json()['snapshot_id'] is not None

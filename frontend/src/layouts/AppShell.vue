@@ -74,7 +74,10 @@ const roleInput = ref<'student' | 'teacher' | 'admin'>('teacher');
 const canManage = computed(
   () => sessionStore.role === 'teacher' || sessionStore.role === 'admin'
 );
-const isChromeHiddenRoute = computed(() => String(route.name ?? '') === 'task-run');
+const isEmbeddedRoute = computed(() => route.query.embed === '1');
+const isChromeHiddenRoute = computed(() =>
+  ['login', 'task-run', 'run-watch'].includes(String(route.name ?? '')) || isEmbeddedRoute.value
+);
 const isWorkspaceRoute = computed(() =>
   ['task-run', 'lobby', 'run-watch', 'competition', 'workspace'].includes(String(route.name ?? ''))
 );

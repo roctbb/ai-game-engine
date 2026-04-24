@@ -156,5 +156,6 @@ def test_lobby_participant_actions_require_session(client, teacher_headers) -> N
     join_without_session = client.post(
         f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
         json={},
+        headers={"X-Test-No-Session": "1"},
     )
-    assert join_without_session.status_code == 422
+    assert join_without_session.status_code == 401

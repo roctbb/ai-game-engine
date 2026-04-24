@@ -208,9 +208,6 @@ def test_snapshot_boundary_is_independent_for_same_team_in_multiple_lobbies(clie
         assert ready_response.status_code == 200, ready_response.json()
 
     _join_and_ready(lobby_a["lobby_id"], team_a["team_id"])
-    _join_and_ready(lobby_a["lobby_id"], team_b["team_id"])
-    _join_and_ready(lobby_b["lobby_id"], team_a["team_id"])
-    _join_and_ready(lobby_b["lobby_id"], team_c["team_id"])
 
     client.put(
         f"/api/v1/teams/{team_a['team_id']}/slots/bot",
@@ -220,12 +217,7 @@ def test_snapshot_boundary_is_independent_for_same_team_in_multiple_lobbies(clie
         },
     )
 
-    tick_a = client.post(
-        f"/api/v1/lobbies/{lobby_a['lobby_id']}/matchmaking/tick",
-        json={"requested_by": "teacher-a"},
-        headers=teacher_headers,
-    )
-    assert tick_a.status_code == 200, tick_a.json()
+    _join_and_ready(lobby_a["lobby_id"], team_b["team_id"])
 
     runs_lobby_a = client.get(f"/api/v1/runs?lobby_id={lobby_a['lobby_id']}").json()
     run_a = next(item for item in runs_lobby_a if item["team_id"] == team_a["team_id"])
@@ -240,22 +232,27 @@ def test_snapshot_boundary_is_independent_for_same_team_in_multiple_lobbies(clie
         },
     )
 
-    tick_b = client.post(
-        f"/api/v1/lobbies/{lobby_b['lobby_id']}/matchmaking/tick",
-        json={"requested_by": "teacher-b"},
-        headers=teacher_headers,
+    _join_and_ready(lobby_b["lobby_id"], team_a["team_id"])
+
+    client.put(
+        f"/api/v1/teams/{team_a['team_id']}/slots/bot",
+        json={
+            "actor_user_id": "cap-alpha",
+            "code": "def make_move(state, memory):\n    return {'row': 3, 'col': 3}, memory\n",
+        },
     )
-    assert tick_b.status_code == 200, tick_b.json()
+
+    _join_and_ready(lobby_b["lobby_id"], team_c["team_id"])
 
     runs_lobby_b = client.get(f"/api/v1/runs?lobby_id={lobby_b['lobby_id']}").json()
     run_b = next(item for item in runs_lobby_b if item["team_id"] == team_a["team_id"])
     assert run_b["status"] == "queued"
-    assert run_b["revisions_by_slot"]["bot"] == 3
+    assert run_b["revisions_by_slot"]["bot"] == 4
 
     context_a = client.get(f"/api/v1/internal/runs/{run_a['run_id']}/execution-context").json()
     context_b = client.get(f"/api/v1/internal/runs/{run_b['run_id']}/execution-context").json()
 
     assert "row': 1" in context_a["codes_by_slot"]["bot"]
     assert "col': 1" in context_a["codes_by_slot"]["bot"]
-    assert "row': 2" in context_b["codes_by_slot"]["bot"]
-    assert "col': 2" in context_b["codes_by_slot"]["bot"]
+    assert "row': 3" in context_b["codes_by_slot"]["bot"]
+    assert "col': 3" in context_b["codes_by_slot"]["bot"]
