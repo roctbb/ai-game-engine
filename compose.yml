@@ -1,47 +1,122 @@
 services:
-  redis:
-    container_name: engine-redis
-    image: redis:7-alpine
-    command: redis-server
-    ports:
-      - 6379:6379
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   postgres:
-    container_name: engine-postgres
     image: postgres:16-alpine
+    container_name: ai-game-postgres-v2
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: game-engine
     ports:
-      - 5432:5432
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "/usr/local/bin/pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
-      timeout: 10s
-      retries: 120
+      timeout: 5s
+      retries: 30
 
-  game-engine:
-    container_name: engine-server
-    build: ./
-    command: sh /app/start.sh
-    environment:
-      DB_LOGIN: postgres
-      DB_PASSWORD: postgres
-      DB_DATABASE: game-engine
-      DB_HOST: postgres
-      REDIS_HOST: redis
+  redis:
+    image: redis:7-alpine
+    container_name: ai-game-redis-v2
+    command: redis-server
     ports:
-      - 4000:4000
-    volumes:
-      - ./:/app
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ai-game-backend-v2
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: game-engine
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://redis:6379/0
+      SCHEDULER_SERVICE_URL: http://scheduler-service:8010
+      BUILDER_SERVICE_URL: http://builder-service:8030
+      CORE_REPOSITORY_BACKEND: sqlalchemy
+      CORE_REPOSITORY_AUTO_CREATE_TABLES: "true"
+      EXECUTION_REPOSITORY_BACKEND: sqlalchemy
+      EXECUTION_REPOSITORY_AUTO_CREATE_TABLES: "true"
+      GAMES_ROOT: /app/games
+    ports:
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  scheduler-service:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: ai-game-scheduler-v2
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8010:8010"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker-service:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: ai-game-worker-v2
+    environment:
+      SCHEDULER_URL: http://scheduler-service:8010
+      BACKEND_API_URL: http://backend-api:8000/api/v1
+      WORKER_ID: worker-compose-1
+      HOSTNAME: worker-compose-1
+      WORKER_LABELS: '{"region":"local","pool":"compose"}'
+      GAMES_ROOT: /app/games
+      EXECUTION_MODE: docker
+      DOCKER_BINARY: docker
+      DOCKER_IMAGE: python:3.12-slim
+      DOCKER_NETWORK_MODE: none
+      AUTO_POLL_ENABLED: "true"
+      AUTO_POLL_INTERVAL_SECONDS: "1"
+      AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8020:8020"
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-api:
+        condition: service_started
+      scheduler-service:
+        condition: service_started
+
+  builder-service:
+    build:
+      context: .
+      dockerfile: services/builder/Dockerfile
+    container_name: ai-game-builder-v2
+    environment:
+      BACKEND_API_URL: http://backend-api:8000/api/v1
+    ports:
+      - "8030:8030"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: ai-game-frontend-v2
+    ports:
+      - "8080:80"
+    depends_on:
+      backend-api:
         condition: service_started

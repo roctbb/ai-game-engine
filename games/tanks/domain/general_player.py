@@ -44,7 +44,12 @@ class GeneralPlayer(Object):
             self.history.append("no_choice")
             return
 
-        parts = choice.split(" ")
+        if not isinstance(choice, str):
+            self.errors.append(Exception("Invalid choice type: " + str(type(choice).__name__)))
+            self.history.append("invalid_choice")
+            return
+
+        parts = choice.split()
 
         if not Decision.has_value(parts[0]):
             self.errors.append(Exception("Invalid choice: " + choice))

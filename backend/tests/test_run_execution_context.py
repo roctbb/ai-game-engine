@@ -1,0 +1,67 @@
+def test_worker_execution_context_contains_manifest_and_snapshot(client) -> None:
+    games = client.get("/api/v1/games").json()
+    game = next(item for item in games if item["slug"] == "maze_escape_v1")
+
+    team = client.post(
+        "/api/v1/teams",
+        json={
+            "game_id": game["game_id"],
+            "name": "Execution Context Team",
+            "captain_user_id": "captain-context",
+        },
+    ).json()
+    client.put(
+        f"/api/v1/teams/{team['team_id']}/slots/agent",
+        json={"actor_user_id": "captain-context", "code": "print('context')"},
+    )
+
+    run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "captain-context",
+            "run_kind": "single_task",
+        },
+    ).json()
+    queued = client.post(f"/api/v1/runs/{run['run_id']}/queue").json()
+
+    context = client.get(f"/api/v1/internal/runs/{run['run_id']}/execution-context")
+
+    assert context.status_code == 200
+    payload = context.json()
+    assert payload["run_id"] == run["run_id"]
+    assert payload["team_id"] == team["team_id"]
+    assert payload["game_slug"] == "maze_escape_v1"
+    assert payload["game_package_dir"] == "maze_escape"
+    assert payload["code_api_mode"] == "script_based"
+    assert payload["engine_entrypoint"] == "engine.py"
+    assert payload["snapshot_id"] == queued["snapshot_id"]
+    assert payload["codes_by_slot"]["agent"] == "print('context')\n"
+
+
+def test_worker_execution_context_requires_queued_run(client) -> None:
+    games = client.get("/api/v1/games").json()
+    game = next(item for item in games if item["slug"] == "maze_escape_v1")
+    team = client.post(
+        "/api/v1/teams",
+        json={
+            "game_id": game["game_id"],
+            "name": "Unqueued Team",
+            "captain_user_id": "captain-unqueued",
+        },
+    ).json()
+    run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "captain-unqueued",
+            "run_kind": "single_task",
+        },
+    ).json()
+
+    response = client.get(f"/api/v1/internal/runs/{run['run_id']}/execution-context")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invariant_violation"

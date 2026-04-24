@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Танки CTF</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #0f1724;
+      color: #eaf1ff;
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+    }
+    .wrap { width: min(900px, 96vw); }
+    .board { background: #0b111b; border: 1px solid #2f3d55; border-radius: 14px; overflow: hidden; }
+    .status { margin-top: 8px; font-size: 13px; color: #c5d4ea; }
+    .details { margin-top: 4px; font-size: 12px; color: #95a9c8; min-height: 16px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <svg id="board" class="board" viewBox="0 0 900 500" role="img" aria-label="Tanks CTF board"></svg>
+    <div class="status" id="status">Renderer: initializing</div>
+    <div class="details mono" id="details"></div>
+  </div>
+  <script>
+    const WIDTH = 9;
+    const HEIGHT = 7;
+    const CELL = 70;
+
+    const boardEl = document.getElementById("board");
+    const statusEl = document.getElementById("status");
+    const detailsEl = document.getElementById("details");
+
+    let runId = "";
+
+    function setStatus(text, details) {
+      statusEl.textContent = text;
+      detailsEl.textContent = details || "";
+    }
+
+    function svg(tag) {
+      return document.createElementNS("http://www.w3.org/2000/svg", tag);
+    }
+
+    function draw(frame) {
+      boardEl.replaceChildren();
+      const player = frame && typeof frame.player === "object" ? frame.player : { x: 1, y: 3 };
+      const enemy = frame && typeof frame.enemy === "object" ? frame.enemy : { x: 7, y: 3 };
+      const flag = frame && typeof frame.flag === "object" ? frame.flag : { x: 4, y: 3, carrier: "none" };
+      const winner = typeof frame?.winner === "string" ? frame.winner : "none";
+
+      const bg = svg("rect");
+      bg.setAttribute("x", "0");
+      bg.setAttribute("y", "0");
+      bg.setAttribute("width", "900");
+      bg.setAttribute("height", "500");
+      bg.setAttribute("fill", "#101a28");
+      boardEl.appendChild(bg);
+
+      for (let y = 0; y < HEIGHT; y += 1) {
+        for (let x = 0; x < WIDTH; x += 1) {
+          const cell = svg("rect");
+          cell.setAttribute("x", String(100 + x * CELL));
+          cell.setAttribute("y", String(40 + y * CELL));
+          cell.setAttribute("width", String(CELL - 4));
+          cell.setAttribute("height", String(CELL - 4));
+          cell.setAttribute("fill", "#162336");
+          cell.setAttribute("stroke", "#2f3d55");
+          boardEl.appendChild(cell);
+        }
+      }
+
+      const playerTank = svg("rect");
+      playerTank.setAttribute("x", String(100 + player.x * CELL + 14));
+      playerTank.setAttribute("y", String(40 + player.y * CELL + 14));
+      playerTank.setAttribute("width", "40");
+      playerTank.setAttribute("height", "40");
+      playerTank.setAttribute("rx", "8");
+      playerTank.setAttribute("fill", "#60a5fa");
+      boardEl.appendChild(playerTank);
+
+      const enemyTank = svg("rect");
+      enemyTank.setAttribute("x", String(100 + enemy.x * CELL + 14));
+      enemyTank.setAttribute("y", String(40 + enemy.y * CELL + 14));
+      enemyTank.setAttribute("width", "40");
+      enemyTank.setAttribute("height", "40");
+      enemyTank.setAttribute("rx", "8");
+      enemyTank.setAttribute("fill", "#f87171");
+      boardEl.appendChild(enemyTank);
+
+      const flagDot = svg("circle");
+      flagDot.setAttribute("cx", String(100 + flag.x * CELL + 33));
+      flagDot.setAttribute("cy", String(40 + flag.y * CELL + 33));
+      flagDot.setAttribute("r", "10");
+      flagDot.setAttribute("fill", flag.carrier === "player" ? "#60a5fa" : flag.carrier === "enemy" ? "#f87171" : "#facc15");
+      boardEl.appendChild(flagDot);
+
+      const info = svg("text");
+      info.setAttribute("x", "16");
+      info.setAttribute("y", "24");
+      info.setAttribute("font-size", "13");
+      info.setAttribute("fill", "#eaf1ff");
+      info.textContent = `flag_carrier=${flag.carrier || "none"} winner=${winner}`;
+      boardEl.appendChild(info);
+    }
+
+    function onState(payload) {
+      const tick = Number.isFinite(payload?.tick) ? payload.tick : "-";
+      const phase = typeof payload?.phase === "string" ? payload.phase : "unknown";
+      const frame = payload && typeof payload.frame === "object" ? payload.frame : {};
+      draw(frame);
+      setStatus(`Renderer: state update (${phase})`, `run_id=${runId || "-"} tick=${tick}`);
+    }
+
+    function onResult(payload) {
+      const status = typeof payload?.status === "string" ? payload.status : "finished";
+      const metrics = payload && typeof payload.metrics === "object" ? payload.metrics : {};
+      const winner = typeof metrics.winner === "string" ? metrics.winner : "draw";
+      setStatus("Renderer: result received", `run_id=${runId || "-"} status=${status} winner=${winner}`);
+    }
+
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (!message || typeof message !== "object" || typeof message.type !== "string") return;
+      if (message.type === "agp.renderer.init") {
+        runId = message.payload && message.payload.runId ? String(message.payload.runId) : "";
+        setStatus("Renderer: init received", runId ? `run_id=${runId}` : "");
+      } else if (message.type === "agp.renderer.state") {
+        onState(message.payload || {});
+      } else if (message.type === "agp.renderer.result") {
+        onResult(message.payload || {});
+      }
+    });
+
+    draw({ player: { x: 1, y: 3 }, enemy: { x: 7, y: 3 }, flag: { x: 4, y: 3, carrier: "none" }, winner: "none" });
+    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.1.0" } }, "*");
+    setStatus("Renderer: ready");
+  </script>
+</body>
+</html>

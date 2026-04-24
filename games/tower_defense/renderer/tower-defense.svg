@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" role="img" aria-label="Tower defense board">
+  <rect width="360" height="240" fill="#f5f7ed"/>
+  <path d="M0 126c60-34 105-34 160 0s105 34 200 0" fill="none" stroke="#94a3b8" stroke-width="24"/>
+  <g fill="#0f766e">
+    <rect x="42" y="42" width="34" height="48" rx="4"/>
+    <rect x="192" y="40" width="34" height="48" rx="4"/>
+    <rect x="260" y="150" width="34" height="48" rx="4"/>
+  </g>
+  <g fill="#ef4444">
+    <circle cx="108" cy="126" r="12"/>
+    <circle cx="152" cy="140" r="12"/>
+    <circle cx="302" cy="120" r="12"/>
+  </g>
+  <path d="M326 70h24v56h-48V70z" fill="#1f2933"/>
+  <path d="M314 70l12-24 12 24z" fill="#1f2933"/>
+</svg>

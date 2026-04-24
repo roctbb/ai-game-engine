@@ -1,0 +1,26 @@
+id: template_v1
+title: Шаблон игры
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: turn_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: |
+  Используйте этот пакет как основу для новой turn-based игры.
+  Функция make_choice(state) может вернуть одно из действий: inc/dec/stay/stop.
+description: Технический шаблон для создания новой игры с базовым turn-based контрактом.
+difficulty: easy
+topics:
+  - шаблон
+  - onboarding
+slots:
+  - key: bot
+    title: Игровой бот
+    required: true
+demo_strategies:
+  - id: counter
+    slot_key: bot
+    title: "Демо: счетчик"
+    language: python
+    path: examples/bot_counter.py
+    description: Увеличивает значение несколько ходов и останавливается.

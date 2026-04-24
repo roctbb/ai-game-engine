@@ -5,4 +5,5 @@ class Item(Object):
         super().__init__()
 
     def apply(self, player):
-        pass
+        # Base items are allowed to be no-op; concrete boosters/consumables override.
+        return None

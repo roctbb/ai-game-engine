@@ -155,7 +155,8 @@ class Game:
                                 [item for item in target.inventory.items()])
                             target.inventory = None
 
-                    except:
+                    except Exception:
+                        # Legacy fallback: target may not expose inventory API.
                         pass
                     events.append(Event("death", {"at": (attack_point.x, attack_point.y)}))
                     self.delete(Point(attack_point.x, attack_point.y))
@@ -175,6 +176,8 @@ class Game:
 
         x = point.x
         y = point.y
+        source_x = x
+        source_y = y
 
         speed = player.properties.get('speed')
         if not speed:
@@ -186,25 +189,29 @@ class Game:
             for _ in range(speed):
                 if self.can_move(Point(x - 1, y)):
                     new_point = Point(x - 1, y)
+                    x, y = new_point.x, new_point.y
 
         elif decision == Decision.GO_RIGHT:
             for _ in range(speed):
                 if self.can_move(Point(x + 1, y)):
                     new_point = Point(x + 1, y)
+                    x, y = new_point.x, new_point.y
 
         if decision == Decision.GO_UP:
             for _ in range(speed):
                 if self.can_move(Point(x, y - 1)):
                     new_point = Point(x, y - 1)
+                    x, y = new_point.x, new_point.y
 
         elif decision == Decision.GO_DOWN:
             for _ in range(speed):
                 if self.can_move(Point(x, y + 1)):
                     new_point = Point(x, y + 1)
+                    x, y = new_point.x, new_point.y
 
         if new_point:
 
-            self.move(Point(x, y), new_point)
+            self.move(Point(source_x, source_y), new_point)
 
             x = new_point.x
             y = new_point.y

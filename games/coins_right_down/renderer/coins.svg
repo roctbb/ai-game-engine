@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Coins right down board">
+  <rect width="320" height="320" fill="#f4f8fb"/>
+  <g stroke="#ccd6dd" stroke-width="2">
+    <path d="M64 24v272M120 24v272M176 24v272M232 24v272M288 24v272"/>
+    <path d="M24 64h272M24 120h272M24 176h272M24 232h272M24 288h272"/>
+  </g>
+  <g fill="#facc15" stroke="#b7791f" stroke-width="4">
+    <circle cx="92" cy="92" r="18"/>
+    <circle cx="204" cy="148" r="18"/>
+    <circle cx="260" cy="260" r="18"/>
+  </g>
+  <path d="M44 44h32v32H44z" fill="#0ea5a6"/>
+  <path d="M256 256h40v40h-40z" fill="#ef4444"/>
+</svg>

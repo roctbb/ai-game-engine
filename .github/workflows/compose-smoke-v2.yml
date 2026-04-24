@@ -1,0 +1,32 @@
+name: Compose Smoke v2
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 */6 * * *"
+  push:
+    branches:
+      - main
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Docker info
+        run: docker info
+
+      - name: Run compose distributed smoke
+        run: |
+          bash scripts/run_compose_e2e_smoke.sh \
+            --project-name agp-smoke-${{ github.run_id }}-${{ github.run_attempt }} \
+            --timeout 90

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Maze escape board">
+  <rect width="320" height="320" fill="#f6f7f1"/>
+  <g fill="#1f2933">
+    <rect x="24" y="24" width="272" height="16"/>
+    <rect x="24" y="280" width="272" height="16"/>
+    <rect x="24" y="24" width="16" height="272"/>
+    <rect x="280" y="24" width="16" height="112"/>
+    <rect x="280" y="184" width="16" height="112"/>
+    <rect x="72" y="72" width="160" height="16"/>
+    <rect x="72" y="72" width="16" height="96"/>
+    <rect x="120" y="120" width="160" height="16"/>
+    <rect x="184" y="168" width="16" height="80"/>
+    <rect x="72" y="216" width="128" height="16"/>
+  </g>
+  <circle cx="64" cy="256" r="18" fill="#0ea5a6"/>
+  <path d="M264 160h40l-20 34z" fill="#ef4444"/>
+</svg>

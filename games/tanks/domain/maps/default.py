@@ -1,10 +1,7 @@
-import imp
 import random
-import sys
 from domain.items.coin import Coin
 from domain.map import Map
 from domain.game import Game
-from domain.common import Position, Point, Direction
 from domain.objects.wall import Wall
 from domain.player import Player
 

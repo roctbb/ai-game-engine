@@ -1,0 +1,36 @@
+id: tanks_ctf_v1
+title: Танки CTF
+game_mode: massive_lobby
+semver: 1.0.0
+code_api_mode: turn_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: |
+  Слот driver: напишите функцию make_choice(x, y, map_state), которая возвращает одно из действий
+  up/down/left/right/stay.
+  Слот support (опционально): напишите функцию make_support(state), которая возвращает "boost" или "none".
+description: Командная CTF-игра танков, где важно сочетать движение, прикрытие и захват флага.
+difficulty: hard
+topics:
+  - мультиагентные системы
+  - координация команд
+slots:
+  - key: driver
+    title: Логика движения
+    required: true
+  - key: support
+    title: Логика поддержки
+    required: false
+demo_strategies:
+  - id: capture_flag_driver
+    slot_key: driver
+    title: "Демо: захват флага"
+    language: python
+    path: examples/driver_capture_flag.py
+    description: Едет к флагу, а после захвата возвращается на свою базу.
+  - id: boost_support
+    slot_key: support
+    title: "Демо: ускорение"
+    language: python
+    path: examples/support_boost.py
+    description: Включает ускорение, когда цель достаточно далеко и cooldown готов.

@@ -1,0 +1,26 @@
+id: ttt_connect5_v1
+title: Крестики-нолики до 5
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: turn_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: |
+  Напишите функцию make_choice(field, role), которая возвращает координаты хода (x, y).
+  Также поддерживается сигнатура make_move(observation), где observation = {"field": ..., "role": ...}.
+description: Реализуйте стратегию для игры в крестики-нолики на большой доске с целью собрать 5 в ряд.
+difficulty: medium
+topics:
+  - игровые стратегии
+  - поиск по дереву
+slots:
+  - key: bot
+    title: Игровой бот
+    required: true
+demo_strategies:
+  - id: balanced_connect5
+    slot_key: bot
+    title: "Демо: атака и блокировка"
+    language: python
+    path: examples/connect5_balanced.py
+    description: Ищет победный ход, затем блокирует победный ход соперника.

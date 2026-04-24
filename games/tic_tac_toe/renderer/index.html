@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Крестики-нолики до 5</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f4f7fb;
+      color: #152033;
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+    }
+    .wrap { width: min(760px, 96vw); }
+    .board { background: #fff; border: 1px solid #cad5e6; border-radius: 12px; overflow: hidden; }
+    .status { margin-top: 8px; font-size: 13px; color: #355073; }
+    .details { margin-top: 4px; font-size: 12px; color: #56739a; min-height: 16px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <svg id="board" class="board" viewBox="0 0 500 500" role="img" aria-label="Tic tac toe board"></svg>
+    <div class="status" id="status">Renderer: initializing</div>
+    <div class="details mono" id="details"></div>
+  </div>
+  <script>
+    const SIZE = 5;
+    const CELL = 100;
+
+    const boardEl = document.getElementById("board");
+    const statusEl = document.getElementById("status");
+    const detailsEl = document.getElementById("details");
+
+    let runId = "";
+
+    function setStatus(text, details) {
+      statusEl.textContent = text;
+      detailsEl.textContent = details || "";
+    }
+
+    function svg(tag) {
+      return document.createElementNS("http://www.w3.org/2000/svg", tag);
+    }
+
+    function draw(frame) {
+      boardEl.replaceChildren();
+      const board = Array.isArray(frame?.board) ? frame.board : [];
+      const winnerRole = Number.isFinite(frame?.winner_role) ? frame.winner_role : 0;
+
+      const bg = svg("rect");
+      bg.setAttribute("x", "0");
+      bg.setAttribute("y", "0");
+      bg.setAttribute("width", "500");
+      bg.setAttribute("height", "500");
+      bg.setAttribute("fill", "#f8fbff");
+      boardEl.appendChild(bg);
+
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const cell = svg("rect");
+          cell.setAttribute("x", String(x * CELL));
+          cell.setAttribute("y", String(y * CELL));
+          cell.setAttribute("width", String(CELL));
+          cell.setAttribute("height", String(CELL));
+          cell.setAttribute("fill", "transparent");
+          cell.setAttribute("stroke", "#d3ddec");
+          boardEl.appendChild(cell);
+
+          const value = Array.isArray(board[x]) ? board[x][y] : 0;
+          if (value === 1 || value === -1) {
+            const mark = svg("text");
+            mark.setAttribute("x", String(x * CELL + 50));
+            mark.setAttribute("y", String(y * CELL + 62));
+            mark.setAttribute("text-anchor", "middle");
+            mark.setAttribute("font-size", "44");
+            mark.setAttribute("font-weight", "700");
+            mark.setAttribute("fill", value === 1 ? "#1d4ed8" : "#ef4444");
+            mark.textContent = value === 1 ? "X" : "O";
+            boardEl.appendChild(mark);
+          }
+        }
+      }
+
+      const info = svg("text");
+      info.setAttribute("x", "12");
+      info.setAttribute("y", "24");
+      info.setAttribute("font-size", "13");
+      info.setAttribute("fill", "#152033");
+      info.textContent = `winner_role=${winnerRole}`;
+      boardEl.appendChild(info);
+    }
+
+    function onState(payload) {
+      const tick = Number.isFinite(payload?.tick) ? payload.tick : "-";
+      const phase = typeof payload?.phase === "string" ? payload.phase : "unknown";
+      const frame = payload && typeof payload.frame === "object" ? payload.frame : {};
+      draw(frame);
+      setStatus(`Renderer: state update (${phase})`, `run_id=${runId || "-"} tick=${tick}`);
+    }
+
+    function onResult(payload) {
+      const status = typeof payload?.status === "string" ? payload.status : "finished";
+      const metrics = payload && typeof payload.metrics === "object" ? payload.metrics : {};
+      const drawGame = metrics.draw === true ? "yes" : "no";
+      setStatus("Renderer: result received", `run_id=${runId || "-"} status=${status} draw=${drawGame}`);
+    }
+
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (!message || typeof message !== "object" || typeof message.type !== "string") return;
+      if (message.type === "agp.renderer.init") {
+        runId = message.payload && message.payload.runId ? String(message.payload.runId) : "";
+        setStatus("Renderer: init received", runId ? `run_id=${runId}` : "");
+      } else if (message.type === "agp.renderer.state") {
+        onState(message.payload || {});
+      } else if (message.type === "agp.renderer.result") {
+        onResult(message.payload || {});
+      }
+    });
+
+    draw({ board: [], winner_role: 0 });
+    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.1.0" } }, "*");
+    setStatus("Renderer: ready");
+  </script>
+</body>
+</html>

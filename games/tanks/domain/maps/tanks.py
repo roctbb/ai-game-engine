@@ -1,12 +1,7 @@
-import imp
 import random
-import sys
 from domain.items.coin import Coin
-from domain.items.healthkit import HealthKit
-from domain.items.sniper import SniperBooster
 from domain.map import Map
 from domain.game import Game
-from domain.common import Position, Point, Direction
 from domain.objects.Snow import Snow
 from domain.objects.ancients import RadientAncient, DareAncient
 from domain.objects.road import Road
@@ -136,9 +131,6 @@ TYPES = {
 class TankMap(Map):
     @classmethod
     def init(cls, game: Game, players):
-
-        print("initing BigMap")
-
         for template, target in ((BACKGROUND, game.backgrounds), (TEMPLATE, game.objects)):
 
             template = template.replace(' ', '')
@@ -161,27 +153,24 @@ class TankMap(Map):
                 if rows[i][j] == 'T':
                     game.players[(i, j)] = Tower('Dare')
 
-        for i in range(30):
-            i = 0
-            x = random.randint(0, width - 1)
-            y = random.randint(0, height - 1)
+        for _ in range(30):
+            while True:
+                x = random.randint(0, width - 1)
+                y = random.randint(0, height - 1)
 
-            if (x, y) in game.objects or (x, y) in game.items or (x, y) in game.players:
-                continue
+                if (x, y) in game.objects or (x, y) in game.items or (x, y) in game.players:
+                    continue
 
-            game.objects[(x, y)] = Coin()
-
-
+                game.items[(x, y)] = Coin()
+                break
 
         for player in players:
-            i = 0
-            x = random.randint(0, width - 1)
-            y = random.randint(0, height - 1)
+            while True:
+                x = random.randint(0, width - 1)
+                y = random.randint(0, height - 1)
 
-            if (x, y) in game.objects or (x, y) in game.items or (x, y) in game.players:
-                continue
+                if (x, y) in game.objects or (x, y) in game.items or (x, y) in game.players:
+                    continue
 
-            game.players[(x, y)] = Player(player, {"team": 'Radient'})
-            i += 1
-
-        print("game is ready")
+                game.players[(x, y)] = Player(player, {"team": 'Radient'})
+                break

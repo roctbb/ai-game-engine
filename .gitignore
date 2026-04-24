@@ -8,3 +8,13 @@ config.py
 __pycache__
 ge_sdk/dist
 ge_sdk/ge_sdk.egg-info
+*.pyc
+.DS_Store
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+backend/.venv
+frontend/node_modules
+frontend/dist
+dump.rdb

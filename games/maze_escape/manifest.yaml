@@ -1,0 +1,24 @@
+id: maze_escape_v1
+title: Выход из лабиринта
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(state), возвращающую up/down/left/right, и доведите агента до выхода.
+description: Проведите агента по клеточному лабиринту от старта к выходу, избегая лишних шагов.
+difficulty: easy
+topics:
+  - графы
+  - поиск пути
+slots:
+  - key: agent
+    title: Код агента
+    required: true
+demo_strategies:
+  - id: pathfinder
+    slot_key: agent
+    title: "Демо: поиск пути BFS"
+    language: python
+    path: examples/agent_pathfinder.py
+    description: На каждом шаге строит кратчайший путь до выхода с учетом стен.

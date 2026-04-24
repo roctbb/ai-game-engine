@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Template game renderer preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fbff"/>
+      <stop offset="100%" stop-color="#e7eef9"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="640" height="360" rx="16" fill="url(#bg)"/>
+  <rect x="24" y="24" width="592" height="54" rx="10" fill="#1e2f49"/>
+  <text x="44" y="58" fill="#edf5ff" font-size="22" font-family="Verdana, sans-serif">Template v2 · Turn-based Shell</text>
+
+  <rect x="40" y="96" width="360" height="220" rx="12" fill="#ffffff" stroke="#c1d1e8" stroke-width="2"/>
+  <text x="58" y="130" fill="#2c405c" font-size="15" font-family="Verdana, sans-serif">Игровая сцена</text>
+  <rect x="58" y="146" width="324" height="152" rx="8" fill="#eef4fd" stroke="#cfdeef"/>
+  <circle cx="130" cy="220" r="18" fill="#4e90ff"/>
+  <circle cx="196" cy="220" r="18" fill="#ff8a78"/>
+  <circle cx="262" cy="220" r="18" fill="#ffcf57"/>
+  <path d="M328 200 h30 v40 h-30z" fill="#76b98f"/>
+
+  <rect x="420" y="96" width="180" height="102" rx="12" fill="#ffffff" stroke="#c1d1e8" stroke-width="2"/>
+  <text x="438" y="126" fill="#2c405c" font-size="14" font-family="Verdana, sans-serif">State snapshot</text>
+  <text x="438" y="148" fill="#506887" font-size="13" font-family="Verdana, sans-serif">tick: 42</text>
+  <text x="438" y="170" fill="#506887" font-size="13" font-family="Verdana, sans-serif">phase: running</text>
+
+  <rect x="420" y="214" width="180" height="102" rx="12" fill="#ffffff" stroke="#c1d1e8" stroke-width="2"/>
+  <text x="438" y="244" fill="#2c405c" font-size="14" font-family="Verdana, sans-serif">Result payload</text>
+  <text x="438" y="266" fill="#506887" font-size="13" font-family="Verdana, sans-serif">status: finished</text>
+  <text x="438" y="288" fill="#506887" font-size="13" font-family="Verdana, sans-serif">score: 17</text>
+</svg>

@@ -1,0 +1,13 @@
+[project]
+name = "ai-game-platform-builder-service"
+version = "0.1.0"
+description = "builder service for AI Game Platform"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.8.0",
+  "pydantic-settings>=2.4.0",
+  "redis>=5.0.7",
+  "httpx>=0.27.0",
+]

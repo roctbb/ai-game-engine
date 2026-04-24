@@ -1,0 +1,365 @@
+from __future__ import annotations
+
+import json
+import time
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+
+from app.auth import require_roles
+from app.dependencies import ServiceContainer, get_container
+from identity.domain.model import AppSession, UserRole
+from shared.api.sse import sse_envelope, sse_event
+from competition.api.schemas import (
+    AdvanceCompetitionRequest,
+    BanEntrantRequest,
+    CompetitionMatchResponse,
+    CompetitionResponse,
+    CompetitionRoundResponse,
+    CompetitionRunItemResponse,
+    CreateCompetitionRequest,
+    PatchCompetitionRequest,
+    RegisterTeamRequest,
+    ResolveMatchTieRequest,
+    RequestedByRequest,
+    SetEntrantReadyRequest,
+)
+from competition.application.service import CreateCompetitionInput, ResolveTieInput
+from competition.domain.model import Competition, CompetitionStatus
+
+router = APIRouter(prefix="/competitions", tags=["competition"])
+_TERMINAL_COMPETITION_STATUSES = {CompetitionStatus.FINISHED}
+
+
+def _match_response(match) -> CompetitionMatchResponse:
+    return CompetitionMatchResponse(
+        match_id=match.match_id,
+        round_index=match.round_index,
+        team_ids=list(match.team_ids),
+        status=match.status,
+        run_ids_by_team=dict(match.run_ids_by_team),
+        scores_by_team=dict(match.scores_by_team),
+        placements_by_team=dict(match.placements_by_team),
+        advanced_team_ids=list(match.advanced_team_ids),
+        tie_break_reason=match.tie_break_reason,
+    )
+
+
+def _round_response(round_item) -> CompetitionRoundResponse:
+    return CompetitionRoundResponse(
+        round_index=round_item.round_index,
+        status=round_item.status,
+        matches=[_match_response(match) for match in round_item.matches],
+    )
+
+
+def _to_response(competition: Competition) -> CompetitionResponse:
+    return CompetitionResponse(
+        competition_id=competition.competition_id,
+        game_id=competition.game_id,
+        game_version_id=competition.game_version_id,
+        title=competition.title,
+        format=competition.format,
+        tie_break_policy=competition.tie_break_policy,
+        advancement_top_k=competition.advancement_top_k,
+        match_size=competition.match_size,
+        status=competition.status,
+        entrants=[
+            {
+                "team_id": entrant.team_id,
+                "ready": entrant.ready,
+                "banned": entrant.banned,
+                "blocker_reason": entrant.blocker_reason,
+            }
+            for entrant in competition.entrants.values()
+        ],
+        rounds=[_round_response(round_item) for round_item in competition.rounds],
+        current_round_index=competition.current_round_index,
+        winner_team_ids=list(competition.winner_team_ids),
+        pending_reason=competition.pending_reason,
+        last_scheduled_run_ids=list(competition.last_scheduled_run_ids),
+    )
+
+
+@router.get("", response_model=list[CompetitionResponse])
+def list_competitions(container: ServiceContainer = Depends(get_container)) -> list[CompetitionResponse]:
+    return [_to_response(item) for item in container.competition.list_competitions()]
+
+
+@router.post("", response_model=CompetitionResponse)
+def create_competition(
+    request: CreateCompetitionRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    competition = container.competition.create_competition(
+        CreateCompetitionInput(
+            game_id=request.game_id,
+            title=request.title,
+            format=request.format,
+            tie_break_policy=request.tie_break_policy,
+            advancement_top_k=request.advancement_top_k,
+            match_size=request.match_size,
+        )
+    )
+    return _to_response(competition)
+
+
+@router.get("/{competition_id}", response_model=CompetitionResponse)
+def get_competition(
+    competition_id: str,
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(container.competition.get_competition(competition_id))
+
+
+@router.patch("/{competition_id}", response_model=CompetitionResponse)
+def patch_competition(
+    competition_id: str,
+    request: PatchCompetitionRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    competition = container.competition.update_competition(
+        competition_id=competition_id,
+        title=request.title,
+        tie_break_policy=request.tie_break_policy,
+        advancement_top_k=request.advancement_top_k,
+        match_size=request.match_size,
+    )
+    return _to_response(competition)
+
+
+@router.get("/{competition_id}/stream")
+def stream_competition(
+    competition_id: str,
+    poll_interval_ms: int = 1000,
+    max_events: int = 0,
+    container: ServiceContainer = Depends(get_container),
+) -> StreamingResponse:
+    interval = max(50, min(poll_interval_ms, 10_000)) / 1000
+    max_events_bounded = max(0, min(max_events, 10_000))
+
+    def _events():
+        emitted = 0
+        last_signature = ""
+        while True:
+            competition_payload = _to_response(
+                container.competition.get_competition(competition_id)
+            ).model_dump(mode="json")
+            signature = json.dumps(competition_payload, ensure_ascii=False, sort_keys=True)
+            if signature != last_signature:
+                last_signature = signature
+                status = str(competition_payload.get("status", ""))
+                yield sse_event(
+                    "agp.update",
+                    sse_envelope(
+                        channel="competition",
+                        entity_id=competition_id,
+                        kind="snapshot",
+                        payload=competition_payload,
+                        status=status,
+                    ),
+                )
+                emitted += 1
+                if max_events_bounded > 0 and emitted >= max_events_bounded:
+                    break
+                if status in {item.value for item in _TERMINAL_COMPETITION_STATUSES}:
+                    yield sse_event(
+                        "agp.terminal",
+                        sse_envelope(
+                            channel="competition",
+                            entity_id=competition_id,
+                            kind="terminal",
+                            payload={"competition_id": competition_id},
+                            status=status,
+                        ),
+                    )
+                    break
+            else:
+                yield sse_event(
+                    "agp.keepalive",
+                    sse_envelope(channel="competition", entity_id=competition_id, kind="keepalive"),
+                )
+            time.sleep(interval)
+
+    return StreamingResponse(
+        _events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/{competition_id}/register", response_model=CompetitionResponse)
+def register_team(
+    competition_id: str,
+    request: RegisterTeamRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(
+        container.competition.register_team(
+            competition_id=competition_id,
+            team_id=request.team_id,
+        )
+    )
+
+
+@router.post("/{competition_id}/unregister", response_model=CompetitionResponse)
+def unregister_team(
+    competition_id: str,
+    request: RegisterTeamRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(
+        container.competition.unregister_team(
+            competition_id=competition_id,
+            team_id=request.team_id,
+        )
+    )
+
+
+@router.post("/{competition_id}/start", response_model=CompetitionResponse)
+def start_competition(
+    competition_id: str,
+    request: RequestedByRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(
+        container.competition.start_competition(
+            competition_id=competition_id,
+            requested_by=request.requested_by,
+        )
+    )
+
+
+@router.post("/{competition_id}/pause", response_model=CompetitionResponse)
+def pause_competition(
+    competition_id: str,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(container.competition.pause_competition(competition_id))
+
+
+@router.post("/{competition_id}/finish", response_model=CompetitionResponse)
+def finish_competition(
+    competition_id: str,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(container.competition.finish_competition(competition_id))
+
+
+@router.post("/{competition_id}/advance", response_model=CompetitionResponse)
+def advance_competition(
+    competition_id: str,
+    request: AdvanceCompetitionRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(
+        container.competition.advance_competition(
+            competition_id=competition_id,
+            requested_by=request.requested_by,
+        )
+    )
+
+
+@router.post("/{competition_id}/matches/resolve", response_model=CompetitionResponse)
+def resolve_match_tie(
+    competition_id: str,
+    request: ResolveMatchTieRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(
+        container.competition.resolve_match_tiebreak(
+            competition_id=competition_id,
+            data=ResolveTieInput(
+                round_index=request.round_index,
+                match_id=request.match_id,
+                advanced_team_ids=request.advanced_team_ids,
+            ),
+        )
+    )
+
+
+@router.post("/{competition_id}/moderation/not-ready", response_model=CompetitionResponse)
+def set_entrant_not_ready(
+    competition_id: str,
+    request: SetEntrantReadyRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(
+        container.competition.set_not_ready(
+            competition_id=competition_id,
+            team_id=request.team_id,
+            reason=request.reason,
+        )
+    )
+
+
+@router.post("/{competition_id}/moderation/ban", response_model=CompetitionResponse)
+def set_entrant_ban(
+    competition_id: str,
+    request: BanEntrantRequest,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(
+        container.competition.set_ban(
+            competition_id=competition_id,
+            team_id=request.team_id,
+            banned=request.banned,
+            reason=request.reason,
+        )
+    )
+
+
+@router.get("/{competition_id}/runs", response_model=list[CompetitionRunItemResponse])
+def list_competition_runs(
+    competition_id: str,
+    container: ServiceContainer = Depends(get_container),
+) -> list[CompetitionRunItemResponse]:
+    return [
+        CompetitionRunItemResponse(**item)
+        for item in container.competition.list_competition_runs(competition_id=competition_id)
+    ]
+
+
+@router.get("/{competition_id}/bracket", response_model=list[CompetitionRoundResponse])
+def get_competition_bracket(
+    competition_id: str,
+    container: ServiceContainer = Depends(get_container),
+) -> list[CompetitionRoundResponse]:
+    competition = container.competition.get_competition(competition_id)
+    return [_round_response(round_item) for round_item in competition.rounds]
+
+
+@router.get("/{competition_id}/rounds", response_model=list[CompetitionRoundResponse])
+def get_competition_rounds(
+    competition_id: str,
+    container: ServiceContainer = Depends(get_container),
+) -> list[CompetitionRoundResponse]:
+    competition = container.competition.get_competition(competition_id)
+    return [_round_response(round_item) for round_item in competition.rounds]
+
+
+@router.get("/{competition_id}/matches", response_model=list[CompetitionMatchResponse])
+def get_competition_matches(
+    competition_id: str,
+    container: ServiceContainer = Depends(get_container),
+) -> list[CompetitionMatchResponse]:
+    competition = container.competition.get_competition(competition_id)
+    matches: list[CompetitionMatchResponse] = []
+    for round_item in competition.rounds:
+        matches.extend(_match_response(match) for match in round_item.matches)
+    return matches
