@@ -309,6 +309,7 @@ def join_lobby_as_user(
         lobby_id=lobby_id,
         user_id=session.nickname,
         access_code=request.access_code,
+        bypass_access_code=session.role in {UserRole.TEACHER, UserRole.ADMIN},
     )
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
 

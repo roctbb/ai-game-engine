@@ -11,10 +11,9 @@ _DIRECTIONS = {
     "left": (-1, 0),
     "right": (1, 0),
 }
-_MAX_STEPS = 2600
-_WIDTH = 31
-_HEIGHT = 31
-_START = (1, 1)
+_MAX_STEPS = 1200
+_WIDTH = 21
+_HEIGHT = 21
 
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
@@ -63,7 +62,18 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             break
 
         print_context["tick"] = step
-        action = move_fn(_build_state(position=position, step=step, maze=maze))
+        try:
+            action = move_fn(_build_state(position=position, step=step, maze=maze))
+        except Exception as exc:
+            action = None
+            error_msg = f"{type(exc).__name__}: {exc}"
+            if not hasattr(move_fn, "_err_count"):
+                move_fn._err_count = 0
+            move_fn._err_count += 1
+            if move_fn._err_count <= 3:
+                events.append({"type": "bot_print", "tick": step, "role": "agent", "message": f"[ERROR] {error_msg}"})
+            if move_fn._err_count == 1:
+                events.append({"type": "runtime_error", "tick": step, "message": error_msg})
         delta = _DIRECTIONS.get(action)
         if delta is None:
             invalid_moves += 1
@@ -192,6 +202,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Context helpers
+# ---------------------------------------------------------------------------
+
 def _load_context() -> dict[str, Any]:
     raw = os.getenv("AGP_RUN_CONTEXT")
     if not raw:
@@ -218,39 +232,25 @@ def _build_player_fn(
 
     namespace: dict[str, Any] = {
         "__builtins__": {
-            "abs": abs,
-            "all": all,
-            "any": any,
-            "bool": bool,
-            "dict": dict,
-            "enumerate": enumerate,
-            "float": float,
-            "int": int,
-            "len": len,
-            "list": list,
-            "max": max,
-            "min": min,
+            "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
+            "enumerate": enumerate, "float": float, "int": int, "len": len,
+            "list": list, "max": max, "min": min,
             "print": _make_bot_print(events=events, role=slot_key, print_context=print_context),
-            "range": range,
-            "set": set,
-            "str": str,
-            "sum": sum,
-            "tuple": tuple,
+            "range": range, "set": set, "str": str, "sum": sum, "tuple": tuple,
+            "hasattr": hasattr, "getattr": getattr, "setattr": setattr,
         }
     }
     compile_error: str | None = None
     if code.strip():
         try:
             exec(code, namespace, namespace)
-        except Exception as exc:  # pragma: no cover - guarded by integration behavior
+        except Exception as exc:
             compile_error = str(exc)
+            events.append({"type": "bot_print", "tick": 0, "role": slot_key, "message": f"[COMPILE ERROR] {compile_error}"})
 
     fn = namespace.get("make_move") or namespace.get("choose_move")
     if not callable(fn):
-        def _fallback(_state: dict[str, object]) -> str:
-            return "right"
-
-        return _fallback, compile_error
+        return (lambda _s: "right"), compile_error
     return fn, compile_error
 
 
@@ -265,19 +265,14 @@ def _make_bot_print(
         message = sep.join(str(value) for value in values)
         if end and end != "\n":
             message = f"{message}{end}"
-        lines = message.splitlines() or [""]
-        for line in lines:
-            events.append(
-                {
-                    "type": "bot_print",
-                    "tick": int(print_context.get("tick", 0)),
-                    "role": role,
-                    "message": line,
-                }
-            )
-
+        for line in (message.splitlines() or [""]):
+            events.append({"type": "bot_print", "tick": int(print_context.get("tick", 0)), "role": role, "message": line})
     return _bot_print
 
+
+# ---------------------------------------------------------------------------
+# Maze generation — recursive backtracker, 1-cell-wide corridors
+# ---------------------------------------------------------------------------
 
 def _build_maze(context: dict[str, Any]) -> dict[str, object]:
     run_id = context.get("run_id")
@@ -288,200 +283,153 @@ def _build_maze(context: dict[str, Any]) -> dict[str, object]:
 
 def _build_random_maze(seed_source: str) -> dict[str, object]:
     rng = random.Random(seed_source)
-    open_cells = _generate_real_maze(rng=rng, width=_WIDTH, height=_HEIGHT)
-    start_cell = _pick_start_cell(rng=rng, cells=open_cells, preferred=_START, width=_WIDTH, height=_HEIGHT)
-    distances = _shortest_path_distances(
-        cells=open_cells,
-        width=_WIDTH,
-        height=_HEIGHT,
-        start=start_cell,
-    )
+    w, h = _WIDTH, _HEIGHT
+
+    # Generate perfect maze, then punch extra passages
+    open_cells = _generate_maze(rng=rng, width=w, height=h)
+    _add_extra_passages(rng=rng, open_cells=open_cells, width=w, height=h, ratio=0.08)
+
+    # Pick start: random open interior cell
+    interior = [c for c in open_cells if 1 <= c[0] < w - 1 and 1 <= c[1] < h - 1]
+    start_cell = rng.choice(interior) if interior else (1, 1)
+
+    # BFS distances from start
+    distances = _bfs_distances(cells=open_cells, start=start_cell)
+
+    # Keep only reachable component
     if len(distances) < len(open_cells):
-        # As a defensive fallback, keep the reachable component only.
         open_cells = set(distances.keys())
-        start_cell = _pick_start_cell(
-            rng=rng,
-            cells=open_cells,
-            preferred=start_cell,
-            width=_WIDTH,
-            height=_HEIGHT,
-        )
-        distances = _shortest_path_distances(
-            cells=open_cells,
-            width=_WIDTH,
-            height=_HEIGHT,
-            start=start_cell,
-        )
-    exit_cell = _pick_random_exit(
-        rng=rng,
-        cells=open_cells,
-        distances=distances,
-        start=start_cell,
-    )
-    optimal_steps = distances.get(exit_cell, -1)
-    if optimal_steps < 0:
-        optimal_steps = _shortest_path_length(
-            cells=open_cells,
-            width=_WIDTH,
-            height=_HEIGHT,
-            start=start_cell,
-            goal=exit_cell,
-        )
-    if optimal_steps <= 0:
-        # safety fallback, should not happen for connected maze
-        optimal_steps = 1
+        interior = [c for c in open_cells if 1 <= c[0] < w - 1 and 1 <= c[1] < h - 1]
+        if start_cell not in open_cells:
+            start_cell = rng.choice(interior) if interior else rng.choice(list(open_cells))
+        distances = _bfs_distances(cells=open_cells, start=start_cell)
+
+    # Pick exit: far from start, surrounded by walls on 3 sides (dead-end)
+    exit_cell = _pick_walled_exit(rng=rng, open_cells=open_cells, distances=distances, start=start_cell, w=w, h=h)
+
+    optimal = distances.get(exit_cell, 1)
+    if optimal <= 0:
+        optimal = 1
 
     walls: set[tuple[int, int]] = set()
-    for y in range(_HEIGHT):
-        for x in range(_WIDTH):
+    for y in range(h):
+        for x in range(w):
             if (x, y) not in open_cells:
                 walls.add((x, y))
 
     return {
-        "width": _WIDTH,
-        "height": _HEIGHT,
+        "width": w,
+        "height": h,
         "start": start_cell,
         "exit": exit_cell,
         "walls": walls,
-        "optimal_steps": optimal_steps,
+        "optimal_steps": optimal,
     }
 
 
-def _pick_random_exit(
-    *,
-    rng: Any,
-    cells: set[tuple[int, int]],
-    distances: dict[tuple[int, int], int],
-    start: tuple[int, int],
-) -> tuple[int, int]:
-    if not cells:
-        return start
-    if not distances:
-        candidates = [cell for cell in cells if cell != start]
-        return rng.choice(candidates or [start])
-
-    far_threshold = max(distances.values(), default=0) * 0.75
-    far_cells = [cell for cell, distance in distances.items() if cell != start and distance >= far_threshold]
-    candidates = far_cells or [cell for cell in cells if cell != start]
-    return rng.choice(candidates)
-
-
-def _pick_start_cell(
-    *,
-    rng: Any,
-    cells: set[tuple[int, int]],
-    preferred: tuple[int, int],
-    width: int,
-    height: int,
-) -> tuple[int, int]:
-    if not cells:
-        return preferred
-
-    safe_cells = [cell for cell in cells if 0 < cell[0] < width - 1 and 0 < cell[1] < height - 1]
-    if preferred in safe_cells:
-        return preferred
-    if safe_cells:
-        return rng.choice(safe_cells)
-    return rng.choice(list(cells))
-
-
-def _shortest_path_distances(
-    *,
-    cells: set[tuple[int, int]],
-    width: int,
-    height: int,
-    start: tuple[int, int],
-) -> dict[tuple[int, int], int]:
-    if start not in cells:
-        return {}
-    queue: deque[tuple[int, int]] = deque([start])
-    distances = {start: 0}
-
-    while queue:
-        x, y = queue.popleft()
-        distance = distances[(x, y)] + 1
-        for dx, dy in _DIRECTIONS.values():
-            candidate = (x + dx, y + dy)
-            if not (0 <= candidate[0] < width and 0 <= candidate[1] < height):
-                continue
-            if candidate not in cells or candidate in distances:
-                continue
-            distances[candidate] = distance
-            queue.append(candidate)
-
-    return distances
-
-
-def _shortest_path_length(
-    *,
-    cells: set[tuple[int, int]],
-    width: int,
-    height: int,
-    start: tuple[int, int],
-    goal: tuple[int, int],
-) -> int:
-    if start == goal:
-        return 0
-    distances = _shortest_path_distances(
-        cells=cells,
-        width=width,
-        height=height,
-        start=start,
-    )
-    return distances.get(goal, -1)
-
-
-def _normalize_direction(*, direction: str, action: object) -> str:
-    if isinstance(action, str) and action in _DIRECTIONS:
-        return action
-    return direction
-
-
-def _generate_real_maze(rng: Any, width: int, height: int) -> set[tuple[int, int]]:
-    open_cells = {_START}
-    stack = [_START]
-    visited = {_START}
+def _generate_maze(rng: Any, width: int, height: int) -> set[tuple[int, int]]:
+    """Recursive backtracker on odd-coordinate grid → perfect maze with 1-cell corridors."""
+    start = (1, 1)
+    open_cells = {start}
+    stack = [start]
+    visited = {start}
 
     while stack:
         current = stack[-1]
-        neighbors = _collect_two_step_neighbors(current=current, width=width, height=height, visited=visited)
+        neighbors = []
+        cx, cy = current
+        for dx, dy in ((2, 0), (-2, 0), (0, 2), (0, -2)):
+            nx, ny = cx + dx, cy + dy
+            if 1 <= nx < width - 1 and 1 <= ny < height - 1 and (nx, ny) not in visited:
+                neighbors.append((nx, ny))
         if not neighbors:
             stack.pop()
             continue
-        next_cell = rng.choice(neighbors)
-        wall = ((current[0] + next_cell[0]) // 2, (current[1] + next_cell[1]) // 2)
+        nxt = rng.choice(neighbors)
+        wall = ((current[0] + nxt[0]) // 2, (current[1] + nxt[1]) // 2)
         open_cells.add(wall)
-        open_cells.add(next_cell)
-        visited.add(next_cell)
-        stack.append(next_cell)
+        open_cells.add(nxt)
+        visited.add(nxt)
+        stack.append(nxt)
 
     return open_cells
 
 
-def _collect_two_step_neighbors(
-    *,
-    current: tuple[int, int],
-    width: int,
-    height: int,
-    visited: set[tuple[int, int]],
-) -> list[tuple[int, int]]:
-    x, y = current
-    moves = (
-        (2, 0),
-        (-2, 0),
-        (0, 2),
-        (0, -2),
-    )
-    neighbors: list[tuple[int, int]] = []
-    for dx, dy in moves:
-        cell = (x + dx, y + dy)
-        if not (1 <= cell[0] < width - 1 and 1 <= cell[1] < height - 1):
-            continue
-        if cell in visited:
-            continue
-        neighbors.append(cell)
-    return neighbors
+def _add_extra_passages(rng: Any, open_cells: set[tuple[int, int]], width: int, height: int, ratio: float) -> None:
+    """Remove random interior wall cells that border ≥2 open cells, creating loops."""
+    candidates = []
+    for y in range(2, height - 2):
+        for x in range(2, width - 2):
+            if (x, y) in open_cells:
+                continue
+            adj_open = sum(1 for dx, dy in _DIRECTIONS.values() if (x + dx, y + dy) in open_cells)
+            if adj_open >= 2:
+                candidates.append((x, y))
+    rng.shuffle(candidates)
+    for cell in candidates[:max(1, int(len(candidates) * ratio))]:
+        open_cells.add(cell)
 
+
+def _bfs_distances(cells: set[tuple[int, int]], start: tuple[int, int]) -> dict[tuple[int, int], int]:
+    if start not in cells:
+        return {}
+    queue: deque[tuple[int, int]] = deque([start])
+    dist = {start: 0}
+    while queue:
+        x, y = queue.popleft()
+        d = dist[(x, y)] + 1
+        for dx, dy in _DIRECTIONS.values():
+            nb = (x + dx, y + dy)
+            if nb in cells and nb not in dist:
+                dist[nb] = d
+                queue.append(nb)
+    return dist
+
+
+def _pick_walled_exit(
+    *,
+    rng: Any,
+    open_cells: set[tuple[int, int]],
+    distances: dict[tuple[int, int], int],
+    start: tuple[int, int],
+    w: int,
+    h: int,
+) -> tuple[int, int]:
+    """Pick exit that is far from start and surrounded by walls on ≥3 sides (dead-end)."""
+    if not distances:
+        return start
+
+    max_dist = max(distances.values())
+    far_threshold = max_dist * 0.6
+
+    # Find dead-ends: open cells with exactly 1 open neighbor
+    dead_ends: list[tuple[int, int]] = []
+    for cell in open_cells:
+        if cell == start:
+            continue
+        if distances.get(cell, 0) < far_threshold:
+            continue
+        open_neighbors = sum(
+            1 for dx, dy in _DIRECTIONS.values()
+            if (cell[0] + dx, cell[1] + dy) in open_cells
+        )
+        if open_neighbors == 1:
+            dead_ends.append(cell)
+
+    if dead_ends:
+        # Pick the farthest dead-end
+        dead_ends.sort(key=lambda c: distances.get(c, 0), reverse=True)
+        top = dead_ends[:max(1, len(dead_ends) // 3)]
+        return rng.choice(top)
+
+    # Fallback: farthest reachable cell
+    far_cells = [c for c, d in distances.items() if c != start and d >= far_threshold]
+    return rng.choice(far_cells) if far_cells else start
+
+
+# ---------------------------------------------------------------------------
+# State / frame helpers
+# ---------------------------------------------------------------------------
 
 def _maze_frame_payload(maze: dict[str, object]) -> dict[str, object]:
     exit_cell = maze["exit"]
@@ -491,6 +439,7 @@ def _maze_frame_payload(maze: dict[str, object]) -> dict[str, object]:
     return {
         "size": {"width": maze["width"], "height": maze["height"]},
         "exit": {"x": exit_cell[0], "y": exit_cell[1]},
+        "maze": _maze_grid(maze),
         "walls": [{"x": x, "y": y} for x, y in sorted(walls)],
     }
 
@@ -505,8 +454,31 @@ def _build_state(position: tuple[int, int], step: int, maze: dict[str, object]) 
         "exit": {"x": exit_cell[0], "y": exit_cell[1]},
         "step": step,
         "size": {"width": maze["width"], "height": maze["height"]},
+        "maze": _maze_grid(maze),
         "walls": [{"x": x, "y": y} for x, y in sorted(walls)],
     }
+
+
+def _maze_grid(maze: dict[str, object]) -> list[list[int]]:
+    width = maze["width"]
+    height = maze["height"]
+    walls = maze["walls"]
+    exit_cell = maze["exit"]
+    assert isinstance(width, int) and isinstance(height, int)
+    assert isinstance(walls, set) and isinstance(exit_cell, tuple)
+
+    grid: list[list[int]] = []
+    for y in range(height):
+        row: list[int] = []
+        for x in range(width):
+            if (x, y) == exit_cell:
+                row.append(1)
+            elif (x, y) in walls:
+                row.append(-1)
+            else:
+                row.append(0)
+        grid.append(row)
+    return grid
 
 
 def _can_enter(position: tuple[int, int], maze: dict[str, object]) -> bool:
@@ -514,12 +486,16 @@ def _can_enter(position: tuple[int, int], maze: dict[str, object]) -> bool:
     width = maze["width"]
     height = maze["height"]
     walls = maze["walls"]
-    assert isinstance(width, int)
-    assert isinstance(height, int)
-    assert isinstance(walls, set)
+    assert isinstance(width, int) and isinstance(height, int) and isinstance(walls, set)
     if x < 0 or y < 0 or x >= width or y >= height:
         return False
     return position not in walls
+
+
+def _normalize_direction(*, direction: str, action: object) -> str:
+    if isinstance(action, str) and action in _DIRECTIONS:
+        return action
+    return direction
 
 
 if __name__ == "__main__":

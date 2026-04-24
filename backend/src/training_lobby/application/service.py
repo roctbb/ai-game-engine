@@ -100,7 +100,7 @@ class TrainingLobbyService:
                 return team_id
         return None
 
-    def ensure_user_joined(self, lobby_id: str, user_id: str, access_code: str | None) -> tuple[Lobby, str]:
+    def ensure_user_joined(self, lobby_id: str, user_id: str, access_code: str | None, *, bypass_access_code: bool = False) -> tuple[Lobby, str]:
         lobby = self.get_lobby(lobby_id)
         existing_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
         if existing_team_id is not None:
@@ -109,10 +109,10 @@ class TrainingLobbyService:
             raise InvariantViolationError("В текущем статусе нельзя присоединиться к лобби")
         if len(lobby.teams) >= lobby.max_teams:
             raise InvariantViolationError("Лобби заполнено")
-        if lobby.access == LobbyAccess.CODE and lobby.access_code != access_code:
+        if not bypass_access_code and lobby.access == LobbyAccess.CODE and lobby.access_code != access_code:
             raise InvariantViolationError("Неверный код доступа к лобби")
         team = self._team_workspace.get_or_create_personal_team(game_id=lobby.game_id, captain_user_id=user_id)
-        lobby.join_team(team_id=team.team_id, access_code=access_code)
+        lobby.join_team(team_id=team.team_id, access_code=access_code, bypass_access_code=bypass_access_code)
         self._repository.save(lobby)
         return lobby, team.team_id
 

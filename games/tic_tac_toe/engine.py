@@ -210,6 +210,9 @@ def _safe_builtins(print_fn: Callable[..., None] | None = None) -> dict[str, obj
         "sum": sum,
         "tuple": tuple,
         "zip": zip,
+        "hasattr": hasattr,
+        "getattr": getattr,
+        "setattr": setattr,
     }
 
 

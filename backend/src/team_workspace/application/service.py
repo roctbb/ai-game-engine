@@ -109,8 +109,10 @@ class TeamWorkspaceService:
         version = self._game_catalog.get_version(game_id=team.game_id, version_id=version_id)
 
         states: list[TeamSlotState] = []
-        for slot_key in version.required_slot_keys:
-            slot = team.slots.get(slot_key)
+        version_slot_keys: set[str] = set()
+        for slot_def in version.required_slots:
+            version_slot_keys.add(slot_def.key)
+            slot = team.slots.get(slot_def.key)
             if slot is None or not slot.code.strip():
                 state = "empty"
                 revision = None
@@ -121,16 +123,16 @@ class TeamWorkspaceService:
                 code = slot.code
             states.append(
                 TeamSlotState(
-                    slot_key=slot_key,
+                    slot_key=slot_def.key,
                     state=state,
-                    required=True,
+                    required=slot_def.required,
                     code=code,
                     revision=revision,
                 )
             )
 
         for slot_key, slot in sorted(team.slots.items()):
-            if slot_key not in version.required_slot_keys:
+            if slot_key not in version_slot_keys:
                 states.append(
                     TeamSlotState(
                         slot_key=slot_key,

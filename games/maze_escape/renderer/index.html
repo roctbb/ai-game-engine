@@ -5,430 +5,221 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Maze Escape Renderer</title>
   <style>
-    body {
-      margin: 0;
-      width: 100vw;
-      height: 100vh;
-      display: grid;
-      place-items: center;
-      background: #07101c;
-      font-family: "Segoe UI", Arial, sans-serif;
-      color: #1f2e46;
-      overflow: hidden;
-    }
-    .wrap {
-      width: 100vw;
-      height: 100vh;
-      display: grid;
-      place-items: center;
-    }
-    .board {
-      width: min(100vw, 100vh);
-      height: min(100vw, 100vh);
-      background: #2b2a25;
-      border: 0;
-      border-radius: 0;
-      overflow: hidden;
-    }
-    .status,
-    .details { margin-top: 8px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    *{box-sizing:border-box}
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#0a0e17;font-family:"Segoe UI",Arial,sans-serif;color:#c8d6e5;overflow:hidden}
+    .wrap{width:100vw;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:6px}
+    .board{flex:1 1 auto;max-width:100%;max-height:calc(100vh - 40px);aspect-ratio:1/1;border-radius:4px;overflow:hidden}
+    .hud{display:flex;gap:12px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#94a3b8;flex-shrink:0}
+    .hud b{color:#e2e8f0;font-weight:600}
+    .hud .win{color:#4ade80}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div>
-      <svg id="board" class="board" role="img" aria-label="Maze board"></svg>
-      <div class="status" id="status">Renderer: initializing</div>
-      <div class="details mono" id="details"></div>
-    </div>
-  </div>
-  <script>
-    const MIN_CELL = 12;
-    const DEFAULT_GRID_W = 31;
-    const DEFAULT_GRID_H = 31;
-    const DEFAULT_WALLS = new Set(["0,0", "0,1", "1,1", "2,2", "3,4", "4,4", "5,5", "6,6"]);
-    const DEFAULT_EXIT = { x: 23, y: 23 };
-    const SVG_NS = "http://www.w3.org/2000/svg";
+<div class="wrap">
+  <svg id="board" class="board" role="img" aria-label="Maze board"></svg>
+  <div class="hud" id="hud"></div>
+</div>
+<script>
+const SVG="http://www.w3.org/2000/svg";
+const boardEl=document.getElementById("board");
+const hudEl=document.getElementById("hud");
+let runId="",lastFrame=null,prevSteps=-1;
 
-    const boardEl = document.getElementById("board");
-    const statusEl = document.getElementById("status");
-    const detailsEl = document.getElementById("details");
+/* ── SVG helpers ── */
+function el(tag,attrs){const e=document.createElementNS(SVG,tag);for(const[k,v]of Object.entries(attrs))e.setAttribute(k,String(v));return e}
+function rect(x,y,w,h,fill,extra){return el("rect",{x,y,width:w,height:h,fill,...(extra||{})})}
+function circle(cx,cy,r,fill,extra){return el("circle",{cx,cy,r:Math.max(0,r),fill,...(extra||{})})}
 
-    let runId = "";
-    let lastFrame = null;
-    let lastStepValue = null;
+/* ── Defs ── */
+function addDefs(C){
+  const d=el("defs",{});
 
-    function setStatus(text, details) {
-      statusEl.textContent = text;
-      detailsEl.textContent = details || "";
+  // ground
+  const gp=el("pattern",{id:"gnd",width:C/2,height:C/2,patternUnits:"userSpaceOnUse"});
+  gp.appendChild(rect(0,0,C/2,C/2,"#3b4a2e"));
+  gp.appendChild(rect(C*0.06,C*0.08,1.5,1.5,"#4a5c38"));
+  gp.appendChild(rect(C*0.32,C*0.38,1,1,"#344226"));
+  d.appendChild(gp);
+
+  // wall
+  const wp=el("pattern",{id:"wll",width:C,height:C,patternUnits:"userSpaceOnUse"});
+  wp.appendChild(rect(0,0,C,C,"#4a4f5c"));
+  // brick lines
+  wp.appendChild(el("line",{x1:0,y1:C*0.33,x2:C,y2:C*0.33,stroke:"#3d424e","stroke-width":0.8}));
+  wp.appendChild(el("line",{x1:0,y1:C*0.66,x2:C,y2:C*0.66,stroke:"#3d424e","stroke-width":0.8}));
+  wp.appendChild(el("line",{x1:C*0.5,y1:0,x2:C*0.5,y2:C*0.33,stroke:"#3d424e","stroke-width":0.8}));
+  wp.appendChild(el("line",{x1:0,y1:C*0.33,x2:0,y2:C*0.66,stroke:"#3d424e","stroke-width":0.8}));
+  wp.appendChild(el("line",{x1:C*0.5,y1:C*0.66,x2:C*0.5,y2:C,stroke:"#3d424e","stroke-width":0.8}));
+  // highlight
+  wp.appendChild(rect(1,1,C*0.48,C*0.31,"#545a68",{opacity:0.25,rx:1}));
+  d.appendChild(wp);
+
+  // exit glow
+  const eg=el("radialGradient",{id:"exG",cx:"50%",cy:"50%",r:"60%"});
+  eg.appendChild(el("stop",{offset:"0%","stop-color":"#4ade80","stop-opacity":0.9}));
+  eg.appendChild(el("stop",{offset:"100%","stop-color":"#166534","stop-opacity":0.3}));
+  d.appendChild(eg);
+
+  // torch radial
+  const tg=el("radialGradient",{id:"torch",cx:"50%",cy:"50%",r:"50%"});
+  tg.appendChild(el("stop",{offset:"0%","stop-color":"#fbbf24","stop-opacity":0.22}));
+  tg.appendChild(el("stop",{offset:"60%","stop-color":"#f97316","stop-opacity":0.08}));
+  tg.appendChild(el("stop",{offset:"100%","stop-color":"#000","stop-opacity":0}));
+  d.appendChild(tg);
+
+  // fog overlay
+  const fg=el("radialGradient",{id:"fog",cx:"50%",cy:"50%",r:"50%"});
+  fg.appendChild(el("stop",{offset:"0%","stop-color":"#000","stop-opacity":0}));
+  fg.appendChild(el("stop",{offset:"55%","stop-color":"#000","stop-opacity":0}));
+  fg.appendChild(el("stop",{offset:"85%","stop-color":"#0a0e17","stop-opacity":0.7}));
+  fg.appendChild(el("stop",{offset:"100%","stop-color":"#0a0e17","stop-opacity":0.92}));
+  d.appendChild(fg);
+
+  boardEl.appendChild(d);
+}
+
+/* ── Hero sprite ── */
+function drawHero(cx,cy,C,dir,tick,moving){
+  const g=el("g",{transform:`translate(${cx} ${cy})`});
+  const angles={right:0,down:90,left:180,up:-90};
+  const a=angles[dir]||0;
+  const bob=moving?Math.sin(tick*0.7)*C*0.04:0;
+
+  const body=el("g",{transform:`rotate(${a}) translate(0 ${bob})`});
+
+  const bw=C*0.28,bh=C*0.34;
+  // shadow
+  body.appendChild(el("ellipse",{cx:0,cy:bh*0.4,rx:C*0.22,ry:C*0.08,fill:"#000",opacity:0.3}));
+  // torso
+  body.appendChild(rect(-bw/2,-bh*0.1,bw,bh,"#2563eb",{rx:2,ry:2}));
+  // belt
+  body.appendChild(rect(-bw/2+1,bh*0.55,bw-2,bh*0.12,"#1e40af",{rx:1}));
+  // head
+  const hr=C*0.11;
+  body.appendChild(circle(0,-bh*0.42,hr,"#f5d0a9"));
+  // eyes
+  body.appendChild(circle(-hr*0.3,-bh*0.45,C*0.022,"#1e293b"));
+  body.appendChild(circle(hr*0.3,-bh*0.45,C*0.022,"#1e293b"));
+
+  // torch stick
+  const sx=bw*0.45,sy=-bh*0.35;
+  body.appendChild(rect(sx,sy,C*0.05,C*0.2,"#78350f",{rx:1,transform:"rotate(20)"}));
+  // flame
+  const flame=circle(sx+C*0.06,sy-C*0.04,C*0.065,"#fb923c",{opacity:0.95});
+  const fa=el("animate",{attributeName:"r",values:`${C*0.05};${C*0.08};${C*0.05}`,dur:"0.6s",repeatCount:"indefinite"});
+  flame.appendChild(fa);
+  const fc=el("animate",{attributeName:"fill",values:"#fb923c;#facc15;#f97316;#fb923c",dur:"0.7s",repeatCount:"indefinite"});
+  flame.appendChild(fc);
+  body.appendChild(flame);
+  // flame tip
+  body.appendChild(circle(sx+C*0.06,sy-C*0.09,C*0.035,"#fde68a",{opacity:0.6}));
+
+  g.appendChild(body);
+  return g;
+}
+
+/* ── Main draw ── */
+function draw(frame){
+  if(!frame)return;
+  const sz=frame.size||{};
+  const grid=Array.isArray(frame.maze)?frame.maze:[];
+  const W=sz.width||(Array.isArray(grid[0])?grid[0].length:31),H=sz.height||grid.length||31;
+  const walls=new Set();
+  if(Array.isArray(frame.walls))for(const w of frame.walls)if(w&&Number.isFinite(w.x))walls.add(w.x+","+w.y);
+  if(!walls.size&&grid.length)for(let y=0;y<grid.length;y++)if(Array.isArray(grid[y]))for(let x=0;x<grid[y].length;x++)if(grid[y][x]===-1)walls.add(x+","+y);
+
+  const C=Math.max(8,Math.floor(Math.min(window.innerWidth*0.92,window.innerHeight-44)/Math.max(W,H)));
+  const pw=W*C,ph=H*C;
+  boardEl.setAttribute("viewBox",`0 0 ${pw} ${ph}`);
+  boardEl.replaceChildren();
+  addDefs(C);
+
+  // background
+  boardEl.appendChild(rect(0,0,pw,ph,"#2d3a28"));
+
+  // cells
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const isW=walls.has(x+","+y);
+    boardEl.appendChild(rect(x*C,y*C,C,C,isW?"url(#wll)":"url(#gnd)"));
+  }
+
+  // wall top edges (3d effect)
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    if(!walls.has(x+","+y))continue;
+    if(y>0&&!walls.has(x+","+(y-1))){
+      boardEl.appendChild(rect(x*C,y*C,C,2,"#6b7280",{opacity:0.5}));
     }
+  }
 
-    function makeRect(x, y, width, height, fill, stroke = "#2a3343", strokeWidth = "1") {
-      const rect = document.createElementNS(SVG_NS, "rect");
-      rect.setAttribute("x", String(x));
-      rect.setAttribute("y", String(y));
-      rect.setAttribute("width", String(width));
-      rect.setAttribute("height", String(height));
-      rect.setAttribute("fill", fill);
-      rect.setAttribute("stroke", stroke);
-      rect.setAttribute("stroke-width", String(strokeWidth));
-      return rect;
-    }
+  // exit
+  const ex=(frame.exit||{}).x||0,ey=(frame.exit||{}).y||0;
+  boardEl.appendChild(rect(ex*C,ey*C,C,C,"url(#exG)"));
+  // exit icon — door arch
+  const doorW=C*0.5,doorH=C*0.65;
+  const doorX=ex*C+(C-doorW)/2,doorY=ey*C+(C-doorH)*0.8;
+  boardEl.appendChild(rect(doorX,doorY,doorW,doorH,"#166534",{rx:doorW/2+" "+doorW/2+" 0 0",opacity:0.7}));
+  boardEl.appendChild(rect(doorX+2,doorY+2,doorW-4,doorH-2,"#22c55e",{rx:(doorW-4)/2+" "+(doorW-4)/2+" 0 0",opacity:0.4}));
 
-    function makeText(x, y, text, fill) {
-      const label = document.createElementNS(SVG_NS, "text");
-      label.setAttribute("x", String(x));
-      label.setAttribute("y", String(y));
-      label.setAttribute("fill", fill);
-      label.setAttribute("font-size", "13");
-      label.textContent = text;
-      return label;
-    }
+  // player
+  const pos=frame.position||{x:1,y:1};
+  const px=pos.x||0,py=pos.y||0;
+  const hx=px*C+C/2,hy=py*C+C/2;
+  const steps=Number.isFinite(frame.steps)?frame.steps:0;
+  const moving=prevSteps>=0&&steps>prevSteps;
+  prevSteps=steps;
 
-    function makeCell(x, y, size, fill, type) {
-      const rect = makeRect(x * size, y * size, size, size, fill, type === "wall" ? "#404754" : "#7f8e6e", type === "wall" ? "0.45" : "0.25");
-      return rect;
-    }
+  // torch glow
+  boardEl.appendChild(el("ellipse",{cx:hx,cy:hy,rx:C*2.5,ry:C*2.5,fill:"url(#torch)",opacity:0.8}));
 
-    function makeCircle(cx, cy, radius, fill) {
-      const el = document.createElementNS(SVG_NS, "circle");
-      el.setAttribute("cx", String(cx));
-      el.setAttribute("cy", String(cy));
-      el.setAttribute("r", String(Math.max(0, radius)));
-      el.setAttribute("fill", fill);
-      return el;
-    }
+  // hero
+  const dir=frame.direction||"right";
+  const tick=Number.isFinite(frame.steps)?frame.steps:0;
+  boardEl.appendChild(drawHero(hx,hy,C,dir,tick,moving));
 
-    function addTextureDefs(cellPx) {
-      const defs = document.createElementNS(SVG_NS, "defs");
-      const tile = Math.max(12, Math.floor(cellPx));
+  // fog of war — centered on player
+  const fogR=Math.max(pw,ph);
+  const fogRect=rect(0,0,pw,ph,"url(#fog)");
+  // We need to reposition the fog gradient center to the player
+  // Use a mask approach: dark overlay with a transparent hole at player
+  const mask=el("mask",{id:"fogM"});
+  mask.appendChild(rect(0,0,pw,ph,"white"));
+  mask.appendChild(circle(hx,hy,C*4.5,"black"));
+  boardEl.appendChild(mask);
+  const overlay=rect(0,0,pw,ph,"#0a0e17",{opacity:0.75,mask:"url(#fogM)"});
+  boardEl.appendChild(overlay);
 
-      const groundPattern = document.createElementNS(SVG_NS, "pattern");
-      groundPattern.setAttribute("id", "groundTexture");
-      groundPattern.setAttribute("x", "0");
-      groundPattern.setAttribute("y", "0");
-      groundPattern.setAttribute("width", String(tile / 2));
-      groundPattern.setAttribute("height", String(tile / 2));
-      groundPattern.setAttribute("patternUnits", "userSpaceOnUse");
-      groundPattern.appendChild(makeRect(0, 0, tile / 2, tile / 2, "#49633b", "none"));
-      groundPattern.appendChild(makeRect(tile / 16, tile / 16, 2, 2, "#5f7a46", "none"));
-      groundPattern.appendChild(makeRect(tile * 0.68, tile * 0.34, 1.5, 1.5, "#557243", "none"));
-      groundPattern.appendChild(makeRect(tile * 0.33, tile * 0.72, 1.5, 1.5, "#3e542f", "none"));
-      const groundSlash = document.createElementNS(SVG_NS, "line");
-      groundSlash.setAttribute("x1", "0");
-      groundSlash.setAttribute("y1", String(tile / 2));
-      groundSlash.setAttribute("x2", String(tile / 2));
-      groundSlash.setAttribute("y2", "0");
-      groundSlash.setAttribute("stroke", "#5f7a4d");
-      groundSlash.setAttribute("stroke-width", "1");
-      groundSlash.setAttribute("opacity", "0.38");
-      groundPattern.appendChild(groundSlash);
-      defs.appendChild(groundPattern);
+  // HUD
+  const reached=frame.reached_exit===true;
+  const sc=Number.isFinite(frame.score)?frame.score:null;
+  const over=Number.isFinite(frame.steps_over_optimal)?frame.steps_over_optimal:null;
+  const opt=Number.isFinite(frame.optimal_steps)?frame.optimal_steps:null;
+  let html=`<span>steps: <b>${steps}</b></span>`;
+  if(opt!==null)html+=`<span>optimal: <b>${opt}</b></span>`;
+  if(over!==null)html+=`<span>overhead: <b>${over}</b></span>`;
+  if(sc!==null)html+=`<span>score: <b>${sc}</b></span>`;
+  if(reached)html+=`<span class="win">✓ EXIT</span>`;
+  if(frame.invalid_moves)html+=`<span>invalid: <b>${frame.invalid_moves}</b></span>`;
+  hudEl.innerHTML=html;
+}
 
-      const wallPattern = document.createElementNS(SVG_NS, "pattern");
-      wallPattern.setAttribute("id", "wallTexture");
-      wallPattern.setAttribute("x", "0");
-      wallPattern.setAttribute("y", "0");
-      wallPattern.setAttribute("width", String(tile / 2));
-      wallPattern.setAttribute("height", String(tile / 2));
-      wallPattern.setAttribute("patternUnits", "userSpaceOnUse");
-      wallPattern.appendChild(makeRect(0, 0, tile / 2, tile / 2, "#5a606a", "none"));
-      const lineTop = document.createElementNS(SVG_NS, "line");
-      lineTop.setAttribute("x1", "0");
-      lineTop.setAttribute("y1", tile / 8);
-      lineTop.setAttribute("x2", String(tile / 2));
-      lineTop.setAttribute("y2", tile / 8);
-      lineTop.setAttribute("stroke", "#6f7884");
-      lineTop.setAttribute("stroke-width", "1");
-      wallPattern.appendChild(lineTop);
-      const lineLeft = document.createElementNS(SVG_NS, "line");
-      lineLeft.setAttribute("x1", tile / 2.5);
-      lineLeft.setAttribute("y1", "0");
-      lineLeft.setAttribute("x2", tile / 2.5);
-      lineLeft.setAttribute("y2", String(tile / 2));
-      lineLeft.setAttribute("stroke", "#4a5360");
-      lineLeft.setAttribute("stroke-width", "1");
-      wallPattern.appendChild(lineLeft);
-      defs.appendChild(wallPattern);
+/* ── Message protocol ── */
+window.addEventListener("message",e=>{
+  const m=e.data;
+  if(!m||typeof m!=="object"||typeof m.type!=="string")return;
+  if(m.type==="agp.renderer.init"){
+    runId=m.payload?.runId||"";prevSteps=-1;
+  }else if(m.type==="agp.renderer.state"){
+    lastFrame=m.payload||{};
+    draw((lastFrame&&typeof lastFrame.frame==="object")?lastFrame.frame:{});
+  }else if(m.type==="agp.renderer.result"){
+    /* keep last drawn frame */
+  }
+});
 
-      const exitGlow = document.createElementNS(SVG_NS, "linearGradient");
-      exitGlow.setAttribute("id", "exitGlow");
-      exitGlow.setAttribute("x1", "0%");
-      exitGlow.setAttribute("y1", "0%");
-      exitGlow.setAttribute("x2", "0%");
-      exitGlow.setAttribute("y2", "100%");
-      const e1 = document.createElementNS(SVG_NS, "stop");
-      e1.setAttribute("offset", "0%");
-      e1.setAttribute("stop-color", "#dcfce7");
-      exitGlow.appendChild(e1);
-      const e2 = document.createElementNS(SVG_NS, "stop");
-      e2.setAttribute("offset", "100%");
-      e2.setAttribute("stop-color", "#86efac");
-      exitGlow.appendChild(e2);
-      defs.appendChild(exitGlow);
+window.addEventListener("resize",()=>{if(lastFrame)draw(typeof lastFrame.frame==="object"?lastFrame.frame:{})});
 
-      const torchLight = document.createElementNS(SVG_NS, "radialGradient");
-      torchLight.setAttribute("id", "torchLight");
-      torchLight.setAttribute("cx", "15%");
-      torchLight.setAttribute("cy", "20%");
-      torchLight.setAttribute("r", "80%");
-      const t1 = document.createElementNS(SVG_NS, "stop");
-      t1.setAttribute("offset", "0%");
-      t1.setAttribute("stop-color", "#f59e0b");
-      t1.setAttribute("stop-opacity", "0.32");
-      torchLight.appendChild(t1);
-      const t2 = document.createElementNS(SVG_NS, "stop");
-      t2.setAttribute("offset", "35%");
-      t2.setAttribute("stop-color", "#f97316");
-      t2.setAttribute("stop-opacity", "0.15");
-      torchLight.appendChild(t2);
-      const t3 = document.createElementNS(SVG_NS, "stop");
-      t3.setAttribute("offset", "100%");
-      t3.setAttribute("stop-color", "#fbbf24");
-      t3.setAttribute("stop-opacity", "0");
-      torchLight.appendChild(t3);
-      defs.appendChild(torchLight);
-
-      boardEl.appendChild(defs);
-    }
-
-    function resolveDirection(raw) {
-      if (raw === "up" || raw === "down" || raw === "left" || raw === "right") return raw;
-      return "right";
-    }
-
-    function makeHero(cx, cy, size, options) {
-      const direction = resolveDirection(options && options.direction);
-      const frame = Number.isFinite(options && options.frameIndex) ? Number(options.frameIndex) : 0;
-      const moving = Boolean(options && options.moving);
-      const angleMap = { right: 0, down: 90, left: 180, up: -90 };
-      const walk = moving ? Math.sin(frame * 0.7) * (size * 0.06) : 0;
-      const shoulderShift = moving ? Math.sin(frame * 1.2) * (size * 0.03) : 0;
-
-      const hero = document.createElementNS(SVG_NS, "g");
-      hero.setAttribute("transform", `translate(${cx} ${cy})`);
-
-      const torso = document.createElementNS(SVG_NS, "g");
-      torso.setAttribute("transform", `rotate(${angleMap[direction]}) translate(0 ${walk})`);
-
-      const bodyWidth = size * 0.24;
-      const bodyHeight = size * 0.30;
-      const headRadius = Math.max(1.8, size * 0.09);
-
-      const body = makeRect(
-        -bodyWidth / 2,
-        -bodyHeight * 0.15,
-        bodyWidth,
-        bodyHeight,
-        "#1d4ed8",
-        "#2d3f5e",
-        "0.8",
-      );
-      body.setAttribute("rx", "2");
-      body.setAttribute("ry", "2");
-      torso.appendChild(body);
-
-      const shoulder = document.createElementNS(SVG_NS, "rect");
-      shoulder.setAttribute("x", String(-bodyWidth / 2 + 1.5));
-      shoulder.setAttribute("y", String(-bodyHeight * 0.23 + shoulderShift));
-      shoulder.setAttribute("width", String(bodyWidth - 3));
-      shoulder.setAttribute("height", String(bodyHeight * 0.28));
-      shoulder.setAttribute("fill", "#2e63cc");
-      shoulder.setAttribute("rx", "1.5");
-      torso.appendChild(shoulder);
-
-      const head = makeCircle(0, -bodyHeight * 0.52 + shoulderShift * 0.3, headRadius, "#f6d4aa");
-      torso.appendChild(head);
-
-      const eye1 = makeCircle(-headRadius * 0.35, -bodyHeight * 0.55 + shoulderShift * 0.3, Math.max(0.35, size * 0.02), "#111827");
-      const eye2 = makeCircle(headRadius * 0.35, -bodyHeight * 0.55 + shoulderShift * 0.3, Math.max(0.35, size * 0.02), "#111827");
-      torso.appendChild(eye1);
-      torso.appendChild(eye2);
-
-      const shadow = makeCircle(0, bodyHeight * 0.34, size * 0.24, "#0f1723");
-      shadow.setAttribute("opacity", "0.25");
-      shadow.setAttribute("transform", `translate(${shoulderShift * 0.2} 2)`);
-      torso.appendChild(shadow);
-
-      const torchStick = makeRect(bodyWidth * 0.42, -bodyHeight * 0.45 + shoulderShift * 0.2, size * 0.06, size * 0.22, "#5e3f16", "none");
-      torchStick.setAttribute("rx", "1");
-      torchStick.setAttribute("transform", "rotate(24)");
-      torso.appendChild(torchStick);
-
-      const torchRock = makeCircle(bodyWidth * 0.64, -bodyHeight * 0.5 + shoulderShift * 0.2, size * 0.055, "#43270f");
-      torso.appendChild(torchRock);
-
-      const flame = makeCircle(bodyWidth * 0.64, -bodyHeight * 0.55 + shoulderShift * 0.2, size * 0.07, "#f97316");
-      flame.setAttribute("opacity", "0.9");
-      const flameSize = document.createElementNS(SVG_NS, "animate");
-      flameSize.setAttribute("attributeName", "r");
-      flameSize.setAttribute("values", `${size * 0.055};${size * 0.08};${size * 0.055}`);
-      flameSize.setAttribute("dur", "0.8s");
-      flameSize.setAttribute("repeatCount", "indefinite");
-      flame.appendChild(flameSize);
-      const flameGlow = document.createElementNS(SVG_NS, "animate");
-      flameGlow.setAttribute("attributeName", "fill");
-      flameGlow.setAttribute("values", "#f97316;#f59e0b;#fb7185;#f97316");
-      flameGlow.setAttribute("dur", "0.8s");
-      flameGlow.setAttribute("repeatCount", "indefinite");
-      flame.appendChild(flameGlow);
-      torso.appendChild(flame);
-
-      const flameArc = document.createElementNS(SVG_NS, "ellipse");
-      flameArc.setAttribute("cx", String(bodyWidth * 0.64));
-      flameArc.setAttribute("cy", String(-bodyHeight * 0.61 + shoulderShift * 0.2));
-      flameArc.setAttribute("rx", String(size * 0.1));
-      flameArc.setAttribute("ry", String(size * 0.03));
-      flameArc.setAttribute("fill", "#fde68a");
-      flameArc.setAttribute("opacity", "0.5");
-      torso.appendChild(flameArc);
-
-      hero.appendChild(torso);
-      return hero;
-    }
-
-    function makeTorchGlow(cx, cy, size) {
-      const glow = document.createElementNS(SVG_NS, "ellipse");
-      glow.setAttribute("cx", String(cx));
-      glow.setAttribute("cy", String(cy));
-      glow.setAttribute("rx", String(size * 1.7));
-      glow.setAttribute("ry", String(size * 1.05));
-      glow.setAttribute("fill", "url(#torchLight)");
-      glow.setAttribute("opacity", "0.6");
-      return glow;
-    }
-
-    function resolveMaze(frame) {
-      const size = frame && typeof frame.size === "object" ? frame.size : {};
-      const width = Number.isFinite(size.width) ? size.width : DEFAULT_GRID_W;
-      const height = Number.isFinite(size.height) ? size.height : DEFAULT_GRID_H;
-      const exit = frame && typeof frame.exit === "object" ? frame.exit : DEFAULT_EXIT;
-      const walls = new Set();
-      if (Array.isArray(frame?.walls)) {
-        for (const wall of frame.walls) {
-          if (!wall || typeof wall !== "object") continue;
-          if (Number.isFinite(wall.x) && Number.isFinite(wall.y)) {
-            walls.add(`${wall.x},${wall.y}`);
-          }
-        }
-      } else {
-        for (const wall of DEFAULT_WALLS) walls.add(wall);
-      }
-      return {
-        width,
-        height,
-        exit: {
-          x: Number.isFinite(exit.x) ? exit.x : DEFAULT_EXIT.x,
-          y: Number.isFinite(exit.y) ? exit.y : DEFAULT_EXIT.y,
-        },
-        walls,
-      };
-    }
-
-    function resolveCellSize(mazeWidth, mazeHeight) {
-      const widthLimit = Math.max(260, Math.min(window.innerWidth * 0.88, window.innerHeight * 0.72));
-      return Math.max(MIN_CELL, Math.floor(widthLimit / Math.max(mazeWidth, mazeHeight)));
-    }
-
-    function draw(frame) {
-      const maze = resolveMaze(frame || {});
-      const CELL = resolveCellSize(maze.width, maze.height);
-      boardEl.setAttribute("viewBox", `0 0 ${maze.width * CELL} ${maze.height * CELL}`);
-      boardEl.replaceChildren();
-      addTextureDefs(CELL);
-
-      for (let y = 0; y < maze.height; y += 1) {
-        for (let x = 0; x < maze.width; x += 1) {
-          const key = `${x},${y}`;
-          const isWall = maze.walls.has(key);
-          const fill = isWall ? "url(#wallTexture)" : "url(#groundTexture)";
-          boardEl.appendChild(makeCell(x, y, CELL, fill, isWall ? "wall" : "ground"));
-        }
-      }
-
-      const exitRect = makeCell(maze.exit.x, maze.exit.y, CELL, "url(#exitGlow)", "ground");
-      exitRect.setAttribute("stroke", "#98f5bf");
-      exitRect.setAttribute("stroke-width", "2");
-      boardEl.appendChild(exitRect);
-
-      const pos = frame && frame.position && typeof frame.position === "object" ? frame.position : { x: 0, y: 0 };
-      const px = Number.isFinite(pos.x) ? pos.x : 0;
-      const py = Number.isFinite(pos.y) ? pos.y : 0;
-      const stepCount = Number.isFinite(frame && frame.steps) ? frame.steps : 0;
-      const prevStepCount = Number.isFinite(lastStepValue) ? lastStepValue : -1;
-      const isMoving = lastStepValue !== null && stepCount > prevStepCount;
-      lastStepValue = stepCount;
-      const heroX = px * CELL + CELL / 2;
-      const heroY = py * CELL + CELL / 2;
-      boardEl.appendChild(makeTorchGlow(heroX, heroY, CELL));
-      boardEl.appendChild(
-        makeHero(heroX, heroY, CELL, {
-          direction: frame && frame.direction ? frame.direction : "right",
-          frameIndex: frame && Number.isFinite(frame.tick) ? frame.tick : 0,
-          moving: isMoving,
-        }),
-      );
-
-      const score = frame && Number.isFinite(frame.score) ? frame.score : "-";
-      const steps = frame && Number.isFinite(frame.steps) ? frame.steps : 0;
-      const over = frame && Number.isFinite(frame.steps_over_optimal) ? frame.steps_over_optimal : "-";
-      const ratio = frame && Number.isFinite(frame.speed_ratio) ? frame.speed_ratio : "-";
-      const reached = frame && frame.reached_exit === true ? "yes" : "no";
-      const dir = resolveDirection(frame && frame.direction);
-      const status = frame && frame.invalid_moves ? ` invalid_moves=${frame.invalid_moves}` : "";
-      const text = makeText(
-        12,
-        20,
-        `score=${score} reached_exit=${reached} dir=${dir} steps=${steps} over_optimal=${over} ratio=${ratio}${status}`,
-        "#d1dce7",
-      );
-      boardEl.appendChild(text);
-    }
-
-    function onState(payload) {
-      lastFrame = payload || {};
-      const tick = Number.isFinite(payload?.tick) ? payload.tick : "-";
-      const phase = typeof payload?.phase === "string" ? payload.phase : "unknown";
-      const frame = payload && typeof payload.frame === "object" ? payload.frame : {};
-      draw(frame);
-      setStatus(`Renderer: state update (${phase})`, `run_id=${runId || "-"} tick=${tick}`);
-    }
-
-    function onResult(payload) {
-      const status = typeof payload?.status === "string" ? payload.status : "finished";
-      const metrics = payload && typeof payload.metrics === "object" ? payload.metrics : {};
-      const score = Number.isFinite(metrics.score) ? metrics.score : "-";
-      const steps = Number.isFinite(metrics.steps) ? metrics.steps : "-";
-      const optimal = Number.isFinite(metrics.optimal_steps) ? metrics.optimal_steps : "-";
-      const overhead = Number.isFinite(metrics.steps_over_optimal) ? metrics.steps_over_optimal : "-";
-      setStatus("Renderer: result received", `run_id=${runId || "-"} status=${status} score=${score} steps=${steps} optimal=${optimal} overhead=${overhead}`);
-    }
-
-    window.addEventListener("resize", () => {
-      if (lastFrame) {
-        const frame = (lastFrame && typeof lastFrame.frame === "object") ? lastFrame.frame : {};
-        draw(frame);
-      }
-    });
-
-    window.addEventListener("message", (event) => {
-      const message = event.data;
-      if (!message || typeof message !== "object" || typeof message.type !== "string") return;
-      if (message.type === "agp.renderer.init") {
-        runId = message.payload && message.payload.runId ? String(message.payload.runId) : "";
-        lastStepValue = null;
-        setStatus("Renderer: init received", runId ? `run_id=${runId}` : "");
-      } else if (message.type === "agp.renderer.state") {
-        onState(message.payload || {});
-      } else if (message.type === "agp.renderer.result") {
-        onResult(message.payload || {});
-      }
-    });
-
-    draw({ position: { x: 1, y: 1 }, reached_exit: false });
-    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.1.0" } }, "*");
-    setStatus("Renderer: ready");
-  </script>
+draw({position:{x:1,y:1},size:{width:31,height:31},walls:[],exit:{x:29,y:29},direction:"right",steps:0});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"2.0.0"}},"*");
+</script>
 </body>
 </html>

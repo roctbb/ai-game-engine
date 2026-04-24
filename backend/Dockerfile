@@ -7,9 +7,12 @@ WORKDIR /app
 
 COPY backend/pyproject.toml /app/pyproject.toml
 COPY backend/src /app/src
+COPY backend/alembic.ini /app/alembic.ini
+COPY backend/alembic /app/alembic
+COPY backend/entrypoint.sh /app/entrypoint.sh
 COPY games /app/games
 
 RUN pip install --no-cache-dir .
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/entrypoint.sh"]

@@ -1,12 +1,9 @@
 def make_move(state):
     start = (state["position"]["x"], state["position"]["y"])
     goal = (state["exit"]["x"], state["exit"]["y"])
-    width = state["size"]["width"]
-    height = state["size"]["height"]
-
-    walls = set()
-    for cell in state["walls"]:
-        walls.add((cell["x"], cell["y"]))
+    maze = state["maze"]
+    height = len(maze)
+    width = len(maze[0]) if height else 0
 
     directions = [
         ("right", 1, 0),
@@ -30,7 +27,9 @@ def make_move(state):
                 continue
             if next_cell[0] >= width or next_cell[1] >= height:
                 continue
-            if next_cell in walls or next_cell in came_from:
+            if maze[next_cell[1]][next_cell[0]] == -1:
+                continue
+            if next_cell in came_from:
                 continue
             came_from[next_cell] = (action, current)
             queue.append(next_cell)

@@ -6,7 +6,7 @@ code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(state), возвращающую up/down/left/right, и доведите агента до выхода на большой случайной карте.
-description: "Проходите по лабиринту 1-клеточной ширины на карте 31×31: коридоры узкие, лабиринт окружён стенами, выход выбирается случайно в дальнюю точку, а больше очков даёт более быстрое прохождение."
+description: "Проходите по лабиринту на карте 21×21: коридоры узкие, но есть несколько путей к выходу. Выход выбирается случайно в дальнюю точку, а больше очков даёт более быстрое прохождение."
 difficulty: medium
 topics:
   - графы
@@ -16,9 +16,15 @@ slots:
     title: Код агента
     required: true
 demo_strategies:
+  - id: wall_follower
+    slot_key: agent
+    title: "Демо: движение вдоль стены"
+    language: python
+    path: examples/agent_wall_follower.py
+    description: Простая стратегия держится правой стены и выбирает первый доступный поворот.
   - id: pathfinder
     slot_key: agent
-    title: "Демо: поиск пути BFS"
+    title: "Демо: умный поиск BFS"
     language: python
     path: examples/agent_pathfinder.py
-    description: На каждом шаге строит кратчайший путь до выхода с учетом стен.
+    description: На каждом шаге строит кратчайший путь до выхода по числовой карте лабиринта.

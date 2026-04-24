@@ -699,6 +699,13 @@ async function loadLobby(): Promise<void> {
   joinRequired.value = false;
   if (canManage.value) {
     lobby.value = await getLobby(id);
+    if (!lobby.value.my_team_id) {
+      try {
+        lobby.value = await joinLobbyAsUser({ lobby_id: id, access_code: null });
+      } catch {
+        // Teacher can still view lobby without joining
+      }
+    }
   } else {
     try {
       lobby.value = await joinLobbyAsUser({

@@ -72,7 +72,7 @@ class Lobby:
             status=status,
         )
 
-    def join_team(self, team_id: str, access_code: str | None = None) -> None:
+    def join_team(self, team_id: str, access_code: str | None = None, *, bypass_access_code: bool = False) -> None:
         joinable_statuses = {LobbyStatus.OPEN, LobbyStatus.DRAFT}
         if self.kind is LobbyKind.TRAINING:
             joinable_statuses.add(LobbyStatus.RUNNING)
@@ -82,7 +82,7 @@ class Lobby:
             raise InvariantViolationError("Команда уже в лобби")
         if len(self.teams) >= self.max_teams:
             raise InvariantViolationError("Лобби заполнено")
-        if self.access == LobbyAccess.CODE and self.access_code != access_code:
+        if not bypass_access_code and self.access == LobbyAccess.CODE and self.access_code != access_code:
             raise InvariantViolationError("Неверный код доступа к лобби")
         self.teams[team_id] = LobbyTeamState(team_id=team_id, ready=False)
 
