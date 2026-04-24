@@ -61,7 +61,7 @@ Builder:
   - валидирует backend lifecycle payload (`build_id`, `status`, `image_digest`) на шагах start/finished;
   - завершает build в backend (`/api/v1/internal/builds/{buildId}/finished`);
   - при ошибке best-effort отправляет `/failed`.
-- в compose `builder-service` получает `BACKEND_API_URL=http://backend-api:8000/api/v1`;
+- в compose `builder-service` получает `BACKEND_API_URL=http://backend-api:8000/api/v1` и общий `INTERNAL_API_TOKEN`;
 - backend для ручного sync game source использует `BUILDER_SERVICE_URL=http://builder-service:8030`.
 
 ## Запуск удаленных worker-узлов (горизонтальное масштабирование)
@@ -69,6 +69,7 @@ Builder:
 Минимальные env для удаленного worker:
 - `SCHEDULER_URL` — публичный адрес scheduler-service;
 - `BACKEND_API_URL` — публичный адрес backend API (`/api/v1`);
+- `INTERNAL_API_TOKEN` — общий сервисный токен для backend `/internal/*`;
 - `WORKER_ID` — уникальный идентификатор узла;
 - `HOSTNAME` — имя узла;
 - `MAX_SLOTS` — сколько запусков узел обрабатывает конкурентно;

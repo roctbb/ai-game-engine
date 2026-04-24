@@ -141,16 +141,12 @@ def _pull_and_execute_once() -> dict[str, object]:
             capacity_available=max(settings.max_slots - 1, 0),
         )
         try:
-            run_info_response = _request_with_retry(
-                client=client,
-                method="GET",
-                url=f"{settings.backend_api_url}/runs/{run_id}",
-            )
-            run_info = run_info_response.json()
-            run_kind_raw = run_info.get("run_kind")
-            if not isinstance(run_kind_raw, str):
-                raise RuntimeError("Run payload is missing run_kind")
             execution_context = _get_execution_context(client=client, run_id=run_id)
+            if execution_context is None:
+                raise RuntimeError(f"Execution context is not available for run {run_id}")
+            run_kind_raw = execution_context.get("run_kind") if execution_context is not None else None
+            if not isinstance(run_kind_raw, str):
+                raise RuntimeError("Execution context is missing run_kind")
             resolved_context = _require_execution_context(
                 run_id=run_id,
                 run_kind=run_kind_raw,
@@ -443,10 +439,11 @@ def _request_with_retry(
 
     for attempt in range(attempts):
         try:
+            headers = _headers_for_request(url)
             if method == "GET":
-                response = client.get(url)
+                response = client.get(url, headers=headers)
             elif method == "POST":
-                response = client.post(url, json=json_payload)
+                response = client.post(url, json=json_payload, headers=headers)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
 
@@ -462,6 +459,12 @@ def _request_with_retry(
                 time.sleep(delay)
 
     raise RuntimeError("Unreachable retry state")
+
+
+def _headers_for_request(url: str) -> dict[str, str] | None:
+    if url.startswith(f"{settings.backend_api_url.rstrip('/')}/internal/"):
+        return {"X-Internal-Token": settings.internal_api_token}
+    return None
 
 
 def _is_retryable_http_error(exc: httpx.HTTPError) -> bool:

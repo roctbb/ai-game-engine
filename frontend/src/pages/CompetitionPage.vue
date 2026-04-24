@@ -2,10 +2,10 @@
   <section class="agp-grid competition-page">
     <header class="agp-card p-4 competition-hero">
       <div>
-        <div class="small text-muted text-uppercase fw-semibold">Competition event</div>
+        <div class="small text-muted text-uppercase fw-semibold">Соревнование</div>
         <h1 class="h3 mb-1">{{ competition?.title || 'Соревнование' }}</h1>
         <p class="text-muted mb-0">
-          Турнирный экран: регистрация команд, раунды, продвижение, replay и модерация в одном месте.
+          Раунды, матчи и результаты участников.
         </p>
       </div>
       <div class="btn-group competition-view-toggle">
@@ -26,10 +26,11 @@
         <div class="competition-command-main">
           <div class="competition-status-line">
             <span class="agp-pill" :class="competitionStatusToneClass">{{ competitionStatusLabel }}</span>
-            <span class="agp-pill agp-pill--neutral">{{ competition.format }}</span>
-            <span class="agp-pill agp-pill--neutral">live: {{ competitionLiveLabel }}</span>
+            <span v-if="canModerate" class="agp-pill agp-pill--neutral">{{ competition.format }}</span>
+            <span v-if="canModerate" class="agp-pill agp-pill--neutral">код: {{ competitionCodePolicyLabel(competition.code_policy) }}</span>
+            <span v-if="canModerate" class="agp-pill agp-pill--neutral">live: {{ competitionLiveLabel }}</span>
           </div>
-          <div class="small text-muted mt-2">
+          <div v-if="canModerate" class="small text-muted mt-2">
             id <span class="mono">{{ competition.competition_id }}</span> · версия <span class="mono">{{ shortVersionId }}</span>
           </div>
           <div v-if="competition.pending_reason" class="competition-warning mt-2">
@@ -50,7 +51,7 @@
             </div>
             <div class="competition-stat">
               <span>матч</span>
-              <strong>{{ competition.match_size }} → top-{{ competition.advancement_top_k }}</strong>
+              <strong>{{ competition.match_size }} игроков · проходят {{ competition.advancement_top_k }}</strong>
             </div>
           </div>
           <div class="small mt-2" v-if="competition.winner_team_ids.length">
@@ -58,7 +59,7 @@
             <span class="mono">{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</span>
           </div>
         </div>
-        <div class="competition-actions">
+        <div v-if="canModerate" class="competition-actions">
           <div class="d-flex gap-2">
             <RouterLink
               v-if="competition"
@@ -87,9 +88,6 @@
             </button>
           </div>
         </div>
-        <div v-if="!canModerate" class="small text-warning-emphasis mt-2">
-          Управление соревнованием и анти-плагиатом доступно только teacher/admin.
-        </div>
       </article>
 
       <article class="agp-card p-3" v-if="competition.status === 'draft' && canModerate">
@@ -105,38 +103,44 @@
           </div>
         </div>
         <div class="row g-3">
-          <div class="col-md-6">
-            <label class="form-label small">Title</label>
+          <div class="col-md-4">
+            <label class="form-label small">Название</label>
             <input v-model.trim="draftTitle" class="form-control" />
           </div>
           <div class="col-md-3">
-            <label class="form-label small">Tie-break policy</label>
+            <label class="form-label small">Разрешение ничьей</label>
             <select v-model="draftTieBreakPolicy" class="form-select mono">
-              <option value="manual">manual</option>
-              <option value="shared_advancement">shared_advancement</option>
-              <option value="tiebreak_match">tiebreak_match</option>
-              <option value="game_defined">game_defined</option>
+              <option value="manual">Ручное решение</option>
+              <option value="shared_advancement">Пропустить всех на границе</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Политика кода</label>
+            <select v-model="draftCodePolicy" class="form-select">
+              <option value="locked_on_start">Заблокировать на старте</option>
+              <option value="allowed_between_matches">Разрешить между матчами</option>
+              <option value="locked_on_registration">Заблокировать при регистрации</option>
             </select>
           </div>
           <div class="col-md-1">
-            <label class="form-label small">match_size</label>
+            <label class="form-label small">Игроков</label>
             <input v-model.number="draftMatchSize" class="form-control mono" type="number" min="2" max="64" />
           </div>
           <div class="col-md-2">
-            <label class="form-label small">advancement_top_k</label>
+            <label class="form-label small">Проходят</label>
             <input v-model.number="draftAdvancementTopK" class="form-control mono" type="number" min="1" max="64" />
           </div>
         </div>
         <div class="small text-muted mt-2">
-          Ограничение: `advancement_top_k` не может быть больше `match_size`.
+          Число проходящих дальше не может быть больше размера матча.
         </div>
       </article>
 
       <div class="agp-grid agp-grid--2">
         <article class="agp-card p-3">
-          <h2 class="h6">Entrants</h2>
-          <label class="form-label small">Команда для регистрации</label>
-          <select v-model="selectedTeamId" class="form-select mb-3">
+          <h2 class="h6">Участники</h2>
+          <label v-if="canModerate" class="form-label small">Игрок для регистрации</label>
+          <select v-if="canModerate" v-model="selectedTeamId" class="form-select mb-3">
             <option value="">Выберите команду</option>
             <option v-for="team in teamsByGame" :key="team.team_id" :value="team.team_id">
               {{ team.name }}
@@ -146,27 +150,27 @@
           <table class="table align-middle mb-0">
             <thead>
               <tr>
-                <th>team</th>
-                <th>ready</th>
-                <th>banned</th>
-                <th>reason</th>
-                <th>actions</th>
+                <th>Игрок</th>
+                <th v-if="canModerate">ready</th>
+                <th v-if="canModerate">banned</th>
+                <th v-if="canModerate">reason</th>
+                <th v-if="canModerate">actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="entrant in competition.entrants" :key="entrant.team_id">
                 <td>{{ teamName(entrant.team_id) }}</td>
-                <td class="mono small">{{ entrant.ready }}</td>
-                <td class="mono small">{{ entrant.banned }}</td>
-                <td class="small text-muted">{{ entrant.blocker_reason || '—' }}</td>
-                <td>
+                <td v-if="canModerate" class="mono small">{{ entrant.ready }}</td>
+                <td v-if="canModerate" class="mono small">{{ entrant.banned }}</td>
+                <td v-if="canModerate" class="small text-muted">{{ entrant.blocker_reason || '—' }}</td>
+                <td v-if="canModerate">
                   <div class="d-flex gap-2 flex-wrap">
                     <button
                       class="btn btn-sm btn-outline-warning"
                       :disabled="!canModerate || !entrant.ready || entrant.banned || moderationBusyTeamId === entrant.team_id"
                       @click="setEntrantNotReady(entrant.team_id)"
                     >
-                      Not ready
+                      Снять готовность
                     </button>
                     <button
                       class="btn btn-sm"
@@ -174,20 +178,20 @@
                       :disabled="!canModerate || moderationBusyTeamId === entrant.team_id"
                       @click="toggleEntrantBan(entrant.team_id, !entrant.banned)"
                     >
-                      {{ entrant.banned ? 'Unban' : 'Ban' }}
+                      {{ entrant.banned ? 'Разбанить' : 'Забанить' }}
                     </button>
                     <button
                       class="btn btn-sm btn-outline-secondary"
                       :disabled="!canModerate || competition.status !== 'draft' || unregisteringTeamId === entrant.team_id"
                       @click="unregisterEntrant(entrant.team_id)"
                     >
-                      Unregister
+                      Убрать
                     </button>
                   </div>
                 </td>
               </tr>
               <tr v-if="competition.entrants.length === 0">
-                <td colspan="5" class="text-muted small">Пока нет зарегистрированных команд.</td>
+                <td :colspan="canModerate ? 5 : 1" class="text-muted small">Пока нет зарегистрированных игроков.</td>
               </tr>
             </tbody>
           </table>
@@ -203,38 +207,39 @@
             >
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <div class="fw-semibold">
-                  Round {{ round.round_index }}
+                  Раунд {{ round.round_index }}
                 </div>
-                <span class="badge text-bg-light mono">{{ round.status }}</span>
+                <span class="badge text-bg-light">{{ roundStatusLabel(round.status) }}</span>
               </div>
               <div class="d-flex flex-column gap-3">
-                <article v-for="match in round.matches" :key="match.match_id" class="bg-white border rounded-3 p-3">
+                <article v-for="(match, matchIndex) in round.matches" :key="match.match_id" class="bg-white border rounded-3 p-3">
                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                     <div>
-                      <div class="fw-semibold mono">{{ match.match_id }}</div>
+                      <div class="fw-semibold">Матч {{ matchIndex + 1 }}</div>
                       <div class="small text-muted">
-                        Qualify top-{{ competition.advancement_top_k }} из {{ match.team_ids.length }}
+                        Проходят дальше: {{ competition.advancement_top_k }} из {{ match.team_ids.length }}
                       </div>
                     </div>
                     <div class="d-flex gap-2 align-items-center">
-                      <span class="badge text-bg-light mono">{{ match.status }}</span>
+                      <span class="badge text-bg-light">{{ matchStatusLabel(match.status) }}</span>
                       <button
+                        v-if="canModerate"
                         class="btn btn-sm btn-outline-dark"
                         :disabled="!canModerate || match.status !== 'awaiting_tiebreak'"
                         @click="resolveTieByFirstTeam(round.round_index, match.match_id, match.team_ids)"
                       >
-                        Resolve tie
+                        Решить ничью
                       </button>
                     </div>
                   </div>
                   <table class="table table-sm align-middle mb-0">
                     <thead>
                       <tr>
-                        <th>team</th>
-                        <th>score</th>
-                        <th>placement</th>
-                        <th>run</th>
-                        <th>advanced</th>
+                        <th>Игрок</th>
+                        <th>Счет</th>
+                        <th>Место</th>
+                        <th>Матч</th>
+                        <th>Прошел дальше</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -246,27 +251,28 @@
                           <template v-if="match.run_ids_by_team[teamId]">
                             <div class="d-flex align-items-center gap-2">
                               <RouterLink :to="`/runs/${match.run_ids_by_team[teamId]}/watch`">
-                                {{ match.run_ids_by_team[teamId] }}
+                                Смотреть
                               </RouterLink>
                               <button
+                                v-if="canModerate"
                                 class="btn btn-sm btn-outline-dark"
                                 @click="inspectRunReplay(match.run_ids_by_team[teamId])"
                               >
-                                Replay
+                                Инспектор
                               </button>
                             </div>
                           </template>
                           <span v-else>—</span>
                         </td>
-                        <td class="mono small">{{ match.advanced_team_ids.includes(teamId) ? 'yes' : '—' }}</td>
+                        <td class="mono small">{{ match.advanced_team_ids.includes(teamId) ? 'да' : '—' }}</td>
                       </tr>
                       <tr v-if="match.team_ids.length === 0">
-                        <td colspan="5" class="text-muted small">В матче пока нет команд.</td>
+                        <td colspan="5" class="text-muted small">В матче пока нет участников.</td>
                       </tr>
                     </tbody>
                   </table>
                   <div class="small text-muted mt-2" v-if="match.tie_break_reason">
-                    tie_break_reason: <span class="mono">{{ match.tie_break_reason }}</span>
+                    Требуется решение: <span>{{ match.tie_break_reason }}</span>
                   </div>
                 </article>
               </div>
@@ -278,7 +284,7 @@
         </article>
 
         <article class="agp-card p-3" v-else>
-          <h2 class="h6">Bracket view</h2>
+          <h2 class="h6">Сетка</h2>
           <div v-if="isBracketPrimaryCompatible" class="d-flex gap-3 flex-wrap">
             <article
               v-for="round in competition.rounds"
@@ -286,28 +292,28 @@
               class="agp-card-soft p-3"
               style="min-width: 18rem"
             >
-              <div class="fw-semibold mb-2">Round {{ round.round_index }}</div>
+              <div class="fw-semibold mb-2">Раунд {{ round.round_index }}</div>
               <div class="d-flex flex-column gap-2">
                 <div
-                  v-for="match in round.matches"
+                  v-for="(match, matchIndex) in round.matches"
                   :key="`bnode-${match.match_id}`"
                   class="bg-white border rounded-3 p-2"
                 >
-                  <div class="mono small fw-semibold mb-1">{{ match.match_id }}</div>
+                  <div class="small fw-semibold mb-1">Матч {{ matchIndex + 1 }}</div>
                   <div class="small" v-for="teamId in match.team_ids" :key="`bnode-team-${match.match_id}-${teamId}`">
                     {{ teamName(teamId) }}
                   </div>
                   <div class="small text-muted mt-1">
-                    winner: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
+                    победитель: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
                   </div>
                 </div>
               </div>
             </article>
           </div>
           <div v-else class="agp-card-soft p-3">
-            <div class="fw-semibold mb-2">Multi-team elimination node</div>
+            <div class="fw-semibold mb-2">Матчи с несколькими участниками</div>
             <div class="small text-muted mb-2">
-              Для текущего формата основной bracket не является бинарным (match_size={{ competition.match_size }}, top_k={{ competition.advancement_top_k }}).
+              Для текущих настроек удобнее смотреть раунды списком.
             </div>
             <div class="d-flex flex-column gap-2">
               <div
@@ -315,29 +321,29 @@
                 :key="`multi-round-${round.round_index}`"
                 class="bg-white border rounded-3 p-2"
               >
-                <div class="fw-semibold small mb-1">Round {{ round.round_index }}</div>
-                <div v-for="match in round.matches" :key="`multi-node-${match.match_id}`" class="border rounded-2 p-2 mb-2">
-                  <div class="mono small fw-semibold">{{ match.match_id }}</div>
-                  <div class="small text-muted">Qualify top-{{ competition.advancement_top_k }}</div>
+                <div class="fw-semibold small mb-1">Раунд {{ round.round_index }}</div>
+                <div v-for="(match, matchIndex) in round.matches" :key="`multi-node-${match.match_id}`" class="border rounded-2 p-2 mb-2">
+                  <div class="small fw-semibold">Матч {{ matchIndex + 1 }}</div>
+                  <div class="small text-muted">Проходят дальше: {{ competition.advancement_top_k }}</div>
                   <div class="small" v-for="teamId in match.team_ids" :key="`multi-node-team-${match.match_id}-${teamId}`">
                     {{ teamName(teamId) }}
                   </div>
                   <div class="small text-muted">
-                    advanced: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
+                    прошли дальше: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          <div class="mt-3">
-            <h3 class="h6">Runs (debug view)</h3>
+          <div v-if="canModerate" class="mt-3">
+            <h3 class="h6">Запуски соревнования</h3>
             <table class="table align-middle mb-0">
               <thead>
                 <tr>
-                  <th>run_id</th>
-                  <th>team</th>
-                  <th>status</th>
-                  <th>reason</th>
+                  <th>ID запуска</th>
+                  <th>Игрок</th>
+                  <th>Статус</th>
+                  <th>Причина</th>
                   <th></th>
                 </tr>
               </thead>
@@ -351,7 +357,7 @@
                   <td><RunReasonBadge :reason="run.error_message" /></td>
                   <td class="text-end">
                     <button class="btn btn-sm btn-outline-dark" @click="inspectRunReplay(run.run_id)">
-                      Replay
+                      Инспектор
                     </button>
                   </td>
                 </tr>
@@ -364,34 +370,34 @@
         </article>
       </div>
 
-      <article class="agp-card p-3" v-if="inspectedRunId">
+      <article class="agp-card p-3" v-if="canModerate && inspectedRunId">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="h6 mb-0">Replay Inspector</h2>
+          <h2 class="h6 mb-0">Инспектор replay</h2>
           <span class="mono small">run_id={{ inspectedRunId }}</span>
         </div>
         <div v-if="isInspectReplayLoading" class="text-muted small">Загрузка replay...</div>
         <div v-else-if="inspectReplayError" class="text-danger small">{{ inspectReplayError }}</div>
         <div v-else-if="inspectedReplay">
           <div class="small text-muted mb-2">
-            frames: <span class="mono">{{ inspectedReplay.frames.length }}</span>
-            · events: <span class="mono">{{ inspectedReplay.events.length }}</span>
-            · updated_at: <span class="mono">{{ inspectedReplay.updated_at }}</span>
+            кадры: <span class="mono">{{ inspectedReplay.frames.length }}</span>
+            · события: <span class="mono">{{ inspectedReplay.events.length }}</span>
+            · обновлено: <span class="mono">{{ inspectedReplay.updated_at }}</span>
           </div>
           <pre class="mono small mb-0">{{ inspectedReplaySummary }}</pre>
         </div>
         <div v-else class="text-muted small">Replay для выбранного run пока недоступен.</div>
       </article>
 
-      <article class="agp-card p-3">
+      <article v-if="canModerate" class="agp-card p-3">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
           <div>
             <h2 class="h6 mb-0">Проверка схожести решений</h2>
             <div class="small text-muted">
-              Проверяются последние competition snapshot'ы команд по слотам.
+              Автоматически проверяются последние версии кода участников по слотам.
             </div>
           </div>
           <div class="d-flex align-items-center gap-2">
-            <label class="small text-muted" for="antiplag-threshold">threshold</label>
+            <label class="small text-muted" for="antiplag-threshold">порог</label>
             <input
               id="antiplag-threshold"
               v-model.number="antiplagThreshold"
@@ -403,7 +409,7 @@
               step="0.01"
             />
             <button class="btn btn-sm btn-outline-dark" :disabled="isCheckingAntiplag || !canModerate" @click="runAntiplagiarismCheck">
-              {{ isCheckingAntiplag ? 'Проверка...' : 'Проверить' }}
+              {{ isCheckingAntiplag ? 'Проверка...' : 'Обновить' }}
             </button>
           </div>
         </div>
@@ -411,11 +417,11 @@
         <table class="table align-middle mb-0">
           <thead>
             <tr>
-              <th>team A</th>
-              <th>team B</th>
-              <th>slot</th>
-              <th>similarity</th>
-              <th>runs</th>
+              <th>Игрок A</th>
+              <th>Игрок B</th>
+              <th>Слот</th>
+              <th>схожесть</th>
+              <th>запуски</th>
             </tr>
           </thead>
           <tbody>
@@ -427,7 +433,7 @@
               <td class="small mono">{{ warning.run_a_id }} / {{ warning.run_b_id }}</td>
             </tr>
             <tr v-if="antiplagWarnings.length === 0">
-              <td colspan="5" class="text-muted small">Предупреждений нет. Запустите проверку вручную.</td>
+              <td colspan="5" class="text-muted small">Предупреждений нет.</td>
             </tr>
           </tbody>
         </table>
@@ -444,7 +450,6 @@ import RunReasonBadge from '../components/RunReasonBadge.vue';
 import {
   advanceCompetition,
   checkCompetitionAntiplagiarism,
-  createCompetition,
   createTeam,
   patchCompetition,
   resolveCompetitionMatchTie,
@@ -452,9 +457,7 @@ import {
   setCompetitionEntrantNotReady,
   getCompetition,
   getRunReplay,
-  listCompetitions,
   listCompetitionRuns,
-  listGames,
   listTeamsByGame,
   pauseCompetition,
   registerCompetitionTeam,
@@ -463,7 +466,10 @@ import {
   startCompetition,
   type StreamEnvelopeDto,
   type AntiplagiarismWarningDto,
+  type CompetitionCodePolicy,
   type CompetitionDto,
+  type CompetitionMatchStatus,
+  type CompetitionRoundStatus,
   type CompetitionRunItemDto,
   type ReplayDto,
   type TeamDto,
@@ -497,10 +503,12 @@ const errorMessage = ref('');
 const competitionLiveMode = ref<'idle' | 'sse' | 'polling'>('idle');
 const draftTitle = ref('');
 const draftTieBreakPolicy = ref<TieBreakPolicy>('manual');
+const draftCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
 const draftMatchSize = ref(2);
 const draftAdvancementTopK = ref(1);
 let competitionEventSource: EventSource | null = null;
 let competitionPollingHandle: ReturnType<typeof setInterval> | null = null;
+let antiplagRunSignature = '';
 
 const canModerate = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const isBracketPrimaryCompatible = computed(() => {
@@ -530,7 +538,7 @@ const canAdvance = computed(() => canModerate.value && competition.value?.status
 const canFinish = computed(
   () =>
     canModerate.value &&
-    (competition.value?.status === 'running' || competition.value?.status === 'paused') &&
+    competition.value?.status === 'completed' &&
     !isChangingStatus.value
 );
 const canSaveDraftSettings = computed(() => {
@@ -553,12 +561,14 @@ const competitionStatusLabel = computed(() => {
   if (status === 'draft') return 'черновик';
   if (status === 'running') return 'идет';
   if (status === 'paused') return 'пауза';
+  if (status === 'completed') return 'победитель определен';
   if (status === 'finished') return 'завершено';
   return 'не загружено';
 });
 const competitionStatusToneClass = computed(() => {
   const status = competition.value?.status;
   if (status === 'running') return 'agp-pill--primary';
+  if (status === 'completed') return 'agp-pill--success';
   if (status === 'paused' || status === 'draft') return 'agp-pill--warning';
   if (status === 'finished') return 'agp-pill--neutral';
   return 'agp-pill--neutral';
@@ -578,6 +588,27 @@ function teamName(teamId: string): string {
   return found?.name ?? teamId;
 }
 
+function roundStatusLabel(status: CompetitionRoundStatus): string {
+  if (status === 'running') return 'идет';
+  if (status === 'finished') return 'завершен';
+  return status;
+}
+
+function matchStatusLabel(status: CompetitionMatchStatus): string {
+  if (status === 'pending') return 'ожидает';
+  if (status === 'running') return 'идет';
+  if (status === 'finished') return 'завершен';
+  if (status === 'awaiting_tiebreak') return 'ничья';
+  if (status === 'auto_advanced') return 'без матча';
+  return status;
+}
+
+function competitionCodePolicyLabel(policy: CompetitionCodePolicy): string {
+  if (policy === 'locked_on_registration') return 'с регистрации';
+  if (policy === 'allowed_between_matches') return 'между матчами';
+  return 'со старта';
+}
+
 function syncSelectedTeam(): void {
   if (!selectedTeamId.value && teamsByGame.value[0]) {
     selectedTeamId.value = teamsByGame.value[0].team_id;
@@ -592,6 +623,7 @@ function syncDraftSettingsFromCompetition(): void {
   if (!competition.value) return;
   draftTitle.value = competition.value.title;
   draftTieBreakPolicy.value = competition.value.tie_break_policy;
+  draftCodePolicy.value = competition.value.code_policy;
   draftMatchSize.value = competition.value.match_size;
   draftAdvancementTopK.value = competition.value.advancement_top_k;
 }
@@ -606,11 +638,11 @@ async function ensureCompetitionLoaded(): Promise<void> {
   isLoading.value = true;
   errorMessage.value = '';
   try {
-    if (competitionIdFromRoute !== 'demo-comp') {
-      competition.value = await getCompetition(competitionIdFromRoute);
-    } else {
-      competition.value = await bootstrapDemoCompetition();
+    if (competitionIdFromRoute === 'demo-comp') {
+      errorMessage.value = 'Соревнование создается и запускается из лобби.';
+      return;
     }
+    competition.value = await getCompetition(competitionIdFromRoute);
     syncDraftSettingsFromCompetition();
     await refreshCompetitionRelatedData();
   } catch (error) {
@@ -620,26 +652,6 @@ async function ensureCompetitionLoaded(): Promise<void> {
   }
 }
 
-async function bootstrapDemoCompetition(): Promise<CompetitionDto> {
-  const existing = await listCompetitions();
-  if (existing.length > 0) {
-    return existing[0];
-  }
-  const games = await listGames();
-  const candidate = games.find((game) => game.mode !== 'single_task') ?? games[0];
-  if (!candidate) {
-    throw new Error('В каталоге нет игр для demo-соревнования');
-  }
-  return createCompetition({
-    game_id: candidate.game_id,
-    title: `Demo Competition / ${candidate.title}`,
-    format: 'single_elimination',
-    tie_break_policy: 'manual',
-    advancement_top_k: 1,
-    match_size: 2,
-  });
-}
-
 async function refreshCompetitionRelatedData(): Promise<void> {
   if (!competition.value) return;
   competition.value = await getCompetition(competition.value.competition_id);
@@ -647,6 +659,7 @@ async function refreshCompetitionRelatedData(): Promise<void> {
   teamsByGame.value = await listTeamsByGame(competition.value.game_id);
   competitionRuns.value = await listCompetitionRuns(competition.value.competition_id);
   syncSelectedTeam();
+  await refreshAntiplagiarismWarnings({ silent: true });
 }
 
 async function inspectRunReplay(runId: string): Promise<void> {
@@ -670,7 +683,7 @@ function startCompetitionLiveUpdates(competitionId: string): void {
     return;
   }
   competitionEventSource = new EventSource(
-    `/api/v1/competitions/${encodeURIComponent(competitionId)}/stream?poll_interval_ms=1000`,
+    `/api/v1/competitions/${encodeURIComponent(competitionId)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
   );
   competitionLiveMode.value = 'sse';
 
@@ -681,6 +694,7 @@ function startCompetitionLiveUpdates(competitionId: string): void {
     teamsByGame.value = await listTeamsByGame(payload.game_id);
     competitionRuns.value = await listCompetitionRuns(payload.competition_id);
     syncSelectedTeam();
+    await refreshAntiplagiarismWarnings({ silent: true });
   };
 
   competitionEventSource.addEventListener('agp.update', (event: MessageEvent) => {
@@ -728,6 +742,7 @@ function startCompetitionPolling(competitionId: string): void {
         teamsByGame.value = await listTeamsByGame(competition.value.game_id);
         competitionRuns.value = await listCompetitionRuns(competition.value.competition_id);
         syncSelectedTeam();
+        await refreshAntiplagiarismWarnings({ silent: true });
       }
       if (competition.value?.status === 'finished') {
         stopCompetitionLiveUpdates();
@@ -789,6 +804,7 @@ async function saveDraftSettings(): Promise<void> {
       competition_id: competition.value.competition_id,
       title: draftTitle.value,
       tie_break_policy: draftTieBreakPolicy.value,
+      code_policy: draftCodePolicy.value,
       match_size: draftMatchSize.value,
       advancement_top_k: draftAdvancementTopK.value,
     });
@@ -946,21 +962,43 @@ async function finishCurrentCompetition(): Promise<void> {
   }
 }
 
-async function runAntiplagiarismCheck(): Promise<void> {
+function currentAntiplagiarismSignature(): string {
+  return [
+    antiplagThreshold.value,
+    ...competitionRuns.value
+      .map((run) => `${run.run_id}:${run.team_id}:${run.status}`)
+      .sort((left, right) => left.localeCompare(right)),
+  ].join('|');
+}
+
+async function refreshAntiplagiarismWarnings(options: { force?: boolean; silent?: boolean } = {}): Promise<void> {
   if (!competition.value || !canModerate.value) return;
-  isCheckingAntiplag.value = true;
-  errorMessage.value = '';
+  const signature = currentAntiplagiarismSignature();
+  if (!options.force && signature === antiplagRunSignature) return;
+  if (!options.silent) {
+    isCheckingAntiplag.value = true;
+    errorMessage.value = '';
+  }
   try {
     antiplagWarnings.value = await checkCompetitionAntiplagiarism({
       competition_id: competition.value.competition_id,
       similarity_threshold: antiplagThreshold.value,
       min_token_count: 12,
     });
+    antiplagRunSignature = signature;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось выполнить antiplagiarism проверку';
+    if (!options.silent) {
+      errorMessage.value = error instanceof Error ? error.message : 'Не удалось выполнить проверку схожести';
+    }
   } finally {
-    isCheckingAntiplag.value = false;
+    if (!options.silent) {
+      isCheckingAntiplag.value = false;
+    }
   }
+}
+
+async function runAntiplagiarismCheck(): Promise<void> {
+  await refreshAntiplagiarismWarnings({ force: true });
 }
 
 onMounted(async () => {

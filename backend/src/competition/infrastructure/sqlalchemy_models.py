@@ -15,9 +15,11 @@ class CompetitionOrm(Base):
     competition_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     game_id: Mapped[str] = mapped_column(String(64), index=True)
     game_version_id: Mapped[str] = mapped_column(String(64), index=True)
+    lobby_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     title: Mapped[str] = mapped_column(Text)
     format: Mapped[str] = mapped_column(String(32), index=True)
     tie_break_policy: Mapped[str] = mapped_column(String(32))
+    code_policy: Mapped[str] = mapped_column(String(32), default="locked_on_start")
     advancement_top_k: Mapped[int]
     match_size: Mapped[int]
     status: Mapped[str] = mapped_column(String(32), index=True)

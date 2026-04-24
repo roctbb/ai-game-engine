@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.auth import get_current_session
+from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
+from execution.api.access import ensure_can_view_run
 from execution.domain.model import RunKind
-from identity.domain.model import AppSession
+from identity.domain.model import AppSession, UserRole
 from spectator_replay.api.schemas import ReplayResponse
 from spectator_replay.application.service import ListReplaysQuery
 from spectator_replay.domain.model import ReplayRecord
@@ -32,8 +33,11 @@ def _to_response(item: ReplayRecord) -> ReplayResponse:
 @router.get("/runs/{run_id}", response_model=ReplayResponse)
 def get_replay_by_run_id(
     run_id: str,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> ReplayResponse:
+    run = container.execution.get_run(run_id)
+    ensure_can_view_run(container=container, session=session, run=run)
     return _to_response(container.spectator_replay.get_by_run_id(run_id))
 
 
@@ -42,7 +46,7 @@ def list_replays(
     game_id: str | None = None,
     run_kind: RunKind | None = None,
     limit: int = 50,
-    _session: AppSession = Depends(get_current_session),
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> list[ReplayResponse]:
     items = container.spectator_replay.list_replays(

@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "Game Worker Service"
     scheduler_url: str = "http://localhost:8010"
     backend_api_url: str = "http://localhost:8000/api/v1"
+    internal_api_token: str = "dev-internal-token"
     worker_id: str = "worker-local-1"
     hostname: str = "localhost"
     max_slots: int = 1

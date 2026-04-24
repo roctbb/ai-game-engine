@@ -16,16 +16,22 @@ _ACTIONS = {"up", "down", "left", "right", "stay"}
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
+    events: list[dict[str, object]] = []
+    print_context = {"tick": 0}
     driver_fn, driver_compile_error = _build_slot_callable(
         ctx=ctx,
         slot_key="driver",
         function_names=("make_choice", "make_move"),
+        events=events,
+        print_context=print_context,
     )
     support_fn, support_compile_error = _build_slot_callable(
         ctx=ctx,
         slot_key="support",
         function_names=("make_support", "choose_support", "make_choice"),
         fallback=_fallback_support,
+        events=events,
+        print_context=print_context,
     )
 
     player_pos = list(_PLAYER_START)
@@ -54,9 +60,9 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             },
         }
     ]
-    events: list[dict[str, object]] = []
 
     for tick in range(_MAX_TICKS):
+        print_context["tick"] = tick
         ticks_played = tick + 1
         state = _build_state(
             tick=tick,
@@ -233,9 +239,19 @@ def _build_slot_callable(
     slot_key: str,
     function_names: tuple[str, ...],
     fallback: Callable[..., object] | None = None,
+    events: list[dict[str, object]] | None = None,
+    print_context: dict[str, int] | None = None,
 ) -> tuple[Callable[..., object], str | None]:
     code = _code_for_slot(ctx=ctx, slot_key=slot_key)
-    namespace: dict[str, Any] = {"__builtins__": _safe_builtins()}
+    namespace: dict[str, Any] = {
+        "__builtins__": _safe_builtins(
+            print_fn=_make_bot_print(
+                events=events if events is not None else [],
+                role=slot_key,
+                print_context=print_context if print_context is not None else {"tick": 0},
+            ),
+        )
+    }
     compile_error: str | None = None
 
     if code.strip():
@@ -263,7 +279,7 @@ def _build_slot_callable(
     return (fallback or _fallback_driver), compile_error
 
 
-def _safe_builtins() -> dict[str, object]:
+def _safe_builtins(print_fn: Callable[..., None] | None = None) -> dict[str, object]:
     return {
         "abs": abs,
         "all": all,
@@ -277,7 +293,7 @@ def _safe_builtins() -> dict[str, object]:
         "list": list,
         "max": max,
         "min": min,
-        "print": print,
+        "print": print_fn or print,
         "range": range,
         "set": set,
         "str": str,
@@ -285,6 +301,31 @@ def _safe_builtins() -> dict[str, object]:
         "tuple": tuple,
         "zip": zip,
     }
+
+
+def _make_bot_print(
+    events: list[dict[str, object]],
+    role: str,
+    print_context: dict[str, int],
+) -> Callable[..., None]:
+    def _bot_print(*values: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
+        if file is not None:
+            return
+        message = sep.join(str(value) for value in values)
+        if end and end != "\n":
+            message = f"{message}{end}"
+        lines = message.splitlines() or [""]
+        for line in lines:
+            events.append(
+                {
+                    "type": "bot_print",
+                    "tick": int(print_context.get("tick", 0)),
+                    "role": role,
+                    "message": line,
+                }
+            )
+
+    return _bot_print
 
 
 def _code_for_slot(ctx: dict[str, Any], slot_key: str) -> str:

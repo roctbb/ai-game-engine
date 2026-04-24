@@ -6,6 +6,7 @@ from fastapi import Depends, Header, Request
 
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
+from shared.config.settings import settings
 from shared.kernel import ForbiddenError, UnauthorizedError
 
 
@@ -40,3 +41,13 @@ def require_roles(*allowed_roles: UserRole) -> Callable[[AppSession], AppSession
         return session
 
     return _dependency
+
+
+def require_internal_token(
+    x_internal_token: str | None = Header(default=None, alias='X-Internal-Token'),
+) -> None:
+    expected = settings.internal_api_token.strip()
+    if not expected:
+        raise ForbiddenError('Internal API token is not configured')
+    if x_internal_token != expected:
+        raise UnauthorizedError('Не передан или неверен X-Internal-Token')

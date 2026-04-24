@@ -10,7 +10,14 @@ _MAX_TURNS = 20
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
-    bot_fn, compile_error = _build_bot_fn(ctx=ctx, slot_key="bot")
+    events: list[dict[str, object]] = []
+    print_context = {"tick": 0}
+    bot_fn, compile_error = _build_bot_fn(
+        ctx=ctx,
+        slot_key="bot",
+        events=events,
+        print_context=print_context,
+    )
 
     state: dict[str, Any] = {
         "turn": 0,
@@ -23,10 +30,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             "frame": {"turn": 0, "value": 0, "action": "init"},
         }
     ]
-    events: list[dict[str, object]] = []
 
     for turn in range(_MAX_TURNS):
         state["turn"] = turn
+        print_context["tick"] = turn
         action = _call_bot(bot_fn=bot_fn, state=state)
         if action == "inc":
             state["value"] += 1
@@ -101,7 +108,12 @@ def _load_context() -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _build_bot_fn(ctx: dict[str, Any], slot_key: str) -> tuple[Callable[..., object], str | None]:
+def _build_bot_fn(
+    ctx: dict[str, Any],
+    slot_key: str,
+    events: list[dict[str, object]],
+    print_context: dict[str, int],
+) -> tuple[Callable[..., object], str | None]:
     code = ""
     codes = ctx.get("codes_by_slot")
     if isinstance(codes, dict):
@@ -123,7 +135,7 @@ def _build_bot_fn(ctx: dict[str, Any], slot_key: str) -> tuple[Callable[..., obj
             "list": list,
             "max": max,
             "min": min,
-            "print": print,
+            "print": _make_bot_print(events=events, role=slot_key, print_context=print_context),
             "range": range,
             "set": set,
             "str": str,
@@ -143,6 +155,31 @@ def _build_bot_fn(ctx: dict[str, Any], slot_key: str) -> tuple[Callable[..., obj
     if callable(fn):
         return fn, compile_error
     return _fallback_bot, compile_error
+
+
+def _make_bot_print(
+    events: list[dict[str, object]],
+    role: str,
+    print_context: dict[str, int],
+) -> Callable[..., None]:
+    def _bot_print(*values: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
+        if file is not None:
+            return
+        message = sep.join(str(value) for value in values)
+        if end and end != "\n":
+            message = f"{message}{end}"
+        lines = message.splitlines() or [""]
+        for line in lines:
+            events.append(
+                {
+                    "type": "bot_print",
+                    "tick": int(print_context.get("tick", 0)),
+                    "role": role,
+                    "message": line,
+                }
+            )
+
+    return _bot_print
 
 
 def _call_bot(bot_fn: Callable[..., object], state: dict[str, Any]) -> str:

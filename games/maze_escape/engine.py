@@ -1,5 +1,6 @@
 import json
 import os
+from collections import deque
 import random
 from typing import Any
 
@@ -10,21 +11,35 @@ _DIRECTIONS = {
     "left": (-1, 0),
     "right": (1, 0),
 }
-_MAX_STEPS = 64
-_WIDTH = 7
-_HEIGHT = 7
-_WALLS = {(1, 1), (1, 2), (3, 3), (4, 3), (5, 3), (2, 5)}
-_START = (0, 0)
-_EXIT = (6, 6)
+_MAX_STEPS = 2600
+_WIDTH = 31
+_HEIGHT = 31
+_START = (1, 1)
 
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
-    move_fn, compile_error = _build_player_fn(ctx, slot_key="agent")
+    events: list[dict[str, object]] = []
+    print_context = {"tick": 0}
+    move_fn, compile_error = _build_player_fn(
+        ctx,
+        slot_key="agent",
+        events=events,
+        print_context=print_context,
+    )
+
     maze = _build_maze(ctx)
-    position = _START
+    exit_cell = maze["exit"]
+    assert isinstance(exit_cell, tuple)
+    start_cell = maze["start"]
+    assert isinstance(start_cell, tuple)
+    optimal_steps = int(maze.get("optimal_steps", 0))
+
+    position = start_cell
     invalid_moves = 0
     steps = 0
+    reached_exit = False
+    direction = "right"
     frames: list[dict[str, object]] = [
         {
             "tick": 0,
@@ -35,19 +50,25 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 "invalid_moves": invalid_moves,
                 "steps": steps,
                 "reached_exit": False,
+                "optimal_steps": optimal_steps,
+                "steps_over_optimal": None,
+                "direction": direction,
             },
         }
     ]
-    events: list[dict[str, object]] = []
 
     for step in range(_MAX_STEPS):
-        if position == _EXIT:
+        if position == exit_cell:
+            reached_exit = True
             break
+
+        print_context["tick"] = step
         action = move_fn(_build_state(position=position, step=step, maze=maze))
         delta = _DIRECTIONS.get(action)
         if delta is None:
             invalid_moves += 1
             events.append({"type": "invalid_action", "tick": step, "action": action})
+            direction = _normalize_direction(direction=direction, action=action)
             frames.append(
                 {
                     "tick": step + 1,
@@ -58,11 +79,16 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                         "invalid_moves": invalid_moves,
                         "steps": steps,
                         "reached_exit": False,
+                        "optimal_steps": optimal_steps,
+                        "steps_over_optimal": None,
+                        "direction": direction,
                     },
                 }
             )
             continue
+
         target = (position[0] + delta[0], position[1] + delta[1])
+        direction = action
         if not _can_enter(target, maze):
             invalid_moves += 1
             events.append({"type": "blocked_move", "tick": step, "action": action, "target": {"x": target[0], "y": target[1]}})
@@ -76,15 +102,21 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                         "invalid_moves": invalid_moves,
                         "steps": steps,
                         "reached_exit": False,
+                        "optimal_steps": optimal_steps,
+                        "steps_over_optimal": None,
+                        "direction": direction,
                     },
                 }
             )
             continue
+
         position = target
         steps += 1
-        reached_step_exit = position == _EXIT
+        reached_step_exit = position == exit_cell
         if reached_step_exit:
             events.append({"type": "exit_reached", "tick": step + 1})
+            reached_exit = True
+
         frames.append(
             {
                 "tick": step + 1,
@@ -95,16 +127,37 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                     "invalid_moves": invalid_moves,
                     "steps": steps,
                     "reached_exit": reached_step_exit,
+                    "optimal_steps": optimal_steps,
+                    "steps_over_optimal": max(0, steps - optimal_steps) if optimal_steps > 0 else None,
+                    "direction": direction,
                 },
             }
         )
 
-    reached_exit = position == _EXIT
-    score = max(0, (100 if reached_exit else 0) - invalid_moves * 2 - steps)
+        if reached_exit:
+            break
+
+    termination_reason = "reached_exit" if reached_exit else "max_steps_exceeded"
+    if optimal_steps > 0:
+        steps_over_optimal = max(0, steps - optimal_steps)
+        speed_ratio = round(100 * optimal_steps / max(1, steps), 2)
+    else:
+        steps_over_optimal = None
+        speed_ratio = None
+
+    if reached_exit and optimal_steps > 0:
+        score = max(0, 2000 - (steps_over_optimal * 5) - invalid_moves * 15)
+    else:
+        score = 0
+
     metrics: dict[str, object] = {
         "steps": steps,
         "invalid_moves": invalid_moves,
         "reached_exit": reached_exit,
+        "optimal_steps": optimal_steps,
+        "steps_over_optimal": steps_over_optimal,
+        "speed_ratio": speed_ratio,
+        "termination_reason": termination_reason,
         "score": score,
     }
     if compile_error:
@@ -122,6 +175,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 "steps": steps,
                 "reached_exit": reached_exit,
                 "score": score,
+                "optimal_steps": optimal_steps,
+                "steps_over_optimal": steps_over_optimal,
+                "speed_ratio": speed_ratio,
+                "direction": direction,
             },
         }
     )
@@ -149,6 +206,8 @@ def _load_context() -> dict[str, Any]:
 def _build_player_fn(
     context: dict[str, Any],
     slot_key: str,
+    events: list[dict[str, object]],
+    print_context: dict[str, int],
 ) -> tuple[callable, str | None]:
     code = ""
     codes = context.get("codes_by_slot")
@@ -171,7 +230,7 @@ def _build_player_fn(
             "list": list,
             "max": max,
             "min": min,
-            "print": print,
+            "print": _make_bot_print(events=events, role=slot_key, print_context=print_context),
             "range": range,
             "set": set,
             "str": str,
@@ -195,53 +254,233 @@ def _build_player_fn(
     return fn, compile_error
 
 
+def _make_bot_print(
+    events: list[dict[str, object]],
+    role: str,
+    print_context: dict[str, int],
+) -> callable:
+    def _bot_print(*values: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
+        if file is not None:
+            return
+        message = sep.join(str(value) for value in values)
+        if end and end != "\n":
+            message = f"{message}{end}"
+        lines = message.splitlines() or [""]
+        for line in lines:
+            events.append(
+                {
+                    "type": "bot_print",
+                    "tick": int(print_context.get("tick", 0)),
+                    "role": role,
+                    "message": line,
+                }
+            )
+
+    return _bot_print
+
+
 def _build_maze(context: dict[str, Any]) -> dict[str, object]:
     run_id = context.get("run_id")
     if not isinstance(run_id, str) or not run_id:
-        return {
-            "width": _WIDTH,
-            "height": _HEIGHT,
-            "start": _START,
-            "exit": _EXIT,
-            "walls": set(_WALLS),
-        }
+        run_id = "maze_escape_offline"
+    return _build_random_maze(seed_source=run_id)
 
-    rng = random.Random(run_id)
-    path = _random_main_path(rng)
+
+def _build_random_maze(seed_source: str) -> dict[str, object]:
+    rng = random.Random(seed_source)
+    open_cells = _generate_real_maze(rng=rng, width=_WIDTH, height=_HEIGHT)
+    start_cell = _pick_start_cell(rng=rng, cells=open_cells, preferred=_START, width=_WIDTH, height=_HEIGHT)
+    distances = _shortest_path_distances(
+        cells=open_cells,
+        width=_WIDTH,
+        height=_HEIGHT,
+        start=start_cell,
+    )
+    if len(distances) < len(open_cells):
+        # As a defensive fallback, keep the reachable component only.
+        open_cells = set(distances.keys())
+        start_cell = _pick_start_cell(
+            rng=rng,
+            cells=open_cells,
+            preferred=start_cell,
+            width=_WIDTH,
+            height=_HEIGHT,
+        )
+        distances = _shortest_path_distances(
+            cells=open_cells,
+            width=_WIDTH,
+            height=_HEIGHT,
+            start=start_cell,
+        )
+    exit_cell = _pick_random_exit(
+        rng=rng,
+        cells=open_cells,
+        distances=distances,
+        start=start_cell,
+    )
+    optimal_steps = distances.get(exit_cell, -1)
+    if optimal_steps < 0:
+        optimal_steps = _shortest_path_length(
+            cells=open_cells,
+            width=_WIDTH,
+            height=_HEIGHT,
+            start=start_cell,
+            goal=exit_cell,
+        )
+    if optimal_steps <= 0:
+        # safety fallback, should not happen for connected maze
+        optimal_steps = 1
+
     walls: set[tuple[int, int]] = set()
     for y in range(_HEIGHT):
         for x in range(_WIDTH):
-            cell = (x, y)
-            if cell in path or cell in {_START, _EXIT}:
-                continue
-            if rng.random() < 0.28:
-                walls.add(cell)
-
-    # Add a few guaranteed side openings so the maze feels varied but never impossible.
-    for _ in range(5):
-        walls.discard((rng.randrange(_WIDTH), rng.randrange(_HEIGHT)))
+            if (x, y) not in open_cells:
+                walls.add((x, y))
 
     return {
         "width": _WIDTH,
         "height": _HEIGHT,
-        "start": _START,
-        "exit": _EXIT,
+        "start": start_cell,
+        "exit": exit_cell,
         "walls": walls,
+        "optimal_steps": optimal_steps,
     }
 
 
-def _random_main_path(rng: random.Random) -> set[tuple[int, int]]:
-    moves = ["right"] * (_WIDTH - 1) + ["down"] * (_HEIGHT - 1)
-    rng.shuffle(moves)
-    x, y = _START
-    path = {(x, y)}
-    for move in moves:
-        if move == "right":
-            x += 1
-        else:
-            y += 1
-        path.add((x, y))
-    return path
+def _pick_random_exit(
+    *,
+    rng: Any,
+    cells: set[tuple[int, int]],
+    distances: dict[tuple[int, int], int],
+    start: tuple[int, int],
+) -> tuple[int, int]:
+    if not cells:
+        return start
+    if not distances:
+        candidates = [cell for cell in cells if cell != start]
+        return rng.choice(candidates or [start])
+
+    far_threshold = max(distances.values(), default=0) * 0.75
+    far_cells = [cell for cell, distance in distances.items() if cell != start and distance >= far_threshold]
+    candidates = far_cells or [cell for cell in cells if cell != start]
+    return rng.choice(candidates)
+
+
+def _pick_start_cell(
+    *,
+    rng: Any,
+    cells: set[tuple[int, int]],
+    preferred: tuple[int, int],
+    width: int,
+    height: int,
+) -> tuple[int, int]:
+    if not cells:
+        return preferred
+
+    safe_cells = [cell for cell in cells if 0 < cell[0] < width - 1 and 0 < cell[1] < height - 1]
+    if preferred in safe_cells:
+        return preferred
+    if safe_cells:
+        return rng.choice(safe_cells)
+    return rng.choice(list(cells))
+
+
+def _shortest_path_distances(
+    *,
+    cells: set[tuple[int, int]],
+    width: int,
+    height: int,
+    start: tuple[int, int],
+) -> dict[tuple[int, int], int]:
+    if start not in cells:
+        return {}
+    queue: deque[tuple[int, int]] = deque([start])
+    distances = {start: 0}
+
+    while queue:
+        x, y = queue.popleft()
+        distance = distances[(x, y)] + 1
+        for dx, dy in _DIRECTIONS.values():
+            candidate = (x + dx, y + dy)
+            if not (0 <= candidate[0] < width and 0 <= candidate[1] < height):
+                continue
+            if candidate not in cells or candidate in distances:
+                continue
+            distances[candidate] = distance
+            queue.append(candidate)
+
+    return distances
+
+
+def _shortest_path_length(
+    *,
+    cells: set[tuple[int, int]],
+    width: int,
+    height: int,
+    start: tuple[int, int],
+    goal: tuple[int, int],
+) -> int:
+    if start == goal:
+        return 0
+    distances = _shortest_path_distances(
+        cells=cells,
+        width=width,
+        height=height,
+        start=start,
+    )
+    return distances.get(goal, -1)
+
+
+def _normalize_direction(*, direction: str, action: object) -> str:
+    if isinstance(action, str) and action in _DIRECTIONS:
+        return action
+    return direction
+
+
+def _generate_real_maze(rng: Any, width: int, height: int) -> set[tuple[int, int]]:
+    open_cells = {_START}
+    stack = [_START]
+    visited = {_START}
+
+    while stack:
+        current = stack[-1]
+        neighbors = _collect_two_step_neighbors(current=current, width=width, height=height, visited=visited)
+        if not neighbors:
+            stack.pop()
+            continue
+        next_cell = rng.choice(neighbors)
+        wall = ((current[0] + next_cell[0]) // 2, (current[1] + next_cell[1]) // 2)
+        open_cells.add(wall)
+        open_cells.add(next_cell)
+        visited.add(next_cell)
+        stack.append(next_cell)
+
+    return open_cells
+
+
+def _collect_two_step_neighbors(
+    *,
+    current: tuple[int, int],
+    width: int,
+    height: int,
+    visited: set[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    x, y = current
+    moves = (
+        (2, 0),
+        (-2, 0),
+        (0, 2),
+        (0, -2),
+    )
+    neighbors: list[tuple[int, int]] = []
+    for dx, dy in moves:
+        cell = (x + dx, y + dy)
+        if not (1 <= cell[0] < width - 1 and 1 <= cell[1] < height - 1):
+            continue
+        if cell in visited:
+            continue
+        neighbors.append(cell)
+    return neighbors
 
 
 def _maze_frame_payload(maze: dict[str, object]) -> dict[str, object]:

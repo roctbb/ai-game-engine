@@ -73,7 +73,10 @@ class Lobby:
         )
 
     def join_team(self, team_id: str, access_code: str | None = None) -> None:
-        if self.status not in {LobbyStatus.OPEN, LobbyStatus.DRAFT}:
+        joinable_statuses = {LobbyStatus.OPEN, LobbyStatus.DRAFT}
+        if self.kind is LobbyKind.TRAINING:
+            joinable_statuses.add(LobbyStatus.RUNNING)
+        if self.status not in joinable_statuses:
             raise InvariantViolationError("В текущем статусе нельзя присоединиться к лобби")
         if team_id in self.teams:
             raise InvariantViolationError("Команда уже в лобби")
@@ -86,11 +89,10 @@ class Lobby:
     def leave_team(self, team_id: str) -> None:
         if team_id not in self.teams:
             raise NotFoundError("Команда не состоит в лобби")
-        if self.kind == LobbyKind.COMPETITION and self.status in {
-            LobbyStatus.RUNNING,
-            LobbyStatus.PAUSED,
-        }:
-            raise InvariantViolationError("Во время соревнования выход из лобби запрещен")
+        if self.status == LobbyStatus.PAUSED or (
+            self.kind == LobbyKind.COMPETITION and self.status == LobbyStatus.RUNNING
+        ):
+            raise InvariantViolationError("Во время соревнования или блокировки лобби выход запрещен")
         self.teams.pop(team_id)
 
     def mark_ready(self, team_id: str, ready: bool, blocker_reason: str | None = None) -> None:

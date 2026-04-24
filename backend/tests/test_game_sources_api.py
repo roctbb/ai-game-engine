@@ -8,7 +8,7 @@ def _admin_headers(client) -> dict[str, str]:
         "/api/v1/auth/dev-login",
         json={
             "nickname": "admin-gs",
-            "role": "teacher",
+            "role": "admin",
         },
     )
     assert login.status_code == 200
@@ -273,7 +273,19 @@ def test_game_source_sync_marks_failed_when_builder_returns_invalid_build_id(cli
     assert history[0]["error_message"] == "Builder вернул некорректный build_id"
 
 
-def test_game_sources_forbidden_for_student(client) -> None:
+def test_game_sources_allowed_for_teacher_and_forbidden_for_student(client) -> None:
+    teacher_login = client.post(
+        "/api/v1/auth/dev-login",
+        json={
+            "nickname": "teacher-gs",
+            "role": "teacher",
+        },
+    )
+    assert teacher_login.status_code == 200
+    teacher_headers = {"X-Session-Id": teacher_login.json()["session_id"]}
+    teacher_response = client.get("/api/v1/game-sources", headers=teacher_headers)
+    assert teacher_response.status_code == 200
+
     login = client.post(
         "/api/v1/auth/dev-login",
         json={

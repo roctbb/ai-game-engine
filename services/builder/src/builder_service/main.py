@@ -36,6 +36,7 @@ def start_build(request: BuildRequest) -> dict[str, object]:
                     "game_source_id": request.game_source_id,
                     "repo_url": str(request.repo_url),
                 },
+                headers=_internal_headers(),
             )
             start_response.raise_for_status()
             build = start_response.json()
@@ -49,6 +50,7 @@ def start_build(request: BuildRequest) -> dict[str, object]:
             finished_response = client.post(
                 f"{settings.backend_api_url}/internal/builds/{build_id}/finished",
                 json={"image_digest": image_digest},
+                headers=_internal_headers(),
             )
             finished_response.raise_for_status()
             finished_payload = finished_response.json()
@@ -102,7 +104,12 @@ def _best_effort_fail(client: httpx.Client, build_id: str | None, message: str) 
         response = client.post(
             f"{settings.backend_api_url}/internal/builds/{build_id}/failed",
             json={"error_message": message[:3000]},
+            headers=_internal_headers(),
         )
         response.raise_for_status()
     except httpx.HTTPError:
         return
+
+
+def _internal_headers() -> dict[str, str]:
+    return {"X-Internal-Token": settings.internal_api_token}

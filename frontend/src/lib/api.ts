@@ -52,6 +52,19 @@ export interface GameTemplatesDto {
   demo_strategies: GameDemoStrategyDto[];
 }
 
+export interface GameDocumentationLinkDto {
+  title: string;
+  path: string;
+  content: string | null;
+}
+
+export interface GameDocumentationDto {
+  game_id: string;
+  slug: string;
+  player_instruction: string | null;
+  links: GameDocumentationLinkDto[];
+}
+
 export interface SingleTaskCatalogItemDto {
   game_id: string;
   slug: string;
@@ -63,6 +76,12 @@ export interface SingleTaskCatalogItemDto {
   attempts_finished: number;
   solved_users: number;
   has_score_model: boolean;
+}
+
+export interface SingleTaskCatalogGroupDto {
+  topic: string;
+  difficulty: string;
+  items: SingleTaskCatalogItemDto[];
 }
 
 export interface SingleTaskSolvedSummaryEntryDto {
@@ -178,6 +197,15 @@ export interface LobbyTeamStateDto {
   blocker_reason: string | null;
 }
 
+export interface LobbyParticipantStatsDto {
+  team_id: string;
+  captain_user_id: string;
+  display_name: string;
+  matches_total: number;
+  wins: number;
+  average_score: number | null;
+}
+
 export interface LobbyDto {
   lobby_id: string;
   game_id: string;
@@ -189,11 +217,42 @@ export interface LobbyDto {
   max_teams: number;
   teams: LobbyTeamStateDto[];
   last_scheduled_run_ids: string[];
+  my_team_id: string | null;
+  my_status: 'not_in_lobby' | 'preparing' | 'queued' | 'playing' | string | null;
+  current_run_id: string | null;
+  playing_team_ids: string[];
+  queued_team_ids: string[];
+  preparing_team_ids: string[];
+  current_run_ids: string[];
+  archived_run_ids: string[];
+  participant_stats: LobbyParticipantStatsDto[];
 }
 
-export type CompetitionFormat = 'single_elimination' | 'round_robin' | 'swiss';
-export type TieBreakPolicy = 'manual' | 'shared_advancement' | 'tiebreak_match' | 'game_defined';
-export type CompetitionStatus = 'draft' | 'running' | 'paused' | 'finished';
+export interface LobbyCurrentRunDto {
+  lobby_id: string;
+  team_id: string | null;
+  run_id: string | null;
+  status: string;
+}
+
+export interface LobbyCompetitionDto {
+  competition_id: string;
+  title: string;
+  status: string;
+}
+
+export interface LobbyCompetitionArchiveDto {
+  lobby_id: string;
+  items: LobbyCompetitionDto[];
+}
+
+export type CompetitionFormat = 'single_elimination';
+export type TieBreakPolicy = 'manual' | 'shared_advancement';
+export type CompetitionCodePolicy =
+  | 'locked_on_registration'
+  | 'locked_on_start'
+  | 'allowed_between_matches';
+export type CompetitionStatus = 'draft' | 'running' | 'paused' | 'completed' | 'finished';
 export type CompetitionRoundStatus = 'running' | 'finished';
 export type CompetitionMatchStatus =
   | 'pending'
@@ -231,9 +290,11 @@ export interface CompetitionDto {
   competition_id: string;
   game_id: string;
   game_version_id: string;
+  lobby_id: string | null;
   title: string;
   format: CompetitionFormat;
   tie_break_policy: TieBreakPolicy;
+  code_policy: CompetitionCodePolicy;
   advancement_top_k: number;
   match_size: number;
   status: CompetitionStatus;
@@ -395,6 +456,10 @@ export function listSingleTaskCatalog(): Promise<SingleTaskCatalogItemDto[]> {
   return request<SingleTaskCatalogItemDto[]>('/catalog/single-tasks');
 }
 
+export function listSingleTaskCatalogGrouped(): Promise<SingleTaskCatalogGroupDto[]> {
+  return request<SingleTaskCatalogGroupDto[]>('/catalog/single-tasks/grouped');
+}
+
 export function getSingleTaskSolvedSummary(limit = 10): Promise<SingleTaskSolvedSummaryDto> {
   return request<SingleTaskSolvedSummaryDto>(
     `/catalog/single-tasks/solved-summary?limit=${encodeURIComponent(String(limit))}`
@@ -519,6 +584,10 @@ export function getGameTopics(gameId: string): Promise<GameTopicsDto> {
 
 export function getGameTemplates(gameId: string): Promise<GameTemplatesDto> {
   return request<GameTemplatesDto>(`/games/${encodeURIComponent(gameId)}/templates`);
+}
+
+export function getGameDocs(gameId: string): Promise<GameDocumentationDto> {
+  return request<GameDocumentationDto>(`/games/${encodeURIComponent(gameId)}/docs`);
 }
 
 export function updateGameCatalogMetadata(payload: {
@@ -696,6 +765,36 @@ export function getLobby(lobbyId: string): Promise<LobbyDto> {
   return request<LobbyDto>(`/lobbies/${encodeURIComponent(lobbyId)}`);
 }
 
+export function joinLobbyAsUser(payload: {
+  lobby_id: string;
+  access_code?: string | null;
+}): Promise<LobbyDto> {
+  return request<LobbyDto>(`/lobbies/${encodeURIComponent(payload.lobby_id)}/join`, {
+    method: 'POST',
+    body: JSON.stringify({ access_code: payload.access_code ?? null }),
+  });
+}
+
+export function playLobby(payload: {
+  lobby_id: string;
+  access_code?: string | null;
+}): Promise<LobbyDto> {
+  return request<LobbyDto>(`/lobbies/${encodeURIComponent(payload.lobby_id)}/play`, {
+    method: 'POST',
+    body: JSON.stringify({ access_code: payload.access_code ?? null }),
+  });
+}
+
+export function stopLobby(lobbyId: string): Promise<LobbyDto> {
+  return request<LobbyDto>(`/lobbies/${encodeURIComponent(lobbyId)}/stop`, {
+    method: 'POST',
+  });
+}
+
+export function getLobbyCurrentRun(lobbyId: string): Promise<LobbyCurrentRunDto> {
+  return request<LobbyCurrentRunDto>(`/lobbies/${encodeURIComponent(lobbyId)}/current-run`);
+}
+
 export function createLobby(payload: {
   game_id: string;
   title: string;
@@ -763,6 +862,42 @@ export function runLobbyMatchmakingTick(payload: {
   });
 }
 
+export function startLobbyCompetition(payload: {
+  lobby_id: string;
+  title: string;
+  format?: CompetitionFormat;
+  tie_break_policy?: TieBreakPolicy;
+  code_policy?: CompetitionCodePolicy;
+  advancement_top_k?: number;
+  match_size?: number;
+}): Promise<LobbyCompetitionDto> {
+  return request<LobbyCompetitionDto>(`/lobbies/${encodeURIComponent(payload.lobby_id)}/competitions/start`, {
+    method: 'POST',
+    body: JSON.stringify({
+      title: payload.title,
+      format: payload.format ?? 'single_elimination',
+      tie_break_policy: payload.tie_break_policy ?? 'manual',
+      code_policy: payload.code_policy ?? 'locked_on_start',
+      advancement_top_k: payload.advancement_top_k ?? 1,
+      match_size: payload.match_size ?? 2,
+    }),
+  });
+}
+
+export function finishLobbyCompetition(payload: {
+  lobby_id: string;
+  competition_id: string;
+}): Promise<LobbyCompetitionDto> {
+  return request<LobbyCompetitionDto>(
+    `/lobbies/${encodeURIComponent(payload.lobby_id)}/competitions/${encodeURIComponent(payload.competition_id)}/finish`,
+    { method: 'POST' }
+  );
+}
+
+export function listLobbyCompetitionArchive(lobbyId: string): Promise<LobbyCompetitionArchiveDto> {
+  return request<LobbyCompetitionArchiveDto>(`/lobbies/${encodeURIComponent(lobbyId)}/competitions/archive`);
+}
+
 export function listCompetitions(): Promise<CompetitionDto[]> {
   return request<CompetitionDto[]>('/competitions');
 }
@@ -775,12 +910,14 @@ export function patchCompetition(payload: {
   competition_id: string;
   title?: string | null;
   tie_break_policy?: TieBreakPolicy | null;
+  code_policy?: CompetitionCodePolicy | null;
   advancement_top_k?: number | null;
   match_size?: number | null;
 }): Promise<CompetitionDto> {
   const body: Record<string, unknown> = {};
   if (payload.title !== undefined) body.title = payload.title;
   if (payload.tie_break_policy !== undefined) body.tie_break_policy = payload.tie_break_policy;
+  if (payload.code_policy !== undefined) body.code_policy = payload.code_policy;
   if (payload.advancement_top_k !== undefined) body.advancement_top_k = payload.advancement_top_k;
   if (payload.match_size !== undefined) body.match_size = payload.match_size;
   return request<CompetitionDto>(`/competitions/${encodeURIComponent(payload.competition_id)}`, {
@@ -792,8 +929,10 @@ export function patchCompetition(payload: {
 export function createCompetition(payload: {
   game_id: string;
   title: string;
+  lobby_id?: string | null;
   format: CompetitionFormat;
   tie_break_policy: TieBreakPolicy;
+  code_policy: CompetitionCodePolicy;
   advancement_top_k: number;
   match_size: number;
 }): Promise<CompetitionDto> {

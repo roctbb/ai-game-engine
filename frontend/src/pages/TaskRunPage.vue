@@ -208,18 +208,27 @@
             ></iframe>
           </div>
           <div v-else class="agp-card-soft p-3 small text-muted">
-            У этой задачи нет отдельной визуализации. После запуска результат появится ниже.
+            У этой задачи нет отдельной визуализации.
           </div>
           <div v-if="isReplayLoading" class="agp-viewer-overlay agp-viewer-overlay--message">Загружаем повтор...</div>
           <div v-else-if="replayError" class="agp-viewer-overlay agp-viewer-overlay--message agp-viewer-overlay--danger">{{ replayError }}</div>
-          <details v-if="replayFrames.length > 0" class="agp-frame-data-popover">
-            <summary class="agp-details-summary">Данные кадра</summary>
-            <pre class="mono small mb-0 mt-2">{{ formattedReplayFrame }}</pre>
-          </details>
-          <details v-else-if="currentRun?.result_payload" class="agp-frame-data-popover">
-            <summary class="agp-details-summary">Данные результата</summary>
-            <pre class="mono small mb-0 mt-2">{{ formattedResult }}</pre>
-          </details>
+          <section class="agp-bot-console" aria-label="Вывод бота">
+            <div class="agp-bot-console-head">
+              <strong>Console</strong>
+              <span v-if="replayFrames.length > 0" class="text-muted">
+                кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}
+              </span>
+            </div>
+            <div class="agp-bot-console-body">
+              <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
+                print появится здесь
+              </div>
+              <div v-for="line in currentConsoleLines" :key="line.id" class="agp-bot-console-line">
+                <span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span>
+                <span class="mono agp-bot-console-message">{{ line.message }}</span>
+              </div>
+            </div>
+          </section>
         </article>
         <button
           v-if="viewMode === 'split'"
@@ -269,6 +278,15 @@
             {{ templates.player_instruction }}
           </div>
           <div v-else class="agp-cockpit-muted">Инструкция пока не задана.</div>
+          <RouterLink
+            v-if="docs?.links.length && game"
+            class="btn btn-sm btn-outline-secondary mt-3"
+            :to="{ name: 'game-docs', params: { gameId: game.game_id }, query: { from: 'task' } }"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Открыть документацию
+          </RouterLink>
         </article>
       </aside>
     </transition>
@@ -364,6 +382,7 @@ import CodeEditor from '../components/CodeEditor.vue';
 import {
   createTeam,
   getGame,
+  getGameDocs,
   getGameTemplates,
   getRun,
   getRunReplay,
@@ -375,6 +394,7 @@ import {
   stopSingleTaskRun,
   updateSlotCode,
   type GameDto,
+  type GameDocumentationDto,
   type GameTemplatesDto,
   type ReplayDto,
   type RunDto,
@@ -391,6 +411,13 @@ interface ReplayFrameView {
   phase: string;
   frame: Record<string, unknown>;
 }
+
+interface BotConsoleLine {
+  id: string;
+  tick: number;
+  role: string;
+  message: string;
+}
 type WorkspaceViewMode = 'viewer' | 'split' | 'code';
 
 const route = useRoute();
@@ -401,6 +428,7 @@ const VIEW_MODE_STORAGE_KEY = 'agp_task_workspace_view_mode';
 
 const game = ref<GameDto | null>(null);
 const templates = ref<GameTemplatesDto | null>(null);
+const docs = ref<GameDocumentationDto | null>(null);
 const workspace = ref<TeamWorkspaceDto | null>(null);
 const teamsByGame = ref<TeamDto[]>([]);
 const teamId = ref('');
@@ -481,8 +509,31 @@ const replayFrames = computed<ReplayFrameView[]>(() =>
   })
 );
 const currentReplayFrame = computed(() => replayFrames.value[replayFrameIndex.value] ?? null);
-const formattedReplayFrame = computed(() => JSON.stringify(currentReplayFrame.value ?? {}, null, 2));
-const formattedResult = computed(() => JSON.stringify(currentRun.value?.result_payload ?? {}, null, 2));
+const botConsoleLines = computed<BotConsoleLine[]>(() => {
+  const lines: BotConsoleLine[] = [];
+  const replayEvents = replay.value?.events ?? [];
+  replayEvents.forEach((event, index) => appendConsoleLine(lines, event, `event-${index}`));
+  (replay.value?.frames ?? []).forEach((frame, index) => {
+    if (!isRecord(frame)) return;
+    const tick = normalizeTick(frame.tick, index);
+    const framePayload = isRecord(frame.frame) ? frame.frame : frame;
+    appendConsoleCollection(lines, framePayload.prints, tick, '', `frame-${index}-prints`);
+    appendConsoleCollection(lines, framePayload.logs, tick, '', `frame-${index}-logs`);
+    appendConsoleCollection(lines, framePayload.console, tick, '', `frame-${index}-console`);
+    appendConsoleCollection(lines, framePayload.stdout, tick, '', `frame-${index}-stdout`);
+  });
+  if (replayEvents.length === 0 && currentRun.value?.result_payload) {
+    appendConsoleCollection(lines, currentRun.value.result_payload.prints, 0, '', 'result-prints');
+    appendConsoleCollection(lines, currentRun.value.result_payload.logs, 0, '', 'result-logs');
+    appendConsoleCollection(lines, currentRun.value.result_payload.stdout, 0, '', 'result-stdout');
+  }
+  return lines.sort((left, right) => left.tick - right.tick || left.id.localeCompare(right.id));
+});
+const currentConsoleLines = computed(() => {
+  if (replayFrames.value.length === 0) return botConsoleLines.value;
+  const tick = currentReplayFrame.value?.tick ?? 0;
+  return botConsoleLines.value.filter((line) => line.tick <= tick);
+});
 const currentScore = computed(() => attemptScoreValue(currentRun.value));
 const myLeaderboardEntry = computed(() =>
   leaderboard.value?.entries.find((entry) => entry.user_id === sessionStore.nickname) ?? null
@@ -526,6 +577,74 @@ function gameIdFromRoute(): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeTick(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fallbackTick = 0): void {
+  if (typeof raw === 'string') {
+    appendConsoleMessage(lines, raw, fallbackTick, '', id);
+    return;
+  }
+  if (!isRecord(raw)) return;
+
+  const type = typeof raw.type === 'string' ? raw.type : '';
+  const hasConsoleShape =
+    type === 'bot_print' ||
+    type === 'print' ||
+    type === 'stdout' ||
+    type === 'bot_stdout' ||
+    type === 'console' ||
+    'stdout' in raw;
+  if (!hasConsoleShape) return;
+
+  const messageRaw = raw.message ?? raw.text ?? raw.line ?? raw.stdout ?? raw.value;
+  const message = typeof messageRaw === 'string' ? messageRaw : String(messageRaw ?? '');
+  if (!message) return;
+  const tick = normalizeTick(raw.tick ?? raw.turn ?? raw.step ?? raw.frame, fallbackTick);
+  const roleRaw = raw.role ?? raw.slot ?? raw.slot_key ?? raw.team_id ?? raw.bot;
+  const role = typeof roleRaw === 'string' || typeof roleRaw === 'number' ? String(roleRaw) : '';
+  appendConsoleMessage(lines, message, tick, role, id);
+}
+
+function appendConsoleCollection(
+  lines: BotConsoleLine[],
+  raw: unknown,
+  tick: number,
+  role: string,
+  idPrefix: string,
+): void {
+  if (raw === undefined || raw === null) return;
+  if (typeof raw === 'string') {
+    appendConsoleMessage(lines, raw, tick, role, idPrefix);
+    return;
+  }
+  if (Array.isArray(raw)) {
+    raw.forEach((item, index) => appendConsoleLine(lines, item, `${idPrefix}-${index}`, tick));
+    return;
+  }
+  appendConsoleLine(lines, raw, idPrefix, tick);
+}
+
+function appendConsoleMessage(
+  lines: BotConsoleLine[],
+  message: string,
+  tick: number,
+  role: string,
+  idPrefix: string,
+): void {
+  const chunks = message.split(/\r?\n/);
+  chunks.forEach((chunk, index) => {
+    if (!chunk) return;
+    lines.push({
+      id: `${idPrefix}-${index}`,
+      tick,
+      role,
+      message: chunk,
+    });
+  });
 }
 
 function isActiveRun(run: RunDto | null): run is RunDto {
@@ -738,7 +857,9 @@ async function loadPage(): Promise<void> {
     if (game.value.mode !== 'single_task') {
       throw new Error('Этот экран предназначен для single_task задач');
     }
-    templates.value = await getGameTemplates(gameId);
+    const [freshTemplates, freshDocs] = await Promise.all([getGameTemplates(gameId), getGameDocs(gameId)]);
+    templates.value = freshTemplates;
+    docs.value = freshDocs;
     teamId.value = await ensurePersonalTeam(gameId);
     workspace.value = await getWorkspace(teamId.value);
     syncEditorFromWorkspace(workspace.value);

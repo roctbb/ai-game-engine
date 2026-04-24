@@ -19,10 +19,16 @@ router = APIRouter(prefix="/teams", tags=["team_workspace"])
 @router.get("", response_model=list[TeamResponse])
 def list_teams(
     game_id: str,
-    _session: AppSession = Depends(get_current_session),
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[TeamResponse]:
-    teams = container.team_workspace.list_teams_by_game(game_id=game_id)
+    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
+        teams = container.team_workspace.list_teams_by_game(game_id=game_id)
+    else:
+        teams = container.team_workspace.list_teams_by_game_and_captain(
+            game_id=game_id,
+            captain_user_id=session.nickname,
+        )
     return [
         TeamResponse(
             team_id=team.team_id,
@@ -66,11 +72,15 @@ def update_slot_code(
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> TeamResponse:
+    existing = container.team_workspace.get_team(team_id)
+    if existing.captain_user_id != session.nickname and session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
+        raise ForbiddenError("Редактировать код может только владелец игрока, преподаватель или админ")
     actor_user_id = (
-        request.actor_user_id
+        existing.captain_user_id
         if session.role in {UserRole.TEACHER, UserRole.ADMIN}
         else session.nickname
     )
+    container.competition.assert_team_code_can_be_updated(team_id=team_id)
     team = container.team_workspace.update_slot_code(
         team_id=team_id,
         actor_user_id=actor_user_id,

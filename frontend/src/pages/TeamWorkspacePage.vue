@@ -2,14 +2,14 @@
   <section class="agp-grid workspace-page">
     <header class="agp-card p-4 workspace-hero">
       <div>
-        <div class="small text-muted text-uppercase fw-semibold">Team workspace</div>
-        <h1 class="h3 mb-1">Канонический код команды</h1>
+        <div class="small text-muted text-uppercase fw-semibold">Просмотр кода игрока</div>
+        <h1 class="h3 mb-1">Код игрока</h1>
         <p class="text-muted mb-0">
           <template v-if="canEditWorkspace">
-            Сохраняем `TeamSlotCode`, а запуски берут snapshot только при постановке run в очередь.
+            Сохраненный код будет использоваться в новых запусках после старта.
           </template>
           <template v-else>
-            Режим просмотра кода команды. Редактировать код может только капитан.
+            Режим просмотра кода игрока. Редактировать может владелец.
           </template>
         </p>
       </div>
@@ -18,19 +18,19 @@
         <span class="agp-pill" :class="emptySlotCount > 0 ? 'agp-pill--warning' : 'agp-pill--primary'">
           пустых: {{ emptySlotCount }}
         </span>
-        <span v-if="workspace" class="agp-pill agp-pill--neutral mono">team {{ shortTeamId }}</span>
+        <span v-if="workspace" class="agp-pill agp-pill--neutral mono">игрок {{ shortTeamId }}</span>
       </div>
     </header>
 
-    <div v-if="isLoading" class="agp-card p-4 text-muted">Загрузка workspace...</div>
+    <div v-if="isLoading" class="agp-card p-4 text-muted">Загрузка кода игрока...</div>
     <div v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</div>
 
     <div v-else class="workspace-layout">
       <aside class="agp-card p-3 workspace-slots">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
           <div>
-            <h2 class="h6 mb-1">Слоты команды</h2>
-            <div class="small text-muted">Роли, которые игра ожидает от команды.</div>
+            <h2 class="h6 mb-1">Слоты игрока</h2>
+            <div class="small text-muted">Роли, которые игра ожидает от участника.</div>
           </div>
         </div>
         <div class="d-flex flex-column gap-2">
@@ -47,7 +47,7 @@
                 {{ slot.slot_key }}
                 <span v-if="slot.required" class="text-danger">*</span>
               </div>
-              <div class="small text-muted">revision: {{ slot.revision ?? 'n/a' }}</div>
+              <div class="small text-muted">ревизия: {{ slot.revision ?? 'n/a' }}</div>
             </div>
             <SlotStateBadge :slot-state="slot.state" />
           </button>
@@ -100,18 +100,16 @@
           :readonly="!selectedSlotKey || !canEditWorkspace"
           language="python"
         />
-        <div class="small text-muted mt-2">
-          Подсветка синтаксиса Python доступна в редакторе.
-        </div>
+        <div class="small text-muted mt-2">Подсветка синтаксиса Python доступна в редакторе.</div>
         <div v-if="canEditWorkspace" class="small text-muted mt-1">
-          Кнопки `Шаблон` и `Демо` подставляют starter-код или готовую демо-стратегию из `/games/{gameId}/templates`.
+          Кнопки «Шаблон» и «Демо» подставляют стартовый код или готовую демо-стратегию.
         </div>
         <div class="small text-muted mt-1">
           <template v-if="canEditWorkspace">
-            Snapshot фиксируется при `run: created -> queued`. Изменения здесь попадут только в новые запуски.
+            Изменения здесь попадут только в новые запуски.
           </template>
           <template v-else>
-            Это безопасный просмотр текущего кода. Запуски и snapshot'ы не создаются.
+            Это безопасный просмотр текущего кода. Новые запуски не создаются.
           </template>
         </div>
       </article>
@@ -123,7 +121,7 @@
           <strong>{{ canEditWorkspace ? 'редактирование' : 'просмотр' }}</strong>
         </div>
         <div class="workspace-inspector-row">
-          <span>Капитан</span>
+          <span>Владелец</span>
           <strong class="mono">{{ workspace?.captain_user_id }}</strong>
         </div>
         <div class="workspace-inspector-row">
@@ -141,13 +139,13 @@
         <div class="workspace-callout mt-3">
           <div class="fw-semibold mb-1">Что попадет в матч?</div>
           <div class="small text-muted">
-            Если запуск создать сейчас, платформа зафиксирует текущие сохраненные ревизии слотов. Несохраненный текст в редакторе не является snapshot.
+            Если запуск создать сейчас, платформа возьмет текущие сохраненные версии кода. Несохраненный текст в редакторе в матч не попадет.
           </div>
         </div>
         <div v-if="incompatibleSlotCount > 0" class="workspace-callout workspace-callout--warning mt-2">
           <div class="fw-semibold mb-1">Есть несовместимые слоты</div>
           <div class="small">
-            {{ incompatibleSlotCount }} слот(ов) больше не требуется текущей версией игры. Код виден, но не участвует в snapshot.
+            {{ incompatibleSlotCount }} слот(ов) больше не требуется текущей версией игры. Код виден, но не участвует в новых матчах.
           </div>
         </div>
       </aside>
@@ -214,7 +212,7 @@ function slotStateLabel(state: string): string {
 async function loadWorkspace(): Promise<void> {
   const teamId = String(route.params.teamId || '').trim();
   if (!teamId) {
-    errorMessage.value = 'Некорректный teamId в маршруте';
+    errorMessage.value = 'Некорректный id игрока в маршруте';
     return;
   }
 
@@ -235,7 +233,7 @@ async function loadWorkspace(): Promise<void> {
     selectedDemoStrategyId.value = selectedSlotDemoStrategies.value[0]?.strategy_id ?? '';
     await ensureGameTemplates(payload.game_id);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить workspace';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить код игрока';
   } finally {
     isLoading.value = false;
   }

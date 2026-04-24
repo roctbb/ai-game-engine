@@ -15,7 +15,14 @@ _ENEMY_SPAWN_PLAN = (0, 1, 2, 1, 0, 2, 2, 1, 0, 1)
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
-    action_fn, compile_error = _build_player_fn(ctx, slot_key="defender")
+    events: list[dict[str, object]] = []
+    print_context = {"tick": 0}
+    action_fn, compile_error = _build_player_fn(
+        ctx,
+        slot_key="defender",
+        events=events,
+        print_context=print_context,
+    )
 
     towers = [0] * _LANES
     enemies: list[dict[str, int]] = []
@@ -38,13 +45,13 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             },
         }
     ]
-    events: list[dict[str, object]] = []
 
     for tick in range(_MAX_TICKS):
         if tick < len(_ENEMY_SPAWN_PLAN):
             enemies.append({"lane": _ENEMY_SPAWN_PLAN[tick], "position": 0, "hp": _ENEMY_HP})
             events.append({"type": "enemy_spawned", "tick": tick, "lane": _ENEMY_SPAWN_PLAN[tick]})
 
+        print_context["tick"] = tick
         action = action_fn(_build_state(tick=tick, towers=towers, enemies=enemies, base_hp=base_hp, budget=budget))
         lane = _normalize_lane(action)
         if lane is not None and budget >= _TOWER_COST:
@@ -138,6 +145,8 @@ def _load_context() -> dict[str, Any]:
 def _build_player_fn(
     context: dict[str, Any],
     slot_key: str,
+    events: list[dict[str, object]],
+    print_context: dict[str, int],
 ) -> tuple[callable, str | None]:
     code = ""
     codes = context.get("codes_by_slot")
@@ -160,7 +169,7 @@ def _build_player_fn(
             "list": list,
             "max": max,
             "min": min,
-            "print": print,
+            "print": _make_bot_print(events=events, role=slot_key, print_context=print_context),
             "range": range,
             "set": set,
             "str": str,
@@ -179,6 +188,31 @@ def _build_player_fn(
     if not callable(fn):
         return lambda _state: 1, compile_error
     return fn, compile_error
+
+
+def _make_bot_print(
+    events: list[dict[str, object]],
+    role: str,
+    print_context: dict[str, int],
+) -> callable:
+    def _bot_print(*values: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
+        if file is not None:
+            return
+        message = sep.join(str(value) for value in values)
+        if end and end != "\n":
+            message = f"{message}{end}"
+        lines = message.splitlines() or [""]
+        for line in lines:
+            events.append(
+                {
+                    "type": "bot_print",
+                    "tick": int(print_context.get("tick", 0)),
+                    "role": role,
+                    "message": line,
+                }
+            )
+
+    return _bot_print
 
 
 def _build_state(

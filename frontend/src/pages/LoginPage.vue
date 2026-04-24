@@ -5,8 +5,7 @@
         <p class="agp-login-kicker">AI Game Platform</p>
         <h1>Вход в систему</h1>
         <p class="text-muted mb-0">
-          Каталог задач, лобби и рабочие пространства доступны только участникам.
-          По публичной ссылке можно открыть только просмотр матча.
+          Каталог задач, лобби, соревнования и просмотр матчей доступны только участникам.
         </p>
       </div>
 
@@ -40,9 +39,23 @@
         Войти через GeekClass
       </a>
 
-      <div v-if="errorMessage" class="alert alert-danger mb-0">{{ errorMessage }}</div>
       <div
-        v-if="!sessionStore.options?.dev_login_enabled && !sessionStore.options?.geekclass_enabled"
+        v-if="!sessionStore.isBootstrapped"
+        class="alert alert-secondary mb-0 d-flex align-items-center gap-2"
+      >
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        Проверяем доступные способы входа...
+      </div>
+
+      <div v-if="errorMessage" class="alert alert-danger mb-0">{{ errorMessage }}</div>
+      <div v-else-if="sessionStore.optionsLoadError" class="alert alert-danger mb-0">
+        {{ sessionStore.optionsLoadError }}
+        <button class="btn btn-sm btn-outline-danger mt-2 w-100" type="button" @click="reloadAuthOptions">
+          Проверить снова
+        </button>
+      </div>
+      <div
+        v-else-if="sessionStore.isBootstrapped && !sessionStore.options?.dev_login_enabled && !sessionStore.options?.geekclass_enabled"
         class="alert alert-warning mb-0"
       >
         Способы входа временно недоступны.
@@ -91,5 +104,9 @@ async function loginAsDev(): Promise<void> {
   } finally {
     isSubmitting.value = false;
   }
+}
+
+async function reloadAuthOptions(): Promise<void> {
+  await sessionStore.refreshAuthOptions();
 }
 </script>

@@ -7,11 +7,14 @@ from app.dependencies import ServiceContainer, get_container, get_games_root
 from game_catalog.api.schemas import (
     ActivateVersionRequest,
     AddVersionRequest,
+    GameDocumentationLinkResponse,
+    GameDocumentationResponse,
     GameDemoStrategyResponse,
     GameResponse,
     GameSlotTemplateResponse,
     GameTemplatesResponse,
     GameTopicsResponse,
+    SingleTaskCatalogGroupResponse,
     SingleTaskCatalogItemResponse,
     SingleTaskLeaderboardEntryResponse,
     SingleTaskLeaderboardResponse,
@@ -199,6 +202,47 @@ def get_game_templates(game_id: str, container: ServiceContainer = Depends(get_c
     )
 
 
+@router.get("/{game_id}/docs", response_model=GameDocumentationResponse)
+def get_game_docs(game_id: str, container: ServiceContainer = Depends(get_container)) -> GameDocumentationResponse:
+    game = container.game_catalog.get_game(game_id)
+    links: list[GameDocumentationLinkResponse] = []
+    player_instruction: str | None = None
+    try:
+        manifest_path = find_game_manifest_path(games_root=get_games_root(), game_id=game.slug)
+        manifest = load_game_manifest(manifest_path)
+    except InvariantViolationError:
+        manifest = None
+    if manifest is not None:
+        player_instruction = manifest.player_instruction
+        docs_candidates = (
+            ("Player Guide", "docs/player_guide_ru.md"),
+            ("Player Guide", "player_guide_ru.md"),
+            ("SDK Guide", "docs/sdk_guide_ru.md"),
+            ("SDK Guide", "sdk_guide_ru.md"),
+            ("README", "README.md"),
+        )
+        used_titles: set[str] = set()
+        for title, relative_path in docs_candidates:
+            if title in used_titles:
+                continue
+            candidate = manifest_path.parent / relative_path
+            if candidate.exists() and candidate.is_file():
+                used_titles.add(title)
+                links.append(
+                    GameDocumentationLinkResponse(
+                        title=title,
+                        path=relative_path,
+                        content=candidate.read_text(encoding="utf-8"),
+                    )
+                )
+    return GameDocumentationResponse(
+        game_id=game.game_id,
+        slug=game.slug,
+        player_instruction=player_instruction,
+        links=links,
+    )
+
+
 @router.post("/{game_id}/versions", response_model=GameResponse)
 def add_version(
     game_id: str,
@@ -266,6 +310,32 @@ def list_single_task_catalog(container: ServiceContainer = Depends(get_container
         )
         for item in items
     ]
+
+
+@progress_router.get("/catalog/single-tasks/grouped", response_model=list[SingleTaskCatalogGroupResponse])
+def list_single_task_catalog_grouped(
+    container: ServiceContainer = Depends(get_container),
+) -> list[SingleTaskCatalogGroupResponse]:
+    items = list_single_task_catalog(container=container)
+    groups: dict[tuple[str, str], list[SingleTaskCatalogItemResponse]] = {}
+    for item in items:
+        topics = item.topics if item.topics else ["other"]
+        difficulty = item.difficulty or "unknown"
+        for topic in topics:
+            key = (topic, difficulty)
+            groups.setdefault(key, []).append(item)
+
+    payload: list[SingleTaskCatalogGroupResponse] = []
+    for (topic, difficulty), group_items in sorted(groups.items(), key=lambda it: (it[0][0], it[0][1])):
+        sorted_items = sorted(group_items, key=lambda item: (item.title.lower(), item.slug))
+        payload.append(
+            SingleTaskCatalogGroupResponse(
+                topic=topic,
+                difficulty=difficulty,
+                items=sorted_items,
+            )
+        )
+    return payload
 
 
 @progress_router.get("/catalog/single-tasks/solved-summary", response_model=SingleTaskSolvedSummaryResponse)

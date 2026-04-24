@@ -25,59 +25,278 @@
     .board {
       width: min(100vw, 100vh);
       height: min(100vw, 100vh);
-      background: #eef4ff;
+      background: #2b2a25;
       border: 0;
       border-radius: 0;
       overflow: hidden;
     }
     .status,
-    .details { display: none; }
+    .details { margin-top: 8px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <svg id="board" class="board" viewBox="0 0 350 350" role="img" aria-label="Maze board"></svg>
-    <div class="status" id="status">Renderer: initializing</div>
-    <div class="details mono" id="details"></div>
+    <div>
+      <svg id="board" class="board" role="img" aria-label="Maze board"></svg>
+      <div class="status" id="status">Renderer: initializing</div>
+      <div class="details mono" id="details"></div>
+    </div>
   </div>
   <script>
-    const CELL = 50;
-    const DEFAULT_GRID_W = 7;
-    const DEFAULT_GRID_H = 7;
-    const DEFAULT_WALLS = new Set(["1,1", "1,2", "3,3", "4,3", "5,3", "2,5"]);
-    const DEFAULT_EXIT = { x: 6, y: 6 };
+    const MIN_CELL = 12;
+    const DEFAULT_GRID_W = 31;
+    const DEFAULT_GRID_H = 31;
+    const DEFAULT_WALLS = new Set(["0,0", "0,1", "1,1", "2,2", "3,4", "4,4", "5,5", "6,6"]);
+    const DEFAULT_EXIT = { x: 23, y: 23 };
+    const SVG_NS = "http://www.w3.org/2000/svg";
 
     const boardEl = document.getElementById("board");
     const statusEl = document.getElementById("status");
     const detailsEl = document.getElementById("details");
 
     let runId = "";
+    let lastFrame = null;
+    let lastStepValue = null;
 
     function setStatus(text, details) {
       statusEl.textContent = text;
       detailsEl.textContent = details || "";
     }
 
-    function cellRect(x, y, fill) {
-      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      rect.setAttribute("x", String(x * CELL));
-      rect.setAttribute("y", String(y * CELL));
-      rect.setAttribute("width", String(CELL));
-      rect.setAttribute("height", String(CELL));
+    function makeRect(x, y, width, height, fill, stroke = "#2a3343", strokeWidth = "1") {
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("x", String(x));
+      rect.setAttribute("y", String(y));
+      rect.setAttribute("width", String(width));
+      rect.setAttribute("height", String(height));
       rect.setAttribute("fill", fill);
-      rect.setAttribute("stroke", "#d9e4f7");
-      rect.setAttribute("stroke-width", "1");
+      rect.setAttribute("stroke", stroke);
+      rect.setAttribute("stroke-width", String(strokeWidth));
       return rect;
     }
 
-    function circle(cx, cy, r, fill) {
-      const el = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    function makeText(x, y, text, fill) {
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", String(x));
+      label.setAttribute("y", String(y));
+      label.setAttribute("fill", fill);
+      label.setAttribute("font-size", "13");
+      label.textContent = text;
+      return label;
+    }
+
+    function makeCell(x, y, size, fill, type) {
+      const rect = makeRect(x * size, y * size, size, size, fill, type === "wall" ? "#404754" : "#7f8e6e", type === "wall" ? "0.45" : "0.25");
+      return rect;
+    }
+
+    function makeCircle(cx, cy, radius, fill) {
+      const el = document.createElementNS(SVG_NS, "circle");
       el.setAttribute("cx", String(cx));
       el.setAttribute("cy", String(cy));
-      el.setAttribute("r", String(r));
+      el.setAttribute("r", String(Math.max(0, radius)));
       el.setAttribute("fill", fill);
       return el;
+    }
+
+    function addTextureDefs(cellPx) {
+      const defs = document.createElementNS(SVG_NS, "defs");
+      const tile = Math.max(12, Math.floor(cellPx));
+
+      const groundPattern = document.createElementNS(SVG_NS, "pattern");
+      groundPattern.setAttribute("id", "groundTexture");
+      groundPattern.setAttribute("x", "0");
+      groundPattern.setAttribute("y", "0");
+      groundPattern.setAttribute("width", String(tile / 2));
+      groundPattern.setAttribute("height", String(tile / 2));
+      groundPattern.setAttribute("patternUnits", "userSpaceOnUse");
+      groundPattern.appendChild(makeRect(0, 0, tile / 2, tile / 2, "#49633b", "none"));
+      groundPattern.appendChild(makeRect(tile / 16, tile / 16, 2, 2, "#5f7a46", "none"));
+      groundPattern.appendChild(makeRect(tile * 0.68, tile * 0.34, 1.5, 1.5, "#557243", "none"));
+      groundPattern.appendChild(makeRect(tile * 0.33, tile * 0.72, 1.5, 1.5, "#3e542f", "none"));
+      const groundSlash = document.createElementNS(SVG_NS, "line");
+      groundSlash.setAttribute("x1", "0");
+      groundSlash.setAttribute("y1", String(tile / 2));
+      groundSlash.setAttribute("x2", String(tile / 2));
+      groundSlash.setAttribute("y2", "0");
+      groundSlash.setAttribute("stroke", "#5f7a4d");
+      groundSlash.setAttribute("stroke-width", "1");
+      groundSlash.setAttribute("opacity", "0.38");
+      groundPattern.appendChild(groundSlash);
+      defs.appendChild(groundPattern);
+
+      const wallPattern = document.createElementNS(SVG_NS, "pattern");
+      wallPattern.setAttribute("id", "wallTexture");
+      wallPattern.setAttribute("x", "0");
+      wallPattern.setAttribute("y", "0");
+      wallPattern.setAttribute("width", String(tile / 2));
+      wallPattern.setAttribute("height", String(tile / 2));
+      wallPattern.setAttribute("patternUnits", "userSpaceOnUse");
+      wallPattern.appendChild(makeRect(0, 0, tile / 2, tile / 2, "#5a606a", "none"));
+      const lineTop = document.createElementNS(SVG_NS, "line");
+      lineTop.setAttribute("x1", "0");
+      lineTop.setAttribute("y1", tile / 8);
+      lineTop.setAttribute("x2", String(tile / 2));
+      lineTop.setAttribute("y2", tile / 8);
+      lineTop.setAttribute("stroke", "#6f7884");
+      lineTop.setAttribute("stroke-width", "1");
+      wallPattern.appendChild(lineTop);
+      const lineLeft = document.createElementNS(SVG_NS, "line");
+      lineLeft.setAttribute("x1", tile / 2.5);
+      lineLeft.setAttribute("y1", "0");
+      lineLeft.setAttribute("x2", tile / 2.5);
+      lineLeft.setAttribute("y2", String(tile / 2));
+      lineLeft.setAttribute("stroke", "#4a5360");
+      lineLeft.setAttribute("stroke-width", "1");
+      wallPattern.appendChild(lineLeft);
+      defs.appendChild(wallPattern);
+
+      const exitGlow = document.createElementNS(SVG_NS, "linearGradient");
+      exitGlow.setAttribute("id", "exitGlow");
+      exitGlow.setAttribute("x1", "0%");
+      exitGlow.setAttribute("y1", "0%");
+      exitGlow.setAttribute("x2", "0%");
+      exitGlow.setAttribute("y2", "100%");
+      const e1 = document.createElementNS(SVG_NS, "stop");
+      e1.setAttribute("offset", "0%");
+      e1.setAttribute("stop-color", "#dcfce7");
+      exitGlow.appendChild(e1);
+      const e2 = document.createElementNS(SVG_NS, "stop");
+      e2.setAttribute("offset", "100%");
+      e2.setAttribute("stop-color", "#86efac");
+      exitGlow.appendChild(e2);
+      defs.appendChild(exitGlow);
+
+      const torchLight = document.createElementNS(SVG_NS, "radialGradient");
+      torchLight.setAttribute("id", "torchLight");
+      torchLight.setAttribute("cx", "15%");
+      torchLight.setAttribute("cy", "20%");
+      torchLight.setAttribute("r", "80%");
+      const t1 = document.createElementNS(SVG_NS, "stop");
+      t1.setAttribute("offset", "0%");
+      t1.setAttribute("stop-color", "#f59e0b");
+      t1.setAttribute("stop-opacity", "0.32");
+      torchLight.appendChild(t1);
+      const t2 = document.createElementNS(SVG_NS, "stop");
+      t2.setAttribute("offset", "35%");
+      t2.setAttribute("stop-color", "#f97316");
+      t2.setAttribute("stop-opacity", "0.15");
+      torchLight.appendChild(t2);
+      const t3 = document.createElementNS(SVG_NS, "stop");
+      t3.setAttribute("offset", "100%");
+      t3.setAttribute("stop-color", "#fbbf24");
+      t3.setAttribute("stop-opacity", "0");
+      torchLight.appendChild(t3);
+      defs.appendChild(torchLight);
+
+      boardEl.appendChild(defs);
+    }
+
+    function resolveDirection(raw) {
+      if (raw === "up" || raw === "down" || raw === "left" || raw === "right") return raw;
+      return "right";
+    }
+
+    function makeHero(cx, cy, size, options) {
+      const direction = resolveDirection(options && options.direction);
+      const frame = Number.isFinite(options && options.frameIndex) ? Number(options.frameIndex) : 0;
+      const moving = Boolean(options && options.moving);
+      const angleMap = { right: 0, down: 90, left: 180, up: -90 };
+      const walk = moving ? Math.sin(frame * 0.7) * (size * 0.06) : 0;
+      const shoulderShift = moving ? Math.sin(frame * 1.2) * (size * 0.03) : 0;
+
+      const hero = document.createElementNS(SVG_NS, "g");
+      hero.setAttribute("transform", `translate(${cx} ${cy})`);
+
+      const torso = document.createElementNS(SVG_NS, "g");
+      torso.setAttribute("transform", `rotate(${angleMap[direction]}) translate(0 ${walk})`);
+
+      const bodyWidth = size * 0.24;
+      const bodyHeight = size * 0.30;
+      const headRadius = Math.max(1.8, size * 0.09);
+
+      const body = makeRect(
+        -bodyWidth / 2,
+        -bodyHeight * 0.15,
+        bodyWidth,
+        bodyHeight,
+        "#1d4ed8",
+        "#2d3f5e",
+        "0.8",
+      );
+      body.setAttribute("rx", "2");
+      body.setAttribute("ry", "2");
+      torso.appendChild(body);
+
+      const shoulder = document.createElementNS(SVG_NS, "rect");
+      shoulder.setAttribute("x", String(-bodyWidth / 2 + 1.5));
+      shoulder.setAttribute("y", String(-bodyHeight * 0.23 + shoulderShift));
+      shoulder.setAttribute("width", String(bodyWidth - 3));
+      shoulder.setAttribute("height", String(bodyHeight * 0.28));
+      shoulder.setAttribute("fill", "#2e63cc");
+      shoulder.setAttribute("rx", "1.5");
+      torso.appendChild(shoulder);
+
+      const head = makeCircle(0, -bodyHeight * 0.52 + shoulderShift * 0.3, headRadius, "#f6d4aa");
+      torso.appendChild(head);
+
+      const eye1 = makeCircle(-headRadius * 0.35, -bodyHeight * 0.55 + shoulderShift * 0.3, Math.max(0.35, size * 0.02), "#111827");
+      const eye2 = makeCircle(headRadius * 0.35, -bodyHeight * 0.55 + shoulderShift * 0.3, Math.max(0.35, size * 0.02), "#111827");
+      torso.appendChild(eye1);
+      torso.appendChild(eye2);
+
+      const shadow = makeCircle(0, bodyHeight * 0.34, size * 0.24, "#0f1723");
+      shadow.setAttribute("opacity", "0.25");
+      shadow.setAttribute("transform", `translate(${shoulderShift * 0.2} 2)`);
+      torso.appendChild(shadow);
+
+      const torchStick = makeRect(bodyWidth * 0.42, -bodyHeight * 0.45 + shoulderShift * 0.2, size * 0.06, size * 0.22, "#5e3f16", "none");
+      torchStick.setAttribute("rx", "1");
+      torchStick.setAttribute("transform", "rotate(24)");
+      torso.appendChild(torchStick);
+
+      const torchRock = makeCircle(bodyWidth * 0.64, -bodyHeight * 0.5 + shoulderShift * 0.2, size * 0.055, "#43270f");
+      torso.appendChild(torchRock);
+
+      const flame = makeCircle(bodyWidth * 0.64, -bodyHeight * 0.55 + shoulderShift * 0.2, size * 0.07, "#f97316");
+      flame.setAttribute("opacity", "0.9");
+      const flameSize = document.createElementNS(SVG_NS, "animate");
+      flameSize.setAttribute("attributeName", "r");
+      flameSize.setAttribute("values", `${size * 0.055};${size * 0.08};${size * 0.055}`);
+      flameSize.setAttribute("dur", "0.8s");
+      flameSize.setAttribute("repeatCount", "indefinite");
+      flame.appendChild(flameSize);
+      const flameGlow = document.createElementNS(SVG_NS, "animate");
+      flameGlow.setAttribute("attributeName", "fill");
+      flameGlow.setAttribute("values", "#f97316;#f59e0b;#fb7185;#f97316");
+      flameGlow.setAttribute("dur", "0.8s");
+      flameGlow.setAttribute("repeatCount", "indefinite");
+      flame.appendChild(flameGlow);
+      torso.appendChild(flame);
+
+      const flameArc = document.createElementNS(SVG_NS, "ellipse");
+      flameArc.setAttribute("cx", String(bodyWidth * 0.64));
+      flameArc.setAttribute("cy", String(-bodyHeight * 0.61 + shoulderShift * 0.2));
+      flameArc.setAttribute("rx", String(size * 0.1));
+      flameArc.setAttribute("ry", String(size * 0.03));
+      flameArc.setAttribute("fill", "#fde68a");
+      flameArc.setAttribute("opacity", "0.5");
+      torso.appendChild(flameArc);
+
+      hero.appendChild(torso);
+      return hero;
+    }
+
+    function makeTorchGlow(cx, cy, size) {
+      const glow = document.createElementNS(SVG_NS, "ellipse");
+      glow.setAttribute("cx", String(cx));
+      glow.setAttribute("cy", String(cy));
+      glow.setAttribute("rx", String(size * 1.7));
+      glow.setAttribute("ry", String(size * 1.05));
+      glow.setAttribute("fill", "url(#torchLight)");
+      glow.setAttribute("opacity", "0.6");
+      return glow;
     }
 
     function resolveMaze(frame) {
@@ -107,37 +326,68 @@
       };
     }
 
+    function resolveCellSize(mazeWidth, mazeHeight) {
+      const widthLimit = Math.max(260, Math.min(window.innerWidth * 0.88, window.innerHeight * 0.72));
+      return Math.max(MIN_CELL, Math.floor(widthLimit / Math.max(mazeWidth, mazeHeight)));
+    }
+
     function draw(frame) {
       const maze = resolveMaze(frame || {});
+      const CELL = resolveCellSize(maze.width, maze.height);
       boardEl.setAttribute("viewBox", `0 0 ${maze.width * CELL} ${maze.height * CELL}`);
       boardEl.replaceChildren();
+      addTextureDefs(CELL);
+
       for (let y = 0; y < maze.height; y += 1) {
         for (let x = 0; x < maze.width; x += 1) {
           const key = `${x},${y}`;
-          const fill = maze.walls.has(key) ? "#475e84" : "#f8fbff";
-          boardEl.appendChild(cellRect(x, y, fill));
+          const isWall = maze.walls.has(key);
+          const fill = isWall ? "url(#wallTexture)" : "url(#groundTexture)";
+          boardEl.appendChild(makeCell(x, y, CELL, fill, isWall ? "wall" : "ground"));
         }
       }
 
-      boardEl.appendChild(cellRect(maze.exit.x, maze.exit.y, "#d9f8e7"));
+      const exitRect = makeCell(maze.exit.x, maze.exit.y, CELL, "url(#exitGlow)", "ground");
+      exitRect.setAttribute("stroke", "#98f5bf");
+      exitRect.setAttribute("stroke-width", "2");
+      boardEl.appendChild(exitRect);
 
       const pos = frame && frame.position && typeof frame.position === "object" ? frame.position : { x: 0, y: 0 };
       const px = Number.isFinite(pos.x) ? pos.x : 0;
       const py = Number.isFinite(pos.y) ? pos.y : 0;
-      boardEl.appendChild(circle(px * CELL + CELL / 2, py * CELL + CELL / 2, 16, "#2563eb"));
+      const stepCount = Number.isFinite(frame && frame.steps) ? frame.steps : 0;
+      const prevStepCount = Number.isFinite(lastStepValue) ? lastStepValue : -1;
+      const isMoving = lastStepValue !== null && stepCount > prevStepCount;
+      lastStepValue = stepCount;
+      const heroX = px * CELL + CELL / 2;
+      const heroY = py * CELL + CELL / 2;
+      boardEl.appendChild(makeTorchGlow(heroX, heroY, CELL));
+      boardEl.appendChild(
+        makeHero(heroX, heroY, CELL, {
+          direction: frame && frame.direction ? frame.direction : "right",
+          frameIndex: frame && Number.isFinite(frame.tick) ? frame.tick : 0,
+          moving: isMoving,
+        }),
+      );
 
-      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.setAttribute("x", "12");
-      text.setAttribute("y", "20");
-      text.setAttribute("fill", "#1f2e46");
-      text.setAttribute("font-size", "13");
       const score = frame && Number.isFinite(frame.score) ? frame.score : "-";
+      const steps = frame && Number.isFinite(frame.steps) ? frame.steps : 0;
+      const over = frame && Number.isFinite(frame.steps_over_optimal) ? frame.steps_over_optimal : "-";
+      const ratio = frame && Number.isFinite(frame.speed_ratio) ? frame.speed_ratio : "-";
       const reached = frame && frame.reached_exit === true ? "yes" : "no";
-      text.textContent = `score=${score} reached_exit=${reached}`;
+      const dir = resolveDirection(frame && frame.direction);
+      const status = frame && frame.invalid_moves ? ` invalid_moves=${frame.invalid_moves}` : "";
+      const text = makeText(
+        12,
+        20,
+        `score=${score} reached_exit=${reached} dir=${dir} steps=${steps} over_optimal=${over} ratio=${ratio}${status}`,
+        "#d1dce7",
+      );
       boardEl.appendChild(text);
     }
 
     function onState(payload) {
+      lastFrame = payload || {};
       const tick = Number.isFinite(payload?.tick) ? payload.tick : "-";
       const phase = typeof payload?.phase === "string" ? payload.phase : "unknown";
       const frame = payload && typeof payload.frame === "object" ? payload.frame : {};
@@ -149,14 +399,25 @@
       const status = typeof payload?.status === "string" ? payload.status : "finished";
       const metrics = payload && typeof payload.metrics === "object" ? payload.metrics : {};
       const score = Number.isFinite(metrics.score) ? metrics.score : "-";
-      setStatus("Renderer: result received", `run_id=${runId || "-"} status=${status} score=${score}`);
+      const steps = Number.isFinite(metrics.steps) ? metrics.steps : "-";
+      const optimal = Number.isFinite(metrics.optimal_steps) ? metrics.optimal_steps : "-";
+      const overhead = Number.isFinite(metrics.steps_over_optimal) ? metrics.steps_over_optimal : "-";
+      setStatus("Renderer: result received", `run_id=${runId || "-"} status=${status} score=${score} steps=${steps} optimal=${optimal} overhead=${overhead}`);
     }
+
+    window.addEventListener("resize", () => {
+      if (lastFrame) {
+        const frame = (lastFrame && typeof lastFrame.frame === "object") ? lastFrame.frame : {};
+        draw(frame);
+      }
+    });
 
     window.addEventListener("message", (event) => {
       const message = event.data;
       if (!message || typeof message !== "object" || typeof message.type !== "string") return;
       if (message.type === "agp.renderer.init") {
         runId = message.payload && message.payload.runId ? String(message.payload.runId) : "";
+        lastStepValue = null;
         setStatus("Renderer: init received", runId ? `run_id=${runId}` : "");
       } else if (message.type === "agp.renderer.state") {
         onState(message.payload || {});
@@ -165,7 +426,7 @@
       }
     });
 
-    draw({ position: { x: 0, y: 0 }, reached_exit: false });
+    draw({ position: { x: 1, y: 1 }, reached_exit: false });
     window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.1.0" } }, "*");
     setStatus("Renderer: ready");
   </script>

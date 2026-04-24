@@ -102,6 +102,10 @@ def test_tanks_training_match_uses_driver_and_support() -> None:
     assert "compile_error_support" not in metrics
     assert isinstance(payload.get("frames"), list) and payload["frames"]
     assert isinstance(payload.get("events"), list)
+    print_events = [event for event in payload["events"] if event.get("type") == "bot_print"]
+    assert print_events
+    assert print_events[0]["role"] == "driver"
+    assert print_events[0]["message"].startswith("tick ")
 
 
 def test_template_turn_based_engine_runs_with_context() -> None:

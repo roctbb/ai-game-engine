@@ -5,6 +5,15 @@ def _create_team(client, game_id: str, name: str, captain: str) -> dict:
     ).json()
 
 
+def _student_headers(client, nickname: str) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/dev-login",
+        json={"nickname": nickname, "role": "student"},
+    )
+    assert response.status_code == 200
+    return {"X-Session-Id": response.json()["session_id"]}
+
+
 def test_list_runs_supports_lobby_and_kind_filters(client) -> None:
     games = client.get("/api/v1/games").json()
     game = next(item for item in games if item["slug"] == "ttt_connect5_v1")
@@ -74,3 +83,51 @@ def test_list_runs_preserves_error_message_for_canceled_lobby_runs(client) -> No
     assert only["run_id"] == run_id
     assert only["status"] == "canceled"
     assert only["error_message"] == "manual_cancel"
+
+
+def test_student_list_runs_only_returns_visible_runs_and_generic_create_is_restricted(client) -> None:
+    games = client.get("/api/v1/games").json()
+    game = next(item for item in games if item["slug"] == "ttt_connect5_v1")
+
+    alice_team = _create_team(client, game_id=game["game_id"], name="Alice Runs", captain="runs-alice")
+    bob_team = _create_team(client, game_id=game["game_id"], name="Bob Runs", captain="runs-bob")
+    alice_run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": alice_team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "runs-alice",
+            "run_kind": "single_task",
+        },
+    ).json()
+    bob_run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": bob_team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "runs-bob",
+            "run_kind": "single_task",
+        },
+    ).json()
+
+    alice_headers = _student_headers(client, "runs-alice")
+    listed = client.get(f"/api/v1/runs?game_id={game['game_id']}", headers=alice_headers)
+
+    assert listed.status_code == 200
+    run_ids = {item["run_id"] for item in listed.json()}
+    assert alice_run["run_id"] in run_ids
+    assert bob_run["run_id"] not in run_ids
+
+    denied_create = client.post(
+        "/api/v1/runs",
+        headers=alice_headers,
+        json={
+            "team_id": alice_team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "runs-alice",
+            "run_kind": "training_match",
+            "lobby_id": "manual-lobby",
+        },
+    )
+    assert denied_create.status_code == 403
+    assert denied_create.json()["error"]["code"] == "forbidden"

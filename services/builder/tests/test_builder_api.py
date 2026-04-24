@@ -51,7 +51,12 @@ class ScriptedHttpxClient:
     def __exit__(self, *_: object) -> None:
         return None
 
-    def post(self, url: str, json: dict[str, Any] | None = None) -> FakeResponse:
+    def post(
+        self,
+        url: str,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> FakeResponse:
         assert self._calls, f"Unexpected POST {url}"
         expected = self._calls.pop(0)
         assert expected.method == "POST"
@@ -62,6 +67,7 @@ class ScriptedHttpxClient:
 
 def _set_test_settings() -> None:
     settings.backend_api_url = "http://backend"
+    settings.internal_api_token = "dev-internal-token"
     settings.request_timeout_seconds = 1.0
 
 

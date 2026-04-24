@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from competition.domain.model import (
     Competition,
+    CompetitionCodePolicy,
     CompetitionEntrant,
     CompetitionFormat,
     CompetitionMatch,
@@ -75,9 +76,11 @@ def _map_competition_to_orm(competition: Competition) -> CompetitionOrm:
         competition_id=competition.competition_id,
         game_id=competition.game_id,
         game_version_id=competition.game_version_id,
+        lobby_id=competition.lobby_id,
         title=competition.title,
         format=competition.format.value,
         tie_break_policy=competition.tie_break_policy.value,
+        code_policy=competition.code_policy.value,
         advancement_top_k=competition.advancement_top_k,
         match_size=competition.match_size,
         status=competition.status.value,
@@ -178,13 +181,21 @@ def _map_competition_from_orm(row: CompetitionOrm) -> Competition:
             )
         )
 
+    code_policy_raw = str(getattr(row, "code_policy", CompetitionCodePolicy.LOCKED_ON_START.value))
+    try:
+        code_policy = CompetitionCodePolicy(code_policy_raw)
+    except ValueError:
+        code_policy = CompetitionCodePolicy.LOCKED_ON_START
+
     return Competition(
         competition_id=row.competition_id,
         game_id=row.game_id,
         game_version_id=row.game_version_id,
+        lobby_id=getattr(row, "lobby_id", None),
         title=row.title,
         format=CompetitionFormat(row.format),
         tie_break_policy=TieBreakPolicy(row.tie_break_policy),
+        code_policy=code_policy,
         advancement_top_k=row.advancement_top_k,
         match_size=row.match_size,
         status=CompetitionStatus(row.status),

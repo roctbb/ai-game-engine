@@ -226,9 +226,11 @@ def upgrade() -> None:
         sa.Column("competition_id", sa.String(length=64), nullable=False),
         sa.Column("game_id", sa.String(length=64), nullable=False),
         sa.Column("game_version_id", sa.String(length=64), nullable=False),
+        sa.Column("lobby_id", sa.String(length=64), nullable=True),
         sa.Column("title", sa.Text(), nullable=False),
         sa.Column("format", sa.String(length=32), nullable=False),
         sa.Column("tie_break_policy", sa.String(length=32), nullable=False),
+        sa.Column("code_policy", sa.String(length=32), nullable=False),
         sa.Column("advancement_top_k", sa.Integer(), nullable=False),
         sa.Column("match_size", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
@@ -244,6 +246,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_competitions_game_id", "competitions", ["game_id"], unique=False)
     op.create_index("ix_competitions_game_version_id", "competitions", ["game_version_id"], unique=False)
+    op.create_index("ix_competitions_lobby_id", "competitions", ["lobby_id"], unique=False)
     op.create_index("ix_competitions_format", "competitions", ["format"], unique=False)
     op.create_index("ix_competitions_status", "competitions", ["status"], unique=False)
     op.create_index("ix_competitions_created_at", "competitions", ["created_at"], unique=False)
@@ -376,6 +379,7 @@ def downgrade() -> None:
     op.drop_index("ix_competitions_created_at", table_name="competitions")
     op.drop_index("ix_competitions_status", table_name="competitions")
     op.drop_index("ix_competitions_format", table_name="competitions")
+    op.drop_index("ix_competitions_lobby_id", table_name="competitions")
     op.drop_index("ix_competitions_game_version_id", table_name="competitions")
     op.drop_index("ix_competitions_game_id", table_name="competitions")
     op.drop_table("competitions")

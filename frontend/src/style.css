@@ -170,6 +170,11 @@ pre,
   color: #8a4b0c;
 }
 
+.agp-pill--success {
+  background: #e1f6ec;
+  color: #116044;
+}
+
 .agp-pill--danger {
   background: #ffe2e0;
   color: var(--agp-danger);
@@ -700,7 +705,7 @@ pre,
 .agp-viewer-card {
   position: relative;
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
   border-color: rgba(135, 226, 255, 0.22);
@@ -807,7 +812,7 @@ pre,
   z-index: 45;
   margin: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 0;
   border: 0;
   background: #020814;
@@ -821,6 +826,94 @@ pre,
 .agp-viewer-card--fullscreen details {
   max-height: 20vh;
   overflow: auto;
+}
+
+.agp-bot-console {
+  overflow: hidden;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+  background: #050812;
+  color: #d1d5db;
+}
+
+.agp-bot-console-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.92);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.agp-bot-console-body {
+  max-height: 9.5rem;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.agp-bot-console-empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+.agp-bot-console-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  min-height: 1.35rem;
+}
+
+.agp-bot-console-role {
+  max-width: 8rem;
+  overflow: hidden;
+  padding: 0.08rem 0.35rem;
+  border: 1px solid rgba(45, 212, 191, 0.36);
+  border-radius: 999px;
+  color: #99f6e4;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agp-bot-console-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #e5e7eb;
+}
+
+.agp-task-docs {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.agp-task-doc {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.agp-task-doc header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--agp-text-muted);
+  font-size: 0.82rem;
+}
+
+.agp-doc-content {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--agp-text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .agp-replay-controls {

@@ -23,6 +23,7 @@ interface SessionState {
   isAuthenticated: boolean;
   isBootstrapped: boolean;
   options: AuthOptionsDto | null;
+  optionsLoadError: string | null;
 }
 
 const DEFAULT_SESSION: SessionState = {
@@ -34,6 +35,7 @@ const DEFAULT_SESSION: SessionState = {
   isAuthenticated: false,
   isBootstrapped: false,
   options: null,
+  optionsLoadError: null,
 };
 
 function applySession(store: SessionState, payload: SessionDto): void {
@@ -49,10 +51,12 @@ export const useSessionStore = defineStore('session', {
   state: (): SessionState => ({ ...DEFAULT_SESSION }),
   actions: {
     async bootstrap(): Promise<void> {
+      this.optionsLoadError = null;
       try {
         this.options = await getAuthOptions();
         const stored = getStoredSessionId();
         if (!stored) {
+          this.optionsLoadError = null;
           return;
         }
         try {
@@ -61,10 +65,23 @@ export const useSessionStore = defineStore('session', {
         } catch {
           clearStoredSessionId();
         }
-      } catch {
-        this.options = { dev_login_enabled: false, geekclass_enabled: false };
+      } catch (error) {
+        this.options = null;
+        this.optionsLoadError =
+          error instanceof Error ? error.message : 'Не удалось загрузить настройки входа';
       } finally {
         this.isBootstrapped = true;
+      }
+    },
+
+    async refreshAuthOptions(): Promise<void> {
+      this.optionsLoadError = null;
+      try {
+        this.options = await getAuthOptions();
+      } catch (error) {
+        this.options = null;
+        this.optionsLoadError =
+          error instanceof Error ? error.message : 'Не удалось загрузить настройки входа';
       }
     },
 

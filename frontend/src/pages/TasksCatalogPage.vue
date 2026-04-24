@@ -60,47 +60,45 @@
         </article>
 
         <div v-else class="tasks-list">
-          <article v-for="task in filteredTasks" :key="task.game_id" class="agp-card p-3 task-row">
-            <div class="task-row-main">
-              <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
-                <div class="d-flex flex-column gap-2">
-                  <span
-                    class="task-state"
-                    :class="isSolvedTask(task.game_id) ? 'task-state--solved' : 'task-state--pending'"
-                  >
-                    {{ isSolvedTask(task.game_id) ? 'Решено' : 'Не решено' }}
-                  </span>
-                  <h2 class="h6 mb-0">{{ task.title }}</h2>
+          <section v-for="group in groupedFilteredTasks" :key="group.key" class="tasks-group">
+            <header class="tasks-group-head">
+              <h2>{{ group.topic }}</h2>
+              <span>{{ difficultyLabel(group.difficulty) }} · {{ group.items.length }}</span>
+            </header>
+            <article v-for="task in group.items" :key="task.game_id" class="agp-card p-3 task-row">
+              <div class="task-row-main">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                  <div class="d-flex flex-column gap-2">
+                    <span
+                      class="task-state"
+                      :class="isSolvedTask(task.game_id) ? 'task-state--solved' : 'task-state--pending'"
+                    >
+                      {{ isSolvedTask(task.game_id) ? 'Решено' : 'Не решено' }}
+                    </span>
+                    <h3 class="h6 mb-0">{{ task.title }}</h3>
+                  </div>
+                  <span v-if="task.difficulty" class="agp-pill agp-pill--neutral">{{ task.difficulty }}</span>
                 </div>
-                <span v-if="task.difficulty" class="agp-pill agp-pill--neutral">{{ task.difficulty }}</span>
+                <p class="small text-muted mb-0 task-description">
+                  {{ task.description || 'Описание задачи пока не заполнено.' }}
+                </p>
+                <div class="d-flex gap-1 flex-wrap">
+                  <span v-for="topic in task.topics" :key="`${task.game_id}-${topic}`" class="agp-topic-chip">
+                    {{ topic }}
+                  </span>
+                </div>
+                <div class="task-meta-row small text-muted">
+                  <span>Попыток: <span class="mono">{{ task.attempts_finished }}</span></span>
+                  <span>Решили: <span class="mono">{{ task.solved_users }}</span></span>
+                  <span>Успех: <span class="mono">{{ successRateLabel(task) }}</span></span>
+                  <span>{{ task.has_score_model ? 'со счетом' : 'зачет/незачет' }}</span>
+                </div>
               </div>
-              <p class="small text-muted mb-0 task-description">
-                {{ task.description || 'Описание задачи пока не заполнено.' }}
-              </p>
-              <div class="d-flex gap-1 flex-wrap">
-                <span v-for="topic in task.topics" :key="`${task.game_id}-${topic}`" class="agp-topic-chip">
-                  {{ topic }}
-                </span>
+              <div class="task-row-action">
+                <RouterLink :to="`/tasks/${task.game_id}/run`" class="btn btn-dark w-100">Решать</RouterLink>
               </div>
-              <div class="task-meta-row small text-muted">
-                <span>
-                  Попыток: <span class="mono">{{ task.attempts_finished }}</span>
-                </span>
-                <span>
-                  Решили: <span class="mono">{{ task.solved_users }}</span>
-                </span>
-                <span>
-                  Успех: <span class="mono">{{ successRateLabel(task) }}</span>
-                </span>
-                <span>
-                  {{ task.has_score_model ? 'со счетом' : 'зачет/незачет' }}
-                </span>
-              </div>
-            </div>
-            <div class="task-row-action">
-              <RouterLink :to="`/tasks/${task.game_id}/run`" class="btn btn-dark w-100">Решать</RouterLink>
-            </div>
-          </article>
+            </article>
+          </section>
         </div>
       </section>
 
@@ -200,6 +198,25 @@ const filteredTasks = computed(() =>
     return true;
   })
 );
+
+const groupedFilteredTasks = computed(() => {
+  const groups = new Map<string, { key: string; topic: string; difficulty: string; items: SingleTaskCatalogItemDto[] }>();
+  for (const task of filteredTasks.value) {
+    const difficulty = task.difficulty || 'unknown';
+    const topics = selectedTopic.value ? [selectedTopic.value] : task.topics.length ? task.topics : ['Без темы'];
+    for (const topic of topics) {
+      const key = `${topic}::${difficulty}`;
+      const group = groups.get(key) ?? { key, topic, difficulty, items: [] };
+      group.items.push(task);
+      groups.set(key, group);
+    }
+  }
+  return Array.from(groups.values()).sort(
+    (left, right) =>
+      left.topic.localeCompare(right.topic) ||
+      difficultyOrder(left.difficulty) - difficultyOrder(right.difficulty)
+  );
+});
 
 const currentUserEntry = computed<SingleTaskSolvedSummaryEntryDto | null>(() => {
   const entries = solvedSummary.value?.entries ?? [];
@@ -307,6 +324,30 @@ onMounted(async () => {
 .tasks-list {
   display: grid;
   gap: 0.75rem;
+}
+
+.tasks-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.tasks-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.1rem 0.1rem 0;
+}
+
+.tasks-group-head h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 850;
+}
+
+.tasks-group-head span {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
 }
 
 .task-row {

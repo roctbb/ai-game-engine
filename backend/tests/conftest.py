@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.dependencies import _build_container
+from shared.config.settings import settings
 
 
 @pytest.fixture()
@@ -30,8 +31,15 @@ def client(container):
         def request_with_default_session(method, url, **kwargs):
             headers = dict(kwargs.pop("headers", {}) or {})
             skip_session = headers.pop("X-Test-No-Session", "") == "1"
+            skip_internal_token = headers.pop("X-Test-No-Internal-Token", "") == "1"
             if not skip_session and "X-Session-Id" not in headers and "X-Dev-Session" not in headers:
                 headers["X-Session-Id"] = default_session_id
+            if (
+                not skip_internal_token
+                and "/api/v1/internal/" in str(url)
+                and "X-Internal-Token" not in headers
+            ):
+                headers["X-Internal-Token"] = settings.internal_api_token
             kwargs["headers"] = headers
             return original_request(method, url, **kwargs)
 

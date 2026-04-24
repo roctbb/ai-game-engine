@@ -4,7 +4,7 @@
       <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
         <div>
           <h1 class="h3 mb-1">Лобби</h1>
-          <p class="text-muted mb-0">Только список доступных лобби с фильтрацией по играм.</p>
+          <p class="text-muted mb-0">Выберите лобби. Игрок для игры создастся автоматически при входе.</p>
         </div>
         <div class="lobbies-controls">
           <div class="lobbies-filter-wrap">
@@ -56,8 +56,21 @@
             <h2 class="h5 mb-1">{{ lobby.title }}</h2>
             <p class="small text-muted mb-0">{{ gameTitle(lobby.game_id) }}</p>
             <div class="small text-muted mt-2">
-              Команд: <span class="mono">{{ lobby.teams.length }}</span> / <span class="mono">{{ lobby.max_teams }}</span>
+              Игроков: <span class="mono">{{ lobby.teams.length }}</span> / <span class="mono">{{ lobby.max_teams }}</span>
             </div>
+            <label
+              v-if="needsAccessCode(lobby)"
+              class="lobby-access-code-field mt-3"
+              @click.stop
+            >
+              <span class="form-label small mb-1">Код входа</span>
+              <input
+                v-model.trim="accessCodeByLobbyId[lobby.lobby_id]"
+                class="form-control form-control-sm"
+                autocomplete="off"
+                @keyup.enter="enterLobby(lobby)"
+              />
+            </label>
           </div>
           <div class="agp-lobby-actions lobby-actions-simple">
             <button
@@ -67,16 +80,6 @@
             >
               {{ enterButtonText(lobby) }}
             </button>
-            <RouterLink class="btn btn-outline-secondary" :to="`/lobbies/${lobby.lobby_id}`">
-              Открыть
-            </RouterLink>
-            <RouterLink
-              v-if="lobby.last_scheduled_run_ids.length > 0"
-              class="btn btn-outline-secondary"
-              :to="`/runs/${lobby.last_scheduled_run_ids[0]}/watch`"
-            >
-              Смотреть
-            </RouterLink>
           </div>
         </div>
       </article>
@@ -85,21 +88,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
 import {
-  createTeam,
-  joinLobby,
+  joinLobbyAsUser,
   listGames,
   listLobbies,
-  listTeamsByGame,
   type GameDto,
   type LobbyDto,
   type LobbyStatus,
   type StreamEnvelopeDto,
 } from '../lib/api';
-import { loadTeamMapping, saveTeamMapping } from '../lib/teamMapping';
 import { useSessionStore } from '../stores/session';
 
 const router = useRouter();
@@ -111,6 +111,7 @@ const errorMessage = ref('');
 const games = ref<GameDto[]>([]);
 const lobbies = ref<LobbyDto[]>([]);
 const selectedGameId = ref('');
+const accessCodeByLobbyId = reactive<Record<string, string>>({});
 let lobbiesEventSource: EventSource | null = null;
 let lobbiesPollingHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -165,47 +166,24 @@ function gameTitle(gameId: string): string {
   return games.value.find((game) => game.game_id === gameId)?.title ?? gameId;
 }
 
-function rememberTeam(gameId: string, teamId: string): void {
-  saveTeamMapping(gameId, sessionStore.nickname, teamId);
-}
-
-function knownTeamForLobby(lobby: LobbyDto): string {
-  return loadTeamMapping(lobby.game_id, sessionStore.nickname);
-}
-
 function canEnterLobby(lobby: LobbyDto): boolean {
   if (lobby.status === 'closed' || lobby.status === 'updating') return false;
-  if (lobby.status === 'running') return lobby.last_scheduled_run_ids.length > 0;
-  return lobby.teams.length < lobby.max_teams || Boolean(knownTeamForLobby(lobby));
+  if (canManage.value) return true;
+  if (lobby.status === 'paused') return Boolean(lobby.my_team_id);
+  if (needsAccessCode(lobby)) return Boolean((accessCodeByLobbyId[lobby.lobby_id] ?? '').trim());
+  return lobby.teams.length < lobby.max_teams || Boolean(lobby.my_team_id);
 }
 
 function enterButtonText(lobby: LobbyDto): string {
   if (busyLobbyId.value === lobby.lobby_id) return 'Входим...';
-  if (lobby.status === 'running') return 'Смотреть игру';
-  if (knownTeamForLobby(lobby)) return 'Вернуться';
+  if (canManage.value && !lobby.my_team_id) return 'Открыть';
+  if (lobby.my_team_id) return 'Вернуться';
+  if (needsAccessCode(lobby)) return 'Войти по коду';
   return 'Войти';
 }
 
-async function ensureTeamForLobby(lobby: LobbyDto): Promise<string> {
-  const mapped = knownTeamForLobby(lobby);
-  const teams = await listTeamsByGame(lobby.game_id);
-  if (mapped && teams.some((team) => team.team_id === mapped && team.captain_user_id === sessionStore.nickname)) {
-    return mapped;
-  }
-
-  const existing = teams.find((team) => team.captain_user_id === sessionStore.nickname);
-  if (existing) {
-    rememberTeam(lobby.game_id, existing.team_id);
-    return existing.team_id;
-  }
-
-  const created = await createTeam({
-    game_id: lobby.game_id,
-    name: `${sessionStore.nickname} / ${gameTitle(lobby.game_id)}`,
-    captain_user_id: sessionStore.nickname,
-  });
-  rememberTeam(lobby.game_id, created.team_id);
-  return created.team_id;
+function needsAccessCode(lobby: LobbyDto): boolean {
+  return lobby.access === 'code' && !lobby.my_team_id && !canManage.value;
 }
 
 async function enterLobby(lobby: LobbyDto): Promise<void> {
@@ -213,16 +191,14 @@ async function enterLobby(lobby: LobbyDto): Promise<void> {
   busyLobbyId.value = lobby.lobby_id;
   errorMessage.value = '';
   try {
-    if (lobby.status === 'running' && lobby.last_scheduled_run_ids[0]) {
-      await router.push(`/runs/${lobby.last_scheduled_run_ids[0]}/watch`);
+    if (canManage.value && !lobby.my_team_id) {
+      await router.push(`/lobbies/${lobby.lobby_id}`);
       return;
     }
-
-    const teamId = await ensureTeamForLobby(lobby);
-    if (!lobby.teams.some((team) => team.team_id === teamId)) {
-      await joinLobby({
+    if (!lobby.my_team_id) {
+      await joinLobbyAsUser({
         lobby_id: lobby.lobby_id,
-        team_id: teamId,
+        access_code: lobby.access === 'code' ? accessCodeByLobbyId[lobby.lobby_id] : null,
       });
     }
     await router.push(`/lobbies/${lobby.lobby_id}`);
@@ -258,7 +234,9 @@ function startLobbiesLiveUpdates(): void {
     return;
   }
 
-  const source = new EventSource('/api/v1/lobbies/stream?poll_interval_ms=1000');
+  const source = new EventSource(
+    `/api/v1/lobbies/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`
+  );
   lobbiesEventSource = source;
 
   source.addEventListener('agp.update', (event: MessageEvent) => {
@@ -348,6 +326,11 @@ onUnmounted(() => {
 
 .lobby-main {
   min-width: 0;
+}
+
+.lobby-access-code-field {
+  display: block;
+  width: min(15rem, 100%);
 }
 
 .lobby-actions-simple {

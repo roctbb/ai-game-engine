@@ -40,6 +40,42 @@ def test_worker_execution_context_contains_manifest_and_snapshot(client) -> None
     assert payload["codes_by_slot"]["agent"] == "print('context')\n"
 
 
+def test_worker_execution_context_requires_internal_token(client) -> None:
+    games = client.get("/api/v1/games").json()
+    game = next(item for item in games if item["slug"] == "maze_escape_v1")
+
+    team = client.post(
+        "/api/v1/teams",
+        json={
+            "game_id": game["game_id"],
+            "name": "Execution Context Guard Team",
+            "captain_user_id": "captain-context-guard",
+        },
+    ).json()
+    client.put(
+        f"/api/v1/teams/{team['team_id']}/slots/agent",
+        json={"actor_user_id": "captain-context-guard", "code": "print('guard')"},
+    )
+    run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "captain-context-guard",
+            "run_kind": "single_task",
+        },
+    ).json()
+    client.post(f"/api/v1/runs/{run['run_id']}/queue")
+
+    response = client.get(
+        f"/api/v1/internal/runs/{run['run_id']}/execution-context",
+        headers={"X-Test-No-Internal-Token": "1"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
 def test_worker_execution_context_requires_queued_run(client) -> None:
     games = client.get("/api/v1/games").json()
     game = next(item for item in games if item["slug"] == "maze_escape_v1")

@@ -16,7 +16,14 @@ _DELTAS = {
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
-    move_fn, compile_error = _build_player_fn(ctx, slot_key="agent")
+    events: list[dict[str, object]] = []
+    print_context = {"tick": 0}
+    move_fn, compile_error = _build_player_fn(
+        ctx,
+        slot_key="agent",
+        events=events,
+        print_context=print_context,
+    )
 
     position = (0, 0)
     collected = 0
@@ -39,11 +46,11 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             },
         }
     ]
-    events: list[dict[str, object]] = []
 
     for step in range(_MAX_STEPS):
         if position == _GOAL:
             break
+        print_context["tick"] = step
         action = move_fn(_build_state(position=position, step=step, coins_left=coins_left))
         delta = _DELTAS.get(action)
         if delta is None:
@@ -156,6 +163,8 @@ def _load_context() -> dict[str, Any]:
 def _build_player_fn(
     context: dict[str, Any],
     slot_key: str,
+    events: list[dict[str, object]],
+    print_context: dict[str, int],
 ) -> tuple[callable, str | None]:
     code = ""
     codes = context.get("codes_by_slot")
@@ -178,7 +187,7 @@ def _build_player_fn(
             "list": list,
             "max": max,
             "min": min,
-            "print": print,
+            "print": _make_bot_print(events=events, role=slot_key, print_context=print_context),
             "range": range,
             "set": set,
             "str": str,
@@ -203,6 +212,31 @@ def _build_player_fn(
 
         return _fallback, compile_error
     return fn, compile_error
+
+
+def _make_bot_print(
+    events: list[dict[str, object]],
+    role: str,
+    print_context: dict[str, int],
+) -> callable:
+    def _bot_print(*values: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
+        if file is not None:
+            return
+        message = sep.join(str(value) for value in values)
+        if end and end != "\n":
+            message = f"{message}{end}"
+        lines = message.splitlines() or [""]
+        for line in lines:
+            events.append(
+                {
+                    "type": "bot_print",
+                    "tick": int(print_context.get("tick", 0)),
+                    "role": role,
+                    "message": line,
+                }
+            )
+
+    return _bot_print
 
 
 def _build_state(

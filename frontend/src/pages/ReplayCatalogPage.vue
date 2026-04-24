@@ -7,12 +7,16 @@
           Публичные replay-артефакты завершенных запусков. Можно отфильтровать и открыть матч в watch-режиме.
         </p>
       </div>
-      <button class="btn btn-outline-dark" :disabled="isLoading" @click="loadReplays">
+      <button v-if="canManage" class="btn btn-outline-dark" :disabled="isLoading" @click="loadReplays">
         {{ isLoading ? 'Обновление...' : 'Обновить' }}
       </button>
     </header>
 
-    <article class="agp-card p-3">
+    <article v-if="!canManage" class="agp-card p-4 text-muted">
+      Каталог реплеев доступен только преподавателю или администратору.
+    </article>
+
+    <article v-if="canManage" class="agp-card p-3">
       <div class="row g-2">
         <div class="col-md-3">
           <label class="form-label small">Игра</label>
@@ -43,9 +47,9 @@
       </div>
     </article>
 
-    <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
+    <article v-if="canManage && errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
-    <article class="agp-card p-3">
+    <article v-if="canManage" class="agp-card p-3">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h2 class="h6 mb-0">Результаты</h2>
         <div class="small text-muted">
@@ -98,8 +102,10 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import { listGames, listReplays, type GameDto, type ReplayDto } from '../lib/api';
+import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
+const sessionStore = useSessionStore();
 
 const games = ref<GameDto[]>([]);
 const replays = ref<ReplayDto[]>([]);
@@ -110,6 +116,7 @@ const gameIdFilter = ref('');
 const runKindFilter = ref<'single_task' | 'training_match' | 'competition_match' | ''>('');
 const limitFilter = ref(50);
 const runIdQuery = ref('');
+const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 
 const filteredReplays = computed(() => {
   const query = runIdQuery.value.toLowerCase();
@@ -158,6 +165,7 @@ function formatIso(value: string): string {
 }
 
 async function loadReplays(): Promise<void> {
+  if (!canManage.value) return;
   isLoading.value = true;
   errorMessage.value = '';
   try {
@@ -178,6 +186,7 @@ watch([gameIdFilter, runKindFilter, limitFilter], () => {
 });
 
 onMounted(async () => {
+  if (!canManage.value) return;
   applyFiltersFromQuery();
   try {
     games.value = await listGames();

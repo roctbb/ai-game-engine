@@ -32,6 +32,7 @@
 
 - `SCHEDULER_URL` — адрес scheduler-service.
 - `BACKEND_API_URL` — адрес backend (`.../api/v1`).
+- `INTERNAL_API_TOKEN` — сервисный токен для backend `/internal/*`.
 - `WORKER_ID` — уникальный ID узла.
 - `HOSTNAME` — имя/алиас узла.
 - `MAX_SLOTS` — емкость worker.
@@ -48,6 +49,7 @@ docker run -d --name agp-worker-remote-1 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e SCHEDULER_URL=http://scheduler.example.internal:8010 \
   -e BACKEND_API_URL=http://backend.example.internal:8000/api/v1 \
+  -e INTERNAL_API_TOKEN='<shared-internal-token>' \
   -e WORKER_ID=worker-remote-1 \
   -e HOSTNAME=worker-remote-1 \
   -e MAX_SLOTS=4 \
@@ -75,7 +77,7 @@ docker run -d --name agp-worker-remote-1 \
 - долю `paused` ответов у worker-loop (обычно означает `draining/disabled/offline`).
 
 Управление статусом worker:
-- `PATCH /api/v1/workers/{workerId}/status` с `online|offline|draining|disabled` (только teacher/admin, `X-Session-Id`).
+- `PATCH /api/v1/workers/{workerId}/status` с `online|offline|draining|disabled` (только admin, `X-Session-Id`).
 
 ## 6. Операционные процедуры
 

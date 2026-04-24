@@ -37,6 +37,7 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
             )
             assert login.status_code == 200
             headers = {'X-Session-Id': login.json()['session_id']}
+            internal_headers = {'X-Internal-Token': settings.internal_api_token}
 
             games = client.get('/api/v1/games', headers=headers).json()
             maze_game = next(item for item in games if item['slug'] == 'maze_escape_v1')
@@ -81,12 +82,14 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
                     'capacity_total': 2,
                     'labels': {'zone': 'sql-test'},
                 },
+                headers=internal_headers,
             )
             assert worker.status_code == 200
 
             accepted = client.post(
                 f"/api/v1/internal/runs/{run['run_id']}/accepted",
                 json={'worker_id': 'sql-worker-1'},
+                headers=internal_headers,
             )
             assert accepted.status_code == 200
             assert accepted.json()['status'] == 'queued'
@@ -95,6 +98,7 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
             started = client.post(
                 f"/api/v1/internal/runs/{run['run_id']}/started",
                 json={'worker_id': 'sql-worker-1'},
+                headers=internal_headers,
             )
             assert started.status_code == 200
             assert started.json()['status'] == 'running'
@@ -107,16 +111,17 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
                         'metrics': {'duration_ms': 123},
                     }
                 },
+                headers=internal_headers,
             )
             assert finished.status_code == 200
             assert finished.json()['status'] == 'finished'
 
-            loaded = client.get(f"/api/v1/runs/{run['run_id']}")
+            loaded = client.get(f"/api/v1/runs/{run['run_id']}", headers=headers)
             assert loaded.status_code == 200
             assert loaded.json()['status'] == 'finished'
             assert loaded.json()['worker_id'] == 'sql-worker-1'
 
-            replay = client.get(f"/api/v1/replays/runs/{run['run_id']}")
+            replay = client.get(f"/api/v1/replays/runs/{run['run_id']}", headers=headers)
             assert replay.status_code == 200
             assert replay.json()['status'] == 'finished'
             assert replay.json()['run_id'] == run['run_id']

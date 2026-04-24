@@ -1,3 +1,12 @@
+def _student_headers(client, nickname: str) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/dev-login",
+        json={"nickname": nickname, "role": "student"},
+    )
+    assert response.status_code == 200
+    return {"X-Session-Id": response.json()["session_id"]}
+
+
 def _create_single_task_run(client, *, requested_by: str = "captain-replay") -> tuple[dict, dict]:
     games = client.get("/api/v1/games").json()
     game = next(item for item in games if item["slug"] == "maze_escape_v1")
@@ -56,10 +65,34 @@ def test_replay_created_for_finished_run_and_available_via_api(client) -> None:
     assert replay["frames"][0]["tick"] == 1
     assert replay["events"][0]["type"] == "move"
 
+    captain_replay = client.get(
+        f"/api/v1/replays/runs/{run['run_id']}",
+        headers=_student_headers(client, "captain-replay-finished"),
+    )
+    assert captain_replay.status_code == 200
+
+    anonymous_replay = client.get(
+        f"/api/v1/replays/runs/{run['run_id']}",
+        headers={"X-Test-No-Session": "1"},
+    )
+    assert anonymous_replay.status_code == 401
+
+    unrelated_replay = client.get(
+        f"/api/v1/replays/runs/{run['run_id']}",
+        headers=_student_headers(client, "unrelated-replay"),
+    )
+    assert unrelated_replay.status_code == 403
+
     listing = client.get(f"/api/v1/replays?game_id={game['game_id']}&run_kind=single_task")
     assert listing.status_code == 200
     items = listing.json()
     assert any(item["run_id"] == run["run_id"] for item in items)
+
+    student_listing = client.get(
+        f"/api/v1/replays?game_id={game['game_id']}&run_kind=single_task",
+        headers=_student_headers(client, "captain-replay-finished"),
+    )
+    assert student_listing.status_code == 403
 
 
 def test_replay_created_for_failed_run_with_error_summary(client) -> None:

@@ -85,6 +85,19 @@ class GameTemplatesResponse(BaseModel):
     demo_strategies: list[GameDemoStrategyResponse] = Field(default_factory=list)
 
 
+class GameDocumentationLinkResponse(BaseModel):
+    title: str
+    path: str
+    content: str | None = None
+
+
+class GameDocumentationResponse(BaseModel):
+    game_id: str
+    slug: str
+    player_instruction: str | None = None
+    links: list[GameDocumentationLinkResponse] = Field(default_factory=list)
+
+
 class GameResponse(BaseModel):
     game_id: str
     slug: str
@@ -109,6 +122,12 @@ class SingleTaskCatalogItemResponse(BaseModel):
     attempts_finished: int
     solved_users: int
     has_score_model: bool
+
+
+class SingleTaskCatalogGroupResponse(BaseModel):
+    topic: str
+    difficulty: str
+    items: list[SingleTaskCatalogItemResponse] = Field(default_factory=list)
 
 
 class SingleTaskSolvedSummaryEntryResponse(BaseModel):

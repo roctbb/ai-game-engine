@@ -61,6 +61,20 @@ def test_internal_run_accepted_assigns_worker_without_start(client) -> None:
     assert payload["worker_id"] == "worker-accept-1"
 
 
+def test_internal_lifecycle_requires_internal_token(client) -> None:
+    queued = _create_queued_single_task_run(client, requested_by="captain-accept-token")
+    _register_worker(client, "worker-accept-token")
+
+    response = client.post(
+        f"/api/v1/internal/runs/{queued['run_id']}/accepted",
+        json={"worker_id": "worker-accept-token"},
+        headers={"X-Test-No-Internal-Token": "1"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
 def test_internal_run_accepted_rejects_conflicting_worker(client) -> None:
     queued = _create_queued_single_task_run(client, requested_by="captain-accept-2")
     _register_worker(client, "worker-accept-2a")

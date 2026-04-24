@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from competition.application.repositories import CompetitionRepository
 from competition.domain.model import (
     Competition,
+    CompetitionCodePolicy,
     CompetitionFormat,
     CompetitionMatch,
     CompetitionMatchStatus,
@@ -24,8 +25,10 @@ class CreateCompetitionInput:
     title: str
     format: CompetitionFormat
     tie_break_policy: TieBreakPolicy
+    code_policy: CompetitionCodePolicy
     advancement_top_k: int
     match_size: int
+    lobby_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -55,6 +58,11 @@ _ACTIVE_STATUSES = {
     RunStatus.QUEUED,
     RunStatus.RUNNING,
 }
+_ACTIVE_COMPETITION_STATUSES = {
+    CompetitionStatus.RUNNING,
+    CompetitionStatus.PAUSED,
+    CompetitionStatus.COMPLETED,
+}
 
 
 class CompetitionService:
@@ -71,6 +79,8 @@ class CompetitionService:
         self._execution = execution
 
     def create_competition(self, data: CreateCompetitionInput) -> Competition:
+        if data.format is not CompetitionFormat.SINGLE_ELIMINATION:
+            raise InvariantViolationError("В текущей версии поддерживается только single_elimination")
         game = self._game_catalog.get_game(data.game_id)
         competition = Competition.create(
             game_id=game.game_id,
@@ -78,8 +88,10 @@ class CompetitionService:
             title=data.title,
             format=data.format,
             tie_break_policy=data.tie_break_policy,
+            code_policy=data.code_policy,
             advancement_top_k=data.advancement_top_k,
             match_size=data.match_size,
+            lobby_id=data.lobby_id,
         )
         self._repository.save(competition)
         return competition
@@ -99,6 +111,7 @@ class CompetitionService:
         *,
         title: str | None = None,
         tie_break_policy: TieBreakPolicy | None = None,
+        code_policy: CompetitionCodePolicy | None = None,
         advancement_top_k: int | None = None,
         match_size: int | None = None,
     ) -> Competition:
@@ -113,6 +126,8 @@ class CompetitionService:
             competition.title = normalized_title
         if tie_break_policy is not None:
             competition.tie_break_policy = tie_break_policy
+        if code_policy is not None:
+            competition.code_policy = code_policy
         if advancement_top_k is not None:
             if advancement_top_k < 1:
                 raise InvariantViolationError("advancement_top_k должен быть >= 1")
@@ -126,6 +141,28 @@ class CompetitionService:
 
         self._repository.save(competition)
         return competition
+
+    def assert_team_code_can_be_updated(self, team_id: str) -> None:
+        for competition in self._repository.list():
+            if team_id not in competition.entrants:
+                continue
+            if competition.status is CompetitionStatus.FINISHED:
+                continue
+            if competition.code_policy is CompetitionCodePolicy.LOCKED_ON_REGISTRATION:
+                raise InvariantViolationError("Код заблокирован политикой соревнования: locked_on_registration")
+            if (
+                competition.code_policy is CompetitionCodePolicy.LOCKED_ON_START
+                and competition.status in _ACTIVE_COMPETITION_STATUSES
+            ):
+                raise InvariantViolationError("Код заблокирован политикой соревнования: locked_on_start")
+            if competition.code_policy is CompetitionCodePolicy.ALLOWED_BETWEEN_MATCHES:
+                active_runs = self._execution.list_runs(
+                    team_id=team_id,
+                    lobby_id=competition.competition_id,
+                    run_kind=RunKind.COMPETITION_MATCH,
+                )
+                if any(run.status in _ACTIVE_STATUSES for run in active_runs):
+                    raise InvariantViolationError("Код можно менять только между матчами соревнования")
 
     def register_team(self, competition_id: str, team_id: str) -> Competition:
         competition = self.get_competition(competition_id)
@@ -251,7 +288,7 @@ class CompetitionService:
         next_seed = [team_id for team_id in next_seed if team_id]
 
         if len(next_seed) <= 1:
-            competition.finish_with_winners(next_seed)
+            competition.complete_with_winners(next_seed)
             self._repository.save(competition)
             return competition
 
@@ -464,6 +501,6 @@ class CompetitionService:
 
     def has_running_competition_for_game(self, game_id: str) -> bool:
         return any(
-            competition.game_id == game_id and competition.status is CompetitionStatus.RUNNING
+            competition.game_id == game_id and competition.status in _ACTIVE_COMPETITION_STATUSES
             for competition in self._repository.list()
         )

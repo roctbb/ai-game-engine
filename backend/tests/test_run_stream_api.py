@@ -43,12 +43,13 @@ def _create_ready_single_task_run(client, requested_by: str) -> dict:
     return created
 
 
-def test_run_stream_emits_created_status(client) -> None:
+def test_run_stream_emits_created_status(client, teacher_headers) -> None:
     run = _create_ready_single_task_run(client, requested_by="captain-stream-created")
 
     with client.stream(
         "GET",
         f"/api/v1/runs/{run['run_id']}/stream?poll_interval_ms=10&max_events=1",
+        headers=teacher_headers,
     ) as response:
         assert response.status_code == 200
         payload = "".join(response.iter_text())
@@ -64,7 +65,7 @@ def test_run_stream_emits_created_status(client) -> None:
     assert first["payload"]["run_id"] == run["run_id"]
 
 
-def test_run_stream_emits_terminal_event_for_finished_run(client) -> None:
+def test_run_stream_emits_terminal_event_for_finished_run(client, teacher_headers) -> None:
     run = _create_ready_single_task_run(client, requested_by="captain-stream-finished")
     queued = client.post(f"/api/v1/runs/{run['run_id']}/queue").json()
 
@@ -98,6 +99,7 @@ def test_run_stream_emits_terminal_event_for_finished_run(client) -> None:
     with client.stream(
         "GET",
         f"/api/v1/runs/{run['run_id']}/stream?poll_interval_ms=10",
+        headers=teacher_headers,
     ) as response:
         assert response.status_code == 200
         payload = "".join(response.iter_text())
@@ -112,7 +114,7 @@ def test_run_stream_emits_terminal_event_for_finished_run(client) -> None:
     assert queued["run_id"] == run["run_id"]
 
 
-def test_run_stream_emits_terminal_event_for_canceled_run(client) -> None:
+def test_run_stream_emits_terminal_event_for_canceled_run(client, teacher_headers) -> None:
     run = _create_ready_single_task_run(client, requested_by="captain-stream-canceled")
     canceled = client.post(f"/api/v1/runs/{run['run_id']}/cancel")
     assert canceled.status_code == 200, canceled.json()
@@ -122,6 +124,7 @@ def test_run_stream_emits_terminal_event_for_canceled_run(client) -> None:
     with client.stream(
         "GET",
         f"/api/v1/runs/{run['run_id']}/stream?poll_interval_ms=10",
+        headers=teacher_headers,
     ) as response:
         assert response.status_code == 200
         payload = "".join(response.iter_text())

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from execution.application.service import CreateRunInput, ExecutionService
-from execution.domain.model import RunKind, RunStatus
+from execution.domain.model import Run, RunKind, RunStatus
 from game_catalog.application.service import GameCatalogService
 from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
@@ -22,6 +22,37 @@ class CreateLobbyInput:
 
 
 _ACTIVE_RUN_STATUSES = {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}
+_TERMINAL_RUN_STATUSES = {RunStatus.FINISHED, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}
+
+
+def _can_change_participation(lobby: Lobby) -> bool:
+    if lobby.status in {LobbyStatus.OPEN, LobbyStatus.DRAFT}:
+        return True
+    return lobby.kind is LobbyKind.TRAINING and lobby.status is LobbyStatus.RUNNING
+
+
+@dataclass(frozen=True, slots=True)
+class LobbyParticipantStats:
+    team_id: str
+    captain_user_id: str
+    display_name: str
+    matches_total: int
+    wins: int
+    average_score: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class LobbyLiveView:
+    lobby: Lobby
+    my_team_id: str | None
+    my_status: str
+    current_run_id: str | None
+    playing_team_ids: tuple[str, ...]
+    queued_team_ids: tuple[str, ...]
+    preparing_team_ids: tuple[str, ...]
+    current_run_ids: tuple[str, ...]
+    archived_run_ids: tuple[str, ...]
+    participant_stats: tuple[LobbyParticipantStats, ...]
 
 
 class TrainingLobbyService:
@@ -60,12 +91,130 @@ class TrainingLobbyService:
             raise NotFoundError(f"Лобби {lobby_id} не найдено")
         return lobby
 
+    def find_user_team_in_lobby(self, lobby_id: str, user_id: str) -> str | None:
+        lobby = self.get_lobby(lobby_id)
+        game_teams = self._team_workspace.list_teams_by_game_and_captain(game_id=lobby.game_id, captain_user_id=user_id)
+        team_ids = {team.team_id for team in game_teams}
+        for team_id in lobby.teams:
+            if team_id in team_ids:
+                return team_id
+        return None
+
+    def ensure_user_joined(self, lobby_id: str, user_id: str, access_code: str | None) -> tuple[Lobby, str]:
+        lobby = self.get_lobby(lobby_id)
+        existing_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
+        if existing_team_id is not None:
+            return lobby, existing_team_id
+        if not _can_change_participation(lobby):
+            raise InvariantViolationError("В текущем статусе нельзя присоединиться к лобби")
+        if len(lobby.teams) >= lobby.max_teams:
+            raise InvariantViolationError("Лобби заполнено")
+        if lobby.access == LobbyAccess.CODE and lobby.access_code != access_code:
+            raise InvariantViolationError("Неверный код доступа к лобби")
+        team = self._team_workspace.get_or_create_personal_team(game_id=lobby.game_id, captain_user_id=user_id)
+        lobby.join_team(team_id=team.team_id, access_code=access_code)
+        self._repository.save(lobby)
+        return lobby, team.team_id
+
+    def set_ready_for_user(self, lobby_id: str, user_id: str, ready: bool) -> Lobby:
+        team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
+        if team_id is None:
+            raise NotFoundError("Пользователь не состоит в лобби")
+        return self.set_ready(lobby_id=lobby_id, team_id=team_id, ready=ready)
+
+    def stop_for_user(self, lobby_id: str, user_id: str) -> Lobby:
+        team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
+        if team_id is None:
+            raise NotFoundError("Пользователь не состоит в лобби")
+        lobby = self.get_lobby(lobby_id)
+        if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING, LobbyStatus.DRAFT}:
+            raise InvariantViolationError("В текущем статусе нельзя нажать Stop")
+        runs = self._execution.list_runs(lobby_id=lobby_id, run_kind=RunKind.TRAINING_MATCH)
+        for run in runs:
+            if run.team_id != team_id:
+                continue
+            if run.status in _ACTIVE_RUN_STATUSES:
+                self._execution.cancel_run(run.run_id, message="manual_stop_lobby")
+        if team_id in lobby.teams and lobby.teams[team_id].ready:
+            lobby.mark_ready(team_id=team_id, ready=False)
+            self._repository.save(lobby)
+        lobby = self.reconcile_training_lobby_status(lobby_id=lobby_id)
+        return lobby
+
+    def get_live_view(self, lobby_id: str, user_id: str) -> LobbyLiveView:
+        lobby = self.get_lobby(lobby_id)
+        runs = self._execution.list_runs(lobby_id=lobby_id, run_kind=RunKind.TRAINING_MATCH)
+        active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
+        playing_team_ids = tuple(sorted({run.team_id for run in active_runs if run.status is RunStatus.RUNNING}))
+        queued_team_ids = set(
+            run.team_id for run in active_runs if run.status in {RunStatus.CREATED, RunStatus.QUEUED}
+        )
+        queued_team_ids.update(
+            team_id
+            for team_id, team_state in lobby.teams.items()
+            if team_state.ready and team_id not in playing_team_ids
+        )
+        queued_team_ids_tuple = tuple(sorted(queued_team_ids))
+
+        my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
+        current_run_id = None
+        if my_team_id is not None:
+            for run in sorted(active_runs, key=lambda item: item.created_at, reverse=True):
+                if run.team_id == my_team_id:
+                    current_run_id = run.run_id
+                    break
+
+        preparing_team_ids: list[str] = []
+        for team_id, team_state in lobby.teams.items():
+            if team_id in playing_team_ids or team_id in queued_team_ids_tuple:
+                continue
+            preparing_team_ids.append(team_id)
+        preparing_team_ids = sorted(set(preparing_team_ids))
+
+        my_status = "not_in_lobby"
+        if my_team_id is not None:
+            if my_team_id in playing_team_ids:
+                my_status = "playing"
+            elif my_team_id in queued_team_ids_tuple:
+                my_status = "queued"
+            else:
+                my_status = "preparing"
+
+        finished_runs = [
+            run
+            for run in runs
+            if run.status in _TERMINAL_RUN_STATUSES
+        ]
+        finished_runs.sort(key=lambda item: item.created_at, reverse=True)
+        archived_run_ids = tuple(run.run_id for run in finished_runs[:100])
+        current_run_ids = tuple(run.run_id for run in sorted(active_runs, key=lambda item: item.created_at, reverse=True))
+        participant_stats = self._collect_participant_stats(lobby=lobby, runs=finished_runs)
+
+        return LobbyLiveView(
+            lobby=lobby,
+            my_team_id=my_team_id,
+            my_status=my_status,
+            current_run_id=current_run_id,
+            playing_team_ids=playing_team_ids,
+            queued_team_ids=queued_team_ids_tuple,
+            preparing_team_ids=tuple(preparing_team_ids),
+            current_run_ids=current_run_ids,
+            archived_run_ids=archived_run_ids,
+            participant_stats=participant_stats,
+        )
+
     def join_team(self, lobby_id: str, team_id: str, access_code: str | None) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         team = self._team_workspace.get_team(team_id)
 
         if team.game_id != lobby.game_id:
             raise InvariantViolationError("Команда может вступать только в лобби своей игры")
+        for existing_team_id in lobby.teams:
+            existing_team = self._team_workspace.get_team(existing_team_id)
+            if existing_team.captain_user_id == team.captain_user_id:
+                if existing_team.team_id == team.team_id:
+                    return lobby
+                raise InvariantViolationError("У пользователя уже есть игрок в этом лобби")
 
         lobby.join_team(team_id=team_id, access_code=access_code)
         self._repository.save(lobby)
@@ -79,7 +228,7 @@ class TrainingLobbyService:
 
     def set_ready(self, lobby_id: str, team_id: str, ready: bool) -> Lobby:
         lobby = self.get_lobby(lobby_id)
-        if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.DRAFT}:
+        if not _can_change_participation(lobby):
             raise InvariantViolationError("В текущем статусе нельзя менять ready-состояние")
         if ready:
             compatibility = self._team_workspace.evaluate_compatibility(
@@ -110,6 +259,26 @@ class TrainingLobbyService:
             lobby.close()
         else:
             raise InvariantViolationError("Разрешены только статусы open, paused и closed")
+        self._repository.save(lobby)
+        return lobby
+
+    def reconcile_training_lobby_status(self, lobby_id: str) -> Lobby:
+        lobby = self.get_lobby(lobby_id)
+        if lobby.kind is not LobbyKind.TRAINING:
+            return lobby
+        if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+            return lobby
+
+        active_runs = [
+            run
+            for run in self._execution.list_runs(lobby_id=lobby_id, run_kind=RunKind.TRAINING_MATCH)
+            if run.status in _ACTIVE_RUN_STATUSES
+        ]
+        if active_runs:
+            lobby.set_running()
+        else:
+            lobby.set_open()
+            lobby.set_last_scheduled_runs([])
         self._repository.save(lobby)
         return lobby
 
@@ -227,3 +396,72 @@ class TrainingLobbyService:
             queued = self._execution.queue_run(run.run_id)
             run_ids.append(queued.run_id)
         return run_ids
+
+    def _collect_participant_stats(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
+        wins_by_team: dict[str, int] = {}
+        matches_by_team: dict[str, int] = {}
+        score_sum_by_team: dict[str, float] = {}
+        score_count_by_team: dict[str, int] = {}
+
+        for run in runs:
+            if run.team_id not in lobby.teams:
+                continue
+            matches_by_team[run.team_id] = matches_by_team.get(run.team_id, 0) + 1
+
+            payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+            metrics = payload.get("metrics")
+            metrics_dict = metrics if isinstance(metrics, dict) else {}
+            placements = payload.get("placements")
+            if not isinstance(placements, dict):
+                placements = metrics_dict.get("placements")
+            if isinstance(placements, dict):
+                raw_place = placements.get(run.team_id)
+                if isinstance(raw_place, int) and raw_place == 1:
+                    wins_by_team[run.team_id] = wins_by_team.get(run.team_id, 0) + 1
+            score = self._extract_score(payload=payload, metrics=metrics_dict, team_id=run.team_id)
+            if score is not None:
+                score_sum_by_team[run.team_id] = score_sum_by_team.get(run.team_id, 0.0) + score
+                score_count_by_team[run.team_id] = score_count_by_team.get(run.team_id, 0) + 1
+
+        items: list[LobbyParticipantStats] = []
+        for team_id in sorted(lobby.teams.keys()):
+            team = self._team_workspace.get_team(team_id)
+            matches_total = matches_by_team.get(team_id, 0)
+            score_count = score_count_by_team.get(team_id, 0)
+            average_score = None if score_count == 0 else score_sum_by_team.get(team_id, 0.0) / score_count
+            items.append(
+                LobbyParticipantStats(
+                    team_id=team_id,
+                    captain_user_id=team.captain_user_id,
+                    display_name=team.name,
+                    matches_total=matches_total,
+                    wins=wins_by_team.get(team_id, 0),
+                    average_score=average_score,
+                )
+            )
+        return tuple(items)
+
+    @staticmethod
+    def _extract_score(
+        *,
+        payload: dict[str, object],
+        metrics: dict[str, object],
+        team_id: str,
+    ) -> float | None:
+        for source in (payload, metrics):
+            for key in ("score", "points"):
+                raw = source.get(key)
+                if isinstance(raw, (int, float)):
+                    return float(raw)
+        for source in (payload, metrics):
+            scores = source.get("scores")
+            if not isinstance(scores, dict):
+                continue
+            raw = scores.get(team_id)
+            if isinstance(raw, (int, float)):
+                return float(raw)
+            if len(scores) == 1:
+                only_value = next(iter(scores.values()))
+                if isinstance(only_value, (int, float)):
+                    return float(only_value)
+        return None

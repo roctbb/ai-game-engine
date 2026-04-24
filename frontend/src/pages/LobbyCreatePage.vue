@@ -24,9 +24,7 @@
           <label class="form-label small">Игра</label>
           <select v-model="form.game_id" class="form-select" :disabled="!canManage || isCreating">
             <option value="">Выберите игру</option>
-            <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">
-              {{ game.title }} ({{ game.mode }})
-            </option>
+            <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">{{ game.title }}</option>
           </select>
         </div>
 
@@ -41,23 +39,15 @@
         </div>
 
         <div class="col-md-3">
-          <label class="form-label small">Режим</label>
-          <select v-model="form.kind" class="form-select" :disabled="!canManage || isCreating">
-            <option value="training">training</option>
-            <option value="competition">competition</option>
-          </select>
-        </div>
-
-        <div class="col-md-3">
           <label class="form-label small">Доступ</label>
           <select v-model="form.access" class="form-select" :disabled="!canManage || isCreating">
-            <option value="public">public</option>
-            <option value="code">code</option>
+            <option value="public">Открытое</option>
+            <option value="code">По коду</option>
           </select>
         </div>
 
         <div class="col-md-3">
-          <label class="form-label small">Команд до</label>
+          <label class="form-label small">Игроков до</label>
           <input
             v-model.number="form.max_teams"
             type="number"
@@ -66,11 +56,6 @@
             class="form-control mono"
             :disabled="!canManage || isCreating"
           />
-        </div>
-
-        <div class="col-md-3">
-          <label class="form-label small">Стартовый статус</label>
-          <div class="form-control bg-light mono">{{ initialStatusLabel }}</div>
         </div>
 
         <div v-if="form.access === 'code'" class="col-md-4">
@@ -91,17 +76,6 @@
         <RouterLink class="btn btn-outline-secondary" to="/lobbies">Отмена</RouterLink>
       </div>
     </article>
-
-    <article class="agp-card p-3">
-      <h2 class="h6 mb-2">Спека и текущий MVP</h2>
-      <p class="small text-muted mb-1">
-        В полной спецификации у лобби действительно больше полей (например `description`, `config_json`,
-        `allow_public_spectators`).
-      </p>
-      <p class="small text-muted mb-0">
-        В текущем API `POST /lobbies` поддерживает: `game_id`, `title`, `kind`, `access`, `access_code`, `max_teams`.
-      </p>
-    </article>
   </section>
 </template>
 
@@ -114,7 +88,6 @@ import {
   listGames,
   type GameDto,
   type LobbyAccess,
-  type LobbyKind,
 } from '../lib/api';
 import { useSessionStore } from '../stores/session';
 
@@ -131,7 +104,6 @@ const games = ref<GameDto[]>([]);
 const form = reactive({
   game_id: '',
   title: '',
-  kind: 'training' as LobbyKind,
   access: 'public' as LobbyAccess,
   access_code: '',
   max_teams: 16,
@@ -143,8 +115,6 @@ const lobbyGames = computed(() =>
     .slice()
     .sort((a, b) => a.title.localeCompare(b.title))
 );
-
-const initialStatusLabel = computed(() => (form.kind === 'training' ? 'open' : 'draft'));
 
 const canCreate = computed(() => {
   if (!canManage.value || isCreating.value) return false;
@@ -202,7 +172,7 @@ async function createNewLobby(): Promise<void> {
     const created = await createLobby({
       game_id: form.game_id,
       title: form.title.trim(),
-      kind: form.kind,
+      kind: 'training',
       access: form.access,
       access_code: form.access === 'code' ? form.access_code.trim() : null,
       max_teams: form.max_teams,

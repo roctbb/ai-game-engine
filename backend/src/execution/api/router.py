@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.auth import get_current_session, require_roles
+from app.auth import get_current_session, require_internal_token, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
 from execution.api.schemas import (
     AcceptRunRequest,
@@ -30,6 +30,7 @@ from execution.api.schemas import (
     WorkerHeartbeatRequest,
     WorkerResponse,
 )
+from execution.api.access import ensure_can_view_run
 from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 from game_catalog.infrastructure.manifest_loader import GameManifest, find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
@@ -134,10 +135,19 @@ def _ensure_can_manage_run(container: ServiceContainer, session: AppSession, run
         raise ForbiddenError("Управлять этим запуском может только его автор, преподаватель или админ")
 
 
+def _reconcile_training_lobby_for_terminal_run(container: ServiceContainer, run: Run) -> None:
+    if run.run_kind is not RunKind.TRAINING_MATCH or run.lobby_id is None:
+        return
+    try:
+        container.training_lobby.reconcile_training_lobby_status(lobby_id=run.lobby_id)
+    except NotFoundError:
+        return
+
+
 @router.post("/runs", response_model=RunResponse)
 def create_run(
     request: CreateRunRequest,
-    session: AppSession = Depends(get_current_session),
+    session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     _ensure_can_use_team(container=container, session=session, team_id=request.team_id)
@@ -191,12 +201,11 @@ def stop_single_task_run(
         raise InvariantViolationError("Остановка single_task доступна только для single_task попытки")
     if run.game_id != game_id:
         raise InvariantViolationError("run_id не принадлежит указанной single_task игре")
-    return _run_response(
-        container.execution.cancel_run(
-            run_id=request.run_id,
-            message="manual_stop_single_task",
-        )
+    stopped = container.execution.cancel_run(
+        run_id=request.run_id,
+        message="manual_stop_single_task",
     )
+    return _run_response(stopped)
 
 
 @router.get("/single-tasks/{game_id}/attempts", response_model=list[RunResponse])
@@ -265,7 +274,7 @@ def list_runs(
     lobby_id: str | None = None,
     run_kind: RunKind | None = None,
     status: RunStatus | None = None,
-    _session: AppSession = Depends(get_current_session),
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[RunResponse]:
     runs = container.execution.list_runs(
@@ -275,7 +284,17 @@ def list_runs(
         run_kind=run_kind,
         status=status,
     )
-    return [_run_response(run) for run in runs]
+    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
+        return [_run_response(run) for run in runs]
+
+    visible_runs: list[Run] = []
+    for run in runs:
+        try:
+            ensure_can_view_run(container=container, session=session, run=run)
+        except ForbiddenError:
+            continue
+        visible_runs.append(run)
+    return [_run_response(run) for run in visible_runs]
 
 
 @router.post("/runs/{run_id}/queue", response_model=RunResponse)
@@ -297,25 +316,33 @@ def cancel_run(
 ) -> RunResponse:
     run = container.execution.get_run(run_id=run_id)
     _ensure_can_manage_run(container=container, session=session, run=run)
-    return _run_response(
-        container.execution.cancel_run(
-            run_id=run_id,
-            message="manual_cancel",
-        )
+    canceled = container.execution.cancel_run(
+        run_id=run_id,
+        message="manual_cancel",
     )
+    _reconcile_training_lobby_for_terminal_run(container=container, run=canceled)
+    return _run_response(canceled)
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)
-def get_run(run_id: str, container: ServiceContainer = Depends(get_container)) -> RunResponse:
-    return _run_response(container.execution.get_run(run_id=run_id))
+def get_run(
+    run_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> RunResponse:
+    run = container.execution.get_run(run_id=run_id)
+    ensure_can_view_run(container=container, session=session, run=run)
+    return _run_response(run)
 
 
 @router.get("/runs/{run_id}/watch-context", response_model=RunWatchContextResponse)
 def get_run_watch_context(
     run_id: str,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunWatchContextResponse:
     run = container.execution.get_run(run_id=run_id)
+    ensure_can_view_run(container=container, session=session, run=run)
     game = container.game_catalog.get_game(run.game_id)
     _, manifest = _resolve_manifest_for_slug(game_slug=game.slug)
 
@@ -341,8 +368,11 @@ def stream_run(
     run_id: str,
     poll_interval_ms: int = 1000,
     max_events: int = 0,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> StreamingResponse:
+    initial_run = container.execution.get_run(run_id=run_id)
+    ensure_can_view_run(container=container, session=session, run=initial_run)
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
 
@@ -406,6 +436,7 @@ def get_renderer_asset(game_slug: str, asset_path: str) -> FileResponse:
 @router.get("/internal/runs/{run_id}/execution-context", response_model=RunExecutionContextResponse)
 def get_run_execution_context(
     run_id: str,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunExecutionContextResponse:
     run = container.execution.get_run(run_id=run_id)
@@ -438,6 +469,7 @@ def get_run_execution_context(
 @router.post("/internal/workers/register", response_model=WorkerResponse)
 def register_worker(
     request: RegisterWorkerRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> WorkerResponse:
     worker = container.execution.register_worker(
@@ -455,6 +487,7 @@ def register_worker(
 def heartbeat_worker(
     worker_id: str,
     request: WorkerHeartbeatRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> WorkerResponse:
     worker = container.execution.worker_heartbeat(
@@ -468,6 +501,7 @@ def heartbeat_worker(
 def update_worker_status(
     worker_id: str,
     request: UpdateWorkerStatusRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> WorkerResponse:
     worker = container.execution.update_worker_status(
@@ -480,13 +514,16 @@ def update_worker_status(
 
 
 @router.get("/internal/workers", response_model=list[WorkerResponse])
-def list_workers(container: ServiceContainer = Depends(get_container)) -> list[WorkerResponse]:
+def list_workers(
+    _: object = Depends(require_internal_token),
+    container: ServiceContainer = Depends(get_container),
+) -> list[WorkerResponse]:
     return [_worker_response(worker) for worker in container.execution.list_workers()]
 
 
 @router.get("/workers", response_model=list[WorkerResponse])
 def list_workers_public(
-    _: object = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    _: object = Depends(require_roles(UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> list[WorkerResponse]:
     return [_worker_response(worker) for worker in container.execution.list_workers()]
@@ -495,7 +532,7 @@ def list_workers_public(
 @router.get("/workers/{worker_id}", response_model=WorkerResponse)
 def get_worker_public(
     worker_id: str,
-    _: object = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    _: object = Depends(require_roles(UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> WorkerResponse:
     return _worker_response(container.execution.get_worker(worker_id=worker_id))
@@ -505,7 +542,7 @@ def get_worker_public(
 def update_worker_status_public(
     worker_id: str,
     request: UpdateWorkerStatusRequest,
-    _: object = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    _: object = Depends(require_roles(UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> WorkerResponse:
     worker = container.execution.update_worker_status(
@@ -521,6 +558,7 @@ def update_worker_status_public(
 def mark_run_started(
     run_id: str,
     request: StartRunRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     run = container.execution.start_run(run_id=run_id, worker_id=request.worker_id)
@@ -531,6 +569,7 @@ def mark_run_started(
 def mark_run_accepted(
     run_id: str,
     request: AcceptRunRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     run = container.execution.accept_run(run_id=run_id, worker_id=request.worker_id)
@@ -541,9 +580,11 @@ def mark_run_accepted(
 def mark_run_finished(
     run_id: str,
     request: FinishRunRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     run = container.execution.finish_run(run_id=run_id, payload=request.payload)
+    _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     return _run_response(run)
 
 
@@ -551,15 +592,18 @@ def mark_run_finished(
 def mark_run_failed(
     run_id: str,
     request: FailRunRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     run = container.execution.fail_run(run_id=run_id, message=request.message)
+    _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     return _run_response(run)
 
 
 @router.post("/internal/builds/start", response_model=BuildResponse)
 def start_build(
     request: StartBuildRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> BuildResponse:
     build = container.execution.start_build(
@@ -573,6 +617,7 @@ def start_build(
 def finish_build(
     build_id: str,
     request: FinishBuildRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> BuildResponse:
     build = container.execution.finish_build(build_id=build_id, image_digest=request.image_digest)
@@ -583,6 +628,7 @@ def finish_build(
 def fail_build(
     build_id: str,
     request: FailBuildRequest,
+    _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> BuildResponse:
     build = container.execution.fail_build(build_id=build_id, error_message=request.error_message)

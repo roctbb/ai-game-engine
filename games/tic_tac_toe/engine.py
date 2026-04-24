@@ -14,7 +14,14 @@ _MAX_TURNS = _BOARD_SIZE * _BOARD_SIZE
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
-    player_fn, compile_error = _build_player_fn(ctx=ctx, slot_key="bot")
+    events: list[dict[str, object]] = []
+    print_context = {"tick": 0}
+    player_fn, compile_error = _build_player_fn(
+        ctx=ctx,
+        slot_key="bot",
+        events=events,
+        print_context=print_context,
+    )
 
     board = _create_board()
     invalid_moves_player = 0
@@ -34,10 +41,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             },
         }
     ]
-    events: list[dict[str, object]] = []
 
     for _ in range(_MAX_TURNS):
         if current_role == _PLAYER_ROLE:
+            print_context["tick"] = turns_played
             move = _call_player(player_fn=player_fn, board=board, role=current_role)
             if not _is_valid_move(board=board, move=move):
                 invalid_moves_player += 1
@@ -148,9 +155,15 @@ def _create_board() -> list[list[int]]:
 def _build_player_fn(
     ctx: dict[str, Any],
     slot_key: str,
+    events: list[dict[str, object]],
+    print_context: dict[str, int],
 ) -> tuple[Callable[..., object], str | None]:
     code = _code_for_slot(ctx=ctx, slot_key=slot_key)
-    namespace: dict[str, Any] = {"__builtins__": _safe_builtins()}
+    namespace: dict[str, Any] = {
+        "__builtins__": _safe_builtins(
+            print_fn=_make_bot_print(events=events, role=slot_key, print_context=print_context),
+        )
+    }
     compile_error: str | None = None
 
     if code.strip():
@@ -176,7 +189,7 @@ def _build_player_fn(
     return _fallback_player_move, compile_error
 
 
-def _safe_builtins() -> dict[str, object]:
+def _safe_builtins(print_fn: Callable[..., None] | None = None) -> dict[str, object]:
     return {
         "abs": abs,
         "all": all,
@@ -190,7 +203,7 @@ def _safe_builtins() -> dict[str, object]:
         "list": list,
         "max": max,
         "min": min,
-        "print": print,
+        "print": print_fn or print,
         "range": range,
         "set": set,
         "str": str,
@@ -198,6 +211,31 @@ def _safe_builtins() -> dict[str, object]:
         "tuple": tuple,
         "zip": zip,
     }
+
+
+def _make_bot_print(
+    events: list[dict[str, object]],
+    role: str,
+    print_context: dict[str, int],
+) -> Callable[..., None]:
+    def _bot_print(*values: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
+        if file is not None:
+            return
+        message = sep.join(str(value) for value in values)
+        if end and end != "\n":
+            message = f"{message}{end}"
+        lines = message.splitlines() or [""]
+        for line in lines:
+            events.append(
+                {
+                    "type": "bot_print",
+                    "tick": int(print_context.get("tick", 0)),
+                    "role": role,
+                    "message": line,
+                }
+            )
+
+    return _bot_print
 
 
 def _code_for_slot(ctx: dict[str, Any], slot_key: str) -> str:

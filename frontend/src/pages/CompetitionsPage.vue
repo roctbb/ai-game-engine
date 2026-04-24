@@ -3,7 +3,7 @@
     <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="h3 mb-1">Соревнования</h1>
-        <p class="text-muted mb-0">Список соревнований и создание новых турнирных сущностей.</p>
+        <p class="text-muted mb-0">Служебный список соревнований. Основной сценарий запускается из лобби.</p>
       </div>
       <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading" @click="loadData">
         {{ isLoading ? 'Обновление...' : 'Обновить' }}
@@ -23,7 +23,7 @@
           <select v-model="form.game_id" class="form-select" :disabled="!canManage || isCreating">
             <option value="">Выберите игру</option>
             <option v-for="game in competitionGames" :key="game.game_id" :value="game.game_id">
-              {{ game.title }} ({{ game.mode }})
+              {{ game.title }}
             </option>
           </select>
         </div>
@@ -32,20 +32,18 @@
           <input v-model.trim="form.title" class="form-control" :disabled="!canManage || isCreating" />
         </div>
         <div class="col-md-2">
-          <label class="form-label small">format</label>
-          <select v-model="form.format" class="form-select mono" :disabled="!canManage || isCreating">
-            <option value="single_elimination">single_elimination</option>
-            <option value="round_robin">round_robin</option>
-            <option value="swiss">swiss</option>
-          </select>
-        </div>
-        <div class="col-md-2">
           <label class="form-label small">tie_break</label>
           <select v-model="form.tie_break_policy" class="form-select mono" :disabled="!canManage || isCreating">
             <option value="manual">manual</option>
             <option value="shared_advancement">shared_advancement</option>
-            <option value="tiebreak_match">tiebreak_match</option>
-            <option value="game_defined">game_defined</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small">code_policy</label>
+          <select v-model="form.code_policy" class="form-select mono" :disabled="!canManage || isCreating">
+            <option value="locked_on_start">locked_on_start</option>
+            <option value="allowed_between_matches">allowed_between_matches</option>
+            <option value="locked_on_registration">locked_on_registration</option>
           </select>
         </div>
         <div class="col-md-2">
@@ -88,7 +86,6 @@
             <tr>
               <th>title</th>
               <th>status</th>
-              <th>format</th>
               <th>game_id</th>
               <th>entrants</th>
               <th></th>
@@ -98,7 +95,6 @@
             <tr v-for="competition in competitions" :key="competition.competition_id">
               <td>{{ competition.title }}</td>
               <td class="mono small">{{ competition.status }}</td>
-              <td class="mono small">{{ competition.format }}</td>
               <td class="mono small">{{ competition.game_id }}</td>
               <td class="mono small">{{ competition.entrants.length }}</td>
               <td class="text-end">
@@ -125,6 +121,7 @@ import {
   createCompetition,
   listCompetitions,
   listGames,
+  type CompetitionCodePolicy,
   type CompetitionDto,
   type GameDto,
 } from '../lib/api';
@@ -143,8 +140,8 @@ const competitions = ref<CompetitionDto[]>([]);
 const form = reactive({
   game_id: '',
   title: 'Новое соревнование',
-  format: 'single_elimination' as 'single_elimination' | 'round_robin' | 'swiss',
-  tie_break_policy: 'manual' as 'manual' | 'shared_advancement' | 'tiebreak_match' | 'game_defined',
+  tie_break_policy: 'manual' as 'manual' | 'shared_advancement',
+  code_policy: 'locked_on_start' as CompetitionCodePolicy,
   advancement_top_k: 1,
   match_size: 2,
 });
@@ -183,8 +180,9 @@ async function createNewCompetition(): Promise<void> {
     const created = await createCompetition({
       game_id: form.game_id,
       title: form.title.trim(),
-      format: form.format,
+      format: 'single_elimination',
       tie_break_policy: form.tie_break_policy,
+      code_policy: form.code_policy,
       advancement_top_k: form.advancement_top_k,
       match_size: form.match_size,
     });
@@ -201,4 +199,3 @@ onMounted(async () => {
   await loadData();
 });
 </script>
-

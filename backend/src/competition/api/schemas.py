@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from competition.domain.model import (
+    CompetitionCodePolicy,
     CompetitionFormat,
     CompetitionMatchStatus,
     CompetitionRoundStatus,
@@ -13,16 +16,19 @@ from competition.domain.model import (
 
 class CreateCompetitionRequest(BaseModel):
     game_id: str
+    lobby_id: str | None = None
     title: str = Field(min_length=2, max_length=160)
-    format: CompetitionFormat
-    tie_break_policy: TieBreakPolicy
+    format: Literal["single_elimination"]
+    tie_break_policy: Literal["manual", "shared_advancement"]
+    code_policy: Literal["locked_on_registration", "locked_on_start", "allowed_between_matches"] = "locked_on_start"
     advancement_top_k: int = Field(ge=1, le=64)
     match_size: int = Field(ge=2, le=64)
 
 
 class PatchCompetitionRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=160)
-    tie_break_policy: TieBreakPolicy | None = None
+    tie_break_policy: Literal["manual", "shared_advancement"] | None = None
+    code_policy: Literal["locked_on_registration", "locked_on_start", "allowed_between_matches"] | None = None
     advancement_top_k: int | None = Field(default=None, ge=1, le=64)
     match_size: int | None = Field(default=None, ge=2, le=64)
 
@@ -85,9 +91,11 @@ class CompetitionResponse(BaseModel):
     competition_id: str
     game_id: str
     game_version_id: str
+    lobby_id: str | None
     title: str
     format: CompetitionFormat
     tie_break_policy: TieBreakPolicy
+    code_policy: CompetitionCodePolicy
     advancement_top_k: int
     match_size: int
     status: CompetitionStatus

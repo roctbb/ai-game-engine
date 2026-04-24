@@ -43,7 +43,7 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     assert "last_scheduled_run_ids_json" in lobby_columns
 
     competition_columns = {item["name"] for item in inspector.get_columns("competitions")}
-    assert {"tie_break_policy", "advancement_top_k", "match_size", "last_scheduled_run_ids_json"}.issubset(
+    assert {"lobby_id", "tie_break_policy", "code_policy", "advancement_top_k", "match_size", "last_scheduled_run_ids_json"}.issubset(
         competition_columns
     )
 

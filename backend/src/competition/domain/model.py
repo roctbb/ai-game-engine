@@ -19,10 +19,17 @@ class TieBreakPolicy(StrEnum):
     GAME_DEFINED = "game_defined"
 
 
+class CompetitionCodePolicy(StrEnum):
+    LOCKED_ON_REGISTRATION = "locked_on_registration"
+    LOCKED_ON_START = "locked_on_start"
+    ALLOWED_BETWEEN_MATCHES = "allowed_between_matches"
+
+
 class CompetitionStatus(StrEnum):
     DRAFT = "draft"
     RUNNING = "running"
     PAUSED = "paused"
+    COMPLETED = "completed"
     FINISHED = "finished"
 
 
@@ -76,8 +83,10 @@ class Competition:
     title: str
     format: CompetitionFormat
     tie_break_policy: TieBreakPolicy
+    code_policy: CompetitionCodePolicy
     advancement_top_k: int
     match_size: int
+    lobby_id: str | None = None
     status: CompetitionStatus = CompetitionStatus.DRAFT
     entrants: dict[str, CompetitionEntrant] = field(default_factory=dict)
     rounds: list[CompetitionRound] = field(default_factory=list)
@@ -95,8 +104,10 @@ class Competition:
         title: str,
         format: CompetitionFormat,
         tie_break_policy: TieBreakPolicy,
+        code_policy: CompetitionCodePolicy,
         advancement_top_k: int,
         match_size: int,
+        lobby_id: str | None = None,
     ) -> "Competition":
         if match_size < 2:
             raise InvariantViolationError("match_size должен быть >= 2")
@@ -112,8 +123,10 @@ class Competition:
             title=title,
             format=format,
             tie_break_policy=tie_break_policy,
+            code_policy=code_policy,
             advancement_top_k=advancement_top_k,
             match_size=match_size,
+            lobby_id=lobby_id,
         )
 
     def register_team(self, team_id: str) -> None:
@@ -168,13 +181,15 @@ class Competition:
         self.updated_at = utc_now()
 
     def finish(self) -> None:
-        if self.status not in {CompetitionStatus.RUNNING, CompetitionStatus.PAUSED}:
-            raise InvariantViolationError("Завершение доступно только в running/paused")
+        if self.status is not CompetitionStatus.COMPLETED:
+            raise InvariantViolationError("Завершение доступно только после определения победителя")
         self.status = CompetitionStatus.FINISHED
         self.updated_at = utc_now()
 
-    def finish_with_winners(self, winner_team_ids: list[str]) -> None:
-        self.finish()
+    def complete_with_winners(self, winner_team_ids: list[str]) -> None:
+        if self.status is not CompetitionStatus.RUNNING:
+            raise InvariantViolationError("Определение победителя доступно только в running")
+        self.status = CompetitionStatus.COMPLETED
         self.winner_team_ids = tuple(winner_team_ids)
         self.current_round_index = None
         self.updated_at = utc_now()

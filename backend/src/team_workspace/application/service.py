@@ -39,6 +39,9 @@ class TeamWorkspaceService:
 
     def create_team(self, game_id: str, name: str, captain_user_id: str) -> Team:
         self._game_catalog.get_game(game_id)
+        existing = self.list_teams_by_game_and_captain(game_id=game_id, captain_user_id=captain_user_id)
+        if existing:
+            return existing[0]
         team = Team.create(game_id=game_id, name=name, captain_user_id=captain_user_id)
         self._team_repository.save(team)
         return team
@@ -51,6 +54,21 @@ class TeamWorkspaceService:
 
     def list_teams_by_game(self, game_id: str) -> tuple[Team, ...]:
         return tuple(self._team_repository.list_by_game(game_id))
+
+    def list_teams_by_game_and_captain(self, game_id: str, captain_user_id: str) -> tuple[Team, ...]:
+        teams = [team for team in self._team_repository.list_by_game(game_id) if team.captain_user_id == captain_user_id]
+        teams.sort(key=lambda team: team.team_id)
+        return tuple(teams)
+
+    def get_or_create_personal_team(self, game_id: str, captain_user_id: str) -> Team:
+        existing = self.list_teams_by_game_and_captain(game_id=game_id, captain_user_id=captain_user_id)
+        if existing:
+            return existing[0]
+        return self.create_team(
+            game_id=game_id,
+            name=f"{captain_user_id} team",
+            captain_user_id=captain_user_id,
+        )
 
     def update_slot_code(self, team_id: str, actor_user_id: str, slot_key: str, code: str) -> Team:
         team = self.get_team(team_id)

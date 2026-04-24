@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     enable_geekclass_login: bool = True
     jwt_secret: str = "change-me-in-prod-super-secret-key-32"
     jwt_max_age_seconds: int = 60
+    internal_api_token: str = "dev-internal-token"
     geekclass_host: str = "https://codingprojects.ru"
     backend_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:8080"

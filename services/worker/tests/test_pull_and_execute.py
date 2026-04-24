@@ -81,10 +81,15 @@ class ScriptedHttpxClient:
     def __exit__(self, *_: object) -> None:
         return None
 
-    def post(self, url: str, json: dict[str, Any] | None = None) -> FakeResponse:
+    def post(
+        self,
+        url: str,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> FakeResponse:
         return self._consume("POST", url, json)
 
-    def get(self, url: str) -> FakeResponse:
+    def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
         return self._consume("GET", url, None)
 
     def _consume(self, method: str, url: str, json: dict[str, Any] | None) -> FakeResponse:
@@ -103,6 +108,7 @@ class ScriptedHttpxClient:
 def _set_test_settings() -> None:
     settings.backend_api_url = "http://backend"
     settings.scheduler_url = "http://scheduler"
+    settings.internal_api_token = "dev-internal-token"
     settings.worker_id = "worker-test-1"
     settings.hostname = "worker-host"
     settings.max_slots = 2
@@ -282,12 +288,6 @@ def test_pull_and_execute_reports_failed_when_execution_context_missing(monkeypa
         ),
         ExpectedCall(
             method="GET",
-            url="http://backend/runs/run-123",
-            json=None,
-            payload={"run_kind": "single_task"},
-        ),
-        ExpectedCall(
-            method="GET",
             url="http://backend/internal/runs/run-123/execution-context",
             json=None,
             status_code=404,
@@ -354,12 +354,6 @@ def test_pull_and_execute_runs_manifest_game(monkeypatch: Any) -> None:
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
             payload={"status": "assigned", "run_id": "run-manifest"},
-        ),
-        ExpectedCall(
-            method="GET",
-            url="http://backend/runs/run-manifest",
-            json=None,
-            payload={"run_kind": "single_task"},
         ),
         ExpectedCall(
             method="GET",
@@ -453,12 +447,6 @@ def test_pull_and_execute_runs_turn_based_manifest_game(monkeypatch: Any) -> Non
         ),
         ExpectedCall(
             method="GET",
-            url="http://backend/runs/run-turn-based",
-            json=None,
-            payload={"run_kind": "training_match"},
-        ),
-        ExpectedCall(
-            method="GET",
             url="http://backend/internal/runs/run-turn-based/execution-context",
             json=None,
             payload=execution_context,
@@ -522,12 +510,6 @@ def test_pull_and_execute_reports_failed_for_unsupported_code_api_mode(monkeypat
         ),
         ExpectedCall(
             method="GET",
-            url="http://backend/runs/run-turn",
-            json=None,
-            payload={"run_kind": "training_match"},
-        ),
-        ExpectedCall(
-            method="GET",
             url="http://backend/internal/runs/run-turn/execution-context",
             json=None,
             payload={
@@ -564,7 +546,7 @@ def test_pull_and_execute_reports_failed_for_unsupported_code_api_mode(monkeypat
     assert scripted_calls == []
 
 
-def test_pull_and_execute_reports_failed_for_run_kind_mismatch(monkeypatch: Any) -> None:
+def test_pull_and_execute_reports_failed_for_missing_run_kind(monkeypatch: Any) -> None:
     _set_test_settings()
     scripted_calls = [
         ExpectedCall(
@@ -585,17 +567,10 @@ def test_pull_and_execute_reports_failed_for_run_kind_mismatch(monkeypatch: Any)
         ),
         ExpectedCall(
             method="GET",
-            url="http://backend/runs/run-mismatch",
-            json=None,
-            payload={"run_kind": "single_task"},
-        ),
-        ExpectedCall(
-            method="GET",
             url="http://backend/internal/runs/run-mismatch/execution-context",
             json=None,
             payload={
                 "run_id": "run-mismatch",
-                "run_kind": "training_match",
                 "game_id": "game-turn",
                 "game_slug": "ttt_connect5_v1",
                 "game_package_dir": "tic_tac_toe",
@@ -611,12 +586,7 @@ def test_pull_and_execute_reports_failed_for_run_kind_mismatch(monkeypatch: Any)
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-mismatch/failed",
-            json={
-                "message": (
-                    "Execution context run_kind mismatch for run run-mismatch: "
-                    "context=training_match, run=single_task"
-                )
-            },
+            json={"message": "Execution context is missing run_kind"},
         ),
     ]
 
@@ -650,12 +620,6 @@ def test_pull_and_execute_reports_failed_for_unsupported_run_kind(monkeypatch: A
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
             payload={"status": "assigned", "run_id": "run-unknown-kind"},
-        ),
-        ExpectedCall(
-            method="GET",
-            url="http://backend/runs/run-unknown-kind",
-            json=None,
-            payload={"run_kind": "sandbox_probe"},
         ),
         ExpectedCall(
             method="GET",
@@ -713,12 +677,6 @@ def test_pull_and_execute_reports_failed_on_http_error(monkeypatch: Any) -> None
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
             payload={"status": "assigned", "run_id": "run-err"},
-        ),
-        ExpectedCall(
-            method="GET",
-            url="http://backend/runs/run-err",
-            json=None,
-            payload={"run_kind": "single_task"},
         ),
         ExpectedCall(
             method="GET",
@@ -794,12 +752,6 @@ def test_pull_and_execute_reports_failed_on_engine_error(monkeypatch: Any, tmp_p
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
             payload={"status": "assigned", "run_id": "run-broken"},
-        ),
-        ExpectedCall(
-            method="GET",
-            url="http://backend/runs/run-broken",
-            json=None,
-            payload={"run_kind": "single_task"},
         ),
         ExpectedCall(
             method="GET",

@@ -24,6 +24,15 @@ def _create_ready_team(client, game_id: str, name: str, captain: str) -> dict:
     return team
 
 
+def _student_headers(client, nickname: str) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/dev-login",
+        json={"nickname": nickname, "role": "student"},
+    )
+    assert response.status_code == 200
+    return {"X-Session-Id": response.json()["session_id"]}
+
+
 def test_competition_start_schedules_competition_runs(client, teacher_headers) -> None:
     game = _create_small_match_game(client, "competition_api_game_start", headers=teacher_headers)
     team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-a")
@@ -68,6 +77,109 @@ def test_competition_start_schedules_competition_runs(client, teacher_headers) -
     assert len(runs) == 2
     assert {item["team_id"] for item in runs} == {team_a["team_id"], team_b["team_id"]}
     assert all(item["status"] == "queued" for item in runs)
+
+
+def test_create_competition_rejects_unsupported_formats(client, teacher_headers) -> None:
+    game = _create_small_match_game(client, "competition_api_unsupported_format", headers=teacher_headers)
+
+    denied = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Round Robin Later",
+            "format": "round_robin",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    )
+
+    assert denied.status_code == 422
+
+
+def test_create_competition_rejects_future_tie_break_policy(client, teacher_headers) -> None:
+    game = _create_small_match_game(client, "competition_api_unsupported_tie_break", headers=teacher_headers)
+
+    denied = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Future Tie Break Cup",
+            "format": "single_elimination",
+            "tie_break_policy": "game_defined",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    )
+
+    assert denied.status_code == 422
+
+
+def test_unrelated_student_cannot_read_competition_details(client, teacher_headers) -> None:
+    game = _create_small_match_game(client, "competition_api_read_scope", headers=teacher_headers)
+    team = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-read-scope")
+    competition = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Private Cup",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    ).json()
+    client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/register",
+        json={"team_id": team["team_id"]},
+        headers=teacher_headers,
+    )
+    headers = _student_headers(client, "unrelated-competition-reader")
+
+    listed = client.get("/api/v1/competitions", headers=headers)
+    assert listed.status_code == 200
+    assert all(item["competition_id"] != competition["competition_id"] for item in listed.json())
+
+    for suffix in ("", "/runs", "/bracket", "/rounds", "/matches"):
+        response = client.get(
+            f"/api/v1/competitions/{competition['competition_id']}{suffix}",
+            headers=headers,
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "forbidden"
+
+
+def test_registered_student_can_read_own_competition(client, teacher_headers) -> None:
+    game = _create_small_match_game(client, "competition_api_read_participant", headers=teacher_headers)
+    team = _create_ready_team(client, game_id=game["game_id"], name="Participant", captain="participant-reader")
+    competition = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Participant Cup",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    ).json()
+    client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/register",
+        json={"team_id": team["team_id"]},
+        headers=teacher_headers,
+    )
+
+    response = client.get(
+        f"/api/v1/competitions/{competition['competition_id']}",
+        headers=_student_headers(client, "participant-reader"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["competition_id"] == competition["competition_id"]
 
 
 def test_competition_ban_disables_ready(client, teacher_headers) -> None:
@@ -200,6 +312,11 @@ def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -
         json={"requested_by": "teacher-2"},
         headers=teacher_headers,
     ).json()
+    early_finish = client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/finish",
+        headers=teacher_headers,
+    )
+    assert early_finish.status_code == 422
     round_one = started["rounds"][0]
     match = round_one["matches"][0]
     run_ids_by_team = match["run_ids_by_team"]
@@ -224,10 +341,17 @@ def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -
         headers=teacher_headers,
     ).json()
 
-    assert advanced["status"] == "finished"
+    assert advanced["status"] == "completed"
     assert advanced["winner_team_ids"] == [team_b["team_id"]]
     assert advanced["current_round_index"] is None
     assert advanced["rounds"][0]["status"] == "finished"
+
+    finished = client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/finish",
+        headers=teacher_headers,
+    ).json()
+    assert finished["status"] == "finished"
+    assert finished["winner_team_ids"] == [team_b["team_id"]]
 
 
 def test_competition_advance_manual_tie_requires_resolution(client, teacher_headers) -> None:
@@ -306,9 +430,16 @@ def test_competition_advance_manual_tie_requires_resolution(client, teacher_head
     ).json()
     assert resumed["status"] == "running"
 
-    finished = client.post(
+    completed = client.post(
         f"/api/v1/competitions/{competition['competition_id']}/advance",
         json={"requested_by": "teacher-tie"},
+        headers=teacher_headers,
+    ).json()
+    assert completed["status"] == "completed"
+    assert completed["winner_team_ids"] == [team_a["team_id"]]
+
+    finished = client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/finish",
         headers=teacher_headers,
     ).json()
     assert finished["status"] == "finished"

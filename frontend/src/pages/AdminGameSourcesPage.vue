@@ -2,9 +2,9 @@
   <section class="agp-grid">
     <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <h1 class="h3 mb-1">Админка: Game Sources</h1>
+        <h1 class="h3 mb-1">Статус системы</h1>
         <p class="text-muted mb-0">
-          Подключение git-репозиториев игр, ручной sync и диагностика последней сборки.
+          Источники игр, ручной sync и диагностика последней сборки.
         </p>
       </div>
       <div class="d-flex gap-2 align-items-center">
@@ -13,7 +13,7 @@
         </span>
         <button
           class="btn btn-sm btn-outline-secondary"
-          :disabled="isLoading || !canManage"
+          :disabled="isLoading || !canManageSources"
           @click="loadSources()"
         >
           Обновить
@@ -31,8 +31,8 @@
       </div>
     </article>
 
-    <article class="agp-card p-3" v-if="!canManage">
-      <div class="text-warning-emphasis fw-semibold">Требуется роль teacher/admin</div>
+    <article class="agp-card p-3" v-if="!canManageSources">
+      <div class="text-warning-emphasis fw-semibold">Требуется роль teacher или admin</div>
       <div class="small text-muted">
         Для текущего пользователя действия создания и sync источников недоступны.
       </div>
@@ -52,7 +52,7 @@
         <div class="col-6 col-lg-3">
           <button
             class="btn btn-dark w-100"
-            :disabled="!canManage || isCreating || !repoUrl || !defaultBranch"
+            :disabled="!canManageSources || isCreating || !repoUrl || !defaultBranch"
             @click="createSource"
           >
             {{ isCreating ? 'Создание...' : 'Добавить source' }}
@@ -109,14 +109,14 @@
                   </button>
                   <button
                     class="btn btn-sm btn-outline-primary"
-                    :disabled="!canManage || syncingSourceId === source.source_id || source.status !== 'active' || source.last_sync_status === 'syncing'"
+                    :disabled="!canManageSources || syncingSourceId === source.source_id || source.status !== 'active' || source.last_sync_status === 'syncing'"
                     @click="syncSource(source.source_id)"
                   >
                     {{ syncingSourceId === source.source_id ? 'Sync...' : 'Sync now' }}
                   </button>
                   <button
                     class="btn btn-sm btn-outline-warning"
-                    :disabled="!canManage || statusChangingSourceId === source.source_id || source.last_sync_status === 'syncing'"
+                    :disabled="!canManageSources || statusChangingSourceId === source.source_id || source.last_sync_status === 'syncing'"
                     @click="toggleSourceStatus(source)"
                   >
                     {{
@@ -160,7 +160,7 @@
                 {{ selectedSource.last_sync_status }}
               </span>
             </div>
-            <div class="mb-2" v-if="canManage">
+            <div class="mb-2" v-if="canManageSources">
               <button
                 class="btn btn-sm btn-outline-warning"
                 :disabled="statusChangingSourceId === selectedSource.source_id || selectedSource.last_sync_status === 'syncing'"
@@ -234,7 +234,7 @@
       </article>
     </div>
 
-    <article class="agp-card p-3">
+    <article v-if="canManageWorkers" class="agp-card p-3">
       <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
         <div>
           <h2 class="h6 mb-1">Worker Control</h2>
@@ -242,7 +242,7 @@
         </div>
         <button
           class="btn btn-sm btn-outline-secondary"
-          :disabled="workersLoading || !canManage"
+          :disabled="workersLoading || !canManageWorkers"
           @click="loadWorkers()"
         >
           Обновить workers
@@ -280,7 +280,7 @@
                   v-for="targetStatus in workerStatusOptions"
                   :key="`${worker.worker_id}-${targetStatus}`"
                   class="btn btn-sm btn-outline-secondary"
-                  :disabled="!canManage || workerStatusChangingId === worker.worker_id || worker.status === targetStatus"
+                  :disabled="!canManageWorkers || workerStatusChangingId === worker.worker_id || worker.status === targetStatus"
                   @click="updateWorkerStatus(worker.worker_id, targetStatus)"
                 >
                   {{ targetStatus }}
@@ -337,7 +337,8 @@ const pollTimer = ref<number | null>(null);
 const pollingIntervalSeconds = 3;
 const workerStatusOptions: WorkerStatus[] = ['online', 'offline', 'draining', 'disabled'];
 
-const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
+const canManageSources = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
+const canManageWorkers = computed(() => sessionStore.role === 'admin');
 const selectedSource = computed(
   () => sources.value.find((source) => source.source_id === selectedSourceId.value) ?? null
 );
@@ -400,7 +401,7 @@ function refreshPollingState(): void {
 }
 
 async function loadSources(options: { silent?: boolean } = {}): Promise<void> {
-  if (!canManage.value) {
+  if (!canManageSources.value) {
     sources.value = [];
     history.value = [];
     selectedSourceId.value = '';
@@ -438,7 +439,7 @@ async function loadSources(options: { silent?: boolean } = {}): Promise<void> {
 }
 
 async function loadWorkers(): Promise<void> {
-  if (!canManage.value) {
+  if (!canManageWorkers.value) {
     workers.value = [];
     workerErrorMessage.value = '';
     return;
@@ -455,7 +456,7 @@ async function loadWorkers(): Promise<void> {
 }
 
 async function createSource(): Promise<void> {
-  if (!canManage.value) return;
+  if (!canManageSources.value) return;
   isCreating.value = true;
   errorMessage.value = '';
   try {
@@ -496,7 +497,7 @@ async function selectSource(sourceId: string): Promise<void> {
 }
 
 async function syncSource(sourceId: string): Promise<void> {
-  if (!canManage.value) return;
+  if (!canManageSources.value) return;
   syncingSourceId.value = sourceId;
   errorMessage.value = '';
   try {
@@ -516,7 +517,7 @@ async function syncSource(sourceId: string): Promise<void> {
 }
 
 async function toggleSourceStatus(source: GameSourceDto): Promise<void> {
-  if (!canManage.value) return;
+  if (!canManageSources.value) return;
   statusChangingSourceId.value = source.source_id;
   errorMessage.value = '';
   const nextStatus: GameSourceStatus = source.status === 'active' ? 'disabled' : 'active';
@@ -535,7 +536,7 @@ async function toggleSourceStatus(source: GameSourceDto): Promise<void> {
 }
 
 async function updateWorkerStatus(workerId: string, status: WorkerStatus): Promise<void> {
-  if (!canManage.value) return;
+  if (!canManageWorkers.value) return;
   workerStatusChangingId.value = workerId;
   workerErrorMessage.value = '';
   try {
@@ -553,8 +554,11 @@ async function updateWorkerStatus(workerId: string, status: WorkerStatus): Promi
 }
 
 onMounted(async () => {
-  if (canManage.value) {
-    await Promise.all([loadSources(), loadWorkers()]);
+  if (canManageSources.value || canManageWorkers.value) {
+    await Promise.all([
+      canManageSources.value ? loadSources() : Promise.resolve(),
+      canManageWorkers.value ? loadWorkers() : Promise.resolve(),
+    ]);
   }
 });
 
@@ -563,10 +567,15 @@ onUnmounted(() => {
 });
 
 watch(
-  canManage,
+  [canManageSources, canManageWorkers],
   async (nextValue) => {
-    if (nextValue) {
-      await Promise.all([loadSources(), loadWorkers()]);
+    const [canUseSources, canUseWorkers] = nextValue;
+    if (canUseSources || canUseWorkers) {
+      await Promise.all([
+        canUseSources ? loadSources() : Promise.resolve(),
+        canUseWorkers ? loadWorkers() : Promise.resolve(),
+      ]);
+      if (!canUseWorkers) workers.value = [];
       return;
     }
     stopPolling();

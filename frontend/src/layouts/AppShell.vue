@@ -6,10 +6,19 @@
 
         <div class="agp-primary-nav" aria-label="Главная навигация">
           <RouterLink class="agp-nav-link" to="/tasks">Задачи</RouterLink>
-          <RouterLink class="agp-nav-link" to="/lobbies">Лобби</RouterLink>
+          <RouterLink class="agp-nav-link" to="/lobbies">Лобби и соревнования</RouterLink>
+          <RouterLink class="agp-nav-link" to="/games">Игры</RouterLink>
+          <RouterLink v-if="sessionStore.role === 'admin'" class="agp-nav-link" to="/admin/game-sources">
+            Статус системы
+          </RouterLink>
         </div>
 
-        <details class="agp-user-menu">
+        <details
+          ref="userMenuRef"
+          class="agp-user-menu"
+          :open="isUserMenuOpen"
+          @toggle="syncUserMenuOpen"
+        >
           <summary>
             <span v-if="sessionStore.isAuthenticated">{{ sessionStore.nickname }}</span>
             <span v-else>Войти</span>
@@ -19,27 +28,10 @@
               {{ sessionStore.role }} · {{ sessionStore.provider }}
             </div>
 
-            <template v-if="sessionStore.options?.dev_login_enabled">
-              <input
-                v-model.trim="nicknameInput"
-                class="form-control form-control-sm"
-                placeholder="Ник"
-              />
-              <select v-model="roleInput" class="form-select form-select-sm">
-                <option value="student">student</option>
-                <option value="teacher">teacher</option>
-                <option value="admin">admin</option>
-              </select>
-              <button class="btn btn-sm btn-outline-primary w-100" @click="loginAsDev">Dev Login</button>
-            </template>
-
-            <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/admin/catalog">
-              Каталог
+            <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/admin/catalog" @click="closeUserMenu">
+              Каталог задач
             </RouterLink>
-            <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/admin/game-sources">
-              Система
-            </RouterLink>
-            <RouterLink class="btn btn-sm btn-outline-secondary w-100" to="/replays">
+            <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/replays" @click="closeUserMenu">
               Реплеи
             </RouterLink>
 
@@ -62,15 +54,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { RouterLink, RouterView, useRoute } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
 import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
+const router = useRouter();
 const sessionStore = useSessionStore();
-const nicknameInput = ref('debug-user');
-const roleInput = ref<'student' | 'teacher' | 'admin'>('teacher');
+const userMenuRef = ref<HTMLDetailsElement | null>(null);
+const isUserMenuOpen = ref(false);
 const canManage = computed(
   () => sessionStore.role === 'teacher' || sessionStore.role === 'admin'
 );
@@ -79,18 +72,47 @@ const isChromeHiddenRoute = computed(() =>
   ['login', 'task-run', 'run-watch'].includes(String(route.name ?? '')) || isEmbeddedRoute.value
 );
 const isWorkspaceRoute = computed(() =>
-  ['task-run', 'lobby', 'run-watch', 'competition', 'workspace'].includes(String(route.name ?? ''))
+  ['task-run', 'run-watch', 'competition', 'workspace'].includes(String(route.name ?? ''))
 );
 
-async function loginAsDev(): Promise<void> {
-  const nickname = nicknameInput.value.trim();
-  if (!nickname) {
-    return;
-  }
-  await sessionStore.loginAsDev(nickname, roleInput.value);
+function closeUserMenu(): void {
+  isUserMenuOpen.value = false;
+}
+
+function syncUserMenuOpen(event: Event): void {
+  isUserMenuOpen.value = (event.currentTarget as HTMLDetailsElement).open;
+}
+
+function handleDocumentPointerDown(event: PointerEvent): void {
+  const menu = userMenuRef.value;
+  if (!menu || !isUserMenuOpen.value) return;
+  if (event.target instanceof Node && menu.contains(event.target)) return;
+  closeUserMenu();
+}
+
+function handleDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return;
+  closeUserMenu();
 }
 
 async function logout(): Promise<void> {
   await sessionStore.logout();
+  closeUserMenu();
+  await router.replace({ name: 'login' });
 }
+
+watch(
+  () => route.fullPath,
+  () => closeUserMenu(),
+);
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown);
+  document.addEventListener('keydown', handleDocumentKeydown);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown);
+  document.removeEventListener('keydown', handleDocumentKeydown);
+});
 </script>

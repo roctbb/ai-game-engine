@@ -64,6 +64,7 @@
           <strong>{{ runStatusLabel }}</strong>
         </div>
         <button
+          v-if="canSeeTechnicalDetails"
           class="agp-icon-button agp-icon-button--restart"
           :disabled="!canRestartRenderer"
           title="Перезапустить renderer"
@@ -99,16 +100,25 @@
             ></iframe>
           </div>
           <div v-else class="agp-card-soft p-3 text-muted small">
-            Для этой игры renderer не настроен. Доступен только JSON-вид результата.
+            Для этой игры renderer не настроен.
           </div>
-          <details v-if="currentReplayFrame" class="agp-frame-data-popover">
-            <summary class="agp-details-summary">Данные кадра</summary>
-            <pre class="mono small mb-0 mt-2">{{ replayFrameJson }}</pre>
-          </details>
-          <details v-else-if="run.result_payload" class="agp-frame-data-popover">
-            <summary class="agp-details-summary">Данные результата</summary>
-            <pre class="mono small mb-0 mt-2">{{ resultPayloadJson }}</pre>
-          </details>
+          <section class="agp-bot-console" aria-label="Вывод бота">
+            <div class="agp-bot-console-head">
+              <strong>Console</strong>
+              <span v-if="replayFrames.length > 0" class="text-muted">
+                кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}
+              </span>
+            </div>
+            <div class="agp-bot-console-body">
+              <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
+                print появится здесь
+              </div>
+              <div v-for="line in currentConsoleLines" :key="line.id" class="agp-bot-console-line">
+                <span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span>
+                <span class="mono agp-bot-console-message">{{ line.message }}</span>
+              </div>
+            </div>
+          </section>
         </article>
 
         <aside v-if="!isEmbedded" class="agp-card p-3 agp-watch-side-card">
@@ -118,14 +128,14 @@
             <strong>{{ runStatusLabel }}</strong>
           </div>
           <div class="agp-watch-stat">
-            <span class="text-muted small">Renderer</span>
+            <span class="text-muted small">Визуализация</span>
             <strong>{{ rendererStatusLabel }}</strong>
           </div>
           <div class="agp-watch-stat">
             <span class="text-muted small">Тип</span>
             <strong>{{ runKindLabel }}</strong>
           </div>
-          <div class="agp-watch-stat">
+          <div v-if="canSeeTechnicalDetails" class="agp-watch-stat">
             <span class="text-muted small">Live updates</span>
             <strong class="mono">{{ liveMode }}</strong>
           </div>
@@ -133,7 +143,7 @@
             <RunReasonBadge :reason="run.error_message" :show-raw="false" />
           </div>
           <hr />
-          <h3 class="h6 mb-2">Replay</h3>
+          <h3 class="h6 mb-2">Повтор</h3>
           <div v-if="isReplayLoading" class="text-muted small">Загрузка replay...</div>
           <div v-else-if="replayError" class="text-danger small">{{ replayError }}</div>
           <div v-else-if="!replay" class="text-muted small">Replay появится после завершения запуска.</div>
@@ -142,7 +152,7 @@
               ◀
             </button>
             <button class="btn btn-sm btn-outline-secondary" :disabled="!canPlayReplay" @click="toggleReplayPlay">
-              {{ replayIsPlaying ? 'Pause' : 'Play' }}
+              {{ replayIsPlaying ? 'Пауза' : 'Пуск' }}
             </button>
             <button class="btn btn-sm btn-outline-secondary" :disabled="!canStepForward" @click="stepReplay(1)">
               ▶
@@ -154,7 +164,7 @@
               <option :value="2000">x0.5</option>
             </select>
             <span class="small text-muted">
-              frame <span class="mono">{{ replayFrameIndex + 1 }}</span>/<span class="mono">{{ replayFrames.length }}</span>
+              кадр <span class="mono">{{ replayFrameIndex + 1 }}</span>/<span class="mono">{{ replayFrames.length }}</span>
             </span>
           </div>
           <input
@@ -166,12 +176,8 @@
             :max="Math.max(0, replayFrames.length - 1)"
             step="1"
           />
-          <div v-if="currentReplayFrame" class="small text-muted">
-            tick=<span class="mono">{{ replayFrameTick }}</span>,
-            phase=<span class="mono">{{ replayFramePhase }}</span>
-          </div>
 
-          <details class="mt-3">
+          <details v-if="canSeeTechnicalDetails" class="mt-3">
             <summary class="agp-details-summary">Технические детали</summary>
             <section class="agp-card-soft p-3 mt-3">
               <h2 class="h6">Run metadata</h2>
@@ -253,13 +259,6 @@
                 · events: <span class="mono">{{ replay.events.length }}</span>
                 · visibility: <span class="mono">{{ replay.visibility }}</span>
               </div>
-              <div v-if="currentReplayFrame" class="agp-card-soft p-2 mb-2">
-                <div class="small text-muted mb-1">
-                  Текущий кадр: tick=<span class="mono">{{ replayFrameTick }}</span>,
-                  phase=<span class="mono">{{ replayFramePhase }}</span>
-                </div>
-                <pre class="mono small mb-0">{{ replayFrameJson }}</pre>
-              </div>
               <details class="mb-2" v-if="replay.events.length > 0">
                 <summary class="small">События replay ({{ replay.events.length }})</summary>
                 <pre class="mono small mb-0">{{ replayEventsJson }}</pre>
@@ -291,6 +290,7 @@ import {
   type RunWatchContextDto,
   type StreamEnvelopeDto,
 } from '../lib/api';
+import { useSessionStore } from '../stores/session';
 
 interface RendererLogItem {
   id: number;
@@ -305,8 +305,17 @@ interface ReplayFrameView {
   frame: Record<string, unknown>;
 }
 
+interface BotConsoleLine {
+  id: string;
+  tick: number;
+  role: string;
+  message: string;
+}
+
 const route = useRoute();
+const sessionStore = useSessionStore();
 const isEmbedded = computed(() => route.query.embed === '1');
+const canSeeTechnicalDetails = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 
 const watchContext = ref<RunWatchContextDto | null>(null);
 const run = ref<RunDto | null>(null);
@@ -330,7 +339,7 @@ let runPollingHandle: ReturnType<typeof setInterval> | null = null;
 let runEventSource: EventSource | null = null;
 let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
 
-const canRestartRenderer = computed(() => Boolean(watchContext.value?.renderer_url));
+const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(watchContext.value?.renderer_url));
 const resultPayloadJson = computed(() => JSON.stringify(run.value?.result_payload ?? {}, null, 2));
 const replaySummaryJson = computed(() => JSON.stringify(replay.value?.summary ?? {}, null, 2));
 const replayEventsJson = computed(() => JSON.stringify(replay.value?.events ?? [], null, 2));
@@ -362,8 +371,8 @@ const runKindLabel = computed(() => {
   return 'run';
 });
 const rendererStatusLabel = computed(() => {
-  if (!watchContext.value?.renderer_url) return 'без renderer';
-  return rendererReady.value ? 'renderer готов' : 'renderer загружается';
+  if (!watchContext.value?.renderer_url) return 'без визуализации';
+  return rendererReady.value ? 'готова' : 'загружается';
 });
 const replayFrames = computed<ReplayFrameView[]>(() => {
   const normalized: ReplayFrameView[] = [];
@@ -392,9 +401,39 @@ const currentReplayFrame = computed<ReplayFrameView | null>(() => {
   return replayFrames.value[index] ?? null;
 });
 
-const replayFrameJson = computed(() => JSON.stringify(currentReplayFrame.value?.frame ?? {}, null, 2));
 const replayFrameTick = computed(() => currentReplayFrame.value?.tick ?? 0);
-const replayFramePhase = computed(() => currentReplayFrame.value?.phase ?? run.value?.status ?? 'unknown');
+const botConsoleLines = computed<BotConsoleLine[]>(() => {
+  const lines: BotConsoleLine[] = [];
+  const replayEvents = replay.value?.events ?? [];
+  replayEvents.forEach((event, index) => {
+    appendConsoleLine(lines, event, `event-${index}`);
+  });
+
+  const rawFrames = replay.value?.frames ?? [];
+  rawFrames.forEach((frame, index) => {
+    if (!isRecord(frame)) return;
+    const tick = normalizeTick(frame.tick, index);
+    const framePayload = isRecord(frame.frame) ? frame.frame : frame;
+    appendConsoleCollection(lines, framePayload.prints, tick, '', `frame-${index}-prints`);
+    appendConsoleCollection(lines, framePayload.logs, tick, '', `frame-${index}-logs`);
+    appendConsoleCollection(lines, framePayload.console, tick, '', `frame-${index}-console`);
+    appendConsoleCollection(lines, framePayload.stdout, tick, '', `frame-${index}-stdout`);
+  });
+
+  if (replayEvents.length === 0 && run.value?.result_payload) {
+    appendConsoleCollection(lines, run.value.result_payload.prints, 0, '', 'result-prints');
+    appendConsoleCollection(lines, run.value.result_payload.logs, 0, '', 'result-logs');
+    appendConsoleCollection(lines, run.value.result_payload.stdout, 0, '', 'result-stdout');
+  }
+
+  return lines.sort((left, right) => left.tick - right.tick || left.id.localeCompare(right.id));
+});
+const currentConsoleLines = computed(() => {
+  if (replayFrames.value.length === 0) {
+    return botConsoleLines.value;
+  }
+  return botConsoleLines.value.filter((line) => line.tick <= replayFrameTick.value);
+});
 const canPlayReplay = computed(() => replayFrames.value.length > 1);
 const canStepBackward = computed(() => replayFrames.value.length > 0 && replayFrameIndex.value > 0);
 const canStepForward = computed(
@@ -411,6 +450,74 @@ function isTerminalStatus(status: RunDto['status']): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeTick(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fallbackTick = 0): void {
+  if (typeof raw === 'string') {
+    appendConsoleMessage(lines, raw, fallbackTick, '', id);
+    return;
+  }
+  if (!isRecord(raw)) return;
+
+  const type = typeof raw.type === 'string' ? raw.type : '';
+  const hasConsoleShape =
+    type === 'bot_print' ||
+    type === 'print' ||
+    type === 'stdout' ||
+    type === 'bot_stdout' ||
+    type === 'console' ||
+    'stdout' in raw;
+  if (!hasConsoleShape) return;
+
+  const messageRaw = raw.message ?? raw.text ?? raw.line ?? raw.stdout ?? raw.value;
+  const message = typeof messageRaw === 'string' ? messageRaw : String(messageRaw ?? '');
+  if (!message) return;
+  const tick = normalizeTick(raw.tick ?? raw.turn ?? raw.step ?? raw.frame, fallbackTick);
+  const roleRaw = raw.role ?? raw.slot ?? raw.slot_key ?? raw.team_id ?? raw.bot;
+  const role = typeof roleRaw === 'string' || typeof roleRaw === 'number' ? String(roleRaw) : '';
+  appendConsoleMessage(lines, message, tick, role, id);
+}
+
+function appendConsoleCollection(
+  lines: BotConsoleLine[],
+  raw: unknown,
+  tick: number,
+  role: string,
+  idPrefix: string,
+): void {
+  if (raw === undefined || raw === null) return;
+  if (typeof raw === 'string') {
+    appendConsoleMessage(lines, raw, tick, role, idPrefix);
+    return;
+  }
+  if (Array.isArray(raw)) {
+    raw.forEach((item, index) => appendConsoleLine(lines, item, `${idPrefix}-${index}`, tick));
+    return;
+  }
+  appendConsoleLine(lines, raw, idPrefix, tick);
+}
+
+function appendConsoleMessage(
+  lines: BotConsoleLine[],
+  message: string,
+  tick: number,
+  role: string,
+  idPrefix: string,
+): void {
+  const chunks = message.split(/\r?\n/);
+  chunks.forEach((chunk, index) => {
+    if (!chunk) return;
+    lines.push({
+      id: `${idPrefix}-${index}`,
+      tick,
+      role,
+      message: chunk,
+    });
+  });
 }
 
 function appendRendererLog(level: RendererLogItem['level'], message: string): void {
@@ -650,7 +757,7 @@ function startRunLiveUpdates(runId: string): void {
   }
 
   const source = new EventSource(
-    `/api/v1/runs/${encodeURIComponent(runId)}/stream?poll_interval_ms=1000`,
+    `/api/v1/runs/${encodeURIComponent(runId)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
   );
   runEventSource = source;
   liveMode.value = 'sse';
@@ -804,10 +911,14 @@ onUnmounted(() => {
 
 .agp-watch-page--embedded .agp-viewer-card {
   border: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.75rem;
 }
 
 .agp-watch-page--embedded .agp-viewer-card .agp-viewer-frame {
-  height: 100dvh !important;
+  height: auto !important;
+  min-height: 0;
 }
 
 .agp-watch-page .agp-viewer-card .agp-viewer-frame {
@@ -836,6 +947,65 @@ onUnmounted(() => {
   font-size: 0.95rem;
 }
 
+.agp-bot-console {
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: #050812;
+  color: #d1d5db;
+}
+
+.agp-bot-console-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.92);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.agp-bot-console-body {
+  max-height: 9.5rem;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.agp-bot-console-empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+.agp-bot-console-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  min-height: 1.35rem;
+}
+
+.agp-bot-console-role {
+  max-width: 8rem;
+  overflow: hidden;
+  padding: 0.08rem 0.35rem;
+  border: 1px solid rgba(45, 212, 191, 0.36);
+  border-radius: 999px;
+  color: #99f6e4;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agp-bot-console-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #e5e7eb;
+}
+
 @media (max-width: 992px) {
   .agp-watch-columns {
     grid-template-columns: 1fr;
@@ -847,6 +1017,14 @@ onUnmounted(() => {
 
   .agp-watch-page .agp-viewer-card .agp-viewer-frame {
     height: 22rem;
+  }
+
+  .agp-bot-console-line {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .agp-bot-console-role {
+    display: none;
   }
 }
 </style>

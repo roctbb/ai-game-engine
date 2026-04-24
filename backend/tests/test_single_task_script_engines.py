@@ -104,3 +104,7 @@ def test_single_task_engine_allows_print_for_debug() -> None:
     metrics = payload["metrics"]
     assert payload["status"] == "finished"
     assert "compile_error" not in metrics
+    print_events = [event for event in payload["events"] if event.get("type") == "bot_print"]
+    assert print_events
+    assert print_events[0]["role"] == "agent"
+    assert print_events[0]["message"].startswith("step ")

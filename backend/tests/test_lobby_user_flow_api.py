@@ -1,0 +1,424 @@
+from __future__ import annotations
+
+
+def _student_headers(client, nickname: str) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/dev-login",
+        json={"nickname": nickname, "role": "student"},
+    )
+    assert response.status_code == 200
+    return {"X-Session-Id": response.json()["session_id"]}
+
+
+def _create_game(client, headers: dict[str, str]) -> dict:
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "slug": "lobby_user_flow_game",
+            "title": "Lobby User Flow",
+            "mode": "small_match",
+            "semver": "1.0.0",
+            "required_slots": [{"key": "bot", "title": "Bot", "required": True}],
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def _create_lobby(client, game_id: str, headers: dict[str, str]) -> str:
+    response = client.post(
+        "/api/v1/lobbies",
+        json={
+            "game_id": game_id,
+            "title": "Lobby User Flow",
+            "kind": "training",
+            "access": "public",
+            "max_teams": 16,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    return response.json()["lobby_id"]
+
+
+def test_lobby_create_rejects_competition_kind(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+
+    response = client.post(
+        "/api/v1/lobbies",
+        json={
+            "game_id": game["game_id"],
+            "title": "Old Competition Kind",
+            "kind": "competition",
+            "access": "public",
+            "max_teams": 16,
+        },
+        headers=teacher_headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_lobby_competition_start_rejects_future_tie_break_policy(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+
+    response = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/start",
+        json={"title": "Future Tie Break", "tie_break_policy": "game_defined"},
+        headers=teacher_headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_code_lobby_details_require_access_code_or_participation(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    created = client.post(
+        "/api/v1/lobbies",
+        json={
+            "game_id": game["game_id"],
+            "title": "Code Lobby",
+            "kind": "training",
+            "access": "code",
+            "access_code": "secret-42",
+            "max_teams": 4,
+        },
+        headers=teacher_headers,
+    )
+    assert created.status_code == 200
+    lobby_id = created.json()["lobby_id"]
+    headers = _student_headers(client, "code-lobby-student")
+
+    listed = client.get("/api/v1/lobbies", headers=headers)
+    assert listed.status_code == 200
+    listed_lobby = next(item for item in listed.json() if item["lobby_id"] == lobby_id)
+    assert listed_lobby["teams"] == []
+    assert listed_lobby["participant_stats"] == []
+
+    detail_denied = client.get(f"/api/v1/lobbies/{lobby_id}", headers=headers)
+    assert detail_denied.status_code == 403
+    assert detail_denied.json()["error"]["code"] == "forbidden"
+
+    wrong_join = client.post(
+        f"/api/v1/lobbies/{lobby_id}/join",
+        json={"access_code": "wrong"},
+        headers=headers,
+    )
+    assert wrong_join.status_code == 422
+
+    joined = client.post(
+        f"/api/v1/lobbies/{lobby_id}/join",
+        json={"access_code": "secret-42"},
+        headers=headers,
+    )
+    assert joined.status_code == 200
+    assert joined.json()["my_team_id"] is not None
+
+    detail_allowed = client.get(f"/api/v1/lobbies/{lobby_id}", headers=headers)
+    assert detail_allowed.status_code == 200
+    assert detail_allowed.json()["teams"]
+
+
+def test_student_join_play_stop_without_team_id(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    alice_headers = _student_headers(client, "alice-flow")
+    bob_headers = _student_headers(client, "bob-flow")
+
+    joined = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=alice_headers)
+    assert joined.status_code == 200
+    joined_payload = joined.json()
+    assert joined_payload["my_team_id"] is not None
+    alice_team_id = joined_payload["my_team_id"]
+
+    slot_update = client.put(
+        f"/api/v1/teams/{alice_team_id}/slots/bot",
+        json={"actor_user_id": "alice-flow", "code": "def make_choice(field, role):\n    return 0, 0\n"},
+        headers=alice_headers,
+    )
+    assert slot_update.status_code == 200
+
+    alice_play = client.post(f"/api/v1/lobbies/{lobby_id}/play", json={}, headers=alice_headers)
+    assert alice_play.status_code == 200
+    assert alice_play.json()["my_status"] == "queued"
+
+    bob_join = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=bob_headers)
+    assert bob_join.status_code == 200
+    bob_team_id = bob_join.json()["my_team_id"]
+    bob_slot = client.put(
+        f"/api/v1/teams/{bob_team_id}/slots/bot",
+        json={"actor_user_id": "bob-flow", "code": "def make_choice(field, role):\n    return 0, 0\n"},
+        headers=bob_headers,
+    )
+    assert bob_slot.status_code == 200
+    bob_play = client.post(f"/api/v1/lobbies/{lobby_id}/play", json={}, headers=bob_headers)
+    assert bob_play.status_code == 200
+
+    charlie_headers = _student_headers(client, "charlie-flow")
+    charlie_join = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=charlie_headers)
+    assert charlie_join.status_code == 200
+    assert charlie_join.json()["status"] == "running"
+    charlie_team_id = charlie_join.json()["my_team_id"]
+    charlie_slot = client.put(
+        f"/api/v1/teams/{charlie_team_id}/slots/bot",
+        json={"actor_user_id": "charlie-flow", "code": "def make_choice(field, role):\n    return 0, 0\n"},
+        headers=charlie_headers,
+    )
+    assert charlie_slot.status_code == 200
+    charlie_play = client.post(f"/api/v1/lobbies/{lobby_id}/play", json={}, headers=charlie_headers)
+    assert charlie_play.status_code == 200
+    assert charlie_play.json()["my_status"] == "queued"
+    charlie_stop = client.post(f"/api/v1/lobbies/{lobby_id}/stop", headers=charlie_headers)
+    assert charlie_stop.status_code == 200
+    assert charlie_stop.json()["my_status"] == "preparing"
+
+    competition_start = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/start",
+        json={"title": "Blocked Cup"},
+        headers=teacher_headers,
+    )
+    assert competition_start.status_code == 422
+
+    current_run = client.get(f"/api/v1/lobbies/{lobby_id}/current-run", headers=alice_headers)
+    assert current_run.status_code == 200
+    assert current_run.json()["status"] in {"preparing", "queued", "playing"}
+
+    stopped = client.post(f"/api/v1/lobbies/{lobby_id}/stop", headers=alice_headers)
+    assert stopped.status_code == 200
+    assert stopped.json()["my_status"] == "preparing"
+
+
+def test_lobby_stats_read_root_scores_and_placements(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    player_headers = [_student_headers(client, "stats-a"), _student_headers(client, "stats-b")]
+    team_ids: list[str] = []
+
+    for index, headers in enumerate(player_headers):
+        joined = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=headers)
+        assert joined.status_code == 200
+        team_id = joined.json()["my_team_id"]
+        team_ids.append(team_id)
+        update = client.put(
+            f"/api/v1/teams/{team_id}/slots/bot",
+            json={
+                "actor_user_id": f"stats-{'a' if index == 0 else 'b'}",
+                "code": "def make_choice(field, role):\n    return 0, 0\n",
+            },
+            headers=headers,
+        )
+        assert update.status_code == 200
+        play = client.post(f"/api/v1/lobbies/{lobby_id}/play", json={}, headers=headers)
+        assert play.status_code == 200
+
+    lobby = client.get(f"/api/v1/lobbies/{lobby_id}", headers=player_headers[0]).json()
+    assert lobby["current_run_ids"]
+    for run_id in lobby["current_run_ids"]:
+        run = client.get(f"/api/v1/runs/{run_id}", headers=teacher_headers)
+        assert run.status_code == 200
+        team_id = run.json()["team_id"]
+        finished = client.post(
+            f"/api/v1/internal/runs/{run_id}/finished",
+            json={
+                "payload": {
+                    "status": "ok",
+                    "scores": {team_id: 25 if team_id == team_ids[0] else 10},
+                    "placements": {team_id: 1 if team_id == team_ids[0] else 2},
+                }
+            },
+        )
+        assert finished.status_code == 200
+
+    refreshed = client.get(f"/api/v1/lobbies/{lobby_id}", headers=player_headers[0])
+    assert refreshed.status_code == 200
+    refreshed_payload = refreshed.json()
+    assert refreshed_payload["status"] == "open"
+    assert refreshed_payload["current_run_ids"] == []
+    stats_by_team = {item["team_id"]: item for item in refreshed_payload["participant_stats"]}
+    assert stats_by_team[team_ids[0]]["wins"] == 1
+    assert stats_by_team[team_ids[0]]["average_score"] == 25
+    assert stats_by_team[team_ids[1]]["wins"] == 0
+    assert stats_by_team[team_ids[1]]["average_score"] == 10
+
+
+def test_student_stop_blocked_while_lobby_competition_is_active(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    players = [
+        ("stop-comp-a", _student_headers(client, "stop-comp-a")),
+        ("stop-comp-b", _student_headers(client, "stop-comp-b")),
+    ]
+    team_ids: list[str] = []
+
+    for nickname, headers in players:
+        joined = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=headers)
+        assert joined.status_code == 200
+        team_id = joined.json()["my_team_id"]
+        team_ids.append(team_id)
+        update = client.put(
+            f"/api/v1/teams/{team_id}/slots/bot",
+            json={"actor_user_id": nickname, "code": "def make_choice(field, role):\n    return 0, 0\n"},
+            headers=headers,
+        )
+        assert update.status_code == 200
+
+    started = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/start",
+        json={"title": "Locked Cup"},
+        headers=teacher_headers,
+    )
+    assert started.status_code == 200
+
+    locked_update = client.put(
+        f"/api/v1/teams/{team_ids[0]}/slots/bot",
+        json={"actor_user_id": "stop-comp-a", "code": "def make_choice(field, role):\n    return 1, 1\n"},
+        headers=players[0][1],
+    )
+    assert locked_update.status_code == 422
+
+    stopped = client.post(f"/api/v1/lobbies/{lobby_id}/stop", headers=players[0][1])
+    assert stopped.status_code == 422
+
+    left = client.post(
+        f"/api/v1/lobbies/{lobby_id}/teams/{team_ids[0]}/leave",
+        headers=players[0][1],
+    )
+    assert left.status_code == 422
+
+
+def test_failed_lobby_join_does_not_create_personal_team(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    paused = client.post(f"/api/v1/lobbies/{lobby_id}/status", json={"status": "paused"}, headers=teacher_headers)
+    assert paused.status_code == 200
+
+    student_headers = _student_headers(client, "blocked-join")
+    denied = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=student_headers)
+    assert denied.status_code == 422
+
+    teams = client.get(f"/api/v1/teams?game_id={game['game_id']}", headers=teacher_headers)
+    assert teams.status_code == 200
+    assert all(item["captain_user_id"] != "blocked-join" for item in teams.json())
+
+
+def test_start_finish_lobby_competition_and_archive(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+
+    for captain in ("comp-a", "comp-b"):
+        team = client.post(
+            "/api/v1/teams",
+            json={"game_id": game["game_id"], "name": captain, "captain_user_id": captain},
+            headers=teacher_headers,
+        )
+        assert team.status_code == 200
+        team_id = team.json()["team_id"]
+        update = client.put(
+            f"/api/v1/teams/{team_id}/slots/bot",
+            json={"actor_user_id": captain, "code": "def make_choice(field, role):\n    return 0, 0\n"},
+            headers=teacher_headers,
+        )
+        assert update.status_code == 200
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby_id}/teams/{team_id}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    started = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/start",
+        json={"title": "Class Cup", "code_policy": "allowed_between_matches"},
+        headers=teacher_headers,
+    )
+    assert started.status_code == 200
+    competition_id = started.json()["competition_id"]
+    assert started.json()["status"] in {"running", "paused"}
+
+    duplicate_start = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/start",
+        json={"title": "Second Cup"},
+        headers=teacher_headers,
+    )
+    assert duplicate_start.status_code == 422
+
+    early_finish = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/{competition_id}/finish",
+        headers=teacher_headers,
+    )
+    assert early_finish.status_code == 422
+
+    competition = client.get(f"/api/v1/competitions/{competition_id}", headers=teacher_headers).json()
+    assert competition["lobby_id"] == lobby_id
+    assert competition["code_policy"] == "allowed_between_matches"
+    assert not competition["title"].startswith(f"[lobby:{lobby_id}] ")
+    match = competition["rounds"][0]["matches"][0]
+    for index, (team_id, run_id) in enumerate(match["run_ids_by_team"].items()):
+        client.post(
+            f"/api/v1/internal/runs/{run_id}/finished",
+            json={
+                "payload": {
+                    "status": "ok",
+                    "metrics": {},
+                    "placements": {team_id: 1},
+                    "scores": {team_id: 100 - index},
+                }
+            },
+        )
+
+    completed = client.post(
+        f"/api/v1/competitions/{competition_id}/advance",
+        json={"requested_by": "teacher-flow"},
+        headers=teacher_headers,
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+
+    finished = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/{competition_id}/finish",
+        headers=teacher_headers,
+    )
+    assert finished.status_code == 200
+    assert finished.json()["status"] == "finished"
+
+    archive = client.get(f"/api/v1/lobbies/{lobby_id}/competitions/archive", headers=teacher_headers)
+    assert archive.status_code == 200
+    assert any(item["competition_id"] == competition_id for item in archive.json()["items"])
+
+
+def test_lobby_competition_start_preflight_does_not_create_orphan_competition(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+
+    team = client.post(
+        "/api/v1/teams",
+        json={"game_id": game["game_id"], "name": "solo", "captain_user_id": "solo"},
+        headers=teacher_headers,
+    )
+    assert team.status_code == 200
+    team_id = team.json()["team_id"]
+    update = client.put(
+        f"/api/v1/teams/{team_id}/slots/bot",
+        json={"actor_user_id": "solo", "code": "def make_choice(field, role):\n    return 0, 0\n"},
+        headers=teacher_headers,
+    )
+    assert update.status_code == 200
+    joined = client.post(
+        f"/api/v1/lobbies/{lobby_id}/teams/{team_id}/join",
+        json={},
+        headers=teacher_headers,
+    )
+    assert joined.status_code == 200
+
+    failed_start = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/start",
+        json={"title": "Too Small Cup"},
+        headers=teacher_headers,
+    )
+    assert failed_start.status_code == 422
+
+    competitions = client.get("/api/v1/competitions", headers=teacher_headers)
+    assert competitions.status_code == 200
+    assert all(item["lobby_id"] != lobby_id for item in competitions.json())
