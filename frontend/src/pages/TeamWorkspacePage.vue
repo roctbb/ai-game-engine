@@ -18,7 +18,6 @@
         <span class="agp-pill" :class="emptySlotCount > 0 ? 'agp-pill--warning' : 'agp-pill--primary'">
           пустых: {{ emptySlotCount }}
         </span>
-        <span v-if="workspace" class="agp-pill agp-pill--neutral mono">игрок {{ shortTeamId }}</span>
       </div>
     </header>
 
@@ -47,7 +46,7 @@
                 {{ slot.slot_key }}
                 <span v-if="slot.required" class="text-danger">*</span>
               </div>
-              <div class="small text-muted">ревизия: {{ slot.revision ?? 'n/a' }}</div>
+              <div class="small text-muted">{{ slot.required ? 'обязательная роль' : 'необязательная роль' }}</div>
             </div>
             <SlotStateBadge :slot-state="slot.state" />
           </button>
@@ -115,7 +114,7 @@
       </article>
 
       <aside class="agp-card p-3 workspace-inspector">
-        <h2 class="h6 mb-2">Инспектор состояния</h2>
+        <h2 class="h6 mb-2">Сводка</h2>
         <div class="workspace-inspector-row">
           <span>Режим</span>
           <strong>{{ canEditWorkspace ? 'редактирование' : 'просмотр' }}</strong>
@@ -124,7 +123,7 @@
           <span>Владелец</span>
           <strong class="mono">{{ workspace?.captain_user_id }}</strong>
         </div>
-        <div class="workspace-inspector-row">
+        <div v-if="canInspectTechnicalDetails" class="workspace-inspector-row">
           <span>Версия</span>
           <strong class="mono">{{ workspace?.version_id }}</strong>
         </div>
@@ -188,15 +187,12 @@ const selectedSlot = computed(() =>
 );
 const canEditWorkspace = computed(() => workspace.value?.captain_user_id === sessionStore.nickname);
 const selectedSlotDemoStrategies = computed(() => demoStrategiesBySlot.value[selectedSlotKey.value] ?? []);
+const canInspectTechnicalDetails = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const slotCount = computed(() => workspace.value?.slot_states.length ?? 0);
 const emptySlotCount = computed(() => workspace.value?.slot_states.filter((slot) => slot.state === 'empty').length ?? 0);
 const incompatibleSlotCount = computed(
   () => workspace.value?.slot_states.filter((slot) => slot.state === 'incompatible').length ?? 0
 );
-const shortTeamId = computed(() => {
-  const teamId = workspace.value?.team_id ?? '';
-  return teamId.length > 14 ? `${teamId.slice(0, 8)}…${teamId.slice(-4)}` : teamId;
-});
 
 function slotStateLabel(state: string): string {
   const labels: Record<string, string> = {

@@ -188,7 +188,7 @@ def get_game_templates(game_id: str, container: ServiceContainer = Depends(get_c
         GameSlotTemplateResponse(
             slot_key=slot.key,
             language="python",
-            code=_build_slot_template_code(slot_key=slot.key, code_api_mode=code_api_mode),
+            code=_build_slot_template_code(slot_key=slot.key, code_api_mode=code_api_mode, game_slug=game.slug),
         )
         for slot in active_slots
     ]
@@ -215,10 +215,10 @@ def get_game_docs(game_id: str, container: ServiceContainer = Depends(get_contai
     if manifest is not None:
         player_instruction = manifest.player_instruction
         docs_candidates = (
-            ("Player Guide", "docs/player_guide_ru.md"),
-            ("Player Guide", "player_guide_ru.md"),
-            ("SDK Guide", "docs/sdk_guide_ru.md"),
-            ("SDK Guide", "sdk_guide_ru.md"),
+            ("Руководство игрока", "docs/player_guide_ru.md"),
+            ("Руководство игрока", "player_guide_ru.md"),
+            ("SDK", "docs/sdk_guide_ru.md"),
+            ("SDK", "sdk_guide_ru.md"),
             ("README", "README.md"),
         )
         used_titles: set[str] = set()
@@ -384,7 +384,35 @@ def get_single_task_leaderboard(
     )
 
 
-def _build_slot_template_code(*, slot_key: str, code_api_mode: str) -> str:
+def _build_slot_template_code(*, slot_key: str, code_api_mode: str, game_slug: str | None = None) -> str:
+    if game_slug == "maze_escape_v1" and slot_key == "agent":
+        return (
+            "def make_move(x, y, maze):\n"
+            f"    \"\"\"Starter template for slot '{slot_key}'.\"\"\"\n"
+            "    # Проверьте соседние клетки и верните up/down/left/right\n"
+            "    return \"right\"\n"
+        )
+    if game_slug == "coins_right_down_v1" and slot_key == "agent":
+        return (
+            "def make_move(state):\n"
+            f"    \"\"\"Starter template for slot '{slot_key}'.\"\"\"\n"
+            "    # Верните right или down\n"
+            "    return \"right\"\n"
+        )
+    if game_slug == "ttt_connect5_v1" and slot_key == "bot":
+        return (
+            "def make_choice(field, role):\n"
+            f"    \"\"\"Starter template for slot '{slot_key}'.\"\"\"\n"
+            "    # Верните координаты свободной клетки: x, y\n"
+            "    return 0, 0\n"
+        )
+    if game_slug == "tanks_ctf_v1" and slot_key == "driver":
+        return (
+            "def make_choice(x, y, map_state):\n"
+            f"    \"\"\"Starter template for slot '{slot_key}'.\"\"\"\n"
+            "    # Верните up/down/left/right/stay\n"
+            "    return \"stay\"\n"
+        )
     function_name = _resolve_template_function_name(slot_key=slot_key, code_api_mode=code_api_mode)
     if function_name == "place_tower":
         default_return = "0"

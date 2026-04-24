@@ -1,0 +1,52 @@
+id: multiplayer_snake_v1
+title: Командная змейка
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Заполните код для каждой роли snake_1..snake_4. В каждой роли определите make_move(x, y, board), возвращающую up/down/left/right.
+description: Управляйте отрядом из четырех змеек на общей карте. Итоговый счет игрока — сумма очков всех ролей.
+difficulty: medium
+topics:
+  - матрицы
+  - игровые стратегии
+  - одновременные ходы
+slots:
+  - key: snake_1
+    title: Змейка 1
+    required: true
+  - key: snake_2
+    title: Змейка 2
+    required: true
+  - key: snake_3
+    title: Змейка 3
+    required: true
+  - key: snake_4
+    title: Змейка 4
+    required: true
+demo_strategies:
+  - id: chaser_1
+    slot_key: snake_1
+    title: "Демо 1: охотник за едой"
+    language: python
+    path: examples/food_chaser_1.py
+    description: Идет к еде и избегает занятых клеток.
+  - id: chaser_2
+    slot_key: snake_2
+    title: "Демо 2: охотник за едой"
+    language: python
+    path: examples/food_chaser_2.py
+    description: Идет к еде и избегает занятых клеток.
+  - id: chaser_3
+    slot_key: snake_3
+    title: "Демо 3: охотник за едой"
+    language: python
+    path: examples/food_chaser_3.py
+    description: Идет к еде и избегает занятых клеток.
+  - id: chaser_4
+    slot_key: snake_4
+    title: "Демо 4: охотник за едой"
+    language: python
+    path: examples/food_chaser_4.py
+    description: Идет к еде и избегает занятых клеток.

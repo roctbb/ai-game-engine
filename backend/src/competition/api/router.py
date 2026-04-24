@@ -198,9 +198,9 @@ def stream_competition(
         emitted = 0
         last_signature = ""
         while True:
-            competition_payload = _to_response(
-                container.competition.get_competition(competition_id)
-            ).model_dump(mode="json")
+            competition = container.competition.get_competition(competition_id)
+            _ensure_can_view_competition(container=container, session=session, competition=competition)
+            competition_payload = _to_response(competition).model_dump(mode="json")
             signature = json.dumps(competition_payload, ensure_ascii=False, sort_keys=True)
             if signature != last_signature:
                 last_signature = signature

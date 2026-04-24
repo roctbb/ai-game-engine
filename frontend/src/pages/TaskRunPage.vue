@@ -202,7 +202,7 @@
               ref="rendererFrameRef"
               :key="rendererKey"
               :src="rendererUrl"
-              title="Task renderer"
+              title="Визуализация задачи"
               sandbox="allow-scripts allow-same-origin"
               @load="sendRendererInit"
             ></iframe>
@@ -214,7 +214,7 @@
           <div v-else-if="replayError" class="agp-viewer-overlay agp-viewer-overlay--message agp-viewer-overlay--danger">{{ replayError }}</div>
           <section class="agp-bot-console" aria-label="Вывод бота">
             <div class="agp-bot-console-head">
-              <strong>Console</strong>
+              <strong>Вывод print</strong>
               <span v-if="replayFrames.length > 0" class="text-muted">
                 кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}
               </span>
@@ -855,7 +855,7 @@ async function loadPage(): Promise<void> {
   try {
     game.value = await getGame(gameId);
     if (game.value.mode !== 'single_task') {
-      throw new Error('Этот экран предназначен для single_task задач');
+      throw new Error('Этот экран предназначен для задач');
     }
     const [freshTemplates, freshDocs] = await Promise.all([getGameTemplates(gameId), getGameDocs(gameId)]);
     templates.value = freshTemplates;
@@ -1007,7 +1007,7 @@ async function loadReplay(runId: string): Promise<void> {
       startReplayPlayback();
     }
   } catch (error) {
-    replayError.value = error instanceof Error ? error.message : 'Replay пока недоступен';
+    replayError.value = error instanceof Error ? error.message : 'Повтор пока недоступен';
   } finally {
     isReplayLoading.value = false;
   }

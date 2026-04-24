@@ -1,7 +1,7 @@
 const KNOWN_REASON_LABELS: Record<string, string> = {
   canceled_by_game_update: 'Отменен из-за обновления игры',
   manual_moderation_ban: 'Отменен модератором (бан)',
-  manual_stop_single_task: 'Остановлен пользователем (single_task)',
+  manual_stop_single_task: 'Остановлен пользователем',
   manual_cancel: 'Остановлен пользователем',
 };
 

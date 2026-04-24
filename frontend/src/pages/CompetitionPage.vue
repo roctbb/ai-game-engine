@@ -66,10 +66,10 @@
               class="btn btn-sm btn-outline-secondary"
               :to="`/replays?game_id=${competition.game_id}&run_kind=competition_match`"
             >
-              Реплеи игры
+              Все повторы игры
             </RouterLink>
             <button class="btn btn-sm btn-outline-secondary" :disabled="isCreatingTeam" @click="createTeamForCompetitionGame">
-              {{ isCreatingTeam ? 'Создание...' : 'Создать команду' }}
+              {{ isCreatingTeam ? 'Создание...' : 'Создать игрока' }}
             </button>
             <button class="btn btn-sm btn-dark" :disabled="!canRegister" @click="registerSelectedTeam">
               Зарегистрировать
@@ -141,7 +141,7 @@
           <h2 class="h6">Участники</h2>
           <label v-if="canModerate" class="form-label small">Игрок для регистрации</label>
           <select v-if="canModerate" v-model="selectedTeamId" class="form-select mb-3">
-            <option value="">Выберите команду</option>
+            <option value="">Выберите игрока</option>
             <option v-for="team in teamsByGame" :key="team.team_id" :value="team.team_id">
               {{ team.name }}
             </option>
@@ -335,47 +335,48 @@
               </div>
             </div>
           </div>
-          <div v-if="canModerate" class="mt-3">
-            <h3 class="h6">Запуски соревнования</h3>
-            <table class="table align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>ID запуска</th>
-                  <th>Игрок</th>
-                  <th>Статус</th>
-                  <th>Причина</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="run in competitionRuns" :key="run.run_id">
-                  <td class="mono small">
-                    <RouterLink :to="`/runs/${run.run_id}/watch`">{{ run.run_id }}</RouterLink>
-                  </td>
-                  <td>{{ teamName(run.team_id) }}</td>
-                  <td class="mono small">{{ run.status }}</td>
-                  <td><RunReasonBadge :reason="run.error_message" /></td>
-                  <td class="text-end">
-                    <button class="btn btn-sm btn-outline-dark" @click="inspectRunReplay(run.run_id)">
-                      Инспектор
-                    </button>
-                  </td>
-                </tr>
-                <tr v-if="competitionRuns.length === 0">
-                  <td colspan="5" class="text-muted small">Пока нет запусков competition_match.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </article>
       </div>
 
+      <article v-if="canModerate" class="agp-card p-3">
+        <h2 class="h6">Запуски соревнования</h2>
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th>ID запуска</th>
+              <th>Игрок</th>
+              <th>Статус</th>
+              <th>Причина</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="run in competitionRuns" :key="run.run_id">
+              <td class="mono small">
+                <RouterLink :to="`/runs/${run.run_id}/watch`">{{ run.run_id }}</RouterLink>
+              </td>
+              <td>{{ teamName(run.team_id) }}</td>
+              <td>{{ runStatusLabel(run.status) }}</td>
+              <td><RunReasonBadge :reason="run.error_message" /></td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-dark" @click="inspectRunReplay(run.run_id)">
+                  Инспектор
+                </button>
+              </td>
+            </tr>
+            <tr v-if="competitionRuns.length === 0">
+              <td colspan="5" class="text-muted small">Пока нет запусков соревнования.</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
       <article class="agp-card p-3" v-if="canModerate && inspectedRunId">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="h6 mb-0">Инспектор replay</h2>
-          <span class="mono small">run_id={{ inspectedRunId }}</span>
+          <h2 class="h6 mb-0">Инспектор повтора</h2>
+          <span class="mono small">ID запуска {{ inspectedRunId }}</span>
         </div>
-        <div v-if="isInspectReplayLoading" class="text-muted small">Загрузка replay...</div>
+        <div v-if="isInspectReplayLoading" class="text-muted small">Загрузка повтора...</div>
         <div v-else-if="inspectReplayError" class="text-danger small">{{ inspectReplayError }}</div>
         <div v-else-if="inspectedReplay">
           <div class="small text-muted mb-2">
@@ -385,16 +386,14 @@
           </div>
           <pre class="mono small mb-0">{{ inspectedReplaySummary }}</pre>
         </div>
-        <div v-else class="text-muted small">Replay для выбранного run пока недоступен.</div>
+        <div v-else class="text-muted small">Повтор для выбранного запуска пока недоступен.</div>
       </article>
 
       <article v-if="canModerate" class="agp-card p-3">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
           <div>
             <h2 class="h6 mb-0">Проверка схожести решений</h2>
-            <div class="small text-muted">
-              Автоматически проверяются последние версии кода участников по слотам.
-            </div>
+            <div class="small text-muted">Проверка обновляется при появлении новых запусков соревнования.</div>
           </div>
           <div class="d-flex align-items-center gap-2">
             <label class="small text-muted" for="antiplag-threshold">порог</label>
@@ -603,6 +602,19 @@ function matchStatusLabel(status: CompetitionMatchStatus): string {
   return status;
 }
 
+function runStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    created: 'Создан',
+    queued: 'В очереди',
+    running: 'Выполняется',
+    finished: 'Завершен',
+    failed: 'Ошибка',
+    timeout: 'Таймаут',
+    canceled: 'Остановлен',
+  };
+  return labels[status] ?? status;
+}
+
 function competitionCodePolicyLabel(policy: CompetitionCodePolicy): string {
   if (policy === 'locked_on_registration') return 'с регистрации';
   if (policy === 'allowed_between_matches') return 'между матчами';
@@ -670,7 +682,7 @@ async function inspectRunReplay(runId: string): Promise<void> {
   try {
     inspectedReplay.value = await getRunReplay(runId);
   } catch (error) {
-    inspectReplayError.value = error instanceof Error ? error.message : 'Replay недоступен';
+    inspectReplayError.value = error instanceof Error ? error.message : 'Повтор недоступен';
   } finally {
     isInspectReplayLoading.value = false;
   }
@@ -778,13 +790,13 @@ async function createTeamForCompetitionGame(): Promise<void> {
   try {
     const created = await createTeam({
       game_id: competition.value.game_id,
-      name: `${sessionStore.nickname} / comp`,
+      name: `Игрок ${sessionStore.nickname}`,
       captain_user_id: sessionStore.nickname,
     });
     await refreshCompetitionRelatedData();
     selectedTeamId.value = created.team_id;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось создать команду';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось создать игрока';
   } finally {
     isCreatingTeam.value = false;
   }
@@ -826,7 +838,7 @@ async function registerSelectedTeam(): Promise<void> {
     });
     await refreshCompetitionRelatedData();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось зарегистрировать команду';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось зарегистрировать игрока';
   }
 }
 
@@ -841,7 +853,7 @@ async function unregisterEntrant(teamId: string): Promise<void> {
     });
     await refreshCompetitionRelatedData();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось снять команду с регистрации';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось снять игрока с регистрации';
   } finally {
     unregisteringTeamId.value = null;
   }
@@ -859,7 +871,7 @@ async function setEntrantNotReady(teamId: string): Promise<void> {
     });
     await refreshCompetitionRelatedData();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось перевести команду в not_ready';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось перевести игрока в статус подготовки';
   } finally {
     moderationBusyTeamId.value = null;
   }
@@ -878,7 +890,7 @@ async function toggleEntrantBan(teamId: string, banned: boolean): Promise<void> 
     });
     await refreshCompetitionRelatedData();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось изменить бан команды';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось изменить бан игрока';
   } finally {
     moderationBusyTeamId.value = null;
   }

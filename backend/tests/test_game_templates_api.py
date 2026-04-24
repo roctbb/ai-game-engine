@@ -14,10 +14,11 @@ def test_get_game_templates_for_script_based_game(client) -> None:
 
     assert payload["code_api_mode"] == "script_based"
     assert payload["templates"][0]["slot_key"] == "agent"
-    assert "def make_move(state):" in payload["templates"][0]["code"]
-    assert payload["demo_strategies"][0]["slot_key"] == "agent"
-    assert "BFS" in payload["demo_strategies"][0]["title"]
-    assert "def make_move(state):" in payload["demo_strategies"][0]["code"]
+    assert "def make_move(x, y, maze):" in payload["templates"][0]["code"]
+    pathfinder = next(item for item in payload["demo_strategies"] if item["strategy_id"] == "pathfinder")
+    assert pathfinder["slot_key"] == "agent"
+    assert "BFS" in pathfinder["title"]
+    assert "def make_move(x, y, maze):" in pathfinder["code"]
 
 
 def test_get_game_templates_uses_slot_specific_stub_for_defender(client) -> None:
@@ -39,7 +40,7 @@ def test_get_game_templates_for_turn_based_game(client) -> None:
 
     assert payload["code_api_mode"] == "turn_based"
     bot_template = next(item for item in payload["templates"] if item["slot_key"] == "bot")
-    assert "def make_choice(state):" in bot_template["code"]
+    assert "def make_choice(field, role):" in bot_template["code"]
     demo = next(item for item in payload["demo_strategies"] if item["slot_key"] == "bot")
     assert demo["strategy_id"] == "balanced_connect5"
     assert "find_winning_move" in demo["code"]

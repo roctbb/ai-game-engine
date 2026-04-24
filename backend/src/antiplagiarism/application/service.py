@@ -84,7 +84,7 @@ class AntiplagiarismService:
     @staticmethod
     def _latest_run_by_team(runs: list[Run], allowed_team_ids: set[str]) -> dict[str, Run]:
         latest: dict[str, Run] = {}
-        for run in runs:
+        for run in sorted(runs, key=lambda item: item.created_at, reverse=True):
             if run.team_id not in allowed_team_ids:
                 continue
             if run.snapshot_id is None:

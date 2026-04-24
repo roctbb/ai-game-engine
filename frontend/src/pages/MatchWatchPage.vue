@@ -11,7 +11,7 @@
           class="agp-icon-button agp-icon-button--replay"
           :disabled="!canPlayReplay"
           :title="replayIsPlaying ? 'Пауза' : 'Воспроизвести'"
-          aria-label="Воспроизвести replay"
+          aria-label="Воспроизвести повтор"
           @click="toggleReplayPlay"
         >
           {{ replayIsPlaying ? '❚❚' : '▶' }}
@@ -36,7 +36,7 @@
         </button>
         <span class="small text-muted agp-player-frame-label">
           <template v-if="replayFrames.length">кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</template>
-          <template v-else>replay после завершения</template>
+          <template v-else>повтор после завершения</template>
         </span>
         <input
           v-model.number="replayFrameIndex"
@@ -67,8 +67,8 @@
           v-if="canSeeTechnicalDetails"
           class="agp-icon-button agp-icon-button--restart"
           :disabled="!canRestartRenderer"
-          title="Перезапустить renderer"
-          aria-label="Перезапустить renderer"
+          title="Перезапустить визуализацию"
+          aria-label="Перезапустить визуализацию"
           @click="restartRenderer"
         >
           ↻
@@ -76,7 +76,7 @@
       </div>
     </header>
 
-    <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка run...</article>
+    <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка матча...</article>
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="watchContext && run">
@@ -94,17 +94,17 @@
               ref="rendererFrameRef"
               :key="rendererKey"
               :src="watchContext.renderer_url"
-              title="Game Renderer"
+              title="Визуализация игры"
               sandbox="allow-scripts allow-same-origin"
               @load="onRendererLoad"
             ></iframe>
           </div>
           <div v-else class="agp-card-soft p-3 text-muted small">
-            Для этой игры renderer не настроен.
+            Для этой игры визуализация не настроена.
           </div>
           <section class="agp-bot-console" aria-label="Вывод бота">
             <div class="agp-bot-console-head">
-              <strong>Console</strong>
+              <strong>Вывод print</strong>
               <span v-if="replayFrames.length > 0" class="text-muted">
                 кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}
               </span>
@@ -136,7 +136,7 @@
             <strong>{{ runKindLabel }}</strong>
           </div>
           <div v-if="canSeeTechnicalDetails" class="agp-watch-stat">
-            <span class="text-muted small">Live updates</span>
+            <span class="text-muted small">Обновления</span>
             <strong class="mono">{{ liveMode }}</strong>
           </div>
           <div v-if="run.error_message" class="mt-3">
@@ -144,9 +144,9 @@
           </div>
           <hr />
           <h3 class="h6 mb-2">Повтор</h3>
-          <div v-if="isReplayLoading" class="text-muted small">Загрузка replay...</div>
+          <div v-if="isReplayLoading" class="text-muted small">Загрузка повтора...</div>
           <div v-else-if="replayError" class="text-danger small">{{ replayError }}</div>
-          <div v-else-if="!replay" class="text-muted small">Replay появится после завершения запуска.</div>
+          <div v-else-if="!replay" class="text-muted small">Повтор появится после завершения запуска.</div>
           <div class="d-flex flex-wrap gap-2 align-items-center mb-3" v-if="replayFrames.length > 0">
             <button class="btn btn-sm btn-outline-secondary" :disabled="!canStepBackward" @click="stepReplay(-1)">
               ◀
@@ -180,27 +180,27 @@
           <details v-if="canSeeTechnicalDetails" class="mt-3">
             <summary class="agp-details-summary">Технические детали</summary>
             <section class="agp-card-soft p-3 mt-3">
-              <h2 class="h6">Run metadata</h2>
+              <h2 class="h6">Данные запуска</h2>
               <table class="table table-sm align-middle mb-0">
                 <tbody>
                   <tr>
-                    <th class="w-25">run_id</th>
+                    <th class="w-25">id запуска</th>
                     <td class="mono small">{{ run.run_id }}</td>
                   </tr>
                   <tr>
-                    <th>status</th>
+                    <th>статус</th>
                     <td class="mono small">{{ run.status }}</td>
                   </tr>
                   <tr>
-                    <th>reason</th>
+                    <th>причина</th>
                     <td><RunReasonBadge :reason="run.error_message" /></td>
                   </tr>
                   <tr>
-                    <th>kind</th>
+                    <th>тип</th>
                     <td class="mono small">{{ run.run_kind }}</td>
                   </tr>
                   <tr>
-                    <th>game</th>
+                    <th>игра</th>
                     <td class="mono small">{{ watchContext.game_slug }}</td>
                   </tr>
                   <tr>
@@ -208,15 +208,15 @@
                     <td class="mono small">{{ run.worker_id ?? '—' }}</td>
                   </tr>
                   <tr>
-                    <th>snapshot</th>
+                    <th>снимок кода</th>
                     <td class="mono small">{{ run.snapshot_id ?? '—' }}</td>
                   </tr>
                   <tr>
-                    <th>protocol</th>
+                    <th>протокол</th>
                     <td class="mono small">{{ watchContext.renderer_protocol }}</td>
                   </tr>
                   <tr v-if="watchContext.renderer_url">
-                    <th>renderer src</th>
+                    <th>визуализация</th>
                     <td class="mono small">{{ watchContext.renderer_url }}</td>
                   </tr>
                 </tbody>
@@ -224,8 +224,8 @@
             </section>
 
             <section class="agp-card-soft p-3 mt-3">
-              <h2 class="h6">Renderer events</h2>
-              <div v-if="rendererLogs.length === 0" class="text-muted small">События renderer пока не поступали.</div>
+              <h2 class="h6">События визуализации</h2>
+              <div v-if="rendererLogs.length === 0" class="text-muted small">События визуализации пока не поступали.</div>
               <ul v-else class="list-group list-group-flush">
                 <li
                   v-for="item in rendererLogs"
@@ -244,29 +244,29 @@
             </section>
 
             <details class="mt-3">
-              <summary class="small fw-semibold">Result payload</summary>
+              <summary class="small fw-semibold">Итоговые данные</summary>
               <pre class="mono small mb-0 mt-2">{{ resultPayloadJson }}</pre>
             </details>
 
             <details class="mt-3">
-              <summary class="small fw-semibold">Replay artifact</summary>
+              <summary class="small fw-semibold">Данные повтора</summary>
               <div v-if="replay" class="mt-2">
               <div class="small mb-2">
-                replay_id: <span class="mono">{{ replay.replay_id }}</span>
+                id повтора: <span class="mono">{{ replay.replay_id }}</span>
               </div>
               <div class="small text-muted mb-2">
-                frames: <span class="mono">{{ replay.frames.length }}</span>
-                · events: <span class="mono">{{ replay.events.length }}</span>
-                · visibility: <span class="mono">{{ replay.visibility }}</span>
+                кадры: <span class="mono">{{ replay.frames.length }}</span>
+                · события: <span class="mono">{{ replay.events.length }}</span>
+                · видимость: <span class="mono">{{ replay.visibility }}</span>
               </div>
               <details class="mb-2" v-if="replay.events.length > 0">
-                <summary class="small">События replay ({{ replay.events.length }})</summary>
+                <summary class="small">События повтора ({{ replay.events.length }})</summary>
                 <pre class="mono small mb-0">{{ replayEventsJson }}</pre>
               </details>
               <pre class="mono small mb-0">{{ replaySummaryJson }}</pre>
               </div>
               <div v-else class="text-muted small mt-2">
-                Replay пока недоступен.
+                Повтор пока недоступен.
               </div>
             </details>
           </details>
@@ -333,7 +333,7 @@ const rendererLogs = ref<RendererLogItem[]>([]);
 const liveMode = ref<'idle' | 'sse' | 'polling'>('idle');
 const replayFrameIndex = ref(0);
 const replayIsPlaying = ref(false);
-const replaySpeedMs = ref(1000);
+const replaySpeedMs = ref(replaySpeedFromQuery());
 let rendererLogCounter = 0;
 let runPollingHandle: ReturnType<typeof setInterval> | null = null;
 let runEventSource: EventSource | null = null;
@@ -566,9 +566,14 @@ function sendRendererInit(): void {
 function sendRendererStateAndResult(): void {
   if (!run.value) return;
   const activeReplayFrame = currentReplayFrame.value;
+  if (isTerminalStatus(run.value.status) && shouldAutoplayReplay.value && !activeReplayFrame && !replay.value) {
+    return;
+  }
   rendererTick.value = activeReplayFrame?.tick ?? rendererTick.value + 1;
   const rendererPhase = activeReplayFrame?.phase ?? run.value.status;
-  const rendererFrame = activeReplayFrame?.frame ?? (run.value.result_payload ?? {});
+  const rendererFrame =
+    activeReplayFrame?.frame ??
+    (isTerminalStatus(run.value.status) && shouldAutoplayReplay.value ? {} : run.value.result_payload ?? {});
 
   sendToRenderer({
     type: 'agp.renderer.state',
@@ -591,6 +596,13 @@ function sendRendererStateAndResult(): void {
         },
     });
   }
+}
+
+function replaySpeedFromQuery(): number {
+  const raw = route.query.speed_ms;
+  const value = typeof raw === 'string' ? Number(raw) : NaN;
+  if (!Number.isFinite(value)) return 1000;
+  return Math.max(150, Math.min(3000, value));
 }
 
 function onRendererLoad(): void {
@@ -718,7 +730,7 @@ async function ensureReplayLoaded(runId: string): Promise<void> {
       }
     }
   } catch (error) {
-    replayError.value = error instanceof Error ? error.message : 'Replay пока недоступен';
+    replayError.value = error instanceof Error ? error.message : 'Повтор пока недоступен';
   } finally {
     isReplayLoading.value = false;
   }
@@ -896,12 +908,18 @@ onUnmounted(() => {
 
 <style scoped>
 .agp-watch-columns {
-  grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 0.8fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(20rem, 0.75fr);
+  gap: 0.5rem;
 }
 
 .agp-watch-page--embedded {
   height: 100dvh;
   background: #030712;
+}
+
+.agp-watch-page {
+  background: #06101f;
+  color: #dbeafe;
 }
 
 .agp-watch-page--embedded .agp-watch-columns {
@@ -934,13 +952,91 @@ onUnmounted(() => {
 .agp-watch-side-card {
   position: sticky;
   top: 0.75rem;
+  overflow: hidden;
+  border-color: rgba(135, 226, 255, 0.22);
+  border-radius: 0;
+  background: #07101c;
+  color: #dbeafe;
+}
+
+.agp-watch-side-card h2,
+.agp-watch-side-card h3,
+.agp-watch-side-card strong,
+.agp-watch-side-card summary {
+  color: #e5f3ff;
+}
+
+.agp-watch-side-card .text-muted {
+  color: #8ea7c1 !important;
+}
+
+.agp-watch-side-card hr {
+  border-color: rgba(148, 163, 184, 0.22);
+  opacity: 1;
+}
+
+.agp-watch-side-card .btn-outline-secondary {
+  border-color: rgba(148, 163, 184, 0.38);
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.agp-watch-side-card .btn-outline-secondary:hover:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.65);
+  background: rgba(14, 116, 144, 0.42);
+  color: #fff;
+}
+
+.agp-watch-side-card .form-select,
+.agp-watch-side-card .form-range {
+  color-scheme: dark;
+}
+
+.agp-watch-side-card .form-select {
+  border-color: rgba(148, 163, 184, 0.36);
+  background-color: #0f172a;
+  color: #dbeafe;
+}
+
+.agp-watch-side-card .agp-card-soft {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.72);
+  color: #dbeafe;
+}
+
+.agp-watch-side-card .table {
+  --bs-table-bg: transparent;
+  --bs-table-color: #dbeafe;
+  --bs-table-border-color: rgba(148, 163, 184, 0.22);
+  margin-bottom: 0;
+}
+
+.agp-watch-side-card .table th {
+  color: #8ea7c1;
+  font-weight: 700;
+}
+
+.agp-watch-side-card pre {
+  max-height: 18rem;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.35rem;
+  background: #020617;
+  color: #dbeafe;
+  padding: 0.65rem;
+}
+
+.agp-watch-side-card .list-group-item {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: transparent;
+  color: #dbeafe;
 }
 
 .agp-watch-stat {
   display: grid;
   gap: 0.15rem;
-  padding: 0.65rem 0;
-  border-bottom: 1px solid var(--agp-border);
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
 }
 
 .agp-watch-stat strong {

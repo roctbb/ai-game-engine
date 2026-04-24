@@ -381,6 +381,7 @@ def stream_run(
         last_payload_signature = ""
         while True:
             run = container.execution.get_run(run_id=run_id)
+            ensure_can_view_run(container=container, session=session, run=run)
             payload = _run_response(run).model_dump(mode="json")
             signature = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             if signature != last_payload_signature:

@@ -32,7 +32,7 @@
               Каталог задач
             </RouterLink>
             <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/replays" @click="closeUserMenu">
-              Реплеи
+              Повторы
             </RouterLink>
 
             <button
@@ -40,7 +40,7 @@
               class="btn btn-sm btn-outline-danger w-100"
               @click="logout"
             >
-              Logout
+              Выйти
             </button>
           </div>
         </details>

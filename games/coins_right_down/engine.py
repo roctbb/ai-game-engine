@@ -1,13 +1,15 @@
 import json
 import os
+import random
 from typing import Any
 
 
-_MAX_STEPS = 24
-_WIDTH = 6
-_HEIGHT = 6
+_MAX_STEPS = 40
+_WIDTH = 8
+_HEIGHT = 8
 _GOAL = (_WIDTH - 1, _HEIGHT - 1)
-_COINS = {(1, 0), (2, 0), (2, 1), (3, 2), (4, 4), (5, 4)}
+_COINS_TOTAL = 8
+_WALLS_TOTAL = 10
 _DELTAS = {
     "right": (1, 0),
     "down": (0, 1),
@@ -25,68 +27,37 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         print_context=print_context,
     )
 
+    game_map = _build_map(ctx)
+    coins = game_map["coins"]
+    walls = game_map["walls"]
+    assert isinstance(coins, set) and isinstance(walls, set)
+
     position = (0, 0)
     collected = 0
     invalid_moves = 0
     steps = 0
-    coins_left = set(_COINS)
+    coins_left = set(coins)
     if position in coins_left:
         coins_left.remove(position)
         collected += 1
-    frames: list[dict[str, object]] = [
-        {
-            "tick": 0,
-            "phase": "running",
-            "frame": {
-                "position": {"x": position[0], "y": position[1]},
-                "coins_left": len(coins_left),
-                "coins_collected": collected,
-                "invalid_moves": invalid_moves,
-                "reached_goal": False,
-            },
-        }
-    ]
+    frames: list[dict[str, object]] = [_frame(0, "running", position, coins_left, walls, collected, invalid_moves, False)]
 
     for step in range(_MAX_STEPS):
         if position == _GOAL:
             break
         print_context["tick"] = step
-        action = move_fn(_build_state(position=position, step=step, coins_left=coins_left))
+        action = move_fn(_build_state(position=position, step=step, coins_left=coins_left, walls=walls))
         delta = _DELTAS.get(action)
         if delta is None:
             invalid_moves += 1
             events.append({"type": "invalid_action", "tick": step, "action": action})
-            frames.append(
-                {
-                    "tick": step + 1,
-                    "phase": "running",
-                    "frame": {
-                        "position": {"x": position[0], "y": position[1]},
-                        "coins_left": len(coins_left),
-                        "coins_collected": collected,
-                        "invalid_moves": invalid_moves,
-                        "reached_goal": False,
-                    },
-                }
-            )
+            frames.append(_frame(step + 1, "running", position, coins_left, walls, collected, invalid_moves, False))
             continue
         target = (position[0] + delta[0], position[1] + delta[1])
-        if not _is_inside(target):
+        if not _can_enter(target, walls):
             invalid_moves += 1
             events.append({"type": "blocked_move", "tick": step, "action": action, "target": {"x": target[0], "y": target[1]}})
-            frames.append(
-                {
-                    "tick": step + 1,
-                    "phase": "running",
-                    "frame": {
-                        "position": {"x": position[0], "y": position[1]},
-                        "coins_left": len(coins_left),
-                        "coins_collected": collected,
-                        "invalid_moves": invalid_moves,
-                        "reached_goal": False,
-                    },
-                }
-            )
+            frames.append(_frame(step + 1, "running", position, coins_left, walls, collected, invalid_moves, False))
             continue
         position = target
         steps += 1
@@ -97,26 +68,15 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         reached_goal_now = position == _GOAL
         if reached_goal_now:
             events.append({"type": "goal_reached", "tick": step + 1})
-        frames.append(
-            {
-                "tick": step + 1,
-                "phase": "running",
-                "frame": {
-                    "position": {"x": position[0], "y": position[1]},
-                    "coins_left": len(coins_left),
-                    "coins_collected": collected,
-                    "invalid_moves": invalid_moves,
-                    "reached_goal": reached_goal_now,
-                },
-            }
-        )
+        frames.append(_frame(step + 1, "running", position, coins_left, walls, collected, invalid_moves, reached_goal_now))
 
     reached_goal = position == _GOAL
     score = max(0, collected * 10 + (50 if reached_goal else 0) - invalid_moves)
     metrics: dict[str, object] = {
         "steps": steps,
         "coins_collected": collected,
-        "coins_total": len(_COINS),
+        "coins_total": len(coins),
+        "walls_total": len(walls),
         "invalid_moves": invalid_moves,
         "reached_goal": reached_goal,
         "score": score,
@@ -125,20 +85,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         metrics["compile_error"] = compile_error
         events.append({"type": "compile_error", "message": compile_error})
 
-    frames.append(
-        {
-            "tick": len(frames),
-            "phase": "finished",
-            "frame": {
-                "position": {"x": position[0], "y": position[1]},
-                "coins_left": len(coins_left),
-                "coins_collected": collected,
-                "invalid_moves": invalid_moves,
-                "reached_goal": reached_goal,
-                "score": score,
-            },
-        }
-    )
+    frames.append(_frame(len(frames), "finished", position, coins_left, walls, collected, invalid_moves, reached_goal, score))
 
     return {
         "status": "finished",
@@ -158,6 +105,46 @@ def _load_context() -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _build_map(context: dict[str, Any]) -> dict[str, object]:
+    seed = context.get("run_id")
+    if not isinstance(seed, str) or not seed:
+        seed = "coins_right_down_offline"
+    rng = random.Random(seed)
+
+    guaranteed_path = _random_monotonic_path(rng)
+    path_cells = set(guaranteed_path)
+    candidates = [
+        (x, y)
+        for y in range(_HEIGHT)
+        for x in range(_WIDTH)
+        if (x, y) not in path_cells and (x, y) not in {(0, 0), _GOAL}
+    ]
+    rng.shuffle(candidates)
+    walls = set(candidates[:_WALLS_TOTAL])
+
+    coin_candidates = [cell for cell in guaranteed_path[1:-1] if cell not in walls]
+    rng.shuffle(coin_candidates)
+    coins = set(coin_candidates[:_COINS_TOTAL])
+
+    return {"walls": walls, "coins": coins}
+
+
+def _random_monotonic_path(rng: random.Random) -> list[tuple[int, int]]:
+    x, y = 0, 0
+    path = [(x, y)]
+    rights = _WIDTH - 1
+    downs = _HEIGHT - 1
+    moves = ["right"] * rights + ["down"] * downs
+    rng.shuffle(moves)
+    for move in moves:
+        if move == "right":
+            x += 1
+        else:
+            y += 1
+        path.append((x, y))
+    return path
 
 
 def _build_player_fn(
@@ -206,8 +193,12 @@ def _build_player_fn(
     if not callable(fn):
         def _fallback(state: dict[str, object]) -> str:
             pos = state["position"]
-            if isinstance(pos, dict) and pos.get("x", 0) < _GOAL[0]:
-                return "right"
+            board = state.get("board")
+            if isinstance(pos, dict) and isinstance(board, list):
+                x = int(pos.get("x", 0))
+                y = int(pos.get("y", 0))
+                if x + 1 < _WIDTH and board[y][x + 1] != -1:
+                    return "right"
             return "down"
 
         return _fallback, compile_error
@@ -243,6 +234,7 @@ def _build_state(
     position: tuple[int, int],
     step: int,
     coins_left: set[tuple[int, int]],
+    walls: set[tuple[int, int]],
 ) -> dict[str, object]:
     return {
         "position": {"x": position[0], "y": position[1]},
@@ -250,12 +242,56 @@ def _build_state(
         "goal": {"x": _GOAL[0], "y": _GOAL[1]},
         "size": {"width": _WIDTH, "height": _HEIGHT},
         "coins": [{"x": x, "y": y} for x, y in sorted(coins_left)],
+        "walls": [{"x": x, "y": y} for x, y in sorted(walls)],
+        "board": _board(coins_left=coins_left, walls=walls),
     }
 
 
 def _is_inside(position: tuple[int, int]) -> bool:
     x, y = position
     return 0 <= x < _WIDTH and 0 <= y < _HEIGHT
+
+
+def _can_enter(position: tuple[int, int], walls: set[tuple[int, int]]) -> bool:
+    return _is_inside(position) and position not in walls
+
+
+def _board(coins_left: set[tuple[int, int]], walls: set[tuple[int, int]]) -> list[list[int]]:
+    board = [[0 for _ in range(_WIDTH)] for _ in range(_HEIGHT)]
+    for x, y in walls:
+        board[y][x] = -1
+    for x, y in coins_left:
+        board[y][x] = 1
+    board[_GOAL[1]][_GOAL[0]] = 2
+    return board
+
+
+def _frame(
+    tick: int,
+    phase: str,
+    position: tuple[int, int],
+    coins_left: set[tuple[int, int]],
+    walls: set[tuple[int, int]],
+    collected: int,
+    invalid_moves: int,
+    reached_goal: bool,
+    score: int | None = None,
+) -> dict[str, object]:
+    frame: dict[str, object] = {
+        "position": {"x": position[0], "y": position[1]},
+        "goal": {"x": _GOAL[0], "y": _GOAL[1]},
+        "size": {"width": _WIDTH, "height": _HEIGHT},
+        "board": _board(coins_left=coins_left, walls=walls),
+        "coins": [{"x": x, "y": y} for x, y in sorted(coins_left)],
+        "walls": [{"x": x, "y": y} for x, y in sorted(walls)],
+        "coins_left": len(coins_left),
+        "coins_collected": collected,
+        "invalid_moves": invalid_moves,
+        "reached_goal": reached_goal,
+    }
+    if score is not None:
+        frame["score"] = score
+    return {"tick": tick, "phase": phase, "frame": frame}
 
 
 if __name__ == "__main__":

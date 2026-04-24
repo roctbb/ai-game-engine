@@ -9,8 +9,8 @@ player_instruction: Определите функцию place_tower(state), во
 description: Управляйте расстановкой башен по линиям, чтобы сдержать волны ботов и сохранить базу.
 difficulty: medium
 topics:
-  - симуляция
   - стратегия
+  - симуляция
 slots:
   - key: defender
     title: Код защитника

@@ -23,14 +23,41 @@ def test_maze_escape_engine_uses_script() -> None:
     context = {
         "codes_by_slot": {
             "agent": (
-                "def make_move(state):\n"
-                "    x = state['position']['x']\n"
-                "    y = state['position']['y']\n"
-                "    if y < 6 and x in {0, 6}:\n"
-                "        return 'down'\n"
-                "    if x < 6:\n"
+                "def make_move(x, y, maze):\n"
+                "    start = (x, y)\n"
+                "    goal = None\n"
+                "    for row_y, row in enumerate(maze):\n"
+                "        for col_x, cell in enumerate(row):\n"
+                "            if cell == 1:\n"
+                "                goal = (col_x, row_y)\n"
+                "                break\n"
+                "        if goal is not None:\n"
+                "            break\n"
+                "    if goal is None:\n"
                 "        return 'right'\n"
-                "    return 'down'\n"
+                "    directions = [('right', 1, 0), ('down', 0, 1), ('left', -1, 0), ('up', 0, -1)]\n"
+                "    queue = [start]\n"
+                "    came_from = {start: ('', start)}\n"
+                "    head = 0\n"
+                "    while head < len(queue):\n"
+                "        current = queue[head]\n"
+                "        head += 1\n"
+                "        if current == goal:\n"
+                "            break\n"
+                "        for action, dx, dy in directions:\n"
+                "            nx = current[0] + dx\n"
+                "            ny = current[1] + dy\n"
+                "            next_cell = (nx, ny)\n"
+                "            if ny < 0 or ny >= len(maze) or nx < 0 or nx >= len(maze[ny]):\n"
+                "                continue\n"
+                "            if maze[ny][nx] == -1 or next_cell in came_from:\n"
+                "                continue\n"
+                "            came_from[next_cell] = (action, current)\n"
+                "            queue.append(next_cell)\n"
+                "    current = goal\n"
+                "    while current in came_from and came_from[current][1] != start:\n"
+                "        current = came_from[current][1]\n"
+                "    return came_from[current][0] if current in came_from else 'right'\n"
             )
         }
     }
@@ -50,12 +77,7 @@ def test_coins_engine_collects_with_script() -> None:
     )
     context = {
         "codes_by_slot": {
-            "agent": (
-                "def make_move(state):\n"
-                "    if state['position']['x'] < state['goal']['x']:\n"
-                "        return 'right'\n"
-                "    return 'down'\n"
-            )
+            "agent": (_repo_root() / "games" / "coins_right_down" / "examples" / "agent_coin_collector.py").read_text(encoding="utf-8")
         }
     }
     payload = module.run(context)
@@ -94,8 +116,8 @@ def test_single_task_engine_allows_print_for_debug() -> None:
     context = {
         "codes_by_slot": {
             "agent": (
-                "def make_move(state):\n"
-                "    print('step', state['step'])\n"
+                "def make_move(x, y, maze):\n"
+                "    print('position', x, y)\n"
                 "    return 'right'\n"
             )
         }
@@ -107,4 +129,4 @@ def test_single_task_engine_allows_print_for_debug() -> None:
     print_events = [event for event in payload["events"] if event.get("type") == "bot_print"]
     assert print_events
     assert print_events[0]["role"] == "agent"
-    assert print_events[0]["message"].startswith("step ")
+    assert print_events[0]["message"].startswith("position ")

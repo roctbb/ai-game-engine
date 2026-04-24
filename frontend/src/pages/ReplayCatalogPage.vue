@@ -2,9 +2,9 @@
   <section class="agp-grid">
     <header class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
       <div>
-        <h1 class="h3 mb-1">Каталог реплеев</h1>
+        <h1 class="h3 mb-1">Каталог повторов</h1>
         <p class="text-muted mb-0">
-          Публичные replay-артефакты завершенных запусков. Можно отфильтровать и открыть матч в watch-режиме.
+          Повторы завершенных запусков для преподавателя и администратора.
         </p>
       </div>
       <button v-if="canManage" class="btn btn-outline-dark" :disabled="isLoading" @click="loadReplays">
@@ -13,7 +13,7 @@
     </header>
 
     <article v-if="!canManage" class="agp-card p-4 text-muted">
-      Каталог реплеев доступен только преподавателю или администратору.
+      Каталог повторов доступен только преподавателю или администратору.
     </article>
 
     <article v-if="canManage" class="agp-card p-3">
@@ -31,9 +31,9 @@
           <label class="form-label small">Тип запуска</label>
           <select v-model="runKindFilter" class="form-select">
             <option value="">Любой</option>
-            <option value="single_task">single_task</option>
-            <option value="training_match">training_match</option>
-            <option value="competition_match">competition_match</option>
+            <option value="single_task">Задача</option>
+            <option value="training_match">Лобби</option>
+            <option value="competition_match">Соревнование</option>
           </select>
         </div>
         <div class="col-md-2">
@@ -41,7 +41,7 @@
           <input v-model.number="limitFilter" min="1" max="200" class="form-control mono" type="number" />
         </div>
         <div class="col-md-4">
-          <label class="form-label small">Поиск по run_id</label>
+          <label class="form-label small">Поиск по ID запуска</label>
           <input v-model.trim="runIdQuery" class="form-control mono" placeholder="run_..." />
         </div>
       </div>
@@ -60,11 +60,11 @@
       <table v-else class="table align-middle mb-0">
         <thead>
           <tr>
-            <th>run_id</th>
+            <th>ID запуска</th>
             <th>Игра</th>
-            <th>kind/status</th>
-            <th>frames/events</th>
-            <th>updated_at</th>
+            <th>Тип и статус</th>
+            <th>Кадры/события</th>
+            <th>Обновлен</th>
             <th></th>
           </tr>
         </thead>
@@ -79,17 +79,17 @@
               <div class="small text-muted mono">{{ item.game_id }}</div>
             </td>
             <td>
-              <div class="mono small">{{ item.run_kind }}</div>
-              <div class="mono small">{{ item.status }}</div>
+              <div>{{ runKindLabel(item.run_kind) }}</div>
+              <div class="small text-muted">{{ statusLabel(item.status) }}</div>
             </td>
             <td class="mono small">{{ item.frames.length }} / {{ item.events.length }}</td>
             <td class="mono small">{{ formatIso(item.updated_at) }}</td>
             <td class="text-end">
-              <RouterLink :to="`/runs/${item.run_id}/watch`" class="btn btn-sm btn-outline-secondary">Watch</RouterLink>
+              <RouterLink :to="`/runs/${item.run_id}/watch`" class="btn btn-sm btn-outline-secondary">Открыть</RouterLink>
             </td>
           </tr>
           <tr v-if="filteredReplays.length === 0">
-            <td colspan="6" class="text-muted small">Реплеи по текущим фильтрам не найдены.</td>
+            <td colspan="6" class="text-muted small">Повторы по текущим фильтрам не найдены.</td>
           </tr>
         </tbody>
       </table>
@@ -158,6 +158,28 @@ function gameTitle(gameId: string): string {
   return item?.title ?? gameId;
 }
 
+function runKindLabel(kind: ReplayDto['run_kind']): string {
+  const labels: Record<ReplayDto['run_kind'], string> = {
+    single_task: 'Задача',
+    training_match: 'Лобби',
+    competition_match: 'Соревнование',
+  };
+  return labels[kind] ?? kind;
+}
+
+function statusLabel(status: ReplayDto['status']): string {
+  const labels: Record<ReplayDto['status'], string> = {
+    created: 'Создан',
+    queued: 'В очереди',
+    running: 'Выполняется',
+    finished: 'Завершен',
+    failed: 'Ошибка',
+    timeout: 'Таймаут',
+    canceled: 'Остановлен',
+  };
+  return labels[status] ?? status;
+}
+
 function formatIso(value: string): string {
   const time = Date.parse(value);
   if (Number.isNaN(time)) return value;
@@ -175,7 +197,7 @@ async function loadReplays(): Promise<void> {
       limit: Math.max(1, Math.min(200, Number(limitFilter.value) || 50)),
     });
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить replay-каталог';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить каталог повторов';
   } finally {
     isLoading.value = false;
   }
@@ -191,7 +213,7 @@ onMounted(async () => {
   try {
     games.value = await listGames();
   } catch {
-    // каталог игр не блокирует отображение replay-таблицы
+    // Каталог игр не блокирует отображение таблицы повторов.
   }
   await loadReplays();
 });

@@ -3,7 +3,9 @@
     <header class="d-flex justify-content-between align-items-start gap-3">
       <div>
         <h1 class="h3 mb-1">История попыток задачи</h1>
-        <p class="text-muted mb-0">Фильтрация и быстрый разбор запусков `single_task`.</p>
+        <p class="text-muted mb-0">
+          {{ canManage ? 'Разбор попыток учеников и ошибок выполнения.' : 'Ваши прошлые запуски и повторы.' }}
+        </p>
       </div>
       <div class="d-flex gap-2">
         <RouterLink v-if="game" :to="`/tasks/${game.game_id}/run`" class="btn btn-outline-dark">К запуску задачи</RouterLink>
@@ -16,28 +18,28 @@
 
     <article v-if="game" class="agp-card p-3">
       <div class="row g-2 align-items-end">
-        <div class="col-md-3">
+        <div v-if="canManage" class="col-md-3">
           <label class="form-label small">Пользователь</label>
-          <input v-model.trim="requestedBy" class="form-control mono" placeholder="nickname" />
+          <input v-model.trim="requestedBy" class="form-control mono" placeholder="Имя пользователя" />
         </div>
-        <div class="col-md-3">
+        <div :class="canManage ? 'col-md-3' : 'col-md-4'">
           <label class="form-label small">Статус</label>
-          <select v-model="statusFilter" class="form-select mono">
+          <select v-model="statusFilter" class="form-select">
             <option value="">Любой</option>
-            <option value="created">created</option>
-            <option value="queued">queued</option>
-            <option value="running">running</option>
-            <option value="finished">finished</option>
-            <option value="failed">failed</option>
-            <option value="timeout">timeout</option>
-            <option value="canceled">canceled</option>
+            <option value="created">Создан</option>
+            <option value="queued">В очереди</option>
+            <option value="running">Выполняется</option>
+            <option value="finished">Завершен</option>
+            <option value="failed">Ошибка</option>
+            <option value="timeout">Таймаут</option>
+            <option value="canceled">Остановлен</option>
           </select>
         </div>
-        <div class="col-md-2">
+        <div :class="canManage ? 'col-md-2' : 'col-md-3'">
           <label class="form-label small">Лимит</label>
           <input v-model.number="limit" class="form-control mono" type="number" min="5" max="100" />
         </div>
-        <div class="col-md-4 d-flex gap-2">
+        <div :class="canManage ? 'col-md-4' : 'col-md-5'" class="d-flex gap-2">
           <button class="btn btn-outline-secondary" @click="applyFilters">Применить</button>
           <button class="btn btn-outline-secondary" @click="resetFilters">Сбросить</button>
         </div>
@@ -54,13 +56,13 @@
         </div>
         <div class="col-md-3">
           <div class="agp-card-soft p-2">
-            <div class="small text-muted">Solved</div>
+            <div class="small text-muted">Решено</div>
             <div class="mono">{{ solvedCount }}</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="agp-card-soft p-2">
-            <div class="small text-muted">Running/Queued</div>
+            <div class="small text-muted">В работе</div>
             <div class="mono">{{ activeCount }}</div>
           </div>
         </div>
@@ -90,28 +92,29 @@
         <table class="table table-sm align-middle mb-0">
           <thead>
             <tr>
-              <th>run_id</th>
-              <th>Пользователь</th>
+              <th v-if="canManage">ID запуска</th>
+              <th v-if="canManage">Пользователь</th>
               <th>Статус</th>
-              <th>Reason</th>
-              <th>Score</th>
-              <th>Solved</th>
+              <th v-if="canManage">Причина</th>
+              <th>Счет</th>
+              <th>Решено</th>
               <th>Время</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="attempt in attempts" :key="attempt.run_id">
-              <td class="mono small">{{ attempt.run_id }}</td>
-              <td class="mono small">{{ attempt.requested_by }}</td>
-              <td class="mono small">{{ attempt.status }}</td>
-              <td><RunReasonBadge :reason="attempt.error_message" /></td>
+              <td v-if="canManage" class="mono small">{{ attempt.run_id }}</td>
+              <td v-if="canManage" class="mono small">{{ attempt.requested_by }}</td>
+              <td>{{ statusLabel(attempt.status) }}</td>
+              <td v-if="canManage"><RunReasonBadge :reason="attempt.error_message" /></td>
               <td class="mono small">{{ attemptScore(attempt) }}</td>
-              <td class="mono small">{{ attemptSolved(attempt) }}</td>
+              <td>{{ attemptSolved(attempt) }}</td>
               <td class="small">{{ formatIso(attempt.finished_at || attempt.created_at) }}</td>
               <td class="text-end d-flex gap-1 justify-content-end">
-                <RouterLink :to="`/runs/${attempt.run_id}/watch`" class="btn btn-sm btn-outline-secondary">Watch</RouterLink>
+                <RouterLink :to="`/runs/${attempt.run_id}/watch`" class="btn btn-sm btn-outline-secondary">Повтор</RouterLink>
                 <button
+                  v-if="canManage"
                   class="btn btn-sm btn-outline-dark"
                   :disabled="logsLoadingRunId === attempt.run_id"
                   @click="showLogs(attempt.run_id)"
@@ -141,8 +144,10 @@ import {
   type GameDto,
   type RunDto,
 } from '../lib/api';
+import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
+const sessionStore = useSessionStore();
 
 const game = ref<GameDto | null>(null);
 const isGameLoading = ref(false);
@@ -161,8 +166,9 @@ const selectedLogs = ref('');
 const logsLoadingRunId = ref('');
 
 const normalizedLimit = computed(() => Math.max(5, Math.min(100, Number(limit.value) || 20)));
+const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 
-const solvedCount = computed(() => attempts.value.filter((attempt) => attemptSolved(attempt) === 'yes').length);
+const solvedCount = computed(() => attempts.value.filter((attempt) => attemptSolved(attempt) === 'да').length);
 const activeCount = computed(
   () => attempts.value.filter((attempt) => attempt.status === 'running' || attempt.status === 'queued').length
 );
@@ -274,10 +280,23 @@ function attemptSolved(run: RunDto): string {
   const metrics = payload.metrics;
   if (!metrics || typeof metrics !== 'object') return '—';
   const source = metrics as Record<string, unknown>;
-  if (typeof source.solved === 'boolean') return source.solved ? 'yes' : 'no';
-  if (typeof source.reached_goal === 'boolean') return source.reached_goal ? 'yes' : 'no';
-  if (typeof source.reached_exit === 'boolean') return source.reached_exit ? 'yes' : 'no';
+  if (typeof source.solved === 'boolean') return source.solved ? 'да' : 'нет';
+  if (typeof source.reached_goal === 'boolean') return source.reached_goal ? 'да' : 'нет';
+  if (typeof source.reached_exit === 'boolean') return source.reached_exit ? 'да' : 'нет';
   return '—';
+}
+
+function statusLabel(status: RunDto['status']): string {
+  const labels: Record<RunDto['status'], string> = {
+    created: 'Создан',
+    queued: 'В очереди',
+    running: 'Выполняется',
+    finished: 'Завершен',
+    failed: 'Ошибка',
+    timeout: 'Таймаут',
+    canceled: 'Остановлен',
+  };
+  return labels[status] ?? status;
 }
 
 function formatIso(value: string): string {

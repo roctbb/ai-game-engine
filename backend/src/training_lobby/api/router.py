@@ -33,6 +33,11 @@ from training_lobby.domain.model import LobbyAccess, LobbyKind, LobbyStatus
 
 router = APIRouter(prefix="/lobbies", tags=["training_lobby"])
 _TERMINAL_LOBBY_STATUSES = {LobbyStatus.CLOSED}
+_LOBBY_LOCKING_COMPETITION_STATUSES = {
+    CompetitionStatus.RUNNING,
+    CompetitionStatus.PAUSED,
+    CompetitionStatus.COMPLETED,
+}
 
 
 def _ensure_can_control_team(container: ServiceContainer, session: AppSession, team_id: str) -> None:
@@ -86,7 +91,17 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
 
 
 def _is_lobby_competition(lobby_id: str, competition: Competition) -> bool:
-    return competition.lobby_id == lobby_id or competition.title.startswith(f"[lobby:{lobby_id}] ")
+    if competition.lobby_id is not None:
+        return competition.lobby_id == lobby_id
+    return competition.title.startswith(f"[lobby:{lobby_id}] ")
+
+
+def _has_lobby_locking_competition(container: ServiceContainer, lobby_id: str) -> bool:
+    return any(
+        _is_lobby_competition(lobby_id=lobby_id, competition=item)
+        and item.status in _LOBBY_LOCKING_COMPETITION_STATUSES
+        for item in container.competition.list_competitions()
+    )
 
 
 def _has_lobby_detail_access(
@@ -248,6 +263,7 @@ def stream_lobby(
         emitted = 0
         last_signature = ""
         while True:
+            _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
             lobby_payload = _to_response(
                 container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
             ).model_dump(mode="json")
@@ -503,6 +519,8 @@ def leave_lobby(
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyResponse:
     _ensure_can_control_team(container=container, session=session, team_id=team_id)
+    if _has_lobby_locking_competition(container=container, lobby_id=lobby_id):
+        raise InvariantViolationError("Во время соревнования выход из лобби запрещен")
     lobby = container.training_lobby.leave_team(lobby_id=lobby_id, team_id=team_id)
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
 

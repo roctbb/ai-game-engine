@@ -4,7 +4,9 @@
       <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
         <div>
           <h1 class="h3 mb-1">Лобби</h1>
-          <p class="text-muted mb-0">Выберите лобби. Игрок для игры создастся автоматически при входе.</p>
+          <p class="text-muted mb-0">
+            Ученики входят как игроки, преподаватель открывает лобби для управления.
+          </p>
         </div>
         <div class="lobbies-controls">
           <div class="lobbies-filter-wrap">
@@ -52,11 +54,12 @@
           <div class="lobby-main">
             <div class="d-flex gap-2 flex-wrap mb-2">
               <span class="agp-pill" :class="statusClass(lobby.status)">{{ statusLabel(lobby.status) }}</span>
+              <span v-if="lobby.access === 'code'" class="agp-pill agp-pill--neutral">по коду</span>
             </div>
             <h2 class="h5 mb-1">{{ lobby.title }}</h2>
             <p class="small text-muted mb-0">{{ gameTitle(lobby.game_id) }}</p>
             <div class="small text-muted mt-2">
-              Игроков: <span class="mono">{{ lobby.teams.length }}</span> / <span class="mono">{{ lobby.max_teams }}</span>
+              Игроки: <span class="mono">{{ lobbyPlayersLabel(lobby) }}</span>
             </div>
             <label
               v-if="needsAccessCode(lobby)"
@@ -118,7 +121,7 @@ let lobbiesPollingHandle: ReturnType<typeof setInterval> | null = null;
 const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const lobbyGames = computed(() =>
   games.value
-    .filter((game) => game.mode !== 'single_task')
+    .filter((game) => isLobbyCatalogGame(game))
     .slice()
     .sort((a, b) => a.title.localeCompare(b.title))
 );
@@ -166,6 +169,10 @@ function gameTitle(gameId: string): string {
   return games.value.find((game) => game.game_id === gameId)?.title ?? gameId;
 }
 
+function isLobbyCatalogGame(game: GameDto): boolean {
+  return game.mode !== 'single_task' && game.catalog_metadata_status === 'ready';
+}
+
 function canEnterLobby(lobby: LobbyDto): boolean {
   if (lobby.status === 'closed' || lobby.status === 'updating') return false;
   if (canManage.value) return true;
@@ -184,6 +191,15 @@ function enterButtonText(lobby: LobbyDto): string {
 
 function needsAccessCode(lobby: LobbyDto): boolean {
   return lobby.access === 'code' && !lobby.my_team_id && !canManage.value;
+}
+
+function hasHiddenLobbyDetails(lobby: LobbyDto): boolean {
+  return lobby.access === 'code' && !lobby.my_team_id && !canManage.value;
+}
+
+function lobbyPlayersLabel(lobby: LobbyDto): string {
+  if (hasHiddenLobbyDetails(lobby)) return 'скрыты до входа';
+  return `${lobby.teams.length} / ${lobby.max_teams}`;
 }
 
 async function enterLobby(lobby: LobbyDto): Promise<void> {

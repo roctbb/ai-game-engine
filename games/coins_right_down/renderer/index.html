@@ -33,12 +33,6 @@
     <div class="details mono" id="details"></div>
   </div>
   <script>
-    const GRID_W = 6;
-    const GRID_H = 6;
-    const CELL = 60;
-    const GOAL = { x: 5, y: 5 };
-    const ALL_COINS = new Set(["1,0", "2,0", "2,1", "3,2", "4,4", "5,4"]);
-
     const boardEl = document.getElementById("board");
     const statusEl = document.getElementById("status");
     const detailsEl = document.getElementById("details");
@@ -58,53 +52,56 @@
       boardEl.replaceChildren();
 
       const pos = frame && typeof frame.position === "object" ? frame.position : { x: 0, y: 0 };
+      const size = frame && typeof frame.size === "object" ? frame.size : { width: 8, height: 8 };
+      const grid = Array.isArray(frame?.board) ? frame.board : [];
+      const width = Number.isFinite(size.width) ? size.width : (Array.isArray(grid[0]) ? grid[0].length : 8);
+      const height = Number.isFinite(size.height) ? size.height : grid.length || 8;
+      const cellSize = Math.floor(360 / Math.max(width, height));
+      const goal = frame && typeof frame.goal === "object" ? frame.goal : { x: width - 1, y: height - 1 };
       const px = Number.isFinite(pos.x) ? pos.x : 0;
       const py = Number.isFinite(pos.y) ? pos.y : 0;
       const collected = Number.isFinite(frame?.coins_collected) ? frame.coins_collected : 0;
+      const left = Number.isFinite(frame?.coins_left) ? frame.coins_left : 0;
       const reached = frame?.reached_goal === true;
+
+      boardEl.setAttribute("viewBox", `0 0 ${width * cellSize} ${height * cellSize}`);
 
       const rect = svg("rect");
       rect.setAttribute("x", "0");
       rect.setAttribute("y", "0");
-      rect.setAttribute("width", String(GRID_W * CELL));
-      rect.setAttribute("height", String(GRID_H * CELL));
+      rect.setAttribute("width", String(width * cellSize));
+      rect.setAttribute("height", String(height * cellSize));
       rect.setAttribute("fill", "#f8fbff");
       boardEl.appendChild(rect);
 
-      for (let y = 0; y < GRID_H; y += 1) {
-        for (let x = 0; x < GRID_W; x += 1) {
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const value = Array.isArray(grid[y]) ? grid[y][x] : 0;
           const cell = svg("rect");
-          cell.setAttribute("x", String(x * CELL));
-          cell.setAttribute("y", String(y * CELL));
-          cell.setAttribute("width", String(CELL));
-          cell.setAttribute("height", String(CELL));
-          cell.setAttribute("fill", x === GOAL.x && y === GOAL.y ? "#dcfce7" : "transparent");
+          cell.setAttribute("x", String(x * cellSize));
+          cell.setAttribute("y", String(y * cellSize));
+          cell.setAttribute("width", String(cellSize));
+          cell.setAttribute("height", String(cellSize));
+          cell.setAttribute("fill", value === -1 ? "#334155" : (x === goal.x && y === goal.y ? "#dcfce7" : "transparent"));
           cell.setAttribute("stroke", "#d9e4f7");
           cell.setAttribute("stroke-width", "1");
           boardEl.appendChild(cell);
+
+          if (value === 1) {
+            const coin = svg("circle");
+            coin.setAttribute("cx", String(x * cellSize + cellSize / 2));
+            coin.setAttribute("cy", String(y * cellSize + cellSize / 2));
+            coin.setAttribute("r", String(Math.max(5, cellSize * 0.18)));
+            coin.setAttribute("fill", "#f59e0b");
+            boardEl.appendChild(coin);
+          }
         }
       }
 
-      const coinBudget = Math.max(0, ALL_COINS.size - collected);
-      let drawn = 0;
-      for (const key of ALL_COINS.values()) {
-        if (drawn >= coinBudget) break;
-        const [xRaw, yRaw] = key.split(",");
-        const x = Number(xRaw);
-        const y = Number(yRaw);
-        const coin = svg("circle");
-        coin.setAttribute("cx", String(x * CELL + CELL / 2));
-        coin.setAttribute("cy", String(y * CELL + CELL / 2));
-        coin.setAttribute("r", "8");
-        coin.setAttribute("fill", "#f59e0b");
-        boardEl.appendChild(coin);
-        drawn += 1;
-      }
-
       const player = svg("circle");
-      player.setAttribute("cx", String(px * CELL + CELL / 2));
-      player.setAttribute("cy", String(py * CELL + CELL / 2));
-      player.setAttribute("r", "14");
+      player.setAttribute("cx", String(px * cellSize + cellSize / 2));
+      player.setAttribute("cy", String(py * cellSize + cellSize / 2));
+      player.setAttribute("r", String(Math.max(8, cellSize * 0.24)));
       player.setAttribute("fill", "#2563eb");
       boardEl.appendChild(player);
 
@@ -113,7 +110,7 @@
       text.setAttribute("y", "20");
       text.setAttribute("font-size", "13");
       text.setAttribute("fill", "#223451");
-      text.textContent = `coins=${collected}/${ALL_COINS.size} reached_goal=${reached ? "yes" : "no"}`;
+      text.textContent = `coins=${collected} left=${left} reached_goal=${reached ? "yes" : "no"}`;
       boardEl.appendChild(text);
     }
 

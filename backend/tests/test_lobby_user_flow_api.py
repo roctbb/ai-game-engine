@@ -288,6 +288,26 @@ def test_student_stop_blocked_while_lobby_competition_is_active(client, teacher_
     assert left.status_code == 422
 
 
+def test_student_can_leave_manually_paused_lobby_without_active_competition(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    student_headers = _student_headers(client, "paused-leaver")
+
+    joined = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=student_headers)
+    assert joined.status_code == 200
+    team_id = joined.json()["my_team_id"]
+
+    paused = client.post(f"/api/v1/lobbies/{lobby_id}/status", json={"status": "paused"}, headers=teacher_headers)
+    assert paused.status_code == 200
+
+    left = client.post(
+        f"/api/v1/lobbies/{lobby_id}/teams/{team_id}/leave",
+        headers=student_headers,
+    )
+    assert left.status_code == 200
+    assert all(item["team_id"] != team_id for item in left.json()["teams"])
+
+
 def test_failed_lobby_join_does_not_create_personal_team(client, teacher_headers) -> None:
     game = _create_game(client, teacher_headers)
     lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)

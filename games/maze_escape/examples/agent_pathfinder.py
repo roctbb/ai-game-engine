@@ -1,9 +1,19 @@
-def make_move(state):
-    start = (state["position"]["x"], state["position"]["y"])
-    goal = (state["exit"]["x"], state["exit"]["y"])
-    maze = state["maze"]
+def make_move(x, y, maze):
+    start = (x, y)
     height = len(maze)
     width = len(maze[0]) if height else 0
+    goal = None
+
+    for row_y, row in enumerate(maze):
+        for col_x, cell in enumerate(row):
+            if cell == 1:
+                goal = (col_x, row_y)
+                break
+        if goal is not None:
+            break
+
+    if goal is None:
+        return "right"
 
     directions = [
         ("right", 1, 0),

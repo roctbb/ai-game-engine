@@ -3,7 +3,7 @@
     <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="h3 mb-1">Админка: Каталог задач</h1>
-        <p class="text-muted mb-0">Публикация `single_task` задач: draft -> ready -> archived.</p>
+        <p class="text-muted mb-0">Публикация задач: черновик → опубликовано → архив.</p>
       </div>
       <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading || !canManage" @click="loadGames">
         {{ isLoading ? 'Обновление...' : 'Обновить' }}
@@ -21,9 +21,9 @@
           <label class="form-label small">Статус</label>
           <select v-model="statusFilter" class="form-select mono">
             <option value="">Все</option>
-            <option value="draft">draft</option>
-            <option value="ready">ready</option>
-            <option value="archived">archived</option>
+            <option value="draft">Черновики</option>
+            <option value="ready">Опубликованные</option>
+            <option value="archived">Архив</option>
           </select>
         </div>
         <div class="col-md-4">
@@ -31,10 +31,10 @@
           <input v-model.trim="searchQuery" class="form-control" placeholder="название / slug" />
         </div>
         <div class="col-md-5 small text-muted">
-          single_task: <span class="mono">{{ rows.length }}</span>
-          · draft: <span class="mono">{{ draftCount }}</span>
-          · ready: <span class="mono">{{ readyCount }}</span>
-          · archived: <span class="mono">{{ archivedCount }}</span>
+          задач: <span class="mono">{{ rows.length }}</span>
+          · черновиков: <span class="mono">{{ draftCount }}</span>
+          · опубликовано: <span class="mono">{{ readyCount }}</span>
+          · архив: <span class="mono">{{ archivedCount }}</span>
         </div>
       </div>
     </article>
@@ -49,10 +49,10 @@
           <thead>
             <tr>
               <th>Игра</th>
-              <th>status</th>
-              <th>difficulty</th>
-              <th>topics</th>
-              <th>actions</th>
+              <th>Статус</th>
+              <th>Сложность</th>
+              <th>Темы</th>
+              <th>Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -62,8 +62,8 @@
                   <div class="fw-semibold">{{ game.title }}</div>
                   <div class="small text-muted mono">{{ game.slug }}</div>
                 </td>
-                <td><span class="badge mono" :class="statusBadgeClass(game.catalog_metadata_status)">{{ game.catalog_metadata_status }}</span></td>
-                <td class="mono small">{{ game.difficulty || '—' }}</td>
+                <td><span class="badge" :class="statusBadgeClass(game.catalog_metadata_status)">{{ statusLabel(game.catalog_metadata_status) }}</span></td>
+                <td class="small">{{ difficultyLabel(game.difficulty) }}</td>
                 <td class="small">{{ game.topics.join(', ') || '—' }}</td>
                 <td>
                   <div class="d-flex gap-2">
@@ -91,17 +91,17 @@
                         <label class="form-label small">Сложность</label>
                         <select v-model="editorByGameId[game.game_id].difficulty" class="form-select mono">
                           <option value="">—</option>
-                          <option value="easy">easy</option>
-                          <option value="medium">medium</option>
-                          <option value="hard">hard</option>
+                          <option value="easy">легкая</option>
+                          <option value="medium">средняя</option>
+                          <option value="hard">сложная</option>
                         </select>
                       </div>
                       <div class="col-md-2">
                         <label class="form-label small">Статус</label>
                         <select v-model="editorByGameId[game.game_id].status" class="form-select mono">
-                          <option value="draft">draft</option>
-                          <option value="ready">ready</option>
-                          <option value="archived">archived</option>
+                          <option value="draft">черновик</option>
+                          <option value="ready">опубликовано</option>
+                          <option value="archived">архив</option>
                         </select>
                       </div>
                     </div>
@@ -124,14 +124,14 @@
                         :disabled="editorByGameId[game.game_id].isSaving || !canManage || !canPublishReady(game.game_id)"
                         @click="publishReady(game.game_id)"
                       >
-                        Опубликовать (ready)
+                        Опубликовать
                       </button>
                       <button
                         class="btn btn-sm btn-outline-warning"
                         :disabled="editorByGameId[game.game_id].isSaving || !canManage"
                         @click="setDraft(game.game_id)"
                       >
-                        В draft
+                        В черновик
                       </button>
                       <button
                         class="btn btn-sm btn-outline-danger"
@@ -149,7 +149,7 @@
                       v-else-if="publishValidationError(game.game_id)"
                       class="small text-warning-emphasis"
                     >
-                      Для публикации в `ready`: {{ publishValidationError(game.game_id) }}
+                      Для публикации: {{ publishValidationError(game.game_id) }}
                     </div>
                   </div>
                 </td>
@@ -210,6 +210,22 @@ function statusBadgeClass(status: CatalogMetadataStatus): string {
   if (status === 'ready') return 'text-bg-success';
   if (status === 'draft') return 'text-bg-warning';
   return 'text-bg-secondary';
+}
+
+function statusLabel(status: CatalogMetadataStatus): string {
+  const labels: Record<CatalogMetadataStatus, string> = {
+    draft: 'черновик',
+    ready: 'опубликовано',
+    archived: 'архив',
+  };
+  return labels[status];
+}
+
+function difficultyLabel(difficulty: GameDto['difficulty']): string {
+  if (difficulty === 'easy') return 'легкая';
+  if (difficulty === 'medium') return 'средняя';
+  if (difficulty === 'hard') return 'сложная';
+  return '—';
 }
 
 function isExpanded(gameId: string): boolean {

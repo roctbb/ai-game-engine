@@ -19,7 +19,7 @@
         <div class="game-row-main">
           <div class="d-flex gap-2 flex-wrap mb-2">
             <span class="agp-pill agp-pill--neutral">{{ modeLabel(game.mode) }}</span>
-            <span v-if="game.difficulty" class="agp-pill agp-pill--neutral">{{ game.difficulty }}</span>
+            <span v-if="game.difficulty" class="agp-pill agp-pill--neutral">{{ difficultyLabel(game.difficulty) }}</span>
           </div>
           <h2 class="h5 mb-1">{{ game.title }}</h2>
           <p class="small text-muted mb-2">{{ game.description || 'Описание пока не заполнено.' }}</p>
@@ -62,14 +62,24 @@ const errorMessage = ref('');
 const canManageGameSources = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const sortedGames = computed(() =>
   games.value
-    .filter((game) => game.mode !== 'single_task')
+    .filter((game) => isLobbyCatalogGame(game))
     .sort((a, b) => a.title.localeCompare(b.title)),
 );
 
+function isLobbyCatalogGame(game: GameDto): boolean {
+  return game.mode !== 'single_task' && game.catalog_metadata_status === 'ready';
+}
+
 function modeLabel(mode: GameMode): string {
-  if (mode === 'small_match') return 'малое лобби';
-  if (mode === 'massive_lobby') return 'большое лобби';
+  if (mode === 'small_match' || mode === 'massive_lobby') return 'лобби';
   return 'лобби';
+}
+
+function difficultyLabel(difficulty: GameDto['difficulty']): string {
+  if (difficulty === 'easy') return 'легкая';
+  if (difficulty === 'medium') return 'средняя';
+  if (difficulty === 'hard') return 'сложная';
+  return difficulty ?? '';
 }
 
 onMounted(async () => {

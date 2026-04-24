@@ -9,15 +9,14 @@ DELTAS = {
 direction = "right"
 
 
-def can_go(state, action):
-    maze = state["maze"]
-    x = state["position"]["x"] + DELTAS[action][0]
-    y = state["position"]["y"] + DELTAS[action][1]
-    if y < 0 or y >= len(maze):
+def can_go(x, y, maze, action):
+    next_x = x + DELTAS[action][0]
+    next_y = y + DELTAS[action][1]
+    if next_y < 0 or next_y >= len(maze):
         return False
-    if x < 0 or x >= len(maze[y]):
+    if next_x < 0 or next_x >= len(maze[next_y]):
         return False
-    return maze[y][x] != -1
+    return maze[next_y][next_x] != -1
 
 
 def turn_right(action):
@@ -32,7 +31,7 @@ def turn_back(action):
     return ORDER[(ORDER.index(action) + 2) % len(ORDER)]
 
 
-def make_move(state):
+def make_move(x, y, maze):
     global direction
 
     for candidate in (
@@ -41,7 +40,7 @@ def make_move(state):
         turn_left(direction),
         turn_back(direction),
     ):
-        if can_go(state, candidate):
+        if can_go(x, y, maze, candidate):
             direction = candidate
             return candidate
 

@@ -2,9 +2,9 @@
   <section class="agp-grid">
     <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <h1 class="h3 mb-1">Статус системы</h1>
+        <h1 class="h3 mb-1">{{ pageTitle }}</h1>
         <p class="text-muted mb-0">
-          Источники игр, ручной sync и диагностика последней сборки.
+          {{ pageSubtitle }}
         </p>
       </div>
       <div class="d-flex gap-2 align-items-center">
@@ -39,10 +39,10 @@
     </article>
 
     <article class="agp-card p-3">
-      <h2 class="h6">Новый git source</h2>
+      <h2 class="h6">Добавить игру из Git</h2>
       <div class="row g-2 align-items-end">
         <div class="col-12 col-lg-7">
-          <label class="form-label small">repo_url</label>
+          <label class="form-label small">Репозиторий</label>
           <input v-model.trim="repoUrl" class="form-control mono" placeholder="https://github.com/org/repo" />
         </div>
         <div class="col-6 col-lg-2">
@@ -55,7 +55,7 @@
             :disabled="!canManageSources || isCreating || !repoUrl || !defaultBranch"
             @click="createSource"
           >
-            {{ isCreating ? 'Создание...' : 'Добавить source' }}
+            {{ isCreating ? 'Создание...' : 'Добавить' }}
           </button>
         </div>
       </div>
@@ -67,7 +67,7 @@
 
     <div class="agp-grid agp-grid--2">
       <article class="agp-card p-3">
-        <h2 class="h6">Источники</h2>
+        <h2 class="h6">Источники игр</h2>
         <div v-if="isLoading" class="text-muted small">Загрузка...</div>
         <table v-else class="table align-middle mb-0">
           <thead>
@@ -339,6 +339,12 @@ const workerStatusOptions: WorkerStatus[] = ['online', 'offline', 'draining', 'd
 
 const canManageSources = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const canManageWorkers = computed(() => sessionStore.role === 'admin');
+const pageTitle = computed(() => (canManageWorkers.value ? 'Статус системы' : 'Источники игр'));
+const pageSubtitle = computed(() =>
+  canManageWorkers.value
+    ? 'Источники игр, ручной sync и диагностика worker-нод.'
+    : 'Подключение и обновление игр из Git-репозиториев.'
+);
 const selectedSource = computed(
   () => sources.value.find((source) => source.source_id === selectedSourceId.value) ?? null
 );

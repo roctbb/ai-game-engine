@@ -111,10 +111,14 @@ const form = reactive({
 
 const lobbyGames = computed(() =>
   games.value
-    .filter((game) => game.mode !== 'single_task')
+    .filter((game) => isLobbyCatalogGame(game))
     .slice()
     .sort((a, b) => a.title.localeCompare(b.title))
 );
+
+function isLobbyCatalogGame(game: GameDto): boolean {
+  return game.mode !== 'single_task' && game.catalog_metadata_status === 'ready';
+}
 
 const canCreate = computed(() => {
   if (!canManage.value || isCreating.value) return false;

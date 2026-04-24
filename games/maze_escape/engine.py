@@ -1,6 +1,7 @@
 import json
 import os
 from collections import deque
+import inspect
 import random
 from typing import Any
 
@@ -63,7 +64,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 
         print_context["tick"] = step
         try:
-            action = move_fn(_build_state(position=position, step=step, maze=maze))
+            action = _call_player_fn(move_fn=move_fn, position=position, step=step, maze=maze)
         except Exception as exc:
             action = None
             error_msg = f"{type(exc).__name__}: {exc}"
@@ -252,6 +253,36 @@ def _build_player_fn(
     if not callable(fn):
         return (lambda _s: "right"), compile_error
     return fn, compile_error
+
+
+def _call_player_fn(
+    *,
+    move_fn: callable,
+    position: tuple[int, int],
+    step: int,
+    maze: dict[str, object],
+) -> object:
+    grid = _maze_grid(maze)
+    try:
+        signature = inspect.signature(move_fn)
+    except (TypeError, ValueError):
+        signature = None
+
+    if signature is not None:
+        positional = [
+            parameter
+            for parameter in signature.parameters.values()
+            if parameter.kind in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)
+            and parameter.default is parameter.empty
+        ]
+        has_variadic = any(
+            parameter.kind == parameter.VAR_POSITIONAL
+            for parameter in signature.parameters.values()
+        )
+        if has_variadic or len(positional) >= 3:
+            return move_fn(position[0], position[1], grid)
+
+    return move_fn(_build_state(position=position, step=step, maze=maze))
 
 
 def _make_bot_print(

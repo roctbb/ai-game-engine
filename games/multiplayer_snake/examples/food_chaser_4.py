@@ -1,0 +1,18 @@
+def make_move(x, y, board):
+    food = None
+    for row_y, row in enumerate(board):
+        for col_x, cell in enumerate(row):
+            if cell == 1:
+                food = (col_x, row_y)
+                break
+        if food is not None:
+            break
+
+    moves = [("up", 0, -1), ("left", -1, 0), ("down", 0, 1), ("right", 1, 0)]
+    if food is not None:
+        moves.sort(key=lambda move: abs(x + move[1] - food[0]) + abs(y + move[2] - food[1]))
+    for action, dx, dy in moves:
+        nx, ny = x + dx, y + dy
+        if 0 <= ny < len(board) and 0 <= nx < len(board[ny]) and board[ny][nx] != -1:
+            return action
+    return "up"

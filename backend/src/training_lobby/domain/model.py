@@ -89,10 +89,8 @@ class Lobby:
     def leave_team(self, team_id: str) -> None:
         if team_id not in self.teams:
             raise NotFoundError("Команда не состоит в лобби")
-        if self.status == LobbyStatus.PAUSED or (
-            self.kind == LobbyKind.COMPETITION and self.status == LobbyStatus.RUNNING
-        ):
-            raise InvariantViolationError("Во время соревнования или блокировки лобби выход запрещен")
+        if self.kind == LobbyKind.COMPETITION and self.status == LobbyStatus.RUNNING:
+            raise InvariantViolationError("Во время соревнования выход запрещен")
         self.teams.pop(team_id)
 
     def mark_ready(self, team_id: str, ready: bool, blocker_reason: str | None = None) -> None:
