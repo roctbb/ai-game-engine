@@ -367,6 +367,30 @@ pre,
   border-right: 1px solid rgba(135, 226, 255, 0.2);
 }
 
+.agp-column-size-control {
+  min-width: 9.8rem;
+  display: grid;
+  grid-template-columns: auto minmax(5.5rem, 1fr) 2.8rem;
+  align-items: center;
+  gap: 0.38rem;
+  border: 1px solid rgba(135, 226, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.075);
+  color: #cfe6f5;
+  padding: 0.28rem 0.55rem;
+}
+
+.agp-column-size-control input {
+  width: 100%;
+  accent-color: #43dcca;
+}
+
+.agp-column-size-control .mono {
+  color: #b7f4ff;
+  font-size: 0.74rem;
+  text-align: right;
+}
+
 .agp-run-status {
   min-width: auto;
   border: 1px solid rgba(135, 226, 255, 0.24);
@@ -673,6 +697,10 @@ pre,
   min-height: 0;
 }
 
+.agp-task-workspace .agp-viewer-card .agp-viewer-frame iframe {
+  pointer-events: none;
+}
+
 .agp-viewer-card {
   position: relative;
   display: grid;
@@ -724,6 +752,7 @@ pre,
 .agp-viewer-fullscreen {
   top: 0.55rem;
   right: 0.55rem;
+  z-index: 30;
   width: 2rem;
   height: 2rem;
   display: grid;
@@ -731,6 +760,8 @@ pre,
   padding: 0;
   font-size: 1rem;
   font-weight: 900;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .agp-viewer-overlay--message {
@@ -1236,6 +1267,11 @@ pre,
     padding-right: 0;
   }
 
+  .agp-column-size-control {
+    order: 3;
+    min-width: min(18rem, 100%);
+  }
+
   .agp-code-card,
   .agp-code-card .agp-code-editor :is(.cm-editor) {
     min-height: 22rem !important;
@@ -1253,6 +1289,10 @@ pre,
   }
 
   .agp-main-splitter {
+    display: none;
+  }
+
+  .agp-column-size-control {
     display: none;
   }
 

@@ -110,6 +110,7 @@ export interface SlotStateDto {
 export interface TeamWorkspaceDto {
   team_id: string;
   game_id: string;
+  captain_user_id: string;
   version_id: string;
   slot_states: SlotStateDto[];
 }

@@ -32,5 +32,6 @@ class SlotStateResponse(BaseModel):
 class TeamWorkspaceResponse(BaseModel):
     team_id: str
     game_id: str
+    captain_user_id: str
     version_id: str
     slot_states: list[SlotStateResponse]

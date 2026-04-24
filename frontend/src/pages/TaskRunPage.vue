@@ -103,6 +103,23 @@
             ≡
           </button>
         </div>
+        <label
+          v-if="viewMode === 'split'"
+          class="agp-column-size-control"
+          title="Размер колонок"
+          aria-label="Размер колонок"
+        >
+          <span aria-hidden="true">◧</span>
+          <input
+            v-model.number="splitRatio"
+            type="range"
+            min="32"
+            max="70"
+            step="1"
+            aria-label="Ширина просмотра"
+          />
+          <span class="mono">{{ splitRatio }}%</span>
+        </label>
         <div class="agp-run-status">
           <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
           <span class="small text-muted">Запуск</span>
@@ -172,10 +189,11 @@
             {{ runStatusLabel }}
           </div>
           <button
+            type="button"
             class="agp-viewer-overlay agp-viewer-fullscreen"
             :title="isViewerFullscreen ? 'Свернуть' : 'Во весь экран'"
             :aria-label="isViewerFullscreen ? 'Свернуть' : 'Во весь экран'"
-            @click="toggleViewerFullscreen"
+            @click.stop="isViewerFullscreen ? closeViewerFullscreen() : openViewerFullscreen()"
           >
             {{ isViewerFullscreen ? '×' : '⛶' }}
           </button>
@@ -298,10 +316,19 @@
             <div
               v-for="entry in leaderboard.entries.slice(0, 8)"
               :key="`${entry.user_id}-${entry.place}`"
-              class="agp-cockpit-row d-flex justify-content-between"
+              class="agp-cockpit-row d-flex justify-content-between align-items-center gap-2"
             >
               <span class="mono small">#{{ entry.place }} {{ entry.user_id }}</span>
-              <span class="mono small">{{ entry.best_score ?? (entry.solved ? 'решено' : '—') }}</span>
+              <span class="d-flex align-items-center gap-2">
+                <span class="mono small">{{ entry.best_score ?? (entry.solved ? 'решено' : '—') }}</span>
+                <RouterLink
+                  v-if="canInspectLeaderboardCode && teamIdForLeaderboardEntry(entry)"
+                  class="small"
+                  :to="`/workspace/${teamIdForLeaderboardEntry(entry)}`"
+                >
+                  Код
+                </RouterLink>
+              </span>
             </div>
           </div>
           <div v-else class="small text-muted">Лидерборд пока пуст.</div>
@@ -351,9 +378,12 @@ import {
   type GameTemplatesDto,
   type ReplayDto,
   type RunDto,
+  type SingleTaskLeaderboardEntryDto,
   type SingleTaskLeaderboardDto,
+  type TeamDto,
   type TeamWorkspaceDto,
 } from '../lib/api';
+import { loadTeamMapping, saveTeamMapping } from '../lib/teamMapping';
 import { useSessionStore } from '../stores/session';
 
 interface ReplayFrameView {
@@ -372,6 +402,7 @@ const VIEW_MODE_STORAGE_KEY = 'agp_task_workspace_view_mode';
 const game = ref<GameDto | null>(null);
 const templates = ref<GameTemplatesDto | null>(null);
 const workspace = ref<TeamWorkspaceDto | null>(null);
+const teamsByGame = ref<TeamDto[]>([]);
 const teamId = ref('');
 const selectedSlotKey = ref('');
 const editorCode = ref('');
@@ -456,6 +487,7 @@ const currentScore = computed(() => attemptScoreValue(currentRun.value));
 const myLeaderboardEntry = computed(() =>
   leaderboard.value?.entries.find((entry) => entry.user_id === sessionStore.nickname) ?? null
 );
+const canInspectLeaderboardCode = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const competitionButtonLabel = computed(() => {
   const place = myLeaderboardEntry.value?.place;
   return typeof place === 'number' ? `Лидерборд #${place}` : 'Лидерборд';
@@ -508,26 +540,6 @@ function sanitizeForPostMessage(value: unknown): unknown {
   }
 }
 
-function loadTeamMapping(gameId: string): string {
-  try {
-    const parsed = JSON.parse(localStorage.getItem('agp_team_by_game') ?? '{}') as Record<string, string>;
-    return parsed[gameId] ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function saveTeamMapping(gameId: string, mappedTeamId: string): void {
-  let parsed: Record<string, string> = {};
-  try {
-    parsed = JSON.parse(localStorage.getItem('agp_team_by_game') ?? '{}') as Record<string, string>;
-  } catch {
-    parsed = {};
-  }
-  parsed[gameId] = mappedTeamId;
-  localStorage.setItem('agp_team_by_game', JSON.stringify(parsed));
-}
-
 function toggleCompetitionPanel(): void {
   conditionPanelOpen.value = false;
   competitionPanelOpen.value = !competitionPanelOpen.value;
@@ -554,8 +566,8 @@ function closeSidePanels(): void {
   closeConditionPanel();
 }
 
-function toggleViewerFullscreen(): void {
-  isViewerFullscreen.value = !isViewerFullscreen.value;
+function openViewerFullscreen(): void {
+  isViewerFullscreen.value = true;
 }
 
 function closeViewerFullscreen(): void {
@@ -675,13 +687,16 @@ function stopSplitResize(): void {
 }
 
 async function ensurePersonalTeam(gameId: string): Promise<string> {
-  const mapped = loadTeamMapping(gameId);
-  if (mapped) return mapped;
-
   const teams = await listTeamsByGame(gameId);
+  teamsByGame.value = teams;
+  const mapped = loadTeamMapping(gameId, sessionStore.nickname);
+  if (mapped && teams.some((team) => team.team_id === mapped && team.captain_user_id === sessionStore.nickname)) {
+    return mapped;
+  }
+
   const existing = teams.find((team) => team.captain_user_id === sessionStore.nickname);
   if (existing) {
-    saveTeamMapping(gameId, existing.team_id);
+    saveTeamMapping(gameId, sessionStore.nickname, existing.team_id);
     return existing.team_id;
   }
 
@@ -690,8 +705,13 @@ async function ensurePersonalTeam(gameId: string): Promise<string> {
     name: `${game.value?.title ?? 'Task'} / ${sessionStore.nickname}`,
     captain_user_id: sessionStore.nickname,
   });
-  saveTeamMapping(gameId, created.team_id);
+  teamsByGame.value = [...teams, created];
+  saveTeamMapping(gameId, sessionStore.nickname, created.team_id);
   return created.team_id;
+}
+
+function teamIdForLeaderboardEntry(entry: SingleTaskLeaderboardEntryDto): string {
+  return teamsByGame.value.find((team) => team.captain_user_id === entry.user_id)?.team_id ?? '';
 }
 
 function syncEditorFromWorkspace(payload: TeamWorkspaceDto): void {

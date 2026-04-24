@@ -36,6 +36,9 @@ def test_workspace_endpoint_returns_slot_code_and_required_flag(client) -> None:
     workspace = client.get(f"/api/v1/teams/{team['team_id']}/workspace")
     assert workspace.status_code == 200
     payload = workspace.json()
+    assert payload["team_id"] == team["team_id"]
+    assert payload["game_id"] == team["game_id"]
+    assert payload["captain_user_id"] == "captain-workspace"
 
     required_slot = next(item for item in payload["slot_states"] if item["slot_key"] == "agent")
     assert required_slot["required"] is True

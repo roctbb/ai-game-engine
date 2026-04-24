@@ -1,15 +1,76 @@
 <template>
-  <section class="agp-grid agp-watch-page">
-    <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-      <div>
-        <h1 class="h3 mb-1">Просмотр матча</h1>
-        <p class="text-muted mb-0">
-          Основной экран для просмотра визуализации запуска. Технические данные спрятаны ниже.
-        </p>
+  <section class="agp-grid agp-task-workspace agp-watch-page">
+    <header class="agp-task-header">
+      <div class="agp-task-header-main">
+        <RouterLink to="/lobbies" class="agp-back-link" title="К лобби" aria-label="К лобби">←</RouterLink>
+        <h1>{{ watchContext?.game_slug || 'Просмотр запуска' }}</h1>
       </div>
-      <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-outline-secondary" :disabled="!canRestartRenderer" @click="restartRenderer">
-          Перезапустить renderer
+
+      <div v-if="!isLoading" class="agp-task-header-player">
+        <button
+          class="agp-icon-button agp-icon-button--replay"
+          :disabled="!canPlayReplay"
+          :title="replayIsPlaying ? 'Пауза' : 'Воспроизвести'"
+          aria-label="Воспроизвести replay"
+          @click="toggleReplayPlay"
+        >
+          {{ replayIsPlaying ? '❚❚' : '▶' }}
+        </button>
+        <button
+          class="agp-icon-button agp-icon-button--ghost"
+          :disabled="!canStepBackward"
+          title="Предыдущий кадр"
+          aria-label="Предыдущий кадр"
+          @click="stepReplay(-1)"
+        >
+          ‹
+        </button>
+        <button
+          class="agp-icon-button agp-icon-button--ghost"
+          :disabled="!canStepForward"
+          title="Следующий кадр"
+          aria-label="Следующий кадр"
+          @click="stepReplay(1)"
+        >
+          ›
+        </button>
+        <span class="small text-muted agp-player-frame-label">
+          <template v-if="replayFrames.length">кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</template>
+          <template v-else>replay после завершения</template>
+        </span>
+        <input
+          v-model.number="replayFrameIndex"
+          class="form-range agp-player-range"
+          type="range"
+          min="0"
+          :max="Math.max(0, replayFrames.length - 1)"
+          :disabled="replayFrames.length <= 1"
+        />
+        <label class="agp-speed-control small text-muted">
+          <span class="agp-speed-label">скорость</span>
+          <select v-model.number="replaySpeedMs" class="form-select form-select-sm agp-speed-select">
+            <option :value="2000">медленно</option>
+            <option :value="1000">обычно</option>
+            <option :value="500">быстро</option>
+            <option :value="250">очень быстро</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="agp-task-header-actions">
+        <div class="agp-run-status">
+          <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
+          <span class="small text-muted">Запуск</span>
+          <strong>{{ runStatusLabel }}</strong>
+        </div>
+        <button
+          class="agp-icon-button agp-icon-button--restart"
+          :disabled="!canRestartRenderer"
+          title="Перезапустить renderer"
+          aria-label="Перезапустить renderer"
+          @click="restartRenderer"
+        >
+          ↻
         </button>
       </div>
     </header>
@@ -18,22 +79,16 @@
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="watchContext && run">
-      <div class="agp-watch-layout">
-        <article class="agp-card p-3 agp-watch-viewer-card">
-          <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
-            <div>
-              <h2 class="h5 mb-1">{{ watchContext.game_slug }}</h2>
-              <div class="text-muted small">
-                run <span class="mono">{{ shortRunId }}</span>
-              </div>
-            </div>
-            <div class="d-flex gap-2 flex-wrap justify-content-end">
-              <span class="agp-pill" :class="runStatusToneClass">{{ runStatusLabel }}</span>
-              <span class="agp-pill agp-pill--neutral">{{ runKindLabel }}</span>
-              <span class="agp-pill" :class="rendererStatusToneClass">{{ rendererStatusLabel }}</span>
-            </div>
+      <div class="agp-main-columns agp-watch-columns">
+        <article class="agp-card p-3 agp-viewer-card">
+          <div class="agp-viewer-overlay agp-viewer-overlay--status">
+            <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
+            {{ runStatusLabel }}
           </div>
-          <div v-if="watchContext.renderer_url" class="agp-watch-frame">
+          <div class="agp-viewer-overlay agp-viewer-overlay--message agp-watch-renderer-state">
+            {{ rendererStatusLabel }}
+          </div>
+          <div v-if="watchContext.renderer_url" class="agp-viewer-frame">
             <iframe
               ref="rendererFrameRef"
               :key="rendererKey"
@@ -42,13 +97,18 @@
               sandbox="allow-scripts allow-same-origin"
               @load="onRendererLoad"
             ></iframe>
-            <div v-if="!rendererReady" class="agp-watch-frame-hint">
-              Renderer загружается. Если это состояние висит долго, iframe не прислал сигнал ready.
-            </div>
           </div>
           <div v-else class="agp-card-soft p-3 text-muted small">
             Для этой игры renderer не настроен. Доступен только JSON-вид результата.
           </div>
+          <details v-if="currentReplayFrame" class="agp-frame-data-popover">
+            <summary class="agp-details-summary">Данные кадра</summary>
+            <pre class="mono small mb-0 mt-2">{{ replayFrameJson }}</pre>
+          </details>
+          <details v-else-if="run.result_payload" class="agp-frame-data-popover">
+            <summary class="agp-details-summary">Данные результата</summary>
+            <pre class="mono small mb-0 mt-2">{{ resultPayloadJson }}</pre>
+          </details>
         </article>
 
         <aside class="agp-card p-3 agp-watch-side-card">
@@ -60,6 +120,10 @@
           <div class="agp-watch-stat">
             <span class="text-muted small">Renderer</span>
             <strong>{{ rendererStatusLabel }}</strong>
+          </div>
+          <div class="agp-watch-stat">
+            <span class="text-muted small">Тип</span>
+            <strong>{{ runKindLabel }}</strong>
           </div>
           <div class="agp-watch-stat">
             <span class="text-muted small">Live updates</span>
@@ -106,14 +170,10 @@
             tick=<span class="mono">{{ replayFrameTick }}</span>,
             phase=<span class="mono">{{ replayFramePhase }}</span>
           </div>
-        </aside>
-      </div>
 
-      <article class="agp-card p-3">
-        <details>
-          <summary class="fw-semibold">Технические детали</summary>
-          <div class="agp-grid agp-grid--2 mt-3">
-            <section class="agp-card-soft p-3">
+          <details class="mt-3">
+            <summary class="agp-details-summary">Технические детали</summary>
+            <section class="agp-card-soft p-3 mt-3">
               <h2 class="h6">Run metadata</h2>
               <table class="table table-sm align-middle mb-0">
                 <tbody>
@@ -157,7 +217,7 @@
               </table>
             </section>
 
-            <section class="agp-card-soft p-3">
+            <section class="agp-card-soft p-3 mt-3">
               <h2 class="h6">Renderer events</h2>
               <div v-if="rendererLogs.length === 0" class="text-muted small">События renderer пока не поступали.</div>
               <ul v-else class="list-group list-group-flush">
@@ -176,16 +236,15 @@
                 </li>
               </ul>
             </section>
-          </div>
 
-          <details class="mt-3">
-            <summary class="small fw-semibold">Result payload</summary>
-            <pre class="mono small mb-0 mt-2">{{ resultPayloadJson }}</pre>
-          </details>
+            <details class="mt-3">
+              <summary class="small fw-semibold">Result payload</summary>
+              <pre class="mono small mb-0 mt-2">{{ resultPayloadJson }}</pre>
+            </details>
 
-          <details class="mt-3">
-            <summary class="small fw-semibold">Replay artifact</summary>
-            <div v-if="replay" class="mt-2">
+            <details class="mt-3">
+              <summary class="small fw-semibold">Replay artifact</summary>
+              <div v-if="replay" class="mt-2">
               <div class="small mb-2">
                 replay_id: <span class="mono">{{ replay.replay_id }}</span>
               </div>
@@ -206,20 +265,21 @@
                 <pre class="mono small mb-0">{{ replayEventsJson }}</pre>
               </details>
               <pre class="mono small mb-0">{{ replaySummaryJson }}</pre>
-            </div>
-            <div v-else class="text-muted small mt-2">
-              Replay пока недоступен.
-            </div>
+              </div>
+              <div v-else class="text-muted small mt-2">
+                Replay пока недоступен.
+              </div>
+            </details>
           </details>
-        </details>
-      </article>
+        </aside>
+      </div>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { RouterLink, useRoute } from 'vue-router';
 
 import RunReasonBadge from '../components/RunReasonBadge.vue';
 import {
@@ -273,11 +333,6 @@ const canRestartRenderer = computed(() => Boolean(watchContext.value?.renderer_u
 const resultPayloadJson = computed(() => JSON.stringify(run.value?.result_payload ?? {}, null, 2));
 const replaySummaryJson = computed(() => JSON.stringify(replay.value?.summary ?? {}, null, 2));
 const replayEventsJson = computed(() => JSON.stringify(replay.value?.events ?? [], null, 2));
-const shortRunId = computed(() => {
-  const runId = run.value?.run_id ?? '';
-  if (runId.length <= 18) return runId;
-  return `${runId.slice(0, 10)}...${runId.slice(-6)}`;
-});
 const runStatusLabel = computed(() => {
   const status = run.value?.status ?? 'created';
   const labels: Record<RunDto['status'], string> = {
@@ -291,12 +346,12 @@ const runStatusLabel = computed(() => {
   };
   return labels[status];
 });
-const runStatusToneClass = computed(() => {
+const runStatusTone = computed<'idle' | 'active' | 'success' | 'danger'>(() => {
   const status = run.value?.status;
-  if (status === 'finished') return 'agp-pill--primary';
-  if (status === 'failed' || status === 'timeout' || status === 'canceled') return 'agp-pill--danger';
-  if (status === 'queued' || status === 'running') return 'agp-pill--warning';
-  return 'agp-pill--neutral';
+  if (!status || status === 'created') return 'idle';
+  if (status === 'queued' || status === 'running') return 'active';
+  if (status === 'finished') return 'success';
+  return 'danger';
 });
 const runKindLabel = computed(() => {
   const kind = run.value?.run_kind;
@@ -309,11 +364,6 @@ const rendererStatusLabel = computed(() => {
   if (!watchContext.value?.renderer_url) return 'без renderer';
   return rendererReady.value ? 'renderer готов' : 'renderer загружается';
 });
-const rendererStatusToneClass = computed(() => {
-  if (!watchContext.value?.renderer_url) return 'agp-pill--neutral';
-  return rendererReady.value ? 'agp-pill--primary' : 'agp-pill--warning';
-});
-
 const replayFrames = computed<ReplayFrameView[]>(() => {
   const normalized: ReplayFrameView[] = [];
   const rawFrames = replay.value?.frames;
@@ -728,41 +778,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.agp-watch-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.34fr);
-  gap: 1rem;
-  align-items: start;
+.agp-watch-columns {
+  grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 0.8fr);
 }
 
-.agp-watch-frame {
-  position: relative;
-  width: 100%;
-  height: clamp(22rem, 62vh, 44rem);
-  border: 1px solid var(--agp-border);
-  border-radius: 0.5rem;
-  overflow: hidden;
-  background: #fff;
+.agp-watch-page .agp-viewer-card .agp-viewer-frame {
+  height: clamp(22rem, 64vh, 46rem);
 }
 
-.agp-watch-frame iframe {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-}
-
-.agp-watch-frame-hint {
-  position: absolute;
-  left: 1rem;
-  right: 1rem;
-  bottom: 1rem;
-  padding: 0.65rem 0.8rem;
-  border-radius: 0.5rem;
-  background: rgba(255, 250, 235, 0.94);
-  border: 1px solid #f3cf8a;
-  color: #7a4308;
-  font-size: 0.82rem;
+.agp-watch-renderer-state {
+  left: auto;
+  right: 0.75rem;
+  max-width: min(26rem, calc(100% - 1.5rem));
 }
 
 .agp-watch-side-card {
@@ -782,7 +809,7 @@ onUnmounted(() => {
 }
 
 @media (max-width: 992px) {
-  .agp-watch-layout {
+  .agp-watch-columns {
     grid-template-columns: 1fr;
   }
 
@@ -790,7 +817,7 @@ onUnmounted(() => {
     position: static;
   }
 
-  .agp-watch-frame {
+  .agp-watch-page .agp-viewer-card .agp-viewer-frame {
     height: 22rem;
   }
 }

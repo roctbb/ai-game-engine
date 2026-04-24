@@ -235,6 +235,7 @@ import {
   type TeamWorkspaceDto,
   type TeamDto,
 } from '../lib/api';
+import { loadTeamMapping, saveTeamMapping } from '../lib/teamMapping';
 import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
@@ -339,32 +340,24 @@ function runStatusText(status: RunDto['status']): string {
   return labels[status];
 }
 
-function readTeamByGameMap(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem('agp_team_by_game') ?? '{}') as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-function writeTeamByGameMap(map: Record<string, string>): void {
-  localStorage.setItem('agp_team_by_game', JSON.stringify(map));
-}
-
 function persistSelectedTeamForGame(gameId: string, teamId: string): void {
-  const map = readTeamByGameMap();
-  map[gameId] = teamId;
-  writeTeamByGameMap(map);
+  saveTeamMapping(gameId, sessionStore.nickname, teamId);
 }
 
 function syncSelectedTeamFromStorage(): void {
   if (!lobby.value) return;
-  const mapped = readTeamByGameMap()[lobby.value.game_id] ?? '';
-  if (mapped && teamsByGame.value.some((team) => team.team_id === mapped)) {
+  const mapped = loadTeamMapping(lobby.value.game_id, sessionStore.nickname);
+  if (mapped && teamsByGame.value.some((team) => team.team_id === mapped && team.captain_user_id === sessionStore.nickname)) {
     selectedTeamId.value = mapped;
     return;
   }
-  if (teamsByGame.value[0]) {
+  const ownTeam = teamsByGame.value.find((team) => team.captain_user_id === sessionStore.nickname);
+  if (ownTeam) {
+    selectedTeamId.value = ownTeam.team_id;
+    persistSelectedTeamForGame(lobby.value.game_id, ownTeam.team_id);
+    return;
+  }
+  if (canManageLobbyLifecycle.value && teamsByGame.value[0]) {
     selectedTeamId.value = teamsByGame.value[0].team_id;
     return;
   }

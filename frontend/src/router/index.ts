@@ -6,6 +6,7 @@ export const router = createRouter({
     { path: '/', redirect: '/tasks' },
     { path: '/tasks', name: 'tasks', component: () => import('../pages/TasksCatalogPage.vue') },
     { path: '/lobbies', name: 'lobbies', component: () => import('../pages/LobbiesPage.vue') },
+    { path: '/lobbies/new', name: 'lobby-create', component: () => import('../pages/LobbyCreatePage.vue') },
     { path: '/competitions', name: 'competitions', component: () => import('../pages/CompetitionsPage.vue') },
     { path: '/workspace/:teamId', name: 'workspace', component: () => import('../pages/TeamWorkspacePage.vue') },
     { path: '/tasks/:gameId/run', name: 'task-run', component: () => import('../pages/TaskRunPage.vue') },

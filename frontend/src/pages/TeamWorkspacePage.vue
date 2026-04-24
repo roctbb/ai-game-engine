@@ -3,7 +3,12 @@
     <header>
       <h1 class="h3 mb-1">Командный Workspace</h1>
       <p class="text-muted mb-0">
-        Каноническая точка редактирования: сохранение кода обновляет `TeamSlotCode`, а запуски используют snapshot.
+        <template v-if="canEditWorkspace">
+          Каноническая точка редактирования: сохранение кода обновляет `TeamSlotCode`, а запуски используют snapshot.
+        </template>
+        <template v-else>
+          Режим просмотра кода команды. Редактировать код может только капитан.
+        </template>
       </p>
     </header>
 
@@ -37,7 +42,7 @@
       <article class="agp-card p-3">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h2 class="h6 mb-0">Редактор слота `{{ selectedSlotKey || '—' }}`</h2>
-          <div class="d-flex gap-2">
+          <div v-if="canEditWorkspace" class="d-flex gap-2">
             <button class="btn btn-sm btn-outline-secondary" :disabled="!selectedSlotKey" @click="resetSelectedSlotCode">
               Сбросить
             </button>
@@ -73,20 +78,26 @@
               {{ isSaving ? 'Сохранение...' : 'Сохранить' }}
             </button>
           </div>
+          <span v-else class="badge text-bg-light">только просмотр</span>
         </div>
         <CodeEditor
           v-model="editorCode"
-          :readonly="!selectedSlotKey"
+          :readonly="!selectedSlotKey || !canEditWorkspace"
           language="python"
         />
         <div class="small text-muted mt-2">
           Подсветка синтаксиса Python доступна в редакторе.
         </div>
-        <div class="small text-muted mt-1">
+        <div v-if="canEditWorkspace" class="small text-muted mt-1">
           Кнопки `Шаблон` и `Демо` подставляют starter-код или готовую демо-стратегию из `/games/{gameId}/templates`.
         </div>
         <div class="small text-muted mt-1">
-          Snapshot фиксируется при `run: created -> queued`. Изменения здесь попадут только в новые запуски.
+          <template v-if="canEditWorkspace">
+            Snapshot фиксируется при `run: created -> queued`. Изменения здесь попадут только в новые запуски.
+          </template>
+          <template v-else>
+            Это безопасный просмотр текущего кода. Запуски и snapshot'ы не создаются.
+          </template>
         </div>
       </article>
     </div>
@@ -126,6 +137,7 @@ const selectedDemoStrategyId = ref('');
 const selectedSlot = computed(() =>
   workspace.value?.slot_states.find((slot) => slot.slot_key === selectedSlotKey.value) ?? null
 );
+const canEditWorkspace = computed(() => workspace.value?.captain_user_id === sessionStore.nickname);
 const selectedSlotDemoStrategies = computed(() => demoStrategiesBySlot.value[selectedSlotKey.value] ?? []);
 
 async function loadWorkspace(): Promise<void> {

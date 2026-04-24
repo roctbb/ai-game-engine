@@ -6,14 +6,23 @@
           <h1 class="h3 mb-1">Лобби</h1>
           <p class="text-muted mb-0">Только список доступных лобби с фильтрацией по играм.</p>
         </div>
-        <div class="lobbies-filter-wrap">
-          <label class="form-label small mb-1">Игра</label>
-          <select v-model="selectedGameId" class="form-select">
-            <option value="">Все игры</option>
-            <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">
-              {{ game.title }}
-            </option>
-          </select>
+        <div class="lobbies-controls">
+          <div class="lobbies-filter-wrap">
+            <label class="form-label small mb-1">Игра</label>
+            <select v-model="selectedGameId" class="form-select">
+              <option value="">Все игры</option>
+              <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">
+                {{ game.title }}
+              </option>
+            </select>
+          </div>
+          <RouterLink
+            v-if="canManage"
+            class="btn btn-dark lobbies-create-btn"
+            :to="createLobbyRoute"
+          >
+            Создать лобби
+          </RouterLink>
         </div>
       </div>
 
@@ -90,6 +99,7 @@ import {
   type LobbyStatus,
   type StreamEnvelopeDto,
 } from '../lib/api';
+import { loadTeamMapping, saveTeamMapping } from '../lib/teamMapping';
 import { useSessionStore } from '../stores/session';
 
 const router = useRouter();
@@ -104,11 +114,17 @@ const selectedGameId = ref('');
 let lobbiesEventSource: EventSource | null = null;
 let lobbiesPollingHandle: ReturnType<typeof setInterval> | null = null;
 
+const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const lobbyGames = computed(() =>
   games.value
     .filter((game) => game.mode !== 'single_task')
     .slice()
     .sort((a, b) => a.title.localeCompare(b.title))
+);
+const createLobbyRoute = computed(() =>
+  selectedGameId.value
+    ? { name: 'lobby-create', query: { game_id: selectedGameId.value } }
+    : { name: 'lobby-create' }
 );
 const sortedLobbies = computed(() => {
   const weight: Record<LobbyStatus, number> = {
@@ -149,22 +165,12 @@ function gameTitle(gameId: string): string {
   return games.value.find((game) => game.game_id === gameId)?.title ?? gameId;
 }
 
-function teamMap(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem('agp_team_by_game') ?? '{}') as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
 function rememberTeam(gameId: string, teamId: string): void {
-  const map = teamMap();
-  map[gameId] = teamId;
-  localStorage.setItem('agp_team_by_game', JSON.stringify(map));
+  saveTeamMapping(gameId, sessionStore.nickname, teamId);
 }
 
 function knownTeamForLobby(lobby: LobbyDto): string {
-  return teamMap()[lobby.game_id] ?? '';
+  return loadTeamMapping(lobby.game_id, sessionStore.nickname);
 }
 
 function canEnterLobby(lobby: LobbyDto): boolean {
@@ -182,9 +188,11 @@ function enterButtonText(lobby: LobbyDto): string {
 
 async function ensureTeamForLobby(lobby: LobbyDto): Promise<string> {
   const mapped = knownTeamForLobby(lobby);
-  if (mapped) return mapped;
-
   const teams = await listTeamsByGame(lobby.game_id);
+  if (mapped && teams.some((team) => team.team_id === mapped && team.captain_user_id === sessionStore.nickname)) {
+    return mapped;
+  }
+
   const existing = teams.find((team) => team.captain_user_id === sessionStore.nickname);
   if (existing) {
     rememberTeam(lobby.game_id, existing.team_id);
@@ -323,6 +331,18 @@ onUnmounted(() => {
   width: min(18rem, 100%);
 }
 
+.lobbies-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.lobbies-create-btn {
+  white-space: nowrap;
+}
+
 .lobby-card-simple {
   gap: 0.6rem;
 }
@@ -336,6 +356,10 @@ onUnmounted(() => {
 }
 
 @media (max-width: 920px) {
+  .lobbies-controls {
+    justify-content: flex-start;
+  }
+
   .lobby-actions-simple {
     justify-content: flex-start;
   }

@@ -79,6 +79,7 @@ def get_workspace(
     return TeamWorkspaceResponse(
         team_id=workspace.team_id,
         game_id=workspace.game_id,
+        captain_user_id=workspace.captain_user_id,
         version_id=workspace.version_id,
         slot_states=[
             {
