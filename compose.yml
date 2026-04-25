@@ -51,7 +51,7 @@ services:
       SESSION_REPOSITORY_BACKEND: sqlalchemy
       SESSION_REPOSITORY_AUTO_CREATE_TABLES: "true"
       GAMES_ROOT: /app/games
-      INTERNAL_API_TOKEN: dev-internal-token
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
     ports:
       - "8000:8000"
     depends_on:
@@ -103,7 +103,7 @@ services:
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
-      INTERNAL_API_TOKEN: dev-internal-token
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       WORKER_ID: worker-compose-1
       HOSTNAME: worker-compose-1
       WORKER_LABELS: '{"region":"local","pool":"compose"}'
@@ -149,7 +149,7 @@ services:
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
-      INTERNAL_API_TOKEN: dev-internal-token
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       WORKER_ID: worker-compose-2
       HOSTNAME: worker-compose-2
       WORKER_LABELS: '{"region":"local","pool":"compose"}'
@@ -195,7 +195,7 @@ services:
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
-      INTERNAL_API_TOKEN: dev-internal-token
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       WORKER_ID: worker-compose-3
       HOSTNAME: worker-compose-3
       WORKER_LABELS: '{"region":"local","pool":"compose"}'
@@ -241,7 +241,7 @@ services:
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
-      INTERNAL_API_TOKEN: dev-internal-token
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       WORKER_ID: worker-compose-4
       HOSTNAME: worker-compose-4
       WORKER_LABELS: '{"region":"local","pool":"compose"}'
@@ -286,7 +286,7 @@ services:
     container_name: ai-game-builder-v2
     environment:
       BACKEND_API_URL: http://backend-api:8000/api/v1
-      INTERNAL_API_TOKEN: dev-internal-token
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
     ports:
       - "8030:8030"
     depends_on:
