@@ -329,7 +329,7 @@
             :src="`/runs/${displayedGameRunId}/watch?embed=1&autoplay=1&speed_ms=500`"
             title="Текущая игра"
           ></iframe>
-          <div v-if="isWaitingForReplay || replayFinishedInViewer" class="lobby-game-finished-overlay">
+          <div v-if="replayFinishedInViewer" class="lobby-game-finished-overlay">
             <div class="lobby-game-finished-card">
               <strong>Игра завершена</strong>
               <span>Победитель: {{ currentGameLeaderLabel }}</span>
