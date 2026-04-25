@@ -152,6 +152,16 @@ class GameCatalogService:
     def get_game_by_slug(self, slug: str) -> Game | None:
         return self._repository.get_by_slug(slug)
 
+    def sync_metadata_from_manifest(self, game_id: str, data: RegisterGameInput) -> Game:
+        game = self._get_game(game_id)
+        game.title = data.title
+        game.description = data.description
+        game.difficulty = data.difficulty
+        game.learning_section = data.learning_section
+        game.topics = data.topics
+        self._repository.save(game)
+        return game
+
     def list_games(self) -> list[Game]:
         return self._repository.list()
 

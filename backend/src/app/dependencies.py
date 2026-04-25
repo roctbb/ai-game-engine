@@ -257,11 +257,13 @@ def _update_existing_game(game_catalog: GameCatalogService, manifest: GameManife
     game = game_catalog.get_game_by_slug(manifest.id)
     if game is None:
         return
+    reg = manifest.to_register_input()
+    game_catalog.sync_metadata_from_manifest(game.game_id, reg)
+
     active = game.versions.get(game.active_version_id or "")
     if active and active.semver == manifest.semver:
         return
     try:
-        reg = manifest.to_register_input()
         version = game_catalog.add_game_version(
             game_id=game.game_id,
             semver=manifest.semver,

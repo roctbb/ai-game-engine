@@ -1,5 +1,5 @@
 id: multiplayer_snake_v1
-title: Змейка
+title: Змейка мультиплеер
 game_mode: small_match
 semver: 1.2.0
 code_api_mode: script_based
