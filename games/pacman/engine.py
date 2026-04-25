@@ -127,6 +127,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "invalid_moves": invalid_moves,
         "alive": alive,
         "won": won,
+        "solved": won,
     }
     if compile_error:
         metrics["compile_error"] = compile_error

@@ -81,6 +81,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     metrics: dict[str, object] = {
         "turns": turns,
         "escaped": escaped,
+        "solved": escaped,
         "alive": alive,
         "water_cells": len(water),
         "walls_total": len(walls) - len(_BORDER_WALLS),

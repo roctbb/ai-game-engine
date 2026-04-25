@@ -1224,7 +1224,7 @@ function isSolvedRun(run: RunDto): boolean {
   if (typeof payload?.status === 'string') {
     return ['success', 'solved', 'passed', 'win', 'won'].includes(payload.status.trim().toLowerCase());
   }
-  for (const key of ['solved', 'success', 'passed', 'win', 'won']) {
+  for (const key of ['solved', 'success', 'passed', 'win', 'won', 'escaped', 'reached_exit', 'reached_goal', 'completed']) {
     if (typeof metrics[key] === 'boolean' && metrics[key]) return true;
   }
   return false;

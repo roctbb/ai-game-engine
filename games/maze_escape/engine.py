@@ -166,6 +166,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "invalid_moves": invalid_moves,
         "reached_exit": reached_exit,
         "optimal_steps": optimal_steps,
+        "solved": reached_exit,
         "steps_over_optimal": steps_over_optimal,
         "speed_ratio": speed_ratio,
         "termination_reason": termination_reason,

@@ -91,6 +91,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "returned_to_base": position == _CHARGER,
         "alive": alive,
         "completed": completed,
+        "solved": completed,
         "invalid_moves": invalid_moves,
         "score": score,
     }

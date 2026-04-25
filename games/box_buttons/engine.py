@@ -78,6 +78,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     metrics: dict[str, object] = {
         "turns": turns,
         "completed": completed,
+        "solved": completed,
         "boxes_on_targets": boxes_on_targets,
         "boxes_total": _BOXES_TOTAL,
         "targets_total": _BOXES_TOTAL,

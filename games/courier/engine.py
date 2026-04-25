@@ -84,6 +84,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "packages_left": len(packages) + (1 if carrying else 0),
         "walls_total": len(walls) - len(_BORDER_WALLS),
         "completed": completed,
+        "solved": completed,
         "invalid_moves": invalid_moves,
         "score": score,
     }

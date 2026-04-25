@@ -83,6 +83,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "length": len(snake),
         "alive": alive,
         "won": won,
+        "solved": won,
         "finish_reason": finish_reason,
         "rocks_total": len(rocks),
         "invalid_moves": invalid_moves,

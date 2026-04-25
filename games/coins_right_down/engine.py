@@ -88,6 +88,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "dead_ends_total": len(_dead_end_cells(walls)),
         "invalid_moves": invalid_moves,
         "reached_goal": reached_goal,
+        "solved": reached_goal,
         "score": score,
     }
     if compile_error:

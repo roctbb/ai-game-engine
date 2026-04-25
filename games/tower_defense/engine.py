@@ -123,6 +123,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "towers_built": towers_built,
         "leaks": leaks,
         "score": score,
+        "solved": base_hp > 0,
     }
     if compile_error:
         metrics["compile_error"] = compile_error

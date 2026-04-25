@@ -69,6 +69,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "turns": turns,
         "invalid_moves": invalid_moves,
         "reached_exit": reached_exit,
+        "solved": reached_exit,
         "score": score,
     }
     if compile_error:

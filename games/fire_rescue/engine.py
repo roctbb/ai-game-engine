@@ -99,6 +99,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "fires_left": len(fires),
         "water": water,
         "completed": completed,
+        "solved": completed,
         "invalid_moves": invalid_moves,
         "score": score,
     }
