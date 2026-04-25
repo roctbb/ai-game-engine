@@ -112,6 +112,7 @@ services:
       DOCKER_BINARY: docker
       DOCKER_IMAGE: python:3.12-slim
       DOCKER_NETWORK_MODE: none
+      MAX_SLOTS: "4"
       AUTO_POLL_ENABLED: "true"
       AUTO_POLL_INTERVAL_SECONDS: "1"
       AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
@@ -121,6 +122,144 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8020:8020"
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
+      scheduler-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8020/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  worker-service-2:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: ai-game-worker-v2-2
+    environment:
+      SCHEDULER_URL: http://scheduler-service:8010
+      BACKEND_API_URL: http://backend-api:8000/api/v1
+      INTERNAL_API_TOKEN: dev-internal-token
+      WORKER_ID: worker-compose-2
+      HOSTNAME: worker-compose-2
+      WORKER_LABELS: '{"region":"local","pool":"compose"}'
+      GAMES_ROOT: /app/games
+      EXECUTION_MODE: docker
+      DOCKER_BINARY: docker
+      DOCKER_IMAGE: python:3.12-slim
+      DOCKER_NETWORK_MODE: none
+      MAX_SLOTS: "4"
+      AUTO_POLL_ENABLED: "true"
+      AUTO_POLL_INTERVAL_SECONDS: "1"
+      AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
+      REQUEST_TIMEOUT_SECONDS: "30"
+      WORKER_REGISTRATION_TTL_SECONDS: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8021:8020"
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
+      scheduler-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8020/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  worker-service-3:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: ai-game-worker-v2-3
+    environment:
+      SCHEDULER_URL: http://scheduler-service:8010
+      BACKEND_API_URL: http://backend-api:8000/api/v1
+      INTERNAL_API_TOKEN: dev-internal-token
+      WORKER_ID: worker-compose-3
+      HOSTNAME: worker-compose-3
+      WORKER_LABELS: '{"region":"local","pool":"compose"}'
+      GAMES_ROOT: /app/games
+      EXECUTION_MODE: docker
+      DOCKER_BINARY: docker
+      DOCKER_IMAGE: python:3.12-slim
+      DOCKER_NETWORK_MODE: none
+      MAX_SLOTS: "4"
+      AUTO_POLL_ENABLED: "true"
+      AUTO_POLL_INTERVAL_SECONDS: "1"
+      AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
+      REQUEST_TIMEOUT_SECONDS: "30"
+      WORKER_REGISTRATION_TTL_SECONDS: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8022:8020"
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
+      scheduler-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8020/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  worker-service-4:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: ai-game-worker-v2-4
+    environment:
+      SCHEDULER_URL: http://scheduler-service:8010
+      BACKEND_API_URL: http://backend-api:8000/api/v1
+      INTERNAL_API_TOKEN: dev-internal-token
+      WORKER_ID: worker-compose-4
+      HOSTNAME: worker-compose-4
+      WORKER_LABELS: '{"region":"local","pool":"compose"}'
+      GAMES_ROOT: /app/games
+      EXECUTION_MODE: docker
+      DOCKER_BINARY: docker
+      DOCKER_IMAGE: python:3.12-slim
+      DOCKER_NETWORK_MODE: none
+      MAX_SLOTS: "4"
+      AUTO_POLL_ENABLED: "true"
+      AUTO_POLL_INTERVAL_SECONDS: "1"
+      AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
+      REQUEST_TIMEOUT_SECONDS: "30"
+      WORKER_REGISTRATION_TTL_SECONDS: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8023:8020"
     depends_on:
       redis:
         condition: service_healthy
