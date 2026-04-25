@@ -1045,6 +1045,8 @@ async function loadReplay(runId: string): Promise<void> {
     sendRendererState();
     if (replayFrames.value.length > 1) {
       startReplayPlayback();
+    } else {
+      maybeShowVictoryCelebration();
     }
   } catch (error) {
     replayError.value = error instanceof Error ? error.message : 'Повтор пока недоступен';
@@ -1192,8 +1194,8 @@ function stopReplayPlayback(options: { completed?: boolean } = {}): void {
 function maybeShowVictoryCelebration(): void {
   const run = currentRun.value;
   if (!run || run.status !== 'finished' || !isSolvedRun(run)) return;
-  if (!replay.value || replay.value.run_id !== run.run_id || replayFrames.value.length <= 1) return;
-  if (replayFrameIndex.value < replayFrames.value.length - 1) return;
+  if (!replay.value || replay.value.run_id !== run.run_id) return;
+  if (replayFrames.value.length > 1 && replayFrameIndex.value < replayFrames.value.length - 1) return;
   if (celebratedRunIds.has(run.run_id)) return;
   celebratedRunIds.add(run.run_id);
   victoryCelebrationVisible.value = true;
