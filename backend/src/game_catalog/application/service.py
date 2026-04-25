@@ -149,6 +149,9 @@ class GameCatalogService:
     def get_game(self, game_id: str) -> Game:
         return self._get_game(game_id)
 
+    def get_game_by_slug(self, slug: str) -> Game | None:
+        return self._repository.get_by_slug(slug)
+
     def list_games(self) -> list[Game]:
         return self._repository.list()
 

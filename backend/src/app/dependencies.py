@@ -38,8 +38,9 @@ from execution.infrastructure.sqlalchemy_repository import (
     SqlAlchemyWorkerRepository,
 )
 from game_catalog.application.service import GameCatalogService
+from game_catalog.domain.model import SlotDefinition
 from game_catalog.infrastructure.in_memory_repository import InMemoryGameRepository
-from game_catalog.infrastructure.manifest_loader import load_game_manifests
+from game_catalog.infrastructure.manifest_loader import GameManifest, load_game_manifests
 from game_catalog.infrastructure.sqlalchemy_repository import SqlAlchemyGameRepository
 from identity.application.service import IdentityService
 from identity.infrastructure.in_memory_repository import InMemorySessionRepository
@@ -249,8 +250,27 @@ def _seed_manifest_games(game_catalog: GameCatalogService) -> None:
         try:
             game_catalog.register_game(manifest.to_register_input())
         except ConflictError:
-            # Persistent repositories may already contain a seeded game from a previous startup.
-            continue
+            _update_existing_game(game_catalog, manifest)
+
+
+def _update_existing_game(game_catalog: GameCatalogService, manifest: GameManifest) -> None:
+    game = game_catalog.get_game_by_slug(manifest.id)
+    if game is None:
+        return
+    active = game.versions.get(game.active_version_id or "")
+    if active and active.semver == manifest.semver:
+        return
+    try:
+        reg = manifest.to_register_input()
+        version = game_catalog.add_game_version(
+            game_id=game.game_id,
+            semver=manifest.semver,
+            required_slots=reg.required_slots,
+            required_worker_labels=dict(reg.required_worker_labels),
+        )
+        game_catalog.activate_game_version(game.game_id, version.version_id)
+    except ConflictError:
+        pass
 
 
 def get_games_root() -> Path:
