@@ -329,7 +329,7 @@
             :src="`/runs/${displayedGameRunId}/watch?embed=1&autoplay=1&speed_ms=500`"
             title="Текущая игра"
           ></iframe>
-          <div v-if="isGameFinishedPhase" class="lobby-game-finished-overlay">
+          <div v-if="isWaitingForReplay || replayFinishedInViewer" class="lobby-game-finished-overlay">
             <div class="lobby-game-finished-card">
               <strong>Игра завершена</strong>
               <span>Победитель: {{ currentGameLeaderLabel }}</span>
@@ -681,7 +681,7 @@ const showPlayAction = computed(() => lobby.value?.my_status !== 'queued' && lob
 const showStopAction = computed(() => lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing');
 const readyStatusLabel = computed(() => {
   if (lobby.value?.my_status === 'playing') return 'Вы играете';
-  if (isGameFinishedPhase.value && lobby.value?.my_status === 'queued') return 'Показ реплея';
+  if (isWaitingForReplay.value) return 'Показ реплея';
   if (lobby.value?.my_status === 'queued') return 'Вы в очереди';
   if (codeLockedByCompetition.value) return 'Код заблокирован';
   if (isDirty.value) return 'Есть изменения';
@@ -693,7 +693,7 @@ const readyStatusHint = computed(() => {
   if (!canUseTrainingQueue.value && activeCompetition.value) return 'Во время соревнования обычная очередь отключена.';
   if (!canUseTrainingQueue.value) return 'Очередь сейчас недоступна.';
   if (lobby.value?.my_status === 'playing') return 'Кнопка “Не готов” остановит участие после текущего состояния.';
-  if (isGameFinishedPhase.value && lobby.value?.my_status === 'queued') return 'Система дожидается окончания реплея перед следующей игрой.';
+  if (isWaitingForReplay.value) return 'Система дожидается окончания реплея перед следующей игрой.';
   if (lobby.value?.my_status === 'queued') return 'Матч начнется автоматически, когда найдутся соперники.';
   if (codeLockedByCompetition.value) return 'Политика соревнования запрещает менять код.';
   if (isDirty.value) return 'Сохраните код, чтобы встать в очередь.';
@@ -855,7 +855,13 @@ const currentGamePhaseLabel = computed(() => {
   }
   return gamePhaseLabel(message.phase, message.status);
 });
-const isGameFinishedPhase = computed(() => {
+const isWaitingForReplay = computed(() => {
+  if (!lobby.value || lobby.value.my_status !== 'queued') return false;
+  if (lobby.value.status !== 'running') return false;
+  // Player is queued but lobby is still running = previous match replay is showing
+  return lobby.value.playing_team_ids.length === 0;
+});
+const replayFinishedInViewer = computed(() => {
   const message = embeddedGameFrame.value;
   if (!message || message.runId !== displayedGameRunId.value) return false;
   if (message.replayFrameCount > 1) return message.replayFrameIndex >= message.replayFrameCount - 1;

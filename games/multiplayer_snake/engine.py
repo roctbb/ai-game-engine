@@ -25,7 +25,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
 
-    role_code, role_team = _resolve_participants(ctx)
+    role_code, role_team, role_name = _resolve_participants(ctx)
     bots = {
         role: _build_fn(role_code.get(role, ""), role, events, print_context)
         for role in _ROLES
@@ -40,7 +40,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     food = _next_food(rng, snakes, alive)
     food_spawned = 1 if food is not None else 0
     turns = 0
-    frames = [_frame(0, "running", snakes, alive, eaten, invalid, food, directions, role_team)]
+    frames = [_frame(0, "running", snakes, alive, eaten, invalid, food, directions, role_team, role_name)]
 
     for turn in range(_MAX_TURNS):
         if sum(1 for v in alive.values() if v) <= 1 or food is None:
@@ -107,7 +107,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 food_spawned += 1 if food is not None else 0
 
         turns = turn + 1
-        frames.append(_frame(turns, "running", snakes, alive, eaten, invalid, food, directions, role_team))
+        frames.append(_frame(turns, "running", snakes, alive, eaten, invalid, food, directions, role_team, role_name))
 
     compile_errors = {role: err for role, (_fn, err) in bots.items() if err}
     role_scores = {
@@ -134,7 +134,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         for role, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": role, "message": message})
 
-    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, food, directions, role_team, role_scores))
+    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, food, directions, role_team, role_name, role_scores))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
     if str(ctx.get("run_kind") or "training_match") == "competition_match":
         payload["placements"] = placements
@@ -145,27 +145,30 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 # Participant resolution: map each role to a player's code and team_id
 # ---------------------------------------------------------------------------
 
-def _resolve_participants(ctx: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
-    """Return (role->code, role->team_id) by reading participants list."""
+def _resolve_participants(ctx: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Return (role->code, role->team_id, role->display_name)."""
     participants = ctx.get("participants")
     if isinstance(participants, list) and len(participants) >= 2:
         role_code: dict[str, str] = {}
         role_team: dict[str, str] = {}
+        role_name: dict[str, str] = {}
         for i, role in enumerate(_ROLES):
             p = participants[i]
             codes = p.get("codes_by_slot") if isinstance(p, dict) else {}
             code = codes.get("player", "") if isinstance(codes, dict) else ""
             role_code[role] = str(code) if code else ""
-            role_team[role] = str(p.get("team_id", f"team-{role}")) if isinstance(p, dict) else f"team-{role}"
-        return role_code, role_team
+            tid = str(p.get("team_id", role)) if isinstance(p, dict) else role
+            role_team[role] = tid
+            name = p.get("display_name") or p.get("captain_user_id") if isinstance(p, dict) else None
+            role_name[role] = str(name) if name else tid
+        return role_code, role_team, role_name
 
-    # Fallback: offline / single-player testing via codes_by_slot
     codes = ctx.get("codes_by_slot")
     if isinstance(codes, dict):
         code = str(codes.get("player", ""))
-        return {r: code for r in _ROLES}, {r: r for r in _ROLES}
+        return {r: code for r in _ROLES}, {r: r for r in _ROLES}, {r: r for r in _ROLES}
 
-    return {r: "" for r in _ROLES}, {r: r for r in _ROLES}
+    return {r: "" for r in _ROLES}, {r: r for r in _ROLES}, {r: r for r in _ROLES}
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +316,7 @@ def _frame(
     eaten: dict[str, int], invalid: dict[str, int],
     food: tuple[int, int] | None, directions: dict[str, str],
     role_team: dict[str, str] | None = None,
+    role_name: dict[str, str] | None = None,
     slot_scores: dict[str, int] | None = None,
 ) -> dict[str, object]:
     frame: dict[str, object] = {
@@ -328,7 +332,7 @@ def _frame(
                 "invalid_moves": invalid[role],
                 "direction": directions[role],
                 "team_id": (role_team or {}).get(role, role),
-                "name": (role_team or {}).get(role, role),
+                "name": (role_name or role_team or {}).get(role, role),
                 "score": (slot_scores or {}).get(role, eaten[role] * 100),
             }
             for role, body in snakes.items()
