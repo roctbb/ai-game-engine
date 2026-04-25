@@ -221,6 +221,13 @@
                     </div>
                     <div class="d-flex gap-2 align-items-center">
                       <span class="badge text-bg-light">{{ matchStatusLabel(match.status) }}</span>
+                      <RouterLink
+                        v-if="matchPrimaryRunId(match)"
+                        class="btn btn-sm btn-outline-secondary"
+                        :to="`/runs/${matchPrimaryRunId(match)}/watch`"
+                      >
+                        Открыть матч
+                      </RouterLink>
                       <button
                         v-if="canModerate"
                         class="btn btn-sm btn-outline-dark"
@@ -305,6 +312,13 @@
                   <div class="small text-muted mt-1">
                     победитель: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
                   </div>
+                  <RouterLink
+                    v-if="matchPrimaryRunId(match)"
+                    class="btn btn-sm btn-outline-secondary mt-2"
+                    :to="`/runs/${matchPrimaryRunId(match)}/watch`"
+                  >
+                    Открыть матч
+                  </RouterLink>
                 </div>
               </div>
             </article>
@@ -330,6 +344,13 @@
                   <div class="small text-muted">
                     прошли дальше: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
                   </div>
+                  <RouterLink
+                    v-if="matchPrimaryRunId(match)"
+                    class="btn btn-sm btn-outline-secondary mt-2"
+                    :to="`/runs/${matchPrimaryRunId(match)}/watch`"
+                  >
+                    Открыть матч
+                  </RouterLink>
                 </div>
               </div>
             </div>
@@ -492,6 +513,7 @@ import {
   type CompetitionCodePolicy,
   type CompetitionDto,
   type CompetitionEntrantDto,
+  type CompetitionMatchDto,
   type CompetitionMatchStatus,
   type CompetitionRoundStatus,
   type CompetitionRunItemDto,
@@ -632,6 +654,14 @@ function matchStatusLabel(status: CompetitionMatchStatus): string {
   if (status === 'awaiting_tiebreak') return 'ничья';
   if (status === 'auto_advanced') return 'без матча';
   return status;
+}
+
+function matchPrimaryRunId(match: CompetitionMatchDto): string {
+  for (const teamId of match.team_ids) {
+    const runId = match.run_ids_by_team[teamId];
+    if (runId) return runId;
+  }
+  return Object.values(match.run_ids_by_team)[0] ?? '';
 }
 
 function runStatusLabel(status: string): string {

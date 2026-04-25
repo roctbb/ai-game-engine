@@ -180,8 +180,19 @@
                 class="lobby-match-group"
               >
                 <header>
-                  <span>Текущий матч</span>
-                  <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
+                  <div>
+                    <span>Текущий матч</span>
+                    <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
+                  </div>
+                  <RouterLink
+                    class="btn btn-sm btn-outline-secondary"
+                    :to="`/runs/${primaryRunId(group)}/watch`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    Смотреть
+                  </RouterLink>
                 </header>
                 <div class="lobby-run-links">
                   <RouterLink
@@ -203,8 +214,19 @@
                 class="lobby-match-group muted"
               >
                 <header>
-                  <span>Архивный матч</span>
-                  <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
+                  <div>
+                    <span>Архивный матч</span>
+                    <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
+                  </div>
+                  <RouterLink
+                    class="btn btn-sm btn-outline-secondary"
+                    :to="`/runs/${primaryRunId(group)}/watch`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    Смотреть
+                  </RouterLink>
                 </header>
                 <div class="lobby-run-links">
                   <RouterLink
@@ -224,6 +246,22 @@
                 Матчей пока нет.
               </div>
             </div>
+          </article>
+
+          <article class="agp-card p-3">
+            <h2 class="h6 mb-3">Лидерборд</h2>
+            <div v-if="lobbyLeaderboard.length" class="lobby-leaderboard-list">
+              <div v-for="(stat, index) in lobbyLeaderboard" :key="stat.team_id" class="lobby-leaderboard-row">
+                <span class="lobby-leaderboard-place">{{ index + 1 }}</span>
+                <div>
+                  <strong>{{ stat.display_name }}</strong>
+                  <span>
+                    побед {{ stat.wins }} · игр {{ stat.matches_total }} · средний счет {{ averageScoreLabel(stat.average_score) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="small text-muted">Статистика появится после первых матчей.</div>
           </article>
 
           <article v-if="canManage" class="agp-card p-3 lobby-teacher-card">
@@ -577,15 +615,10 @@ const currentCompetitionRunId = computed(() => {
   const myTeamId = lobby.value?.my_team_id ?? '';
   if (!activeCompetition.value || !myTeamId) return '';
   if (currentCompetitionRun.value) return currentCompetitionRun.value.run_id;
-
-  const currentRoundIndex = activeCompetition.value.current_round_index;
-  const currentRound = activeCompetition.value.rounds.find((round) => round.round_index === currentRoundIndex);
-  if (!currentRound) return '';
-  const myMatch = currentRound.matches.find((match) => match.team_ids.includes(myTeamId));
-  return myMatch?.run_ids_by_team[myTeamId] ?? '';
+  return '';
 });
 const currentGameRunId = computed(() => currentCompetitionRunId.value || lobby.value?.current_run_id || '');
-const displayedGameRunId = computed(() => currentGameRunId.value || lastGameRunId.value);
+const displayedGameRunId = computed(() => currentGameRunId.value || (activeCompetition.value ? '' : lastGameRunId.value));
 const canFinishActiveCompetition = computed(
   () => canManage.value && activeCompetition.value?.status === 'completed',
 );
@@ -613,6 +646,11 @@ const trainingRunsById = computed(() => {
   for (const run of trainingRuns.value) result[run.run_id] = run;
   return result;
 });
+const competitionRunsById = computed(() => {
+  const result: Record<string, CompetitionRunItemDto> = {};
+  for (const run of competitionRuns.value) result[run.run_id] = run;
+  return result;
+});
 const currentTrainingMatchGroups = computed(() =>
   buildTrainingMatchGroups(lobby.value?.current_run_ids ?? [], false)
 );
@@ -627,22 +665,42 @@ const displayedTrainingRunIds = computed(() => {
   return [displayedGameRunId.value];
 });
 const currentGameStats = computed<CurrentGameStatRow[]>(() =>
-  displayedTrainingRunIds.value
-    .map((runId) => trainingRunsById.value[runId])
-    .filter((run): run is RunDto => Boolean(run))
-    .map((run) => ({
-      run_id: run.run_id,
-      team_id: run.team_id,
-      display_name: teamLabel(run.team_id),
-      status: runStatusLabel(run.status),
-      score: runScoreLabel(run),
-    })),
+  displayedTrainingRunIds.value.flatMap((runId) => {
+    const trainingRun = trainingRunsById.value[runId];
+    if (trainingRun) {
+      return [{
+        run_id: trainingRun.run_id,
+        team_id: trainingRun.team_id,
+        display_name: teamLabel(trainingRun.team_id),
+        status: runStatusLabel(trainingRun.status),
+        score: runScoreLabel(trainingRun),
+      }];
+    }
+    const competitionRun = competitionRunsById.value[runId];
+    if (!competitionRun) return [];
+    return [{
+      run_id: competitionRun.run_id,
+      team_id: competitionRun.team_id,
+      display_name: teamLabel(competitionRun.team_id),
+      status: runStatusLabel(competitionRun.status as RunDto['status']),
+      score: 'пока нет',
+    }];
+  }),
 );
 const statsByTeam = computed(() => {
   const result: Record<string, LobbyParticipantStatsDto> = {};
   for (const stat of lobby.value?.participant_stats ?? []) result[stat.team_id] = stat;
   return result;
 });
+const lobbyLeaderboard = computed(() =>
+  [...(lobby.value?.participant_stats ?? [])].sort((left, right) => {
+    const rightAverage = right.average_score ?? Number.NEGATIVE_INFINITY;
+    const leftAverage = left.average_score ?? Number.NEGATIVE_INFINITY;
+    if (rightAverage !== leftAverage) return rightAverage - leftAverage;
+    if (right.wins !== left.wins) return right.wins - left.wins;
+    return right.matches_total - left.matches_total;
+  }),
+);
 const preparingTeamIds = computed(() => {
   const listed = new Set([...(lobby.value?.playing_team_ids ?? []), ...(lobby.value?.queued_team_ids ?? [])]);
   return (lobby.value?.teams ?? []).map((team) => team.team_id).filter((teamId) => !listed.has(teamId));
@@ -678,6 +736,10 @@ function lobbyId(): string {
 
 function scoreLabel(value: number | null): string {
   return value === null ? 'нет данных' : value.toFixed(1);
+}
+
+function averageScoreLabel(value: number | null | undefined): string {
+  return value === null || value === undefined ? 'нет данных' : value.toFixed(1);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -723,6 +785,10 @@ function pluralizePlayers(count: number): string {
   if (mod10 === 1 && mod100 !== 11) return 'игрок';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'игрока';
   return 'игроков';
+}
+
+function primaryRunId(group: TrainingMatchGroup): string {
+  return group.runs[0]?.run_id ?? '';
 }
 
 function buildTrainingMatchGroups(runIds: string[], archived: boolean): TrainingMatchGroup[] {
@@ -1441,7 +1507,8 @@ onUnmounted(() => {
 .lobby-player-row,
 .lobby-match-row,
 .lobby-match-group,
-.lobby-stat-row {
+.lobby-stat-row,
+.lobby-leaderboard-row {
   border: 1px solid var(--agp-border);
   border-radius: 0.45rem;
   padding: 0.55rem 0.65rem;
@@ -1478,7 +1545,8 @@ onUnmounted(() => {
 }
 
 .lobby-match-group header,
-.lobby-run-links {
+.lobby-run-links,
+.lobby-leaderboard-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1487,6 +1555,49 @@ onUnmounted(() => {
 
 .lobby-match-group header {
   justify-content: space-between;
+}
+
+.lobby-match-group header > div {
+  display: grid;
+  gap: 0.05rem;
+}
+
+.lobby-match-group header > div span {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+}
+
+.lobby-leaderboard-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.lobby-leaderboard-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  background: #fff;
+}
+
+.lobby-leaderboard-row > div {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.lobby-leaderboard-row span:not(.lobby-leaderboard-place) {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+}
+
+.lobby-leaderboard-place {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
+  font-weight: 850;
+  font-size: 0.78rem;
 }
 
 .lobby-game-view {

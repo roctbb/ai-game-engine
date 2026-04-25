@@ -151,6 +151,20 @@ def _reconcile_training_lobby_for_terminal_run(container: ServiceContainer, run:
         return
 
 
+def _advance_competition_for_terminal_run(container: ServiceContainer, run: Run) -> None:
+    if run.run_kind is not RunKind.COMPETITION_MATCH or run.lobby_id is None:
+        return
+    try:
+        container.competition.advance_competition(
+            competition_id=run.lobby_id,
+            requested_by="system",
+        )
+    except NotFoundError:
+        return
+    except InvariantViolationError:
+        return
+
+
 @router.post("/runs", response_model=RunResponse)
 def create_run(
     request: CreateRunRequest,
@@ -627,6 +641,7 @@ def mark_run_finished(
 ) -> RunResponse:
     run = container.execution.finish_run(run_id=run_id, payload=request.payload)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
+    _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)
 
 
@@ -639,6 +654,7 @@ def mark_run_failed(
 ) -> RunResponse:
     run = container.execution.fail_run(run_id=run_id, message=request.message)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
+    _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)
 
 

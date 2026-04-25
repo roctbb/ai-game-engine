@@ -435,9 +435,8 @@ def test_start_finish_lobby_competition_and_archive(client, teacher_headers) -> 
             },
         )
 
-    completed = client.post(
-        f"/api/v1/competitions/{competition_id}/advance",
-        json={"requested_by": "teacher-flow"},
+    completed = client.get(
+        f"/api/v1/competitions/{competition_id}",
         headers=teacher_headers,
     )
     assert completed.status_code == 200

@@ -355,9 +355,8 @@ def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -
             },
         )
 
-    advanced = client.post(
-        f"/api/v1/competitions/{competition['competition_id']}/advance",
-        json={"requested_by": "teacher-2"},
+    advanced = client.get(
+        f"/api/v1/competitions/{competition['competition_id']}",
         headers=teacher_headers,
     ).json()
 
