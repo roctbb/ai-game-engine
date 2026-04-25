@@ -184,7 +184,13 @@ def _load_context() -> dict[str, Any]:
 
 
 def _rng(context: dict[str, Any]) -> random.Random:
-    seed = context.get("run_id")
+    # Use sorted participant team_ids as seed so both runs in a pair get the same game
+    participants = context.get("participants")
+    if isinstance(participants, list) and len(participants) >= 2:
+        team_ids = sorted(str(p.get("team_id", "")) for p in participants if isinstance(p, dict))
+        seed = "|".join(team_ids) or context.get("run_id", "multiplayer_snake_offline")
+    else:
+        seed = context.get("run_id")
     if not isinstance(seed, str) or not seed:
         seed = "multiplayer_snake_offline"
     return random.Random(seed)

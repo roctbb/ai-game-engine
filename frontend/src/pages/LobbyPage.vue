@@ -1942,7 +1942,7 @@ onUnmounted(() => {
 }
 
 .lobby-code-layout {
-  align-items: stretch;
+  align-items: start;
 }
 
 .lobby-state-grid {
@@ -2465,8 +2465,6 @@ onUnmounted(() => {
 
 .lobby-game-finished-card small {
   color: #9bb3c9;
-}
-  background: #0f172a;
 }
 
 .lobby-game-stats {
