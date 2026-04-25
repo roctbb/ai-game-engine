@@ -10,20 +10,6 @@
         <div class="agp-login-hero-content">
           <p>Игровая платформа</p>
           <h1>Код. Матчи. Турниры.</h1>
-          <div class="agp-login-hero-grid">
-            <div>
-              <strong>Задачи</strong>
-              <span>тренировка с визуальным результатом</span>
-            </div>
-            <div>
-              <strong>Лобби</strong>
-              <span>матчи против других игроков</span>
-            </div>
-            <div>
-              <strong>Повторы</strong>
-              <span>разбор игры по кадрам</span>
-            </div>
-          </div>
         </div>
       </aside>
 
@@ -71,7 +57,7 @@
 
       <a
         v-if="sessionStore.options?.geekclass_enabled"
-        class="btn btn-outline-primary w-100"
+        class="btn btn-outline-primary agp-login-geekclass-btn"
         :href="geekClassLoginUrl"
       >
         Войти через GeekClass
@@ -303,10 +289,16 @@ async function reloadAuthOptions(): Promise<void> {
 }
 
 .agp-login-panel {
+  align-content: center;
   gap: 1rem;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(239, 246, 255, 0.94));
-  padding: 1.25rem;
+  padding: 2rem 1.5rem;
+}
+
+.agp-login-geekclass-btn {
+  justify-self: start;
+  padding: 0.5rem 1.5rem;
 }
 
 .agp-login-kicker {

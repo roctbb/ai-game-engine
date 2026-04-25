@@ -16,7 +16,6 @@
         <details
           ref="userMenuRef"
           class="agp-user-menu"
-          :open="isUserMenuOpen"
           @toggle="syncUserMenuOpen"
         >
           <summary>
@@ -93,6 +92,7 @@ const isWorkspaceRoute = computed(() =>
 
 function closeUserMenu(): void {
   isUserMenuOpen.value = false;
+  if (userMenuRef.value) userMenuRef.value.open = false;
 }
 
 function syncUserMenuOpen(event: Event): void {
