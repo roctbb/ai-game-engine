@@ -858,8 +858,12 @@ const currentGamePhaseLabel = computed(() => {
 const isWaitingForReplay = computed(() => {
   if (!lobby.value || lobby.value.my_status !== 'queued') return false;
   if (lobby.value.status !== 'running') return false;
-  // Player is queued but lobby is still running = previous match replay is showing
-  return lobby.value.playing_team_ids.length === 0;
+  if (lobby.value.playing_team_ids.length > 0) return false;
+  // Confirm the displayed run is actually finished
+  const runId = displayedGameRunId.value;
+  if (!runId) return false;
+  const run = trainingRunsById.value[runId];
+  return Boolean(run && ['finished', 'failed', 'timeout', 'canceled'].includes(run.status));
 });
 const replayFinishedInViewer = computed(() => {
   const message = embeddedGameFrame.value;
