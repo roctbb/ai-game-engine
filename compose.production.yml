@@ -1,0 +1,47 @@
+# Production compose — run with:
+#   docker compose -f compose.yml -f compose.production.yml --env-file .env.production up --build -d
+
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports: !override []
+
+  redis:
+    ports: !override []
+
+  backend-api:
+    environment:
+      APP_ENV: ${APP_ENV}
+      DEBUG: ${DEBUG}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_DEV_LOGIN: ${ENABLE_DEV_LOGIN}
+      ENABLE_GEEKCLASS_LOGIN: ${ENABLE_GEEKCLASS_LOGIN}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_MAX_AGE_SECONDS: ${JWT_MAX_AGE_SECONDS}
+      GEEKCLASS_HOST: ${GEEKCLASS_HOST}
+      BACKEND_URL: ${BACKEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  scheduler-service:
+    ports: !override []
+
+  worker-service:
+    environment:
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+    ports: !override []
+
+  builder-service:
+    environment:
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+    ports: !override []
+
+  frontend:
+    ports: !override
+      - "127.0.0.1:8080:80"
