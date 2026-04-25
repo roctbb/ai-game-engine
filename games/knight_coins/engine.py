@@ -78,9 +78,11 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         frames.append(_frame(turns, "running", position, walls, coins, exit_cell, collected, escaped, invalid_moves))
 
     score = max(0, collected * 70 + (350 if escaped else 0) - turns * 2 - invalid_moves * 12)
+    solved = escaped and collected >= _COINS_TOTAL
     metrics: dict[str, object] = {
         "turns": turns,
         "escaped": escaped,
+        "solved": solved,
         "coins_collected": collected,
         "coins_total": _COINS_TOTAL,
         "coins_left": len(coins),

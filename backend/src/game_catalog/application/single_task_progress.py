@@ -19,6 +19,7 @@ _SOLVED_FLAG_KEYS = (
     "completed",
     "reached_goal",
     "reached_exit",
+    "escaped",
     "won",
     "victory",
     "is_win",
