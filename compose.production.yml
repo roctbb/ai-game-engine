@@ -27,7 +27,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
     ports: !override
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:5152:8000"
 
   scheduler-service:
     ports: !override []
@@ -44,4 +44,4 @@ services:
 
   frontend:
     ports: !override
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:5151:80"
