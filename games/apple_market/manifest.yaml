@@ -1,35 +1,28 @@
 id: apple_market_v1
 title: Яблочный рынок
 game_mode: small_match
-semver: 1.0.0
+semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: Определите функцию make_move(x, y, board, carrying), возвращающую up/down/left/right/stay. Собирайте яблоки и относите их на свою базу.
-description: Два участника собирают яблоки на случайной карте, но могут нести только два яблока за раз.
+player_instruction: Определите функцию make_move(x, y, board, carrying), возвращающую
+  up/down/left/right/stay. Собирайте яблоки и относите их на свою базу.
+description: Два участника собирают яблоки на случайной карте, но могут нести только
+  два яблока за раз.
 difficulty: medium
 learning_section: Списки и цели
 topics:
-  - графы
-  - BFS
-  - соревнования
+- графы
+- BFS
+- соревнования
 slots:
-  - key: north
-    title: Северный игрок
-    required: true
-  - key: south
-    title: Южный игрок
-    required: true
+- key: player
+  title: Игрок
+  required: true
 demo_strategies:
-  - id: north_bfs
-    slot_key: north
-    title: "Демо: северный BFS"
-    language: python
-    path: examples/north_bfs.py
-    description: Собирает яблоки и возвращается на базу.
-  - id: south_bfs
-    slot_key: south
-    title: "Демо: южный BFS"
-    language: python
-    path: examples/south_bfs.py
-    description: Собирает яблоки с другим порядком обхода.
+- id: demo_strategy
+  slot_key: player
+  title: 'Демо: базовая стратегия'
+  language: python
+  path: examples/demo.py
+  description: Собирает яблоки и возвращается на базу.

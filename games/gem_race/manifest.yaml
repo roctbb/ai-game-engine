@@ -1,35 +1,28 @@
 id: gem_race_v1
 title: Гонка за кристаллами
 game_mode: small_match
-semver: 1.0.0
+semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right/stay. Собирайте кристаллы быстрее соперника.
-description: Два участника собирают кристаллы на общей случайной карте со стенами. Побеждает тот, кто набрал больше очков.
+player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right/stay.
+  Собирайте кристаллы быстрее соперника.
+description: Два участника собирают кристаллы на общей случайной карте со стенами.
+  Побеждает тот, кто набрал больше очков.
 difficulty: medium
 learning_section: Жадные стратегии
 topics:
-  - игровые стратегии
-  - жадные алгоритмы
-  - матрицы
+- игровые стратегии
+- жадные алгоритмы
+- матрицы
 slots:
-  - key: red
-    title: Красный игрок
-    required: true
-  - key: blue
-    title: Синий игрок
-    required: true
+- key: player
+  title: Игрок
+  required: true
 demo_strategies:
-  - id: greedy_red
-    slot_key: red
-    title: "Демо: красный жадный сборщик"
-    language: python
-    path: examples/greedy_red.py
-    description: Идет к ближайшему кристаллу, избегая стен и соперника.
-  - id: greedy_blue
-    slot_key: blue
-    title: "Демо: синий жадный сборщик"
-    language: python
-    path: examples/greedy_blue.py
-    description: Идет к ближайшему кристаллу с другим порядком выбора ходов.
+- id: demo_strategy
+  slot_key: player
+  title: 'Демо: базовая стратегия'
+  language: python
+  path: examples/demo.py
+  description: Идет к ближайшему кристаллу, избегая стен и соперника.

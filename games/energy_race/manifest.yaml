@@ -1,35 +1,27 @@
 id: energy_race_v1
 title: Гонка энергии
 game_mode: small_match
-semver: 1.0.0
+semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: Определите функцию make_move(x, y, board, battery), возвращающую up/down/left/right/stay. Собирайте энергию и заряжайтесь на станциях.
+player_instruction: Определите функцию make_move(x, y, board, battery), возвращающую
+  up/down/left/right/stay. Собирайте энергию и заряжайтесь на станциях.
 description: Два участника собирают энергию на случайной карте с ограниченной батареей.
 difficulty: hard
-learning_section: "Состояния: время, ключи, ресурсы"
+learning_section: 'Состояния: время, ключи, ресурсы'
 topics:
-  - графы
-  - BFS
-  - ресурс
+- графы
+- BFS
+- ресурс
 slots:
-  - key: solar
-    title: Солнечный игрок
-    required: true
-  - key: lunar
-    title: Лунный игрок
-    required: true
+- key: player
+  title: Игрок
+  required: true
 demo_strategies:
-  - id: solar_bfs
-    slot_key: solar
-    title: "Демо: солнечный BFS"
-    language: python
-    path: examples/solar_bfs.py
-    description: Идет к энергии, а при низкой батарее к зарядке.
-  - id: lunar_bfs
-    slot_key: lunar
-    title: "Демо: лунный BFS"
-    language: python
-    path: examples/lunar_bfs.py
-    description: Идет к энергии с другим порядком обхода.
+- id: demo_strategy
+  slot_key: player
+  title: 'Демо: базовая стратегия'
+  language: python
+  path: examples/demo.py
+  description: Идет к энергии, а при низкой батарее к зарядке.

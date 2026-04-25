@@ -116,6 +116,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             payload["tie_resolution"] = "explicit_tie"
     elif run_kind == "training_match":
         payload["scores"] = scores
+        payload["placements"] = placements
     else:
         payload["replay_ref"] = None
 

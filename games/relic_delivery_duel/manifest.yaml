@@ -1,35 +1,28 @@
 id: relic_delivery_duel_v1
 title: Доставка реликвий
 game_mode: small_match
-semver: 1.0.0
+semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: Определите функцию make_move(x, y, board, carrying), возвращающую up/down/left/right/stay. Берите реликвии и доставляйте их на свою базу.
-description: Два участника собирают реликвии на случайной карте и относят их на свои базы.
+player_instruction: Определите функцию make_move(x, y, board, carrying), возвращающую
+  up/down/left/right/stay. Берите реликвии и доставляйте их на свою базу.
+description: Два участника собирают реликвии на случайной карте и относят их на свои
+  базы.
 difficulty: medium
 learning_section: Соревновательные стратегии
 topics:
-  - графы
-  - BFS
-  - игровые стратегии
+- графы
+- BFS
+- игровые стратегии
 slots:
-  - key: amber
-    title: Янтарный курьер
-    required: true
-  - key: violet
-    title: Фиолетовый курьер
-    required: true
+- key: player
+  title: Игрок
+  required: true
 demo_strategies:
-  - id: amber_bfs
-    slot_key: amber
-    title: "Демо: янтарный BFS"
-    language: python
-    path: examples/amber_bfs.py
-    description: Идет за реликвией, затем возвращается на базу.
-  - id: violet_bfs
-    slot_key: violet
-    title: "Демо: фиолетовый BFS"
-    language: python
-    path: examples/violet_bfs.py
-    description: Идет за реликвией с другим порядком обхода соседей.
+- id: demo_strategy
+  slot_key: player
+  title: 'Демо: базовая стратегия'
+  language: python
+  path: examples/demo.py
+  description: Идет за реликвией, затем возвращается на базу.

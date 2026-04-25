@@ -109,8 +109,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 
     frames.append(_frame(len(frames), "finished", positions, walls, stars, collected, caught, invalid, slot_scores))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
-    if str(ctx.get("run_kind") or "training_match") == "competition_match":
-        payload["placements"] = placements
+    payload["placements"] = placements
     return payload
 
 

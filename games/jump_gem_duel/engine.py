@@ -27,7 +27,8 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
-    bots = {slot: _build_player_fn(ctx, slot, events, print_context) for slot in _SLOTS}
+    role_code, role_team, role_name = _resolve_participants(ctx)
+    bots = {role: _build_fn(role_code.get(role, ''), role, events, print_context) for role in _SLOTS}
     game_map = _build_map(ctx)
     walls = game_map["walls"]
     jumps = game_map["jumps"]
@@ -85,9 +86,8 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 
     compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
     slot_scores = {slot: collected[slot] * 100 + jump_moves[slot] * 4 - invalid[slot] * 10 for slot in _SLOTS}
-    team_ids = _team_ids(ctx)
-    scores = {team_ids[slot]: max(0, slot_scores[slot]) for slot in _SLOTS}
-    placements = _placements(team_ids, slot_scores)
+    scores = {role_team[slot]: max(0, slot_scores[slot]) for slot in _SLOTS}
+    placements = _placements(role_team, slot_scores)
     metrics: dict[str, object] = {
         "turns": turns,
         "winner_slot": max(_SLOTS, key=lambda slot: (slot_scores[slot], collected[slot])),
@@ -109,8 +109,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 
     frames.append(_frame(len(frames), "finished", positions, walls, jumps, gems, collected, jump_moves, invalid, slot_scores))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
-    if str(ctx.get("run_kind") or "training_match") == "competition_match":
-        payload["placements"] = placements
+    payload["placements"] = placements
     return payload
 
 
@@ -125,10 +124,55 @@ def _load_context() -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _build_map(context: dict[str, Any]) -> dict[str, object]:
-    seed = context.get("run_id")
+
+def _resolve_participants(ctx):
+    participants = ctx.get('participants')
+    if isinstance(participants, list) and len(participants) >= 2:
+        role_code = {}
+        role_team = {}
+        role_name = {}
+        for i, role in enumerate(_SLOTS):
+            p = participants[i]
+            codes = p.get('codes_by_slot') if isinstance(p, dict) else {}
+            code = codes.get('player', '') if isinstance(codes, dict) else ''
+            role_code[role] = str(code) if code else ''
+            tid = str(p.get('team_id', role)) if isinstance(p, dict) else role
+            role_team[role] = tid
+            name = p.get('display_name') or p.get('captain_user_id') if isinstance(p, dict) else None
+            role_name[role] = str(name) if name else tid
+        return role_code, role_team, role_name
+    codes = ctx.get('codes_by_slot')
+    if isinstance(codes, dict):
+        code = str(codes.get('player', ''))
+        return {r: code for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
+    return {r: '' for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
+
+
+
+def _map_seed(context, fallback):
+    participants = context.get('participants')
+    if isinstance(participants, list) and len(participants) >= 2:
+        run_ids = [str(p.get('run_id', '')) for p in participants if isinstance(p, dict) and p.get('run_id')]
+        seed = min(run_ids) if run_ids else context.get('run_id', fallback)
+    else:
+        seed = context.get('run_id')
     if not isinstance(seed, str) or not seed:
-        seed = "jump_gem_duel_offline"
+        seed = fallback
+    return seed
+
+def _build_fn(code, role, events, print_context):
+    namespace = {'__builtins__': _builtins(role, events, print_context)}
+    compile_error = None
+    if code.strip():
+        try:
+            exec(code, namespace, namespace)
+        except Exception as exc:
+            compile_error = str(exc)
+    fn = namespace.get("make_move") or namespace.get("choose_move")
+    return (fn if callable(fn) else _fallback_move), compile_error
+
+def _build_map(context: dict[str, Any]) -> dict[str, object]:
+    seed = _map_seed(context, "jump_gem_duel_offline")
     rng = random.Random(seed)
     starts = set(_STARTS.values())
     candidates = [(x, y) for y in range(1, _HEIGHT - 1) for x in range(1, _WIDTH - 1) if (x, y) not in starts]
@@ -258,10 +302,6 @@ def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]], jumps:
     return seen
 
 
-def _team_ids(ctx: dict[str, Any]) -> dict[str, str]:
-    team_id = ctx.get("team_id")
-    return {"amber": str(team_id) if isinstance(team_id, str) and team_id else "team-amber", "teal": "team-teal"}
-
 
 
 def _winner_slots(slot_scores: dict[str, int]) -> list[str]:
@@ -271,7 +311,7 @@ def _winner_slots(slot_scores: dict[str, int]) -> list[str]:
 def _is_tie(slot_scores: dict[str, int]) -> bool:
     return len(_winner_slots(slot_scores)) > 1
 
-def _placements(team_ids: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
+def _placements(role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
     ordered = sorted(_SLOTS, key=lambda slot: slot_scores[slot], reverse=True)
     result: dict[str, int] = {}
     last_score: int | None = None
@@ -281,7 +321,7 @@ def _placements(team_ids: dict[str, str], slot_scores: dict[str, int]) -> dict[s
         if score != last_score:
             last_place = index
             last_score = score
-        result[team_ids[slot]] = last_place
+        result[role_team[slot]] = last_place
     return result
 
 

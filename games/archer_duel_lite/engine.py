@@ -33,7 +33,13 @@ CONFIG = {
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
-    rng = random.Random(str(ctx.get("run_id") or CONFIG["id"]))
+    participants = ctx.get('participants')
+    if isinstance(participants, list) and len(participants) >= 2:
+        run_ids = [str(p.get('run_id', '')) for p in participants if isinstance(p, dict) and p.get('run_id')]
+        seed = min(run_ids) if run_ids else str(ctx.get('run_id') or CONFIG['id'])
+    else:
+        seed = str(ctx.get('run_id') or CONFIG['id'])
+    rng = random.Random(seed)
     if CONFIG.get("mode") == "small_match":
         return _run_match(ctx, rng)
     return _run_single(ctx, rng)
@@ -282,19 +288,58 @@ def _laser_visual_steps(task: dict[str, object]) -> list[dict[str, object]]:
     return steps or [_step(0, task.get("expected"), None)]
 
 
+
+def _resolve_participants(ctx, slots):
+    participants = ctx.get('participants')
+    if isinstance(participants, list) and len(participants) >= 2:
+        role_code = {}
+        role_team = {}
+        role_name = {}
+        for i, role in enumerate(slots):
+            p = participants[i]
+            codes = p.get('codes_by_slot') if isinstance(p, dict) else {}
+            code = codes.get('player', '') if isinstance(codes, dict) else ''
+            role_code[role] = str(code) if code else ''
+            tid = str(p.get('team_id', role)) if isinstance(p, dict) else role
+            role_team[role] = tid
+            name = p.get('display_name') or p.get('captain_user_id') if isinstance(p, dict) else None
+            role_name[role] = str(name) if name else tid
+        return role_code, role_team, role_name
+    codes = ctx.get('codes_by_slot')
+    if isinstance(codes, dict):
+        code = str(codes.get('player', ''))
+        return {r: code for r in slots}, {r: r for r in slots}, {r: r for r in slots}
+    return {r: '' for r in slots}, {r: r for r in slots}, {r: r for r in slots}
+
+
+def _build_fn_from_code(code, slot, events, print_context):
+    namespace = {"__builtins__": _builtins(slot, events, print_context)}
+    compile_error = None
+    if code.strip():
+        try:
+            exec(code, namespace, namespace)
+        except Exception as exc:
+            compile_error = str(exc)
+    for name in ("play", "solve", "choose_action", "choose_actions", "choose_target", "choose_item", "choose_potion", "schedule", "decode", "run_tape", "paint", "scan", "build_numbers", "count_plants", "trace", "simulate", "make_plan", "make_move", "bid"):
+        candidate = namespace.get(name)
+        if callable(candidate):
+            return candidate, compile_error
+    return None, compile_error
+
+
 def _run_match(ctx: dict[str, Any], rng: random.Random) -> dict[str, object]:
     events: list[dict[str, object]] = []
     slots = [slot["key"] for slot in CONFIG["slots"]]
     print_context = {"tick": 0}
-    bots = {slot: _build_fn(ctx, slot, events, print_context) for slot in slots}
+    role_code, role_team, role_name = _resolve_participants(ctx, slots)
+    bots = {slot: _build_fn_from_code(role_code.get(slot, ''), slot, events, print_context) for slot in slots}
     if CONFIG["kind"] == "archer_duel_lite":
         result = _archer_duel(slots, bots, events, print_context, rng)
     else:
         result = _crystal_auction(slots, bots, events, print_context, rng)
-    team_ids = _team_ids(ctx, slots)
     slot_scores = result["slot_scores"]
-    scores = {team_ids[slot]: int(slot_scores[slot]) for slot in slots}
-    placements = _placements(team_ids, slot_scores, slots)
+    scores = {role_team[slot]: int(slot_scores[slot]) for slot in slots}
+    placements = _placements(role_team, slot_scores, slots)
     metrics = {**result["metrics"], "slot_scores": slot_scores, "winner_slots": _winner_slots(slot_scores, slots)}
     compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
     if compile_errors:
@@ -302,9 +347,8 @@ def _run_match(ctx: dict[str, Any], rng: random.Random) -> dict[str, object]:
         for slot, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": slot, "message": message})
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": result["frames"], "events": events, "scores": scores}
-    if str(ctx.get("run_kind") or "training_match") == "competition_match":
-        payload["placements"] = placements
-        if len(set(placements.values())) != len(placements):
+    payload["placements"] = placements
+    if len(set(placements.values())) != len(placements):
             payload["tie_resolution"] = "explicit_tie"
     return payload
 
@@ -715,24 +759,14 @@ def _match_frame(payload: dict[str, object]) -> dict[str, object]:
     return {"title": CONFIG["title"], "kind": CONFIG["kind"], "learning_section": CONFIG["learning_section"], "difficulty": CONFIG["difficulty"], **_normalize(payload)}
 
 
-def _team_ids(ctx: dict[str, Any], slots: list[str]) -> dict[str, str]:
-    result = {slot: f"team-{slot}" for slot in slots}
-    participants = ctx.get("participants")
-    if isinstance(participants, list):
-        for item in participants:
-            if isinstance(item, dict) and item.get("slot_key") in result and isinstance(item.get("team_id"), str):
-                result[str(item["slot_key"])] = str(item["team_id"])
-    return result
-
-
-def _placements(team_ids: dict[str, str], slot_scores: dict[str, int], slots: list[str]) -> dict[str, int]:
+def _placements(role_team: dict[str, str], slot_scores: dict[str, int], slots: list[str]) -> dict[str, int]:
     ordered = sorted(slots, key=lambda slot: (-slot_scores[slot], slot))
     placements: dict[str, int] = {}
     last_score = None; last_place = 0
     for index, slot in enumerate(ordered, start=1):
         score = slot_scores[slot]
         place = last_place if score == last_score else index
-        placements[team_ids[slot]] = place
+        placements[role_team[slot]] = place
         last_score = score; last_place = place
     return placements
 

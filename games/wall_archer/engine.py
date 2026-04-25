@@ -299,10 +299,9 @@ def _run_match(ctx: dict[str, Any], rng: random.Random) -> dict[str, object]:
         for slot, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": slot, "message": message})
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": result["frames"], "events": events, "scores": scores}
-    if str(ctx.get("run_kind") or "training_match") == "competition_match":
-        payload["placements"] = placements
-        if len(set(placements.values())) != len(placements):
-            payload["tie_resolution"] = "explicit_tie"
+    payload["placements"] = placements
+    if len(set(placements.values())) != len(placements):
+        payload["tie_resolution"] = "explicit_tie"
     return payload
 
 

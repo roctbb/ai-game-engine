@@ -1,35 +1,28 @@
 id: checkpoint_race_v1
 title: Гонка по контрольным точкам
 game_mode: small_match
-semver: 1.0.0
+semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: Определите функцию make_move(x, y, board, checkpoint_index), возвращающую up/down/left/right/stay. Добегайте до контрольных точек по порядку.
-description: Два участника бегут по случайной карте со стенами и собирают свои цепочки контрольных точек.
+player_instruction: Определите функцию make_move(x, y, board, checkpoint_index), возвращающую
+  up/down/left/right/stay. Добегайте до контрольных точек по порядку.
+description: Два участника бегут по случайной карте со стенами и собирают свои цепочки
+  контрольных точек.
 difficulty: medium
 learning_section: Жадные стратегии
 topics:
-  - графы
-  - BFS
-  - соревнования
+- графы
+- BFS
+- соревнования
 slots:
-  - key: orange
-    title: Оранжевый бегун
-    required: true
-  - key: cyan
-    title: Голубой бегун
-    required: true
+- key: player
+  title: Игрок
+  required: true
 demo_strategies:
-  - id: orange_bfs
-    slot_key: orange
-    title: "Демо: оранжевый BFS"
-    language: python
-    path: examples/orange_bfs.py
-    description: Идет к текущей контрольной точке кратчайшим путем.
-  - id: cyan_bfs
-    slot_key: cyan
-    title: "Демо: голубой BFS"
-    language: python
-    path: examples/cyan_bfs.py
-    description: Идет к текущей контрольной точке, но выбирает соседей в другом порядке.
+- id: demo_strategy
+  slot_key: player
+  title: 'Демо: базовая стратегия'
+  language: python
+  path: examples/demo.py
+  description: Идет к текущей контрольной точке кратчайшим путем.
