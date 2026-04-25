@@ -9,12 +9,13 @@ from typing import Any, Callable
 _WIDTH = 14
 _HEIGHT = 14
 _MAX_TURNS = 120
-_SLOTS = ("snake_1", "snake_2")
+_ROLES = ("snake_1", "snake_2")
 _DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 _STARTS = {
     "snake_1": [(2, 2), (1, 2)],
     "snake_2": [(11, 11), (12, 11)],
 }
+_INIT_DIR = {"snake_1": "right", "snake_2": "left"}
 _OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 _FOOD_LIMIT = 15
 
@@ -23,77 +24,80 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
+
+    role_code, role_team = _resolve_participants(ctx)
     bots = {
-        slot: _build_player_fn(ctx, slot, events, print_context)
-        for slot in _SLOTS
+        role: _build_fn(role_code.get(role, ""), role, events, print_context)
+        for role in _ROLES
     }
+
     rng = _rng(ctx)
-    snakes = {slot: body[:] for slot, body in _STARTS.items()}
-    alive = {slot: True for slot in _SLOTS}
-    eaten = {slot: 0 for slot in _SLOTS}
-    invalid = {slot: 0 for slot in _SLOTS}
-    directions = {"snake_1": "right", "snake_2": "left"}
+    snakes = {role: body[:] for role, body in _STARTS.items()}
+    alive = {role: True for role in _ROLES}
+    eaten = {role: 0 for role in _ROLES}
+    invalid = {role: 0 for role in _ROLES}
+    directions = dict(_INIT_DIR)
     food = _next_food(rng, snakes, alive)
     food_spawned = 1 if food is not None else 0
     turns = 0
     frames = [_frame(0, "running", snakes, alive, eaten, invalid, food, directions)]
 
     for turn in range(_MAX_TURNS):
-        if sum(1 for value in alive.values() if value) <= 1 or food is None:
+        if sum(1 for v in alive.values() if v) <= 1 or food is None:
             break
         print_context["tick"] = turn
         board = _board(snakes, alive, food)
         intents: dict[str, tuple[int, int]] = {}
-        for slot in _SLOTS:
-            if not alive[slot]:
+        for role in _ROLES:
+            if not alive[role]:
                 continue
-            fn, _compile_error = bots[slot]
-            x, y = snakes[slot][0]
-            action = _safe_call(fn, x, y, _copy_grid(board), slot)
+            fn, _ = bots[role]
+            x, y = snakes[role][0]
+            action = _safe_call(fn, x, y, _copy_grid(board), role)
             if action not in _DELTAS:
-                invalid[slot] += 1
-                action = directions[slot]
-                events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": turn, "slot": slot})
-            if len(snakes[slot]) > 1 and action == _OPPOSITE[directions[slot]]:
-                invalid[slot] += 1
-                action = directions[slot]
-                events.append({"type": "reverse_blocked", "message": "Змейка не может развернуться в собственную шею.", "tick": turn, "slot": slot})
-            directions[slot] = str(action)
+                invalid[role] += 1
+                action = directions[role]
+                events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": turn, "slot": role})
+            if len(snakes[role]) > 1 and action == _OPPOSITE[directions[role]]:
+                invalid[role] += 1
+                action = directions[role]
+                events.append({"type": "reverse_blocked", "message": "Змейка не может развернуться в собственную шею.", "tick": turn, "slot": role})
+            directions[role] = str(action)
             dx, dy = _DELTAS[str(action)]
-            intents[slot] = (x + dx, y + dy)
+            intents[role] = (x + dx, y + dy)
 
         occupied_now = set()
-        for slot, body in snakes.items():
-            if alive[slot]:
+        for role, body in snakes.items():
+            if alive[role]:
                 occupied_now.update(body)
         target_counts: dict[tuple[int, int], int] = {}
         for target in intents.values():
             target_counts[target] = target_counts.get(target, 0) + 1
 
         crashed: set[str] = set()
-        for slot, target in intents.items():
-            own_tail = snakes[slot][-1]
+        for role, target in intents.items():
+            own_tail = snakes[role][-1]
             grows = target == food
             occupied = occupied_now if grows else occupied_now - {own_tail}
             if not _inside(target) or target in occupied or target_counts[target] > 1:
-                crashed.add(slot)
+                crashed.add(role)
 
-        for slot in crashed:
-            alive[slot] = False
-            events.append({"type": "crash", "message": "Столкновение: змейка врезалась в стену, препятствие или себя.", "tick": turn + 1, "slot": slot})
+        for role in crashed:
+            alive[role] = False
+            events.append({"type": "crash", "message": "Столкновение: змейка врезалась в стену, препятствие или себя.", "tick": turn + 1, "slot": role})
 
         food_taken = False
-        for slot, target in intents.items():
-            if not alive[slot]:
+        for role, target in intents.items():
+            if not alive[role]:
                 continue
             grows = target == food and not food_taken
-            snakes[slot].insert(0, target)
+            snakes[role].insert(0, target)
             if grows:
-                eaten[slot] += 1
+                eaten[role] += 1
                 food_taken = True
-                events.append({"type": "food", "tick": turn + 1, "slot": slot, "x": target[0], "y": target[1]})
+                events.append({"type": "food", "tick": turn + 1, "slot": role, "x": target[0], "y": target[1]})
             else:
-                snakes[slot].pop()
+                snakes[role].pop()
 
         if food_taken:
             if food_spawned >= _FOOD_LIMIT:
@@ -105,39 +109,68 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         turns = turn + 1
         frames.append(_frame(turns, "running", snakes, alive, eaten, invalid, food, directions))
 
-    compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
-    team_ids = _team_ids(ctx)
-    slot_scores = {
-        slot: eaten[slot] * 100 + len(snakes[slot]) * 5 + (30 if alive[slot] else 0) - invalid[slot] * 10
-        for slot in _SLOTS
+    compile_errors = {role: err for role, (_fn, err) in bots.items() if err}
+    role_scores = {
+        role: eaten[role] * 100 + len(snakes[role]) * 5 + (30 if alive[role] else 0) - invalid[role] * 10
+        for role in _ROLES
     }
-    score = max(0, sum(slot_scores.values()))
-    scores = {team_ids[slot]: max(0, slot_scores[slot]) for slot in _SLOTS}
-    placements = _placements(team_ids, slot_scores)
-    winner_slot = max(_SLOTS, key=lambda slot: (slot_scores[slot], eaten[slot], int(alive[slot])))
-    winner_slots = _winner_slots(slot_scores)
+    scores = {role_team[role]: max(0, role_scores[role]) for role in _ROLES}
+    placements = _placements(role_team, role_scores)
+    winner_role = max(_ROLES, key=lambda r: (role_scores[r], eaten[r], int(alive[r])))
+    winner_roles = [r for r in _ROLES if role_scores[r] == max(role_scores.values())]
     metrics: dict[str, object] = {
         "turns": turns,
-        "winner_slot": winner_slot,
-        "winner_slots": winner_slots,
-        "is_tie": len(winner_slots) > 1,
+        "winner_slot": winner_role,
+        "winner_slots": winner_roles,
+        "is_tie": len(winner_roles) > 1,
         "food_eaten": eaten,
         "alive": alive,
         "invalid_moves": invalid,
-        "slot_scores": slot_scores,
-        "score": score,
+        "slot_scores": role_scores,
+        "score": max(0, sum(role_scores.values())),
     }
     if compile_errors:
         metrics["compile_errors"] = compile_errors
-        for slot, message in compile_errors.items():
-            events.append({"type": "compile_error", "slot": slot, "message": message})
+        for role, message in compile_errors.items():
+            events.append({"type": "compile_error", "slot": role, "message": message})
 
-    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, food, directions, slot_scores))
+    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, food, directions, role_scores))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
     if str(ctx.get("run_kind") or "training_match") == "competition_match":
         payload["placements"] = placements
     return payload
 
+
+# ---------------------------------------------------------------------------
+# Participant resolution: map each role to a player's code and team_id
+# ---------------------------------------------------------------------------
+
+def _resolve_participants(ctx: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+    """Return (role->code, role->team_id) by reading participants list."""
+    participants = ctx.get("participants")
+    if isinstance(participants, list) and len(participants) >= 2:
+        role_code: dict[str, str] = {}
+        role_team: dict[str, str] = {}
+        for i, role in enumerate(_ROLES):
+            p = participants[i]
+            codes = p.get("codes_by_slot") if isinstance(p, dict) else {}
+            code = codes.get("player", "") if isinstance(codes, dict) else ""
+            role_code[role] = str(code) if code else ""
+            role_team[role] = str(p.get("team_id", f"team-{role}")) if isinstance(p, dict) else f"team-{role}"
+        return role_code, role_team
+
+    # Fallback: offline / single-player testing via codes_by_slot
+    codes = ctx.get("codes_by_slot")
+    if isinstance(codes, dict):
+        code = str(codes.get("player", ""))
+        return {r: code for r in _ROLES}, {r: r for r in _ROLES}
+
+    return {r: "" for r in _ROLES}, {r: r for r in _ROLES}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _load_context() -> dict[str, Any]:
     raw = os.getenv("AGP_RUN_CONTEXT")
@@ -157,17 +190,13 @@ def _rng(context: dict[str, Any]) -> random.Random:
     return random.Random(seed)
 
 
-def _build_player_fn(
-    context: dict[str, Any],
-    slot: str,
+def _build_fn(
+    code: str,
+    role: str,
     events: list[dict[str, object]],
     print_context: dict[str, int],
 ) -> tuple[Callable[..., object], str | None]:
-    code = ""
-    codes = context.get("codes_by_slot")
-    if isinstance(codes, dict) and isinstance(codes.get(slot), str):
-        code = str(codes[slot])
-    namespace = {"__builtins__": _builtins(slot, events, print_context)}
+    namespace = {"__builtins__": _builtins(role, events, print_context)}
     compile_error: str | None = None
     if code.strip():
         try:
@@ -178,15 +207,15 @@ def _build_player_fn(
     return (fn if callable(fn) else _fallback_move), compile_error
 
 
-def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[str, int]) -> dict[str, object]:
+def _builtins(role: str, events: list[dict[str, object]], print_context: dict[str, int]) -> dict[str, object]:
     def bot_print(*values: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
         if file is not None:
             return
-        message = sep.join(str(value) for value in values)
+        message = sep.join(str(v) for v in values)
         if end and end != "\n":
             message += end
         for line in message.splitlines() or [""]:
-            events.append({"type": "bot_print", "tick": int(print_context.get("tick", 0)), "role": slot, "message": line})
+            events.append({"type": "bot_print", "tick": int(print_context.get("tick", 0)), "role": role, "message": line})
 
     return {
         "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict, "enumerate": enumerate,
@@ -195,9 +224,9 @@ def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[st
     }
 
 
-def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]], slot: str) -> object:
+def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]], role: str) -> object:
     try:
-        return fn(x, y, board, slot)
+        return fn(x, y, board, role)
     except TypeError:
         try:
             return fn(x, y, board)
@@ -207,11 +236,11 @@ def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]]
         return None
 
 
-def _fallback_move(x: int, y: int, board: list[list[int]], _slot: str = "") -> str:
+def _fallback_move(x: int, y: int, board: list[list[int]], _role: str = "") -> str:
     food = _find_food(board)
     moves = [("right", 1, 0), ("down", 0, 1), ("left", -1, 0), ("up", 0, -1)]
     if food:
-        moves.sort(key=lambda move: abs(x + move[1] - food[0]) + abs(y + move[2] - food[1]))
+        moves.sort(key=lambda m: abs(x + m[1] - food[0]) + abs(y + m[2] - food[1]))
     for action, dx, dy in moves:
         nx, ny = x + dx, y + dy
         if 0 <= nx < len(board) and 0 <= ny < len(board[nx]) and board[nx][ny] != -1:
@@ -227,8 +256,8 @@ def _board(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], foo
     for y in range(_HEIGHT):
         board[0][y] = -1
         board[_WIDTH - 1][y] = -1
-    for slot, body in snakes.items():
-        if alive[slot]:
+    for role, body in snakes.items():
+        if alive[role]:
             for x, y in body:
                 board[x][y] = -1
     if food is not None:
@@ -244,21 +273,12 @@ def _find_food(board: list[list[int]]) -> tuple[int, int] | None:
     return None
 
 
-def _next_food(
-    rng: random.Random,
-    snakes: dict[str, list[tuple[int, int]]],
-    alive: dict[str, bool],
-) -> tuple[int, int] | None:
+def _next_food(rng: random.Random, snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool]) -> tuple[int, int] | None:
     occupied: set[tuple[int, int]] = set()
-    for slot, body in snakes.items():
-        if alive[slot]:
+    for role, body in snakes.items():
+        if alive[role]:
             occupied.update(body)
-    candidates = [
-        (x, y)
-        for y in range(1, _HEIGHT - 1)
-        for x in range(1, _WIDTH - 1)
-        if (x, y) not in occupied
-    ]
+    candidates = [(x, y) for y in range(1, _HEIGHT - 1) for x in range(1, _WIDTH - 1) if (x, y) not in occupied]
     return rng.choice(candidates) if candidates else None
 
 
@@ -267,41 +287,25 @@ def _inside(cell: tuple[int, int]) -> bool:
     return 1 <= x < _WIDTH - 1 and 1 <= y < _HEIGHT - 1
 
 
-def _team_ids(ctx: dict[str, Any]) -> dict[str, str]:
-    mapping = ctx.get("team_ids_by_slot")
-    if isinstance(mapping, dict):
-        return {slot: str(mapping.get(slot, f"team-{slot}")) for slot in _SLOTS}
-    return {slot: f"team-{slot}" for slot in _SLOTS}
-
-
-def _winner_slots(slot_scores: dict[str, int]) -> list[str]:
-    best = max(slot_scores.values()) if slot_scores else 0
-    return [slot for slot in _SLOTS if slot_scores.get(slot, 0) == best]
-
-
-def _placements(team_ids: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
-    ordered = sorted(_SLOTS, key=lambda slot: slot_scores[slot], reverse=True)
+def _placements(role_team: dict[str, str], role_scores: dict[str, int]) -> dict[str, int]:
+    ordered = sorted(_ROLES, key=lambda r: role_scores[r], reverse=True)
     result: dict[str, int] = {}
     last_score: int | None = None
     last_place = 0
-    for index, slot in enumerate(ordered, start=1):
-        score = slot_scores[slot]
-        if score != last_score:
-            last_place = index
-            last_score = score
-        result[team_ids[slot]] = last_place
+    for i, role in enumerate(ordered, start=1):
+        s = role_scores[role]
+        if s != last_score:
+            last_place = i
+            last_score = s
+        result[role_team[role]] = last_place
     return result
 
 
 def _frame(
-    tick: int,
-    phase: str,
-    snakes: dict[str, list[tuple[int, int]]],
-    alive: dict[str, bool],
-    eaten: dict[str, int],
-    invalid: dict[str, int],
-    food: tuple[int, int] | None,
-    directions: dict[str, str],
+    tick: int, phase: str,
+    snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool],
+    eaten: dict[str, int], invalid: dict[str, int],
+    food: tuple[int, int] | None, directions: dict[str, str],
     slot_scores: dict[str, int] | None = None,
 ) -> dict[str, object]:
     frame: dict[str, object] = {
@@ -310,14 +314,14 @@ def _frame(
         "height": _HEIGHT,
         "food": {"x": food[0], "y": food[1]} if food else None,
         "snakes": {
-            slot: {
+            role: {
                 "body": [{"x": x, "y": y} for x, y in body],
-                "alive": alive[slot],
-                "food_eaten": eaten[slot],
-                "invalid_moves": invalid[slot],
-                "direction": directions[slot],
+                "alive": alive[role],
+                "food_eaten": eaten[role],
+                "invalid_moves": invalid[role],
+                "direction": directions[role],
             }
-            for slot, body in snakes.items()
+            for role, body in snakes.items()
         },
     }
     if slot_scores is not None:

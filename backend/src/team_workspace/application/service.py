@@ -66,7 +66,7 @@ class TeamWorkspaceService:
             return existing[0]
         return self.create_team(
             game_id=game_id,
-            name=f"{captain_user_id} team",
+            name=captain_user_id,
             captain_user_id=captain_user_id,
         )
 

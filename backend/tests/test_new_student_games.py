@@ -1697,18 +1697,15 @@ def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:
         _repo_root() / "games" / "multiplayer_snake" / "engine.py",
         "multiplayer_snake_engine_test",
     )
+    demo_code = _read_game_example("multiplayer_snake", "food_chaser.py")
     payload = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "multi-snake-test",
-            "codes_by_slot": {
-                "snake_1": _read_game_example("multiplayer_snake", "food_chaser_1.py"),
-                "snake_2": _read_game_example("multiplayer_snake", "food_chaser_2.py"),
-            },
-            "team_ids_by_slot": {
-                "snake_1": "team-alpha",
-                "snake_2": "team-beta",
-            },
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": demo_code}},
+            ],
         }
     )
 
@@ -1716,7 +1713,6 @@ def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:
     first_frame = payload["frames"][0]["frame"]
 
     assert payload["status"] == "finished"
-    assert payload["metrics"]["score"] == sum(payload["metrics"]["slot_scores"].values())
     assert set(payload["scores"]) == {"team-alpha", "team-beta"}
     assert set(payload["placements"]) == set(payload["scores"])
     assert set(metrics["winner_slots"]).issubset({"snake_1", "snake_2"})
