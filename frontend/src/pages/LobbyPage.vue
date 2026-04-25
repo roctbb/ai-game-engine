@@ -858,7 +858,8 @@ const currentGamePhaseLabel = computed(() => {
 const isGameFinishedPhase = computed(() => {
   const message = embeddedGameFrame.value;
   if (!message || message.runId !== displayedGameRunId.value) return false;
-  return message.phase === 'finished' || message.status === 'finished';
+  if (message.replayFrameCount > 1) return message.replayFrameIndex >= message.replayFrameCount - 1;
+  return message.phase === 'finished';
 });
 const currentGameLeaderLabel = computed(() => {
   const leader = [...currentGameStats.value].sort((left, right) => {
