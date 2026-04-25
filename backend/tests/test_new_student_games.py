@@ -1701,12 +1701,13 @@ def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:
         {
             "run_kind": "competition_match",
             "run_id": "multi-snake-test",
-            "team_id": "team-primary",
             "codes_by_slot": {
                 "snake_1": _read_game_example("multiplayer_snake", "food_chaser_1.py"),
                 "snake_2": _read_game_example("multiplayer_snake", "food_chaser_2.py"),
-                "snake_3": _read_game_example("multiplayer_snake", "food_chaser_3.py"),
-                "snake_4": _read_game_example("multiplayer_snake", "food_chaser_4.py"),
+            },
+            "team_ids_by_slot": {
+                "snake_1": "team-alpha",
+                "snake_2": "team-beta",
             },
         }
     )
@@ -1716,9 +1717,9 @@ def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:
 
     assert payload["status"] == "finished"
     assert payload["metrics"]["score"] == sum(payload["metrics"]["slot_scores"].values())
-    assert set(payload["scores"]) == {"team-primary", "team-snake_2", "team-snake_3", "team-snake_4"}
+    assert set(payload["scores"]) == {"team-alpha", "team-beta"}
     assert set(payload["placements"]) == set(payload["scores"])
-    assert set(metrics["winner_slots"]).issubset({"snake_1", "snake_2", "snake_3", "snake_4"})
-    assert set(metrics["food_eaten"]) == {"snake_1", "snake_2", "snake_3", "snake_4"}
+    assert set(metrics["winner_slots"]).issubset({"snake_1", "snake_2"})
+    assert set(metrics["food_eaten"]) == {"snake_1", "snake_2"}
     assert first_frame["board"][0][0] == -1
     assert "compile_errors" not in metrics

@@ -1,112 +1,128 @@
 <template>
-  <section class="agp-grid">
-    <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-      <div>
-        <RouterLink to="/lobbies" class="small text-decoration-none">← К списку лобби</RouterLink>
-        <h1 class="h3 mb-1 mt-2">Создать лобби</h1>
-        <p class="text-muted mb-0">Выберите игру и настройте параметры лобби перед запуском.</p>
+  <section class="agp-grid lc-page">
+    <header class="agp-card p-4 lc-head">
+      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
+        <div>
+          <RouterLink to="/lobbies" class="lc-back-link">← К списку лобби</RouterLink>
+          <p class="lc-kicker">Новое лобби</p>
+          <h1 class="h3 mb-1">Создать лобби</h1>
+          <p class="text-muted mb-0">Выберите игру и настройте параметры перед запуском.</p>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading" @click="loadData">
+          {{ isLoading ? 'Обновление...' : 'Обновить игры' }}
+        </button>
       </div>
-      <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading" @click="loadData">
-        {{ isLoading ? 'Обновление...' : 'Обновить игры' }}
-      </button>
     </header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
-    <article class="agp-card p-3 lobby-create-card">
-      <h2 class="h6 mb-2">Параметры лобби</h2>
-      <div v-if="!canManage" class="small text-warning-emphasis mb-3">
-        Создание лобби доступно только преподавателю или администратору.
-      </div>
-      <div v-else-if="!isLoading && lobbyGames.length === 0" class="small text-warning-emphasis mb-3">
-        Нет опубликованных игр для лобби. Сначала подключите игру и опубликуйте ее в каталоге.
-      </div>
+    <div v-if="!canManage" class="agp-card p-3">
+      <div class="small text-warning-emphasis">Создание лобби доступно только преподавателю или администратору.</div>
+    </div>
+    <div v-else-if="!isLoading && lobbyGames.length === 0" class="agp-card p-3">
+      <div class="small text-warning-emphasis">Нет опубликованных игр для лобби. Сначала подключите игру и опубликуйте ее в каталоге.</div>
+    </div>
 
-      <div class="lobby-create-form">
-        <div class="lobby-create-field lobby-create-field--game">
-          <label class="form-label small">Игра</label>
-          <select v-model="form.game_id" class="form-select" :disabled="!canManage || isCreating">
-            <option value="">Выберите игру</option>
-            <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">{{ game.title }}</option>
-          </select>
-        </div>
-
-        <div class="lobby-create-field lobby-create-field--title">
-          <label class="form-label small">Название лобби</label>
-          <input
-            v-model.trim="form.title"
-            class="form-control"
-            placeholder="Например: Тренировка 8А / Графы"
-            :disabled="!canManage || isCreating"
-            @input="titleTouched = true"
-          />
-        </div>
-
-        <div class="lobby-create-field">
-          <label class="form-label small">Доступ</label>
-          <select v-model="form.access" class="form-select" :disabled="!canManage || isCreating">
-            <option value="public">Открытое</option>
-            <option value="code">По коду</option>
-          </select>
-        </div>
-
-        <div class="lobby-create-field">
-          <label class="form-label small">Лимит игроков</label>
-          <input
-            v-model.number="form.max_teams"
-            type="number"
-            min="2"
-            max="512"
-            class="form-control mono"
-            :disabled="!canManage || isCreating"
-          />
-          <div class="form-text">{{ playerLimitHint }}</div>
-        </div>
-
-        <div v-if="form.access === 'code'" class="lobby-create-field lobby-create-field--code">
-          <label class="form-label small">Код входа</label>
-          <div class="input-group input-group-sm">
-            <input
-              v-model.trim="form.access_code"
-              class="form-control mono"
-              placeholder="например CLASS-2026"
-              :disabled="!canManage || isCreating"
-            />
-            <button
-              class="btn btn-outline-secondary"
-              type="button"
-              :disabled="!canManage || isCreating"
-              @click="generateAccessCode"
-            >
-              Сгенерировать
-            </button>
+    <div v-if="canManage" class="lc-body">
+      <article class="agp-card p-4 lc-form-card">
+        <div class="lc-steps">
+          <div class="agp-task-step" :class="{ 'agp-task-step--active': !form.game_id, 'agp-task-step--done': !!form.game_id }">
+            <strong>1</strong><span>Игра</span>
+          </div>
+          <div class="agp-task-step" :class="{ 'agp-task-step--active': !!form.game_id && !form.title.trim(), 'agp-task-step--done': !!form.game_id && !!form.title.trim() }">
+            <strong>2</strong><span>Настройки</span>
+          </div>
+          <div class="agp-task-step" :class="{ 'agp-task-step--active': canCreate }">
+            <strong>3</strong><span>Запуск</span>
           </div>
         </div>
-      </div>
 
-      <section v-if="selectedGame" class="lobby-game-summary mt-3">
-        <div>
-          <div class="small text-muted">Выбранная игра</div>
-          <strong>{{ selectedGame.title }}</strong>
-          <p class="small text-muted mb-0">{{ selectedGame.description || 'Описание игры пока не заполнено.' }}</p>
+        <div class="lc-fields">
+          <div class="lc-field">
+            <label class="form-label small fw-bold">Игра</label>
+            <select v-model="form.game_id" class="form-select" :disabled="!canManage || isCreating">
+              <option value="">Выберите игру</option>
+              <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">{{ game.title }}</option>
+            </select>
+          </div>
+
+          <div class="lc-field">
+            <label class="form-label small fw-bold">Название лобби</label>
+            <input
+              v-model.trim="form.title"
+              class="form-control"
+              placeholder="Например: Тренировка 8А / Графы"
+              :disabled="!canManage || isCreating"
+              @input="titleTouched = true"
+            />
+          </div>
+
+          <div class="lc-field-row">
+            <div class="lc-field">
+              <label class="form-label small fw-bold">Доступ</label>
+              <select v-model="form.access" class="form-select" :disabled="!canManage || isCreating">
+                <option value="public">Открытое</option>
+                <option value="code">По коду</option>
+              </select>
+            </div>
+
+            <div class="lc-field">
+              <label class="form-label small fw-bold">Лимит игроков</label>
+              <input
+                v-model.number="form.max_teams"
+                type="number"
+                min="2"
+                max="512"
+                class="form-control mono"
+                :disabled="!canManage || isCreating"
+              />
+              <div class="form-text">{{ playerLimitHint }}</div>
+            </div>
+          </div>
+
+          <div v-if="form.access === 'code'" class="lc-field">
+            <label class="form-label small fw-bold">Код входа</label>
+            <div class="input-group">
+              <input
+                v-model.trim="form.access_code"
+                class="form-control mono"
+                placeholder="например CLASS-2026"
+                :disabled="!canManage || isCreating"
+              />
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                :disabled="!canManage || isCreating"
+                @click="generateAccessCode"
+              >
+                Сгенерировать
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="lobby-game-summary-meta">
+
+        <div class="lc-actions">
+          <button class="btn btn-dark" :disabled="!canCreate" @click="createNewLobby">
+            {{ isCreating ? 'Создание...' : 'Создать лобби' }}
+          </button>
+          <RouterLink class="btn btn-outline-secondary" to="/lobbies">Отмена</RouterLink>
+          <span class="small text-muted lc-hint">{{ createHint }}</span>
+        </div>
+      </article>
+
+      <aside v-if="selectedGame" class="agp-card p-4 lc-preview">
+        <p class="lc-kicker mb-2">Выбранная игра</p>
+        <h2 class="h5 mb-1">{{ selectedGame.title }}</h2>
+        <p class="small text-muted mb-3">{{ selectedGame.description || 'Описание игры пока не заполнено.' }}</p>
+        <div class="lc-preview-pills">
           <span class="agp-pill agp-pill--neutral">{{ modeLabel(selectedGame.mode) }}</span>
           <span class="agp-pill agp-pill--neutral">{{ matchFlowLabel(selectedGame.mode) }}</span>
           <span class="agp-pill agp-pill--neutral">ролей: {{ selectedRequiredSlots.length || 'нет данных' }}</span>
           <span v-if="selectedGame.difficulty" class="agp-pill agp-pill--neutral">{{ difficultyLabel(selectedGame.difficulty) }}</span>
           <span v-if="selectedGame.learning_section" class="agp-pill agp-pill--primary">{{ selectedGame.learning_section }}</span>
         </div>
-      </section>
-
-      <div class="mt-3 lobby-create-actions">
-        <button class="btn btn-dark" :disabled="!canCreate" @click="createNewLobby">
-          {{ isCreating ? 'Создание...' : 'Создать лобби' }}
-        </button>
-        <RouterLink class="btn btn-outline-secondary" to="/lobbies">Отмена</RouterLink>
-        <span class="small text-muted">{{ createHint }}</span>
-      </div>
-    </article>
+      </aside>
+    </div>
   </section>
 </template>
 
@@ -282,76 +298,116 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.lobby-create-card {
-  display: grid;
-  gap: 0.25rem;
+.lc-page {
+  max-width: 64rem;
 }
 
-.lobby-create-form {
+.lc-head {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.97), rgba(240, 253, 250, 0.94)),
+    url("data:image/svg+xml,%3Csvg width='96' height='48' viewBox='0 0 96 48' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.07'%3E%3Cpath d='M0 24h96M24 0v48M72 0v48'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.lc-kicker {
+  margin: 0 0 0.25rem;
+  color: var(--agp-primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.lc-back-link {
+  display: inline-block;
+  margin-bottom: 0.55rem;
+  color: var(--agp-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.lc-back-link:hover {
+  color: var(--agp-primary);
+}
+
+.lc-body {
   display: grid;
-  grid-template-columns: minmax(16rem, 1.2fr) minmax(18rem, 1.8fr) minmax(9rem, 0.7fr) minmax(10rem, 0.8fr);
-  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 0.6fr);
+  gap: 1rem;
   align-items: start;
 }
 
-.lobby-create-field {
+.lc-form-card {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.lc-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.lc-fields {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.lc-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+.lc-field {
   min-width: 0;
 }
 
-.lobby-create-field .form-label {
-  min-height: 1.1rem;
-}
-
-.lobby-create-field--game,
-.lobby-create-field--title {
-  grid-row: 1;
-}
-
-.lobby-create-field--code {
-  grid-column: 3 / 5;
-}
-
-.lobby-game-summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.9rem;
-  align-items: flex-start;
-  border: 1px solid rgba(15, 118, 110, 0.18);
-  border-radius: 0.55rem;
-  background: #f0fdfa;
-  padding: 0.75rem;
-}
-
-.lobby-game-summary-meta,
-.lobby-create-actions {
+.lc-actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--agp-border);
 }
 
-.lobby-game-summary-meta {
-  justify-content: flex-end;
+.lc-hint {
+  margin-left: auto;
 }
 
-@media (max-width: 760px) {
-  .lobby-create-form {
+.lc-preview {
+  position: sticky;
+  top: 4.5rem;
+  border-left: 3px solid var(--agp-primary);
+}
+
+.lc-preview-pills {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 860px) {
+  .lc-body {
     grid-template-columns: 1fr;
   }
 
-  .lobby-create-field--game,
-  .lobby-create-field--title,
-  .lobby-create-field--code {
-    grid-column: auto;
-    grid-row: auto;
+  .lc-preview {
+    position: static;
   }
 
-  .lobby-game-summary {
-    display: grid;
+  .lc-field-row {
+    grid-template-columns: 1fr;
   }
 
-  .lobby-game-summary-meta {
-    justify-content: flex-start;
+  .lc-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .lc-hint {
+    margin-left: 0;
+    width: 100%;
   }
 }
 </style>

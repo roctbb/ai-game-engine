@@ -1,13 +1,13 @@
 id: multiplayer_snake_v1
 title: Командная змейка
 game_mode: small_match
-semver: 1.0.0
+semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: Заполните код для каждой роли snake_1..snake_4. В каждой роли определите make_move(x, y, board), возвращающую up/down/left/right.
-description: Управляйте отрядом из четырех змеек на общей карте. Итоговый счет игрока — сумма очков всех ролей.
-difficulty: hard
+player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right. Каждый игрок управляет одной змейкой.
+description: Дуэль двух змеек на общей карте. Каждый игрок управляет одной змейкой. Собирайте еду, избегайте столкновений и переживите соперника.
+difficulty: medium
 learning_section: Соревновательные стратегии
 topics:
   - матрицы
@@ -20,34 +20,16 @@ slots:
   - key: snake_2
     title: Змейка 2
     required: true
-  - key: snake_3
-    title: Змейка 3
-    required: true
-  - key: snake_4
-    title: Змейка 4
-    required: true
 demo_strategies:
   - id: chaser_1
     slot_key: snake_1
-    title: "Демо 1: охотник за едой"
+    title: "Демо: охотник за едой"
     language: python
     path: examples/food_chaser_1.py
     description: Идет к еде и избегает занятых клеток.
   - id: chaser_2
     slot_key: snake_2
-    title: "Демо 2: охотник за едой"
+    title: "Демо: охотник за едой"
     language: python
     path: examples/food_chaser_2.py
-    description: Идет к еде и избегает занятых клеток.
-  - id: chaser_3
-    slot_key: snake_3
-    title: "Демо 3: охотник за едой"
-    language: python
-    path: examples/food_chaser_3.py
-    description: Идет к еде и избегает занятых клеток.
-  - id: chaser_4
-    slot_key: snake_4
-    title: "Демо 4: охотник за едой"
-    language: python
-    path: examples/food_chaser_4.py
     description: Идет к еде и избегает занятых клеток.

@@ -9,13 +9,11 @@ from typing import Any, Callable
 _WIDTH = 14
 _HEIGHT = 14
 _MAX_TURNS = 120
-_SLOTS = ("snake_1", "snake_2", "snake_3", "snake_4")
+_SLOTS = ("snake_1", "snake_2")
 _DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 _STARTS = {
     "snake_1": [(2, 2), (1, 2)],
-    "snake_2": [(11, 2), (12, 2)],
-    "snake_3": [(2, 11), (1, 11)],
-    "snake_4": [(11, 11), (12, 11)],
+    "snake_2": [(11, 11), (12, 11)],
 }
 _OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 _FOOD_LIMIT = 15
@@ -34,7 +32,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     alive = {slot: True for slot in _SLOTS}
     eaten = {slot: 0 for slot in _SLOTS}
     invalid = {slot: 0 for slot in _SLOTS}
-    directions = {"snake_1": "right", "snake_2": "left", "snake_3": "right", "snake_4": "left"}
+    directions = {"snake_1": "right", "snake_2": "left"}
     food = _next_food(rng, snakes, alive)
     food_spawned = 1 if food is not None else 0
     turns = 0
@@ -270,9 +268,10 @@ def _inside(cell: tuple[int, int]) -> bool:
 
 
 def _team_ids(ctx: dict[str, Any]) -> dict[str, str]:
-    return {slot: f"team-{slot}" for slot in _SLOTS} | (
-        {"snake_1": str(ctx["team_id"])} if isinstance(ctx.get("team_id"), str) and ctx.get("team_id") else {}
-    )
+    mapping = ctx.get("team_ids_by_slot")
+    if isinstance(mapping, dict):
+        return {slot: str(mapping.get(slot, f"team-{slot}")) for slot in _SLOTS}
+    return {slot: f"team-{slot}" for slot in _SLOTS}
 
 
 def _winner_slots(slot_scores: dict[str, int]) -> list[str]:
