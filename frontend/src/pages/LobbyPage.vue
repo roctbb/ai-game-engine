@@ -329,7 +329,14 @@
             :src="`/runs/${displayedGameRunId}/watch?embed=1&autoplay=1&speed_ms=500`"
             title="Текущая игра"
           ></iframe>
-          <div v-else class="lobby-empty">
+          <div v-if="isGameFinishedPhase" class="lobby-game-finished-overlay">
+            <div class="lobby-game-finished-card">
+              <strong>Игра завершена</strong>
+              <span>Победитель: {{ currentGameLeaderLabel }}</span>
+              <small>Ожидайте следующей игры</small>
+            </div>
+          </div>
+          <div v-if="!displayedGameRunId" class="lobby-empty">
             <h2 class="h6">Текущей игры пока нет</h2>
             <p class="small text-muted mb-0">Заполните код и нажмите Play. Изменения попадут в следующую игру.</p>
           </div>
@@ -674,6 +681,7 @@ const showPlayAction = computed(() => lobby.value?.my_status !== 'queued' && lob
 const showStopAction = computed(() => lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing');
 const readyStatusLabel = computed(() => {
   if (lobby.value?.my_status === 'playing') return 'Вы играете';
+  if (isGameFinishedPhase.value && lobby.value?.my_status === 'queued') return 'Показ реплея';
   if (lobby.value?.my_status === 'queued') return 'Вы в очереди';
   if (codeLockedByCompetition.value) return 'Код заблокирован';
   if (isDirty.value) return 'Есть изменения';
@@ -685,6 +693,7 @@ const readyStatusHint = computed(() => {
   if (!canUseTrainingQueue.value && activeCompetition.value) return 'Во время соревнования обычная очередь отключена.';
   if (!canUseTrainingQueue.value) return 'Очередь сейчас недоступна.';
   if (lobby.value?.my_status === 'playing') return 'Кнопка “Не готов” остановит участие после текущего состояния.';
+  if (isGameFinishedPhase.value && lobby.value?.my_status === 'queued') return 'Система дожидается окончания реплея перед следующей игрой.';
   if (lobby.value?.my_status === 'queued') return 'Матч начнется автоматически, когда найдутся соперники.';
   if (codeLockedByCompetition.value) return 'Политика соревнования запрещает менять код.';
   if (isDirty.value) return 'Сохраните код, чтобы встать в очередь.';
@@ -845,6 +854,11 @@ const currentGamePhaseLabel = computed(() => {
     return displayedGameRunId.value ? 'ожидаем кадры' : 'нет активной игры';
   }
   return gamePhaseLabel(message.phase, message.status);
+});
+const isGameFinishedPhase = computed(() => {
+  const message = embeddedGameFrame.value;
+  if (!message || message.runId !== displayedGameRunId.value) return false;
+  return message.phase === 'finished' || message.status === 'finished';
 });
 const currentGameLeaderLabel = computed(() => {
   const leader = [...currentGameStats.value].sort((left, right) => {
@@ -2404,6 +2418,7 @@ onUnmounted(() => {
 }
 
 .lobby-game-view {
+  position: relative;
   min-height: 0;
   padding: 0;
   overflow: hidden;
@@ -2419,6 +2434,38 @@ onUnmounted(() => {
   min-height: 0;
   border: 0;
   border-radius: 0;
+}
+
+.lobby-game-finished-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.6);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.lobby-game-finished-card {
+  display: grid;
+  gap: 0.25rem;
+  text-align: center;
+  padding: 1rem 1.5rem;
+  border-radius: 0.6rem;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(135, 226, 255, 0.3);
+  color: #e9f7ff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.lobby-game-finished-card strong {
+  font-size: 1.1rem;
+}
+
+.lobby-game-finished-card small {
+  color: #9bb3c9;
+}
   background: #0f172a;
 }
 

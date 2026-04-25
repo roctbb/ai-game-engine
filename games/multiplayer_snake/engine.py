@@ -40,7 +40,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     food = _next_food(rng, snakes, alive)
     food_spawned = 1 if food is not None else 0
     turns = 0
-    frames = [_frame(0, "running", snakes, alive, eaten, invalid, food, directions)]
+    frames = [_frame(0, "running", snakes, alive, eaten, invalid, food, directions, role_team)]
 
     for turn in range(_MAX_TURNS):
         if sum(1 for v in alive.values() if v) <= 1 or food is None:
@@ -107,7 +107,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 food_spawned += 1 if food is not None else 0
 
         turns = turn + 1
-        frames.append(_frame(turns, "running", snakes, alive, eaten, invalid, food, directions))
+        frames.append(_frame(turns, "running", snakes, alive, eaten, invalid, food, directions, role_team))
 
     compile_errors = {role: err for role, (_fn, err) in bots.items() if err}
     role_scores = {
@@ -134,7 +134,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         for role, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": role, "message": message})
 
-    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, food, directions, role_scores))
+    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, food, directions, role_team, role_scores))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
     if str(ctx.get("run_kind") or "training_match") == "competition_match":
         payload["placements"] = placements
@@ -306,6 +306,7 @@ def _frame(
     snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool],
     eaten: dict[str, int], invalid: dict[str, int],
     food: tuple[int, int] | None, directions: dict[str, str],
+    role_team: dict[str, str] | None = None,
     slot_scores: dict[str, int] | None = None,
 ) -> dict[str, object]:
     frame: dict[str, object] = {
@@ -320,6 +321,9 @@ def _frame(
                 "food_eaten": eaten[role],
                 "invalid_moves": invalid[role],
                 "direction": directions[role],
+                "team_id": (role_team or {}).get(role, role),
+                "name": (role_team or {}).get(role, role),
+                "score": (slot_scores or {}).get(role, eaten[role] * 100),
             }
             for role, body in snakes.items()
         },

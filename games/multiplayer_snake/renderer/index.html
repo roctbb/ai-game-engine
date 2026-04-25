@@ -27,9 +27,10 @@ function draw(frame){
   for(const [slot,snake] of Object.entries(snakes)){
     const color=colors[slot]||"#ddd", body=Array.isArray(snake.body)?snake.body:[];
     for(let i=body.length-1;i>=0;i--){const p=body[i];boardEl.appendChild(el(i===0?"circle":"rect",i===0?{cx:p.x*C+C/2,cy:p.y*C+C/2,r:C*0.32,fill:color,opacity:snake.alive?1:0.35}:{x:p.x*C+4,y:p.y*C+4,width:C-8,height:C-8,rx:5,fill:color,opacity:snake.alive?0.8:0.25}));if(i===0)drawMiniBadge(p.x*C+C/2,p.y*C+C/2,C,snake.food_eaten||0,color)}
+    if(body.length>0){const head=body[0],label=snake.name||snake.team_id||slot,tx=head.x*C+C/2,ty=head.y*C-C*0.2,t=el("text",{x:tx,y:ty,"text-anchor":"middle","dominant-baseline":"auto","font-size":Math.max(9,C*0.38),"font-weight":700,fill:color,stroke:"#0f172a","stroke-width":2,"paint-order":"stroke"});t.textContent=label;boardEl.appendChild(t)}
   }
   const scores=frame.slot_scores||{};
-  hudEl.textContent=Object.entries(snakes).map(([slot,s])=>`${slot}: food=${s.food_eaten||0} alive=${s.alive!==false} score=${scores[slot]??"-"}`).join(" | ");
+  hudEl.textContent=Object.entries(snakes).map(([slot,s])=>{const name=s.name||s.team_id||slot;return`${name}: еда=${s.food_eaten||0} ${s.alive!==false?"жив":"выбыл"} очки=${scores[slot]??"-"}`}).join(" | ");
 }
 window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
 draw({width:14,height:14,snakes:{},food:{x:6,y:6}});

@@ -27,7 +27,7 @@ class CreateLobbyInput:
 _ACTIVE_RUN_STATUSES = {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}
 _TERMINAL_RUN_STATUSES = {RunStatus.FINISHED, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}
 _LOBBY_REPLAY_FRAME_MS = 500
-_LOBBY_REPLAY_GRACE_SECONDS = 1
+_LOBBY_REPLAY_GRACE_SECONDS = 5
 
 
 def _can_change_participation(lobby: Lobby) -> bool:
@@ -367,7 +367,8 @@ class TrainingLobbyService:
 
         if scheduled_run_ids:
             lobby.set_running()
-            lobby.set_last_scheduled_runs(scheduled_run_ids)
+            active_run_ids = [run.run_id for run in active_runs]
+            lobby.set_last_scheduled_runs(active_run_ids + scheduled_run_ids)
             self._repository.save(lobby)
             for run_id in scheduled_run_ids:
                 self._execution.queue_run(run_id)

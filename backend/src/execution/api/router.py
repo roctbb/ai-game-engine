@@ -321,7 +321,7 @@ def list_runs(
         lobby_id=lobby_id,
         run_kind=run_kind,
         status=status,
-        include_result_payload=False,
+        include_result_payload=True,
     )
     if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
         return [_run_response(run, compact_result_payload=True) for run in runs]
@@ -513,7 +513,16 @@ def _execution_context_participants(container: ServiceContainer, current_run_id:
     if run.lobby_id is not None and run.run_kind is RunKind.TRAINING_MATCH:
         lobby = container.training_lobby.get_lobby(run.lobby_id)
         if current_run_id in lobby.last_scheduled_run_ids:
-            run_ids = list(lobby.last_scheduled_run_ids)
+            # Find runs created at the same time (same match pair)
+            all_ids = list(lobby.last_scheduled_run_ids)
+            peer_ids: list[str] = []
+            for rid in all_ids:
+                if rid == current_run_id:
+                    continue
+                peer = container.execution.get_run(rid)
+                if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 2:
+                    peer_ids.append(rid)
+            run_ids = [current_run_id] + peer_ids
 
     participants: list[dict[str, object]] = []
     seen: set[str] = set()
