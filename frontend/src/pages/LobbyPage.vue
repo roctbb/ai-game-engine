@@ -43,10 +43,26 @@
         >
           ■
         </button>
+        <button
+          v-if="canManage && canCloseLobby"
+          class="btn btn-sm btn-outline-danger"
+          :disabled="isBusy"
+          @click="closeLobby"
+        >
+          Закрыть лобби
+        </button>
       </div>
       <div v-else-if="lobby && canManage" class="lobby-head-actions">
         <button class="btn btn-outline-secondary" :disabled="!canJoinAsPlayer || isBusy" @click="joinAsPlayer">
           {{ isBusy ? '...' : 'Участвовать как игрок' }}
+        </button>
+        <button
+          v-if="canCloseLobby"
+          class="btn btn-sm btn-outline-danger"
+          :disabled="isBusy"
+          @click="closeLobby"
+        >
+          Закрыть лобби
         </button>
       </div>
     </header>
@@ -480,6 +496,7 @@ import {
   listLobbyCompetitionArchive,
   listRuns,
   playLobby,
+  setLobbyStatus,
   startLobbyCompetition,
   stopLobby,
   updateSlotCode,
@@ -1530,6 +1547,9 @@ const canJoinAsPlayer = computed(() =>
       !activeCompetition.value,
   ),
 );
+const canCloseLobby = computed(() =>
+  Boolean(lobby.value && lobby.value.status !== 'closed'),
+);
 
 async function joinAsPlayer(): Promise<void> {
   if (!lobby.value || !canJoinAsPlayer.value) return;
@@ -1541,6 +1561,20 @@ async function joinAsPlayer(): Promise<void> {
     activeTab.value = 'code';
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось присоединиться как игрок';
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function closeLobby(): Promise<void> {
+  if (!lobby.value || !canManage.value) return;
+  if (!confirm('Закрыть лобби? Это действие нельзя отменить.')) return;
+  isBusy.value = true;
+  errorMessage.value = '';
+  try {
+    lobby.value = await setLobbyStatus({ lobby_id: lobby.value.lobby_id, status: 'closed' });
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось закрыть лобби';
   } finally {
     isBusy.value = false;
   }
