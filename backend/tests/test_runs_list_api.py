@@ -85,6 +85,53 @@ def test_list_runs_preserves_error_message_for_canceled_lobby_runs(client) -> No
     assert only["error_message"] == "manual_cancel"
 
 
+def test_list_runs_omits_heavy_result_payload_fields(client) -> None:
+    games = client.get("/api/v1/games").json()
+    game = next(item for item in games if item["slug"] == "ttt_connect5_v1")
+    team = _create_team(client, game_id=game["game_id"], name="Payload Team", captain="payload-captain")
+    slot = client.put(
+        f"/api/v1/teams/{team['team_id']}/slots/bot",
+        json={"actor_user_id": "payload-captain", "code": "def move():\n    return None\n"},
+    )
+    assert slot.status_code == 200
+    created = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "payload-captain",
+            "run_kind": "training_match",
+            "lobby_id": "lobby-heavy-payload",
+        },
+    )
+    assert created.status_code == 200
+    run_id = created.json()["run_id"]
+    queued = client.post(f"/api/v1/runs/{run_id}/queue")
+    assert queued.status_code == 200
+    finished = client.post(
+        f"/api/v1/internal/runs/{run_id}/finished",
+        json={
+                "payload": {
+                    "status": "ok",
+                    "frames": {"blob": {"value": "x" * 100_000}},
+                "scores": {team["team_id"]: 42},
+                "placements": {team["team_id"]: 1},
+                "metrics": {"score": 42},
+            }
+        },
+    )
+    assert finished.status_code == 200, finished.text
+
+    listed = client.get("/api/v1/runs?lobby_id=lobby-heavy-payload")
+    assert listed.status_code == 200
+    payload = listed.json()[0]["result_payload"]
+    assert payload is None
+
+    detailed = client.get(f"/api/v1/runs/{run_id}")
+    assert detailed.status_code == 200
+    assert detailed.json()["result_payload"]["frames"]
+
+
 def test_student_list_runs_only_returns_visible_runs_and_generic_create_is_restricted(client) -> None:
     games = client.get("/api/v1/games").json()
     game = next(item for item in games if item["slug"] == "ttt_connect5_v1")

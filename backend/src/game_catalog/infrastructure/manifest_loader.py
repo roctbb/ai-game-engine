@@ -40,6 +40,7 @@ class GameManifest(BaseModel):
     player_instruction: str | None = Field(default=None, max_length=1024)
     description: str | None = Field(default=None, max_length=2000)
     difficulty: str | None = Field(default=None, max_length=32)
+    learning_section: str | None = Field(default=None, max_length=80)
     topics: tuple[str, ...] = ()
     required_worker_labels: dict[str, str] = Field(default_factory=dict)
     catalog_metadata_status: CatalogMetadataStatus | None = None
@@ -97,6 +98,7 @@ class GameManifest(BaseModel):
             semver=self.semver,
             description=self.description,
             difficulty=self.difficulty,
+            learning_section=self.learning_section,
             topics=self.topics,
             required_worker_labels=self.required_worker_labels,
             catalog_metadata_status=self.catalog_metadata_status,

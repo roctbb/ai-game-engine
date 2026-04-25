@@ -1,3 +1,6 @@
+from datetime import UTC, datetime, timedelta
+
+
 def _create_game(client, slug: str, mode: str, headers: dict[str, str]) -> dict:
     return client.post(
         "/api/v1/games",
@@ -39,7 +42,7 @@ def _create_training_lobby(client, game_id: str, title: str, headers: dict[str, 
 
 
 def test_small_match_matchmaking_schedules_only_full_pairs(client, teacher_headers) -> None:
-    game = _create_game(client, slug="small_match_mm_game", mode="small_match", headers=teacher_headers)
+    game = next(item for item in client.get("/api/v1/games").json() if item["slug"] == "tanks_ai_legacy_v1")
     team_a = _create_ready_team(client, game_id=game["game_id"], captain="cap-a", name="Alpha")
     team_b = _create_ready_team(client, game_id=game["game_id"], captain="cap-b", name="Bravo")
     team_c = _create_ready_team(client, game_id=game["game_id"], captain="cap-c", name="Charlie")
@@ -69,16 +72,23 @@ def test_small_match_matchmaking_schedules_only_full_pairs(client, teacher_heade
     assert len(runs) == 2
     assert {item["team_id"] for item in runs} == {team_a["team_id"], team_b["team_id"]}
     assert all(item["status"] == "queued" for item in runs)
+    for run in runs:
+        context = client.get(f"/api/v1/internal/runs/{run['run_id']}/execution-context")
+        assert context.status_code == 200
+        assert {item["team_id"] for item in context.json()["participants"]} == {
+            team_a["team_id"],
+            team_b["team_id"],
+        }
 
     tick_again = client.post(
         f"/api/v1/lobbies/{lobby['lobby_id']}/matchmaking/tick",
         json={"requested_by": "teacher-mm"},
         headers=teacher_headers,
     ).json()
-    assert tick_again["last_scheduled_run_ids"] == []
+    assert set(tick_again["last_scheduled_run_ids"]) == set(auto_tick["last_scheduled_run_ids"])
 
 
-def test_small_match_matchmaking_continues_after_finished_match(client, teacher_headers) -> None:
+def test_small_match_matchmaking_continues_after_finished_match(client, teacher_headers, container) -> None:
     game = _create_game(client, slug="small_match_mm_continues", mode="small_match", headers=teacher_headers)
     team_a = _create_ready_team(client, game_id=game["game_id"], captain="loop-a", name="Alpha")
     team_b = _create_ready_team(client, game_id=game["game_id"], captain="loop-b", name="Bravo")
@@ -108,6 +118,31 @@ def test_small_match_matchmaking_continues_after_finished_match(client, teacher_
             json={"payload": {"status": "ok", "scores": {run["team_id"]: 10 - index}}},
         )
         assert finished.status_code == 200
+
+    all_runs = client.get(
+        f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match",
+        headers=teacher_headers,
+    ).json()
+    active_runs = [item for item in all_runs if item["status"] in {"created", "queued", "running"}]
+    assert len(all_runs) == 2
+    assert active_runs == []
+
+    old_finished_at = datetime.now(tz=UTC) - timedelta(seconds=30)
+    for run in first_runs:
+        model = container.execution._run_repository.get(run["run_id"])
+        model.finished_at = old_finished_at
+        container.execution._run_repository.save(model)
+
+    listed_lobbies = client.get("/api/v1/lobbies", headers=teacher_headers)
+    assert listed_lobbies.status_code == 200
+    all_runs = client.get(
+        f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match",
+        headers=teacher_headers,
+    ).json()
+    assert len(all_runs) == 2
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
 
     all_runs = client.get(
         f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match",

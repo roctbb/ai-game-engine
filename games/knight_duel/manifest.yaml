@@ -8,6 +8,7 @@ renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board, score), возвращающую один из ходов коня. Собирайте звезды быстрее соперника.
 description: Два игрока ходят как шахматные кони по случайной карте с ямами и соревнуются за звезды.
 difficulty: medium
+learning_section: Поиск пути BFS
 topics:
   - графы
   - BFS

@@ -46,7 +46,24 @@ _TERMINAL_RUN_STATUSES = {
 }
 
 
-def _run_response(run: Run) -> RunResponse:
+def _compact_result_payload(payload: dict[str, object] | None) -> dict[str, object] | None:
+    if not isinstance(payload, dict):
+        return None
+    allowed_keys = {
+        "status",
+        "score",
+        "scores",
+        "placement",
+        "placements",
+        "winner",
+        "winners",
+        "metrics",
+        "error",
+    }
+    return {key: value for key, value in payload.items() if key in allowed_keys}
+
+
+def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunResponse:
     return RunResponse(
         run_id=run.run_id,
         team_id=run.team_id,
@@ -60,7 +77,7 @@ def _run_response(run: Run) -> RunResponse:
         snapshot_version_id=run.snapshot_version_id,
         worker_id=run.worker_id,
         revisions_by_slot=run.revisions_by_slot,
-        result_payload=run.result_payload,
+        result_payload=_compact_result_payload(run.result_payload) if compact_result_payload else run.result_payload,
         error_message=run.error_message,
         created_at=run.created_at,
         queued_at=run.queued_at,
@@ -304,9 +321,10 @@ def list_runs(
         lobby_id=lobby_id,
         run_kind=run_kind,
         status=status,
+        include_result_payload=False,
     )
     if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
-        return [_run_response(run) for run in runs]
+        return [_run_response(run, compact_result_payload=True) for run in runs]
 
     visible_runs: list[Run] = []
     for run in runs:
@@ -315,7 +333,7 @@ def list_runs(
         except ForbiddenError:
             continue
         visible_runs.append(run)
-    return [_run_response(run) for run in visible_runs]
+    return [_run_response(run, compact_result_payload=True) for run in visible_runs]
 
 
 @router.post("/runs/{run_id}/queue", response_model=RunResponse)
@@ -403,7 +421,7 @@ def stream_run(
         while True:
             run = container.execution.get_run(run_id=run_id)
             ensure_can_view_run(container=container, session=session, run=run)
-            payload = _run_response(run).model_dump(mode="json")
+            payload = _run_response(run, compact_result_payload=True).model_dump(mode="json")
             signature = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             if signature != last_payload_signature:
                 last_payload_signature = signature

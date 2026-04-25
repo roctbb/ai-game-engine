@@ -11,6 +11,7 @@ player_instruction: |
   shield или self_destruct.
 description: "Классические танчики из TanksAI: массовая пошаговая арена с монетами, стрельбой, щитом, самоуничтожением и старым визуалом."
 difficulty: hard
+learning_section: Соревновательные стратегии
 topics:
   - графы
   - игровые стратегии

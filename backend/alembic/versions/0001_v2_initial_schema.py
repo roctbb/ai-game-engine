@@ -21,6 +21,7 @@ def upgrade() -> None:
         sa.Column("mode", sa.String(length=32), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("difficulty", sa.String(length=32), nullable=True),
+        sa.Column("learning_section", sa.String(length=80), nullable=True),
         sa.Column("topics", sa.JSON(), nullable=False),
         sa.Column("catalog_metadata_status", sa.String(length=32), nullable=False),
         sa.Column("active_version_id", sa.String(length=64), nullable=True),
@@ -29,6 +30,7 @@ def upgrade() -> None:
     op.create_index("ix_catalog_games_slug", "catalog_games", ["slug"], unique=True)
     op.create_index("ix_catalog_games_mode", "catalog_games", ["mode"], unique=False)
     op.create_index("ix_catalog_games_difficulty", "catalog_games", ["difficulty"], unique=False)
+    op.create_index("ix_catalog_games_learning_section", "catalog_games", ["learning_section"], unique=False)
     op.create_index(
         "ix_catalog_games_catalog_metadata_status",
         "catalog_games",
@@ -340,6 +342,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_catalog_games_catalog_metadata_status", table_name="catalog_games")
+    op.drop_index("ix_catalog_games_learning_section", table_name="catalog_games")
     op.drop_index("ix_catalog_games_difficulty", table_name="catalog_games")
     op.drop_index("ix_spectator_replays_updated_at", table_name="spectator_replays")
     op.drop_index("ix_spectator_replays_created_at", table_name="spectator_replays")

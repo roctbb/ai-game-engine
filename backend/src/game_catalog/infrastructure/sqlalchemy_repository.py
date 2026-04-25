@@ -22,6 +22,7 @@ class SqlAlchemyGameRepository:
                     mode=game.mode.value,
                     description=game.description,
                     difficulty=game.difficulty,
+                    learning_section=game.learning_section,
                     topics=list(game.topics),
                     catalog_metadata_status=game.catalog_metadata_status.value,
                     active_version_id=game.active_version_id,
@@ -33,6 +34,7 @@ class SqlAlchemyGameRepository:
                 existing_game.mode = game.mode.value
                 existing_game.description = game.description
                 existing_game.difficulty = game.difficulty
+                existing_game.learning_section = game.learning_section
                 existing_game.topics = list(game.topics)
                 existing_game.catalog_metadata_status = game.catalog_metadata_status.value
                 existing_game.active_version_id = game.active_version_id
@@ -129,6 +131,7 @@ def _map_game_from_rows(
         mode=GameMode(game_row.mode),
         description=game_row.description,
         difficulty=game_row.difficulty,
+        learning_section=game_row.learning_section,
         topics=tuple(game_row.topics or []),
         catalog_metadata_status=CatalogMetadataStatus(game_row.catalog_metadata_status or "ready"),
         versions=versions,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from threading import Lock
 
 from execution.application.service import CreateRunInput, ExecutionService
 from execution.domain.model import Run, RunKind, RunStatus
@@ -9,7 +11,7 @@ from game_catalog.domain.model import CatalogMetadataStatus, GameMode
 from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
-from shared.kernel import InvariantViolationError, NotFoundError
+from shared.kernel import InvariantViolationError, NotFoundError, utc_now
 
 
 @dataclass(slots=True)
@@ -24,6 +26,8 @@ class CreateLobbyInput:
 
 _ACTIVE_RUN_STATUSES = {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}
 _TERMINAL_RUN_STATUSES = {RunStatus.FINISHED, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}
+_LOBBY_REPLAY_FRAME_MS = 500
+_LOBBY_REPLAY_GRACE_SECONDS = 1
 
 
 def _can_change_participation(lobby: Lobby) -> bool:
@@ -68,6 +72,11 @@ class TrainingLobbyService:
         self._game_catalog = game_catalog
         self._team_workspace = team_workspace
         self._execution = execution
+        self._matchmaking_locks: dict[str, Lock] = {}
+        self._participant_stats_cache: dict[
+            str,
+            tuple[tuple[int, object | None], tuple[LobbyParticipantStats, ...]],
+        ] = {}
 
     def create_lobby(self, data: CreateLobbyInput) -> Lobby:
         game = self._game_catalog.get_game(data.game_id)
@@ -134,7 +143,11 @@ class TrainingLobbyService:
         lobby = self.get_lobby(lobby_id)
         if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING, LobbyStatus.DRAFT}:
             raise InvariantViolationError("В текущем статусе нельзя нажать Stop")
-        runs = self._execution.list_runs(lobby_id=lobby_id, run_kind=RunKind.TRAINING_MATCH)
+        runs = self._execution.list_runs(
+            lobby_id=lobby_id,
+            run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
+        )
         for run in runs:
             if run.team_id != team_id:
                 continue
@@ -148,7 +161,11 @@ class TrainingLobbyService:
 
     def get_live_view(self, lobby_id: str, user_id: str) -> LobbyLiveView:
         lobby = self.get_lobby(lobby_id)
-        runs = self._execution.list_runs(lobby_id=lobby_id, run_kind=RunKind.TRAINING_MATCH)
+        runs = self._execution.list_runs(
+            lobby_id=lobby_id,
+            run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
+        )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         playing_team_ids = tuple(sorted({run.team_id for run in active_runs if run.status is RunStatus.RUNNING}))
         queued_team_ids = set(
@@ -193,7 +210,7 @@ class TrainingLobbyService:
         finished_runs.sort(key=lambda item: item.created_at, reverse=True)
         archived_run_ids = tuple(run.run_id for run in finished_runs[:100])
         current_run_ids = tuple(run.run_id for run in sorted(active_runs, key=lambda item: item.created_at, reverse=True))
-        participant_stats = self._collect_participant_stats(lobby=lobby, runs=finished_runs)
+        participant_stats = self._collect_participant_stats_cached(lobby=lobby, runs=finished_runs)
 
         return LobbyLiveView(
             lobby=lobby,
@@ -276,7 +293,11 @@ class TrainingLobbyService:
 
         active_runs = [
             run
-            for run in self._execution.list_runs(lobby_id=lobby_id, run_kind=RunKind.TRAINING_MATCH)
+            for run in self._execution.list_runs(
+                lobby_id=lobby_id,
+                run_kind=RunKind.TRAINING_MATCH,
+                include_result_payload=False,
+            )
             if run.status in _ACTIVE_RUN_STATUSES
         ]
         if active_runs:
@@ -288,6 +309,11 @@ class TrainingLobbyService:
         return lobby
 
     def run_matchmaking_cycle(self, lobby_id: str, requested_by: str) -> Lobby:
+        lock = self._matchmaking_locks.setdefault(lobby_id, Lock())
+        with lock:
+            return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
+
+    def _run_matchmaking_cycle_locked(self, lobby_id: str, requested_by: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         if lobby.kind is not LobbyKind.TRAINING:
             raise InvariantViolationError("Matchmaking cycle доступен только для training лобби")
@@ -295,9 +321,18 @@ class TrainingLobbyService:
             raise InvariantViolationError("В текущем статусе лобби матчмейкинг недоступен")
 
         game = self._game_catalog.get_game(lobby.game_id)
-        runs = self._execution.list_runs(lobby_id=lobby.lobby_id, run_kind=RunKind.TRAINING_MATCH)
+        runs = self._execution.list_runs(
+            lobby_id=lobby.lobby_id,
+            run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
+        )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         busy_team_ids = {run.team_id for run in active_runs}
+        if not active_runs and self._is_waiting_for_replay_display(runs):
+            lobby.set_open()
+            lobby.set_last_scheduled_runs([])
+            self._repository.save(lobby)
+            return lobby
 
         ready_team_ids = [
             state.team_id
@@ -306,43 +341,46 @@ class TrainingLobbyService:
         ]
         ready_team_ids = [team_id for team_id in ready_team_ids if team_id not in busy_team_ids]
 
-        scheduled_run_ids: list[str] = []
+        scheduled_team_groups: list[list[str]] = []
 
         if game.mode.value == "small_match":
             while len(ready_team_ids) >= 2:
                 pair = ready_team_ids[:2]
                 del ready_team_ids[:2]
-                scheduled_run_ids.extend(
-                    self._schedule_training_match(
-                        lobby=lobby,
-                        team_ids=pair,
-                        requested_by=requested_by,
-                    )
-                )
+                scheduled_team_groups.append(pair)
         elif game.mode.value == "massive_lobby":
             if len(ready_team_ids) >= 2:
-                scheduled_run_ids.extend(
-                    self._schedule_training_match(
-                        lobby=lobby,
-                        team_ids=list(ready_team_ids),
-                        requested_by=requested_by,
-                    )
-                )
+                scheduled_team_groups.append(list(ready_team_ids))
         else:
             # single_task не должен работать через lobby matchmaking.
             raise InvariantViolationError("single_task игра не поддерживает lobby matchmaking")
 
+        scheduled_run_ids: list[str] = []
+        for team_ids in scheduled_team_groups:
+            scheduled_run_ids.extend(
+                self._create_training_match_runs(
+                    lobby=lobby,
+                    team_ids=team_ids,
+                    requested_by=requested_by,
+                )
+            )
+
         if scheduled_run_ids:
             lobby.set_running()
             lobby.set_last_scheduled_runs(scheduled_run_ids)
+            self._repository.save(lobby)
+            for run_id in scheduled_run_ids:
+                self._execution.queue_run(run_id)
         else:
             if active_runs:
                 lobby.set_running()
+                self._repository.save(lobby)
+                return lobby
             else:
                 lobby.set_open()
-            lobby.set_last_scheduled_runs([])
+                lobby.set_last_scheduled_runs([])
+            self._repository.save(lobby)
 
-        self._repository.save(lobby)
         return lobby
 
     def switch_game_version(self, lobby_id: str, version_id: str) -> Lobby:
@@ -357,6 +395,7 @@ class TrainingLobbyService:
         active_lobby_runs = self._execution.list_runs(
             lobby_id=lobby.lobby_id,
             run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
         )
         for run in active_lobby_runs:
             if run.status in _ACTIVE_RUN_STATUSES:
@@ -385,7 +424,7 @@ class TrainingLobbyService:
         self._repository.save(lobby)
         return lobby
 
-    def _schedule_training_match(self, lobby: Lobby, team_ids: list[str], requested_by: str) -> list[str]:
+    def _create_training_match_runs(self, lobby: Lobby, team_ids: list[str], requested_by: str) -> list[str]:
         run_ids: list[str] = []
         for team_id in team_ids:
             run = self._execution.create_run(
@@ -398,9 +437,59 @@ class TrainingLobbyService:
                     version_id=lobby.game_version_id,
                 )
             )
-            queued = self._execution.queue_run(run.run_id)
-            run_ids.append(queued.run_id)
+            run_ids.append(run.run_id)
         return run_ids
+
+    def _is_waiting_for_replay_display(self, runs: list[Run]) -> bool:
+        terminal_runs = [
+            run
+            for run in runs
+            if run.run_kind is RunKind.TRAINING_MATCH
+            and run.status in _TERMINAL_RUN_STATUSES
+            and isinstance(run.finished_at, datetime)
+        ]
+        if not terminal_runs:
+            return False
+
+        latest_run = max(terminal_runs, key=lambda run: run.finished_at)
+        finished_at = latest_run.finished_at
+        if finished_at is None:
+            return False
+        if finished_at.tzinfo is None:
+            finished_at = finished_at.replace(tzinfo=utc_now().tzinfo)
+        run_with_payload = latest_run
+        if run_with_payload.result_payload is None:
+            run_with_payload = self._execution.get_run(latest_run.run_id)
+        frames_count = self._replay_frames_count(run_with_payload)
+        display_seconds = max(1.0, frames_count * _LOBBY_REPLAY_FRAME_MS / 1000)
+        display_until = finished_at + timedelta(seconds=display_seconds + _LOBBY_REPLAY_GRACE_SECONDS)
+        return utc_now() < display_until
+
+    @staticmethod
+    def _replay_frames_count(run: Run) -> int:
+        payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+        frames = payload.get("frames")
+        if isinstance(frames, list) and frames:
+            return len(frames)
+        return 1
+
+    def _collect_participant_stats_cached(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
+        latest_finished_at = max(
+            (run.finished_at for run in runs if isinstance(run.finished_at, datetime)),
+            default=None,
+        )
+        signature = (len(runs), latest_finished_at)
+        cached = self._participant_stats_cache.get(lobby.lobby_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+
+        runs_with_payload = [
+            run if run.result_payload is not None else self._execution.get_run(run.run_id)
+            for run in runs
+        ]
+        stats = self._collect_participant_stats(lobby=lobby, runs=runs_with_payload)
+        self._participant_stats_cache[lobby.lobby_id] = (signature, stats)
+        return stats
 
     def _collect_participant_stats(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
         wins_by_team: dict[str, int] = {}

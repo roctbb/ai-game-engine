@@ -8,6 +8,7 @@ renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию choose_cell(board, flags_left), возвращающую (x, y) для открытия клетки или ("flag", x, y) для флага.
 description: Открывайте клетки на большом поле сапера 12×12, используйте числа вокруг открытых клеток и отмечайте мины флагами. Поля подбираются без необходимости угадывать.
 difficulty: hard
+learning_section: Логические головоломки
 topics:
   - логика
 slots:

@@ -1,0 +1,26 @@
+id: space_queue_v1
+title: Очередь кораблей
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: "Определите функцию schedule(ships), которая возвращает id кораблей в порядке обслуживания."
+description: Диспетчер сортирует корабли по приоритету и запасу топлива.
+difficulty: medium
+learning_section: Списки и цели
+topics:
+  - списки
+  - очередь
+  - сортировка
+slots:
+  - key: agent
+    title: Код решения
+    required: true
+demo_strategies:
+  - id: solution
+    slot_key: agent
+    title: "Демо: рабочее решение"
+    language: python
+    path: examples/solution.py
+    description: Простой пример, который решает задачу по данным, а не по заранее угаданной карте.

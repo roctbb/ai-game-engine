@@ -1,9 +1,10 @@
 <template>
   <section class="agp-grid">
-    <header class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
+    <header class="agp-card replay-catalog-head">
       <div>
+        <p class="replay-catalog-kicker mb-1">Архив матчей</p>
         <h1 class="h3 mb-1">Каталог повторов</h1>
-        <p class="text-muted mb-0">
+        <p class="mb-0">
           Повторы завершенных запусков для преподавателя и администратора.
         </p>
       </div>
@@ -12,11 +13,13 @@
       </button>
     </header>
 
-    <article v-if="!canManage" class="agp-card p-4 text-muted">
+    <article v-if="!canManage" class="agp-card p-4">
+      <div class="agp-empty-state">
       Каталог повторов доступен только преподавателю или администратору.
+      </div>
     </article>
 
-    <article v-if="canManage" class="agp-card p-3">
+    <article v-if="canManage" class="agp-card p-3 replay-filter-card">
       <div class="row g-2">
         <div class="col-md-3">
           <label class="form-label small">Игра</label>
@@ -55,7 +58,7 @@
 
     <article v-if="canManage && errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
-    <article v-if="canManage" class="agp-card p-3">
+    <article v-if="canManage" class="agp-card p-3 replay-results-card">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h2 class="h6 mb-0">Результаты</h2>
         <div class="replay-results-meta">
@@ -67,9 +70,9 @@
           <span v-if="lastUpdatedAt" class="small text-muted">обновлено: {{ formatIso(lastUpdatedAt) }}</span>
         </div>
       </div>
-      <div v-if="isLoading" class="text-muted small">Загрузка...</div>
+      <div v-if="isLoading" class="agp-loading-state agp-loading-state--compact">Загрузка повторов...</div>
       <div v-else class="table-responsive">
-        <table class="table align-middle mb-0">
+        <table class="table align-middle mb-0 replay-table">
           <thead>
             <tr>
               <th>Игра</th>
@@ -82,7 +85,10 @@
           <tbody>
             <tr v-for="item in filteredReplays" :key="item.replay_id">
               <td>
-                <div>{{ gameTitle(item.game_id) }}</div>
+                <div class="replay-row-title">
+                  <strong>{{ gameTitle(item.game_id) }}</strong>
+                  <span class="mono">{{ item.run_id }}</span>
+                </div>
                 <details class="small mt-1">
                   <summary class="text-muted">Технические детали</summary>
                   <div class="mono small mt-1">игра: {{ item.game_id }}</div>
@@ -91,12 +97,16 @@
                 </details>
               </td>
               <td>
-                <div>{{ runKindLabel(item.run_kind) }}</div>
-                <div class="small text-muted">{{ statusLabel(item.status) }}</div>
+                <div class="replay-kind-line">
+                  <span class="replay-kind-pill">{{ runKindLabel(item.run_kind) }}</span>
+                  <span class="agp-pill" :class="statusToneClass(item.status)">{{ statusLabel(item.status) }}</span>
+                </div>
               </td>
               <td class="small">
-                <div>{{ item.frames.length }} кадров</div>
-                <div class="text-muted">{{ item.events.length }} событий</div>
+                <div class="replay-metrics">
+                  <span class="replay-metric-pill"><strong>{{ item.frames.length }}</strong> кадров</span>
+                  <span class="replay-metric-pill"><strong>{{ item.events.length }}</strong> событий</span>
+                </div>
               </td>
               <td class="mono small">{{ formatIso(item.updated_at) }}</td>
               <td class="text-end">
@@ -104,7 +114,9 @@
               </td>
             </tr>
             <tr v-if="filteredReplays.length === 0">
-              <td colspan="5" class="text-muted small">{{ emptyStateText }}</td>
+              <td colspan="5">
+                <div class="agp-empty-state agp-empty-state--compact">{{ emptyStateText }}</div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -226,6 +238,13 @@ function statusLabel(status: ReplayDto['status']): string {
   return labels[status] ?? status;
 }
 
+function statusToneClass(status: ReplayDto['status']): string {
+  if (status === 'finished') return 'agp-pill--success';
+  if (status === 'queued' || status === 'running') return 'agp-pill--warning';
+  if (status === 'failed' || status === 'timeout' || status === 'canceled') return 'agp-pill--danger';
+  return 'agp-pill--neutral';
+}
+
 function formatIso(value: string): string {
   const time = Date.parse(value);
   if (Number.isNaN(time)) return value;
@@ -306,6 +325,63 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.replay-catalog-head {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  background:
+    url("data:image/svg+xml,%3Csvg width='160' height='96' viewBox='0 0 160 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.32' stroke-width='2'%3E%3Cpath d='M18 18h26v26H18zM116 18h26v26h-26zM67 52h26v26H67z'/%3E%3Cpath d='M44 31h23M93 65h23M80 0v26M80 70v26'/%3E%3C/g%3E%3C/svg%3E") right 1rem center / 13rem auto no-repeat,
+    linear-gradient(135deg, #0f766e 0%, #2563eb 58%, #f59e0b 100%);
+  color: #f8fbff;
+}
+
+.replay-catalog-head h1,
+.replay-catalog-head p {
+  position: relative;
+  z-index: 1;
+}
+
+.replay-catalog-head p {
+  color: rgba(248, 251, 255, 0.78);
+}
+
+.replay-catalog-kicker {
+  color: rgba(204, 251, 241, 0.9) !important;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.replay-catalog-head .btn {
+  position: relative;
+  z-index: 1;
+  border-color: rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  backdrop-filter: blur(8px);
+}
+
+.replay-filter-card,
+.replay-results-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.replay-filter-card::before,
+.replay-results-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.18rem;
+  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+  opacity: 0.72;
+}
+
 .replay-active-filter-line {
   display: flex;
   align-items: baseline;
@@ -326,5 +402,66 @@ onUnmounted(() => {
   justify-content: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.replay-table {
+  --bs-table-bg: transparent;
+  --bs-table-hover-bg: rgba(20, 184, 166, 0.06);
+}
+
+.replay-table thead th {
+  color: var(--agp-text-muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.replay-table tbody tr {
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.replay-row-title {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.replay-row-title strong {
+  font-size: 0.96rem;
+}
+
+.replay-row-title .mono {
+  color: var(--agp-text-muted);
+  font-size: 0.76rem;
+}
+
+.replay-kind-line,
+.replay-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.38rem;
+  align-items: center;
+}
+
+.replay-kind-pill,
+.replay-metric-pill {
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 0.28rem 0.58rem;
+}
+
+.replay-metric-pill strong {
+  color: var(--agp-primary);
+}
+
+@media (max-width: 720px) {
+  .replay-catalog-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 </style>

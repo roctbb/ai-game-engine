@@ -1,0 +1,35 @@
+id: archer_duel_lite_v1
+title: Дуэль лучников Lite
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: "Определите функцию make_move(state), которая возвращает aim/shoot/shield/reload."
+description: "Два лучника соревнуются, выбирая выстрел, щит, прицеливание или перезарядку."
+difficulty: medium
+learning_section: Соревновательные стратегии
+topics:
+  - соревнование
+  - условия
+  - ресурсы
+slots:
+  - key: left
+    title: Левый участник
+    required: true
+  - key: right
+    title: Правый участник
+    required: true
+demo_strategies:
+  - id: left_strategy
+    slot_key: left
+    title: "Демо: левая стратегия"
+    language: python
+    path: examples/left_strategy.py
+    description: Базовая стратегия для первого участника.
+  - id: right_strategy
+    slot_key: right
+    title: "Демо: правая стратегия"
+    language: python
+    path: examples/right_strategy.py
+    description: Базовая стратегия для второго участника.

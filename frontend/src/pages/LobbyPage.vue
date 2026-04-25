@@ -1,5 +1,5 @@
 <template>
-  <section class="agp-grid lobby-page">
+  <section class="agp-grid lobby-page" :class="{ 'lobby-page--game': activeTab === 'game' }">
     <header class="agp-card p-2 lobby-head">
       <div class="lobby-title-block">
         <div class="lobby-title-line">
@@ -52,7 +52,9 @@
     </header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
-    <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка лобби...</article>
+    <article v-if="isLoading" class="agp-card p-4">
+      <div class="agp-loading-state agp-loading-state--compact">Загрузка лобби...</div>
+    </article>
 
     <article v-else-if="joinRequired" class="agp-card p-4 lobby-access-card">
       <div>
@@ -86,19 +88,27 @@
 
       <section v-if="activeTab === 'code'" class="lobby-code-layout">
         <aside class="agp-card p-3 lobby-roles">
-          <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
-            <strong>Роли</strong>
-            <span class="small text-muted">{{ filledRequiredSlots }}/{{ requiredSlotCount }} обязательных</span>
+          <div class="lobby-roles-head">
+            <div>
+              <strong>Роли</strong>
+              <span>{{ filledRequiredSlots }}/{{ requiredSlotCount }} обязательных</span>
+            </div>
+            <div class="lobby-role-progress" aria-hidden="true">
+              <i :style="{ width: `${roleProgressPercent}%` }"></i>
+            </div>
           </div>
           <button
             v-for="slot in slotStates"
             :key="slot.slot_key"
             class="lobby-role-button"
-            :class="{ active: activeSlotKey === slot.slot_key }"
+            :class="{ active: activeSlotKey === slot.slot_key, filled: Boolean(slot.code?.trim()), required: slot.required }"
             @click="selectSlot(slot.slot_key)"
           >
-            <span>{{ slot.slot_key }}</span>
-            <small>{{ slot.code?.trim() ? 'заполнено' : slot.required ? 'пусто' : 'необязательная' }}</small>
+            <span>
+              <i aria-hidden="true"></i>
+              {{ slot.slot_key }}
+            </span>
+            <small>{{ slot.code?.trim() ? 'заполнено' : slot.required ? 'нужно заполнить' : 'необязательная' }}</small>
           </button>
           <RouterLink
             v-if="docs?.links.length"
@@ -119,7 +129,7 @@
           <div class="lobby-editor-toolbar">
             <div>
               <h2 class="h6 mb-1">{{ activeSlotKey || 'Код' }}</h2>
-              <p class="small text-muted mb-0">{{ codeStateLabel }}</p>
+              <p class="small mb-0">{{ codeStateLabel }}</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
               <button class="btn btn-sm btn-outline-secondary" :disabled="!activeTemplate || codeLockedByCompetition" @click="applyTemplate">
@@ -158,96 +168,85 @@
           </div>
           <div>
             <span class="small text-muted">Матчей</span>
-            <strong class="mono">{{ currentTrainingMatchGroups.length + archivedTrainingMatchGroups.length }}</strong>
-          </div>
-        </article>
-        <article class="agp-card p-3 lobby-participants-card">
-          <h2 class="h6 mb-3">Участники</h2>
-          <div class="lobby-participant-columns">
-            <ParticipantColumn title="Играют" :team-ids="lobby.playing_team_ids" :stats="statsByTeam" empty="Сейчас никто не играет" />
-            <ParticipantColumn title="В очереди" :team-ids="lobby.queued_team_ids" :stats="statsByTeam" empty="Очередь пуста" />
-            <ParticipantColumn title="Готовятся" :team-ids="preparingTeamIds" :stats="statsByTeam" empty="Все уже готовы" />
+            <strong class="mono">{{ allTrainingMatchGroups.length }}</strong>
           </div>
         </article>
 
-        <aside class="lobby-side-stack">
-          <article class="agp-card p-3">
-            <h2 class="h6 mb-3">Матчи</h2>
-            <div class="lobby-match-list">
-              <article
-                v-for="group in currentTrainingMatchGroups"
-                :key="group.group_id"
-                class="lobby-match-group"
-              >
-                <header>
-                  <div>
-                    <span>Текущий матч</span>
-                    <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
-                  </div>
-                  <RouterLink
-                    class="btn btn-sm btn-outline-secondary"
-                    :to="`/runs/${primaryRunId(group)}/watch`"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    @click.stop
-                  >
-                    Смотреть
-                  </RouterLink>
-                </header>
-                <div class="lobby-run-links">
-                  <RouterLink
-                    v-for="run in group.runs"
-                    :key="run.run_id"
-                    class="btn btn-sm btn-outline-secondary"
-                    :to="`/runs/${run.run_id}/watch`"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    @click.stop
-                  >
-                    {{ run.team_id ? teamLabel(run.team_id) : 'Смотреть' }}
-                  </RouterLink>
-                </div>
-              </article>
-              <article
-                v-for="group in archivedTrainingMatchGroups"
-                :key="group.group_id"
-                class="lobby-match-group muted"
-              >
-                <header>
-                  <div>
-                    <span>Архивный матч</span>
-                    <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
-                  </div>
-                  <RouterLink
-                    class="btn btn-sm btn-outline-secondary"
-                    :to="`/runs/${primaryRunId(group)}/watch`"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    @click.stop
-                  >
-                    Смотреть
-                  </RouterLink>
-                </header>
-                <div class="lobby-run-links">
-                  <RouterLink
-                    v-for="run in group.runs"
-                    :key="run.run_id"
-                    class="btn btn-sm btn-outline-secondary"
-                    :to="`/runs/${run.run_id}/watch`"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    @click.stop
-                  >
-                    {{ run.team_id ? teamLabel(run.team_id) : 'Смотреть' }}
-                  </RouterLink>
-                </div>
-              </article>
-              <div v-if="!currentTrainingMatchGroups.length && !archivedTrainingMatchGroups.length" class="small text-muted">
-                Матчей пока нет.
-              </div>
+        <div class="lobby-main-stack">
+          <article class="agp-card p-3 lobby-participants-card">
+            <h2 class="h6 mb-3">Участники</h2>
+            <div class="lobby-participant-columns">
+              <ParticipantColumn title="Играют" :team-ids="lobby.playing_team_ids" :stats="statsByTeam" empty="Сейчас никто не играет" />
+              <ParticipantColumn title="В очереди" :team-ids="lobby.queued_team_ids" :stats="statsByTeam" empty="Очередь пуста" />
+              <ParticipantColumn title="Готовятся" :team-ids="preparingTeamIds" :stats="statsByTeam" empty="Все уже готовы" />
             </div>
           </article>
 
+          <article class="agp-card p-3 lobby-matches-card">
+            <header class="lobby-section-head">
+              <div>
+                <h2 class="h6 mb-1">Матчи</h2>
+                <p class="small text-muted mb-0">Последние игры в этом лобби.</p>
+              </div>
+              <span class="lobby-count-pill">{{ allTrainingMatchGroups.length }} всего</span>
+            </header>
+            <div class="lobby-match-list">
+              <article
+                v-for="group in pagedTrainingMatchGroups"
+                :key="group.group_id"
+                class="lobby-match-group"
+                :class="{ muted: group.archived }"
+              >
+                <header>
+                  <div>
+                    <span>{{ group.archived ? 'Архивный матч' : 'Текущий матч' }}</span>
+                    <strong>{{ matchGroupTeamIds(group).length }} {{ pluralizePlayers(matchGroupTeamIds(group).length) }}</strong>
+                  </div>
+                  <RouterLink
+                    class="btn btn-sm btn-outline-secondary"
+                    :to="`/runs/${primaryRunId(group)}/watch`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    Смотреть
+                  </RouterLink>
+                </header>
+                <div class="lobby-match-meta">
+                  <span>{{ formatMatchDate(group) }}</span>
+                  <span>Победитель: <strong>{{ matchWinnerLabel(group) }}</strong></span>
+                </div>
+                <div class="lobby-run-links">
+                  <RouterLink
+                    v-for="teamId in matchGroupTeamIds(group)"
+                    :key="`${group.group_id}-${teamId}`"
+                    class="btn btn-sm btn-outline-secondary"
+                    :to="`/runs/${runIdForTeamInGroup(group, teamId)}/watch`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    {{ teamLabel(teamId) }}
+                  </RouterLink>
+                </div>
+              </article>
+              <div v-if="!allTrainingMatchGroups.length" class="agp-empty-state agp-empty-state--compact">
+                Матчей пока нет.
+              </div>
+            </div>
+            <footer v-if="matchPageCount > 1" class="lobby-match-pagination">
+              <button class="btn btn-sm btn-outline-secondary" :disabled="matchPage === 1" @click="matchPage -= 1">
+                Назад
+              </button>
+              <span class="small text-muted">Страница {{ matchPage }} из {{ matchPageCount }}</span>
+              <button class="btn btn-sm btn-outline-secondary" :disabled="matchPage === matchPageCount" @click="matchPage += 1">
+                Вперед
+              </button>
+            </footer>
+          </article>
+        </div>
+
+        <aside class="lobby-side-stack">
           <article class="agp-card p-3">
             <h2 class="h6 mb-3">Лидерборд</h2>
             <div v-if="lobbyLeaderboard.length" class="lobby-leaderboard-list">
@@ -261,7 +260,7 @@
                 </div>
               </div>
             </div>
-            <div v-else class="small text-muted">Статистика появится после первых матчей.</div>
+            <div v-else class="agp-empty-state agp-empty-state--compact">Статистика появится после первых матчей.</div>
           </article>
 
           <article v-if="canManage" class="agp-card p-3 lobby-teacher-card">
@@ -308,10 +307,10 @@
       </section>
 
       <section v-else-if="activeTab === 'game'" class="lobby-game-layout">
-        <article class="agp-card p-3 lobby-game-view">
+        <article class="lobby-game-view">
           <iframe
             v-if="displayedGameRunId"
-            :src="`/runs/${displayedGameRunId}/watch?embed=1&autoplay=1&speed_ms=700`"
+            :src="`/runs/${displayedGameRunId}/watch?embed=1&autoplay=1&speed_ms=500`"
             title="Текущая игра"
           ></iframe>
           <div v-else class="lobby-empty">
@@ -319,15 +318,46 @@
             <p class="small text-muted mb-0">Заполните код и нажмите Play. Изменения попадут в следующую игру.</p>
           </div>
         </article>
-        <aside class="agp-card p-3 lobby-game-stats">
-          <h2 class="h6 mb-3">Текущая игра</h2>
-          <div v-if="currentGameStats.length" class="lobby-stats-list">
-            <div v-for="stat in currentGameStats" :key="`${stat.run_id}-${stat.team_id}`" class="lobby-stat-row">
-              <strong>{{ stat.display_name }}</strong>
-              <span>{{ stat.status }} · счет {{ stat.score }}</span>
+        <aside class="lobby-game-stats">
+          <header class="lobby-game-stats-head">
+            <div>
+              <h2 class="h6 mb-1">Матч</h2>
+              <span>{{ currentGamePhaseLabel }}</span>
+            </div>
+            <strong>{{ currentGameFrameLabel }}</strong>
+          </header>
+
+          <div class="lobby-game-mini-stats">
+            <div>
+              <span>Лидер</span>
+              <strong>{{ currentGameLeaderLabel }}</strong>
+            </div>
+            <div>
+              <span>Игроков</span>
+              <strong>{{ currentGameStats.length || '—' }}</strong>
             </div>
           </div>
-          <div v-else class="small text-muted">Статистика появится, когда начнется матч.</div>
+
+          <div v-if="currentGameStats.length" class="lobby-stats-list lobby-game-scoreboard">
+            <article
+              v-for="stat in currentGameStats"
+              :key="`${stat.run_id}-${stat.team_id}`"
+              class="lobby-stat-row"
+              :class="{ 'lobby-stat-row--self': stat.isSelf }"
+            >
+              <div class="lobby-stat-title">
+                <strong>{{ stat.display_name }}</strong>
+                <span>{{ stat.status }}</span>
+              </div>
+              <div class="lobby-stat-score">{{ stat.score }}</div>
+              <div class="lobby-stat-bars">
+                <span><i :style="{ width: `${stat.lifePercent}%` }"></i></span>
+                <span><i :style="{ width: `${stat.shieldPercent}%` }"></i></span>
+              </div>
+              <small v-if="stat.meta">{{ stat.meta }}</small>
+            </article>
+          </div>
+          <div v-else class="lobby-game-empty-stat">Статистика появится, когда начнется матч.</div>
         </aside>
       </section>
 
@@ -359,6 +389,15 @@
           <span class="small text-muted">Победитель</span>
           <strong>{{ activeCompetition.winner_team_ids.map(teamLabel).join(', ') }}</strong>
         </div>
+        <div v-if="competitionTeamStats.length" class="lobby-competition-leaderboard mt-3">
+          <h3 class="h6 mb-0">Итоги команд</h3>
+          <div class="lobby-competition-stat-list">
+            <div v-for="stat in competitionTeamStats" :key="stat.team_id" class="lobby-competition-stat-row">
+              <strong>{{ stat.name }}</strong>
+              <span>побед {{ stat.wins }} · поражений {{ stat.losses }} · очков {{ scoreLabel(stat.points) }}</span>
+            </div>
+          </div>
+        </div>
         <div v-if="activeCompetition.rounds.length" class="lobby-rounds mt-3">
           <section v-for="round in activeCompetition.rounds" :key="round.round_index" class="lobby-round">
             <header>
@@ -368,38 +407,35 @@
             <article v-for="(match, matchIndex) in round.matches" :key="match.match_id" class="lobby-competition-match">
               <div class="d-flex justify-content-between gap-2 flex-wrap">
                 <strong>Матч {{ matchIndex + 1 }}</strong>
-                <span class="small text-muted">{{ competitionMatchStatusLabel(match.status) }}</span>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <span class="small text-muted">{{ competitionMatchStatusLabel(effectiveCompetitionMatchStatus(match)) }}</span>
+                  <RouterLink
+                    v-if="matchPrimaryRunId(match)"
+                    class="btn btn-sm btn-outline-secondary"
+                    :to="`/runs/${matchPrimaryRunId(match)}/watch`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Смотреть
+                  </RouterLink>
+                </div>
               </div>
-              <div class="lobby-match-team-list">
-                <span v-for="teamId in match.team_ids" :key="teamId" class="agp-topic-chip">
-                  {{ teamLabel(teamId) }}
-                </span>
-              </div>
-              <div v-if="Object.keys(match.scores_by_team).length" class="small text-muted">
-                <span v-for="teamId in match.team_ids" :key="`${match.match_id}-${teamId}-score`">
-                  {{ teamLabel(teamId) }}: <span class="mono">{{ scoreLabel(match.scores_by_team[teamId] ?? null) }}</span>
-                </span>
-              </div>
-              <div v-if="match.advanced_team_ids.length" class="small">
-                Прошли дальше: <strong>{{ match.advanced_team_ids.map(teamLabel).join(', ') }}</strong>
+              <div class="lobby-competition-team-rows">
+                <div
+                  v-for="teamId in match.team_ids"
+                  :key="`${match.match_id}-${teamId}`"
+                  class="lobby-competition-team-row"
+                  :class="{ winner: match.advanced_team_ids.includes(teamId), loser: isCompetitionMatchLoser(match, teamId) }"
+                >
+                  <strong>{{ teamLabel(teamId) }}</strong>
+                  <span>{{ competitionTeamMatchSummary(match, teamId) }}</span>
+                </div>
               </div>
               <div v-if="match.tie_break_reason" class="small text-warning">{{ match.tie_break_reason }}</div>
-              <div v-if="Object.keys(match.run_ids_by_team).length" class="d-flex gap-2 flex-wrap">
-                <RouterLink
-                  v-for="[teamId, runId] in Object.entries(match.run_ids_by_team)"
-                  :key="`${match.match_id}-${teamId}-${runId}`"
-                  class="btn btn-sm btn-outline-secondary"
-                  :to="`/runs/${runId}/watch`"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {{ teamLabel(teamId) }}
-                </RouterLink>
-              </div>
             </article>
           </section>
         </div>
-        <div v-else class="small text-muted mt-3">Сетка появится после старта первого раунда.</div>
+        <div v-else class="agp-empty-state agp-empty-state--compact mt-3">Сетка появится после старта первого раунда.</div>
       </section>
 
       <section v-else-if="activeTab === 'archive'" class="agp-card p-3">
@@ -411,7 +447,12 @@
             class="lobby-match-row"
             :to="`/competitions/${item.competition_id}`"
           >
-            <span>{{ cleanCompetitionTitle(item.title) }}</span>
+            <span>
+              <strong>{{ cleanCompetitionTitle(item.title) }}</strong>
+              <small class="text-muted">
+                Победитель: {{ archiveCompetitionWinnerLabel(item) }}
+              </small>
+            </span>
             <strong>{{ competitionStatusLabel(item.status) }}</strong>
           </RouterLink>
         </div>
@@ -444,6 +485,7 @@ import {
   updateSlotCode,
   type CompetitionCodePolicy,
   type CompetitionDto,
+  type CompetitionMatchDto,
   type CompetitionMatchStatus,
   type CompetitionRoundStatus,
   type CompetitionRunItemDto,
@@ -488,7 +530,7 @@ const ParticipantColumn = defineComponent({
                 ),
               ]);
             })
-          : h('div', { class: 'small text-muted' }, props.empty),
+          : h('div', { class: 'lobby-column-empty' }, props.empty),
       ]);
   },
 });
@@ -500,6 +542,7 @@ interface TrainingRunLink {
 
 interface TrainingMatchGroup {
   group_id: string;
+  archived: boolean;
   runs: TrainingRunLink[];
 }
 
@@ -509,6 +552,29 @@ interface CurrentGameStatRow {
   display_name: string;
   status: string;
   score: string;
+  scoreValue: number | null;
+  lifePercent: number;
+  shieldPercent: number;
+  meta: string;
+  isSelf: boolean;
+}
+
+interface EmbeddedGameFrame {
+  runId: string;
+  status: RunDto['status'];
+  tick: number;
+  phase: string;
+  frame: Record<string, unknown>;
+  replayFrameIndex: number;
+  replayFrameCount: number;
+}
+
+interface CompetitionTeamStatRow {
+  team_id: string;
+  name: string;
+  wins: number;
+  losses: number;
+  points: number;
 }
 
 const route = useRoute();
@@ -538,6 +604,9 @@ const competitionAdvanceTopK = ref(1);
 const competitionTieBreakPolicy = ref<TieBreakPolicy>('manual');
 const competitionCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
 const lastGameRunId = ref('');
+const matchPage = ref(1);
+const matchesPerPage = 5;
+const embeddedGameFrame = ref<EmbeddedGameFrame | null>(null);
 let lobbyEventSource: EventSource | null = null;
 let pollingHandle: ReturnType<typeof setInterval> | null = null;
 let competitionPollingHandle: ReturnType<typeof setInterval> | null = null;
@@ -550,6 +619,9 @@ const activeSlot = computed(() => slotStates.value.find((slot) => slot.slot_key 
 const requiredSlotStates = computed(() => slotStates.value.filter((slot) => slot.required));
 const requiredSlotCount = computed(() => requiredSlotStates.value.length);
 const filledRequiredSlots = computed(() => requiredSlotStates.value.filter((slot) => Boolean(slot.code?.trim())).length);
+const roleProgressPercent = computed(() =>
+  requiredSlotCount.value ? Math.round((filledRequiredSlots.value / requiredSlotCount.value) * 100) : 0
+);
 const isDirty = computed(() => editorCode.value !== savedCode.value);
 const activeTemplate = computed(() => templates.value?.templates.find((item) => item.slot_key === activeSlotKey.value)?.code ?? '');
 const activeDemoStrategy = computed(
@@ -605,6 +677,18 @@ const readyStatusHint = computed(() => {
   }
   return 'Нажмите “Готов”, чтобы встать в очередь.';
 });
+const currentCompetitionMatch = computed(() => {
+  const competition = activeCompetition.value;
+  const myTeamId = lobby.value?.my_team_id ?? '';
+  if (!competition || !myTeamId) return null;
+  const currentRound = competition.rounds.find((round) => round.round_index === competition.current_round_index);
+  return currentRound?.matches.find(
+    (match) =>
+      effectiveCompetitionMatchStatus(match) === 'running' &&
+      match.team_ids.includes(myTeamId) &&
+      Boolean(match.run_ids_by_team[myTeamId]),
+  ) ?? null;
+});
 const currentCompetitionRun = computed(() => {
   const myTeamId = lobby.value?.my_team_id ?? '';
   if (!activeCompetition.value || !myTeamId) return null;
@@ -615,6 +699,7 @@ const currentCompetitionRunId = computed(() => {
   const myTeamId = lobby.value?.my_team_id ?? '';
   if (!activeCompetition.value || !myTeamId) return '';
   if (currentCompetitionRun.value) return currentCompetitionRun.value.run_id;
+  if (currentCompetitionMatch.value) return currentCompetitionMatch.value.run_ids_by_team[myTeamId] ?? '';
   return '';
 });
 const currentGameRunId = computed(() => currentCompetitionRunId.value || lobby.value?.current_run_id || '');
@@ -655,38 +740,103 @@ const currentTrainingMatchGroups = computed(() =>
   buildTrainingMatchGroups(lobby.value?.current_run_ids ?? [], false)
 );
 const archivedTrainingMatchGroups = computed(() =>
-  buildTrainingMatchGroups((lobby.value?.archived_run_ids ?? []).slice(0, 8), true)
+  buildTrainingMatchGroups(lobby.value?.archived_run_ids ?? [], true)
 );
+const allTrainingMatchGroups = computed(() => [
+  ...currentTrainingMatchGroups.value,
+  ...archivedTrainingMatchGroups.value,
+]);
+const matchPageCount = computed(() =>
+  Math.max(1, Math.ceil(allTrainingMatchGroups.value.length / matchesPerPage))
+);
+const pagedTrainingMatchGroups = computed(() => {
+  const start = (matchPage.value - 1) * matchesPerPage;
+  return allTrainingMatchGroups.value.slice(start, start + matchesPerPage);
+});
+watch(matchPageCount, (pageCount) => {
+  if (matchPage.value > pageCount) matchPage.value = pageCount;
+});
+watch(allTrainingMatchGroups, () => {
+  if (matchPage.value < 1) matchPage.value = 1;
+  if (matchPage.value > matchPageCount.value) matchPage.value = matchPageCount.value;
+});
 const displayedTrainingRunIds = computed(() => {
   if (!displayedGameRunId.value) return [];
-  const group = [...currentTrainingMatchGroups.value, ...archivedTrainingMatchGroups.value]
+  const group = allTrainingMatchGroups.value
     .find((item) => item.runs.some((run) => run.run_id === displayedGameRunId.value));
   if (group) return group.runs.map((run) => run.run_id);
+  const competitionMatch = currentCompetitionMatch.value;
+  if (competitionMatch && Object.values(competitionMatch.run_ids_by_team).includes(displayedGameRunId.value)) {
+    return competitionMatch.team_ids
+      .map((teamId) => competitionMatch.run_ids_by_team[teamId] ?? '')
+      .filter(Boolean);
+  }
   return [displayedGameRunId.value];
 });
+const frameGameStats = computed<CurrentGameStatRow[]>(() => {
+  const message = embeddedGameFrame.value;
+  if (!message || message.runId !== displayedGameRunId.value) return [];
+  const players = collectFrameGamePlayers(message.frame);
+  return dedupeCurrentGameStats(players.map((player, index) => buildCurrentGameStatFromFrame(message, player, index)));
+});
 const currentGameStats = computed<CurrentGameStatRow[]>(() =>
-  displayedTrainingRunIds.value.flatMap((runId) => {
-    const trainingRun = trainingRunsById.value[runId];
-    if (trainingRun) {
+  frameGameStats.value.length
+    ? frameGameStats.value
+    : displayedTrainingRunIds.value.flatMap((runId) => {
+      const trainingRun = trainingRunsById.value[runId];
+      if (trainingRun) {
+        return [{
+          run_id: trainingRun.run_id,
+          team_id: trainingRun.team_id,
+          display_name: teamLabel(trainingRun.team_id),
+          status: runStatusLabel(trainingRun.status),
+          score: runScoreLabel(trainingRun),
+          scoreValue: extractRunScore(isRecord(trainingRun.result_payload) ? trainingRun.result_payload : {}, trainingRun.team_id),
+          lifePercent: 0,
+          shieldPercent: 0,
+          meta: '',
+          isSelf: trainingRun.team_id === lobby.value?.my_team_id,
+        }];
+      }
+      const competitionRun = competitionRunsById.value[runId];
+      if (!competitionRun) return [];
       return [{
-        run_id: trainingRun.run_id,
-        team_id: trainingRun.team_id,
-        display_name: teamLabel(trainingRun.team_id),
-        status: runStatusLabel(trainingRun.status),
-        score: runScoreLabel(trainingRun),
+        run_id: competitionRun.run_id,
+        team_id: competitionRun.team_id,
+        display_name: teamLabel(competitionRun.team_id),
+        status: runStatusLabel(competitionRun.status as RunDto['status']),
+        score: 'пока нет',
+        scoreValue: null,
+        lifePercent: 0,
+        shieldPercent: 0,
+        meta: '',
+        isSelf: competitionRun.team_id === lobby.value?.my_team_id,
       }];
-    }
-    const competitionRun = competitionRunsById.value[runId];
-    if (!competitionRun) return [];
-    return [{
-      run_id: competitionRun.run_id,
-      team_id: competitionRun.team_id,
-      display_name: teamLabel(competitionRun.team_id),
-      status: runStatusLabel(competitionRun.status as RunDto['status']),
-      score: 'пока нет',
-    }];
-  }),
+    }),
 );
+const currentGameFrameLabel = computed(() => {
+  const message = embeddedGameFrame.value;
+  if (!message || message.runId !== displayedGameRunId.value) return 'кадр —';
+  if (message.replayFrameCount > 0) {
+    return `кадр ${message.replayFrameIndex + 1}/${message.replayFrameCount}`;
+  }
+  return `ход ${message.tick}`;
+});
+const currentGamePhaseLabel = computed(() => {
+  const message = embeddedGameFrame.value;
+  if (!message || message.runId !== displayedGameRunId.value) {
+    return displayedGameRunId.value ? 'ожидаем кадры' : 'нет активной игры';
+  }
+  return gamePhaseLabel(message.phase, message.status);
+});
+const currentGameLeaderLabel = computed(() => {
+  const leader = [...currentGameStats.value].sort((left, right) => {
+    const rightScore = right.scoreValue ?? Number.NEGATIVE_INFINITY;
+    const leftScore = left.scoreValue ?? Number.NEGATIVE_INFINITY;
+    return rightScore - leftScore;
+  })[0];
+  return leader?.display_name ?? '—';
+});
 const statsByTeam = computed(() => {
   const result: Record<string, LobbyParticipantStatsDto> = {};
   for (const stat of lobby.value?.participant_stats ?? []) result[stat.team_id] = stat;
@@ -701,6 +851,38 @@ const lobbyLeaderboard = computed(() =>
     return right.matches_total - left.matches_total;
   }),
 );
+const competitionTeamStats = computed<CompetitionTeamStatRow[]>(() => {
+  const rows: Record<string, CompetitionTeamStatRow> = {};
+  const ensureRow = (teamId: string) => {
+    rows[teamId] ??= {
+      team_id: teamId,
+      name: teamLabel(teamId),
+      wins: 0,
+      losses: 0,
+      points: 0,
+    };
+    return rows[teamId];
+  };
+
+  for (const entrant of activeCompetition.value?.entrants ?? []) ensureRow(entrant.team_id);
+  for (const round of activeCompetition.value?.rounds ?? []) {
+    for (const match of round.matches) {
+      for (const teamId of match.team_ids) {
+        const row = ensureRow(teamId);
+        row.points += match.scores_by_team[teamId] ?? 0;
+        if (!isResolvedCompetitionMatch(match)) continue;
+        if (match.advanced_team_ids.includes(teamId)) row.wins += 1;
+        else row.losses += 1;
+      }
+    }
+  }
+
+  return Object.values(rows).sort((left, right) => {
+    if (right.wins !== left.wins) return right.wins - left.wins;
+    if (right.points !== left.points) return right.points - left.points;
+    return left.losses - right.losses;
+  });
+});
 const preparingTeamIds = computed(() => {
   const listed = new Set([...(lobby.value?.playing_team_ids ?? []), ...(lobby.value?.queued_team_ids ?? [])]);
   return (lobby.value?.teams ?? []).map((team) => team.team_id).filter((teamId) => !listed.has(teamId));
@@ -759,6 +941,22 @@ function runStatusLabel(status: RunDto['status']): string {
   return labels[status];
 }
 
+function gamePhaseLabel(phase: string, status: RunDto['status']): string {
+  const normalized = phase.toLowerCase();
+  const labels: Record<string, string> = {
+    created: 'создан',
+    queued: 'ожидает запуска',
+    running: 'игра идет',
+    started: 'игра идет',
+    playing: 'игра идет',
+    finished: 'завершен',
+    failed: 'ошибка',
+    timeout: 'таймаут',
+    canceled: 'остановлен',
+  };
+  return labels[normalized] ?? runStatusLabel(status);
+}
+
 function runScoreLabel(run: RunDto): string {
   const payload = isRecord(run.result_payload) ? run.result_payload : {};
   const metrics = isRecord(payload.metrics) ? payload.metrics : {};
@@ -791,18 +989,138 @@ function primaryRunId(group: TrainingMatchGroup): string {
   return group.runs[0]?.run_id ?? '';
 }
 
+function matchGroupTeamIds(group: TrainingMatchGroup): string[] {
+  return [...new Set(group.runs.map((run) => run.team_id).filter(Boolean))];
+}
+
+function runIdForTeamInGroup(group: TrainingMatchGroup, teamId: string): string {
+  return group.runs.find((run) => run.team_id === teamId)?.run_id ?? primaryRunId(group);
+}
+
+function formatMatchDate(group: TrainingMatchGroup): string {
+  const run = group.runs
+    .map((item) => trainingRunsById.value[item.run_id])
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at))[0];
+  if (!run?.created_at) return 'время неизвестно';
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(run.created_at));
+}
+
+function matchWinnerLabel(group: TrainingMatchGroup): string {
+  const winners = matchGroupWinnerIds(group);
+  return winners.length ? winners.map(teamLabel).join(', ') : 'не определен';
+}
+
+function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
+  const explicitWinners = new Set<string>();
+  const placements = new Map<string, number>();
+  const scores = new Map<string, number>();
+
+  for (const runLink of group.runs) {
+    const run = trainingRunsById.value[runLink.run_id];
+    const payload = isRecord(run?.result_payload) ? run.result_payload : {};
+    const winners = payload.winners ?? payload.winner;
+    if (Array.isArray(winners)) {
+      for (const winner of winners) {
+        if (typeof winner === 'string' && winner) explicitWinners.add(winner);
+      }
+    } else if (typeof winners === 'string' && winners) {
+      explicitWinners.add(winners);
+    }
+
+    const payloadPlacements = isRecord(payload.placements) ? payload.placements : {};
+    for (const [teamId, rawPlacement] of Object.entries(payloadPlacements)) {
+      if (typeof rawPlacement === 'number' && Number.isFinite(rawPlacement)) {
+        placements.set(teamId, Math.min(placements.get(teamId) ?? rawPlacement, rawPlacement));
+      }
+    }
+
+    const payloadScores = isRecord(payload.scores) ? payload.scores : {};
+    for (const [teamId, rawScore] of Object.entries(payloadScores)) {
+      if (typeof rawScore === 'number' && Number.isFinite(rawScore)) {
+        scores.set(teamId, Math.max(scores.get(teamId) ?? rawScore, rawScore));
+      }
+    }
+
+    const ownScore = extractRunScore(payload, runLink.team_id);
+    if (ownScore !== null && runLink.team_id) {
+      scores.set(runLink.team_id, Math.max(scores.get(runLink.team_id) ?? ownScore, ownScore));
+    }
+  }
+
+  if (explicitWinners.size) return [...explicitWinners];
+  if (placements.size) {
+    const bestPlacement = Math.min(...placements.values());
+    return [...placements.entries()].filter(([, placement]) => placement === bestPlacement).map(([teamId]) => teamId);
+  }
+  if (scores.size) {
+    const bestScore = Math.max(...scores.values());
+    return [...scores.entries()].filter(([, score]) => score === bestScore).map(([teamId]) => teamId);
+  }
+  return [];
+}
+
+function matchPrimaryRunId(match: { team_ids: string[]; run_ids_by_team: Record<string, string> }): string {
+  for (const teamId of match.team_ids) {
+    const runId = match.run_ids_by_team[teamId];
+    if (runId) return runId;
+  }
+  return Object.values(match.run_ids_by_team)[0] ?? '';
+}
+
+function runCreatedAtMs(run: { run_id: string }): number {
+  const createdAt = trainingRunsById.value[run.run_id]?.created_at;
+  const value = createdAt ? Date.parse(createdAt) : NaN;
+  return Number.isFinite(value) ? value : 0;
+}
+
 function buildTrainingMatchGroups(runIds: string[], archived: boolean): TrainingMatchGroup[] {
   const runs = runIds.map((runId) => ({
     run_id: runId,
     team_id: trainingRunsById.value[runId]?.team_id ?? '',
-  }));
-  const groupSize = game.value?.mode === 'small_match' ? 2 : Math.max(1, runs.length);
+  })).sort((left, right) => runCreatedAtMs(right) - runCreatedAtMs(left));
+  if (game.value?.mode === 'small_match') {
+    const groupSize = 2;
+    const groups: TrainingMatchGroup[] = [];
+    for (let index = 0; index < runs.length; index += groupSize) {
+      const groupRuns = runs.slice(index, index + groupSize);
+      groups.push({
+        group_id: `${archived ? 'archive' : 'current'}-${index}-${groupRuns.map((run) => run.run_id).join('-')}`,
+        archived,
+        runs: groupRuns,
+      });
+    }
+    return groups;
+  }
+
+  const closeCreatedAtMs = 2_000;
   const groups: TrainingMatchGroup[] = [];
-  for (let index = 0; index < runs.length; index += groupSize) {
-    const groupRuns = runs.slice(index, index + groupSize);
+  let currentGroup: typeof runs = [];
+  for (const run of runs) {
+    const previousRun = currentGroup[currentGroup.length - 1];
+    const createdAt = runCreatedAtMs(run);
+    const previousCreatedAt = previousRun ? runCreatedAtMs(previousRun) : 0;
+    if (previousRun && Math.abs(previousCreatedAt - createdAt) > closeCreatedAtMs) {
+      groups.push({
+        group_id: `${archived ? 'archive' : 'current'}-${groups.length}-${currentGroup.map((item) => item.run_id).join('-')}`,
+        archived,
+        runs: currentGroup,
+      });
+      currentGroup = [];
+    }
+    currentGroup.push(run);
+  }
+  if (currentGroup.length) {
     groups.push({
-      group_id: `${archived ? 'archive' : 'current'}-${index}-${groupRuns.map((run) => run.run_id).join('-')}`,
-      runs: groupRuns,
+      group_id: `${archived ? 'archive' : 'current'}-${groups.length}-${currentGroup.map((item) => item.run_id).join('-')}`,
+      archived,
+      runs: currentGroup,
     });
   }
   return groups;
@@ -812,8 +1130,216 @@ function cleanCompetitionTitle(title: string): string {
   return title.replace(/^\[lobby:[^\]]+\]\s*/, '');
 }
 
+function archiveCompetitionWinnerLabel(item: LobbyCompetitionDto): string {
+  return item.winner_team_ids.length ? item.winner_team_ids.map(teamLabel).join(', ') : 'не определен';
+}
+
 function teamLabel(teamId: string): string {
   return statsByTeam.value[teamId]?.display_name ?? teamId;
+}
+
+function collectFrameGamePlayers(frame: Record<string, unknown>): Record<string, unknown>[] {
+  const byId = new Map<string, Record<string, unknown>>();
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!isRecord(value)) return;
+
+    const name = value.name ?? value.player ?? value.role ?? value.key;
+    const hasPlayerShape =
+      name !== undefined &&
+      (
+        value.team_id !== undefined ||
+        value.score !== undefined ||
+        value.points !== undefined ||
+        value.life !== undefined ||
+        value.hp !== undefined ||
+        value.shield !== undefined ||
+        value.coins !== undefined
+      );
+    if (hasPlayerShape) {
+      const id = String(value.team_id ?? value.key ?? value.role ?? value.name ?? `player-${byId.size + 1}`);
+      byId.set(id, value);
+    }
+    Object.values(value).forEach(visit);
+  };
+
+  visit(frame);
+  return [...byId.values()];
+}
+
+function buildCurrentGameStatFromFrame(
+  message: EmbeddedGameFrame,
+  player: Record<string, unknown>,
+  index: number,
+): CurrentGameStatRow {
+  const teamId = typeof player.team_id === 'string' ? player.team_id : '';
+  const name = typeof player.name === 'string' ? player.name : '';
+  const scoreValue = numericFrameValue(player.score ?? player.points);
+  const life = numericFrameValue(player.life ?? player.hp);
+  const shield = numericFrameValue(player.shield);
+  const alive = typeof player.alive === 'boolean' ? player.alive : life !== 0;
+  return {
+    run_id: message.runId,
+    team_id: teamId || `frame-player-${index}`,
+    display_name: teamId ? teamLabel(teamId) : name || `Игрок ${index + 1}`,
+    status: message.phase === 'finished' ? (alive ? 'финиш' : 'выбыл') : alive ? 'в игре' : 'выбыл',
+    score: framePlayerScoreLabel(player),
+    scoreValue,
+    lifePercent: percentFrameValue(life, 50),
+    shieldPercent: percentFrameValue(shield, 25),
+    meta: framePlayerMetaLabel(player),
+    isSelf: teamId === lobby.value?.my_team_id,
+  };
+}
+
+function normalizeGameStatName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '');
+}
+
+function isSyntheticFrameTeamId(value: string): boolean {
+  return value.startsWith('frame-player-');
+}
+
+function dedupeCurrentGameStats(rows: CurrentGameStatRow[]): CurrentGameStatRow[] {
+  const concreteRows = rows.filter((row) => !isSyntheticFrameTeamId(row.team_id));
+  const concreteNames = concreteRows
+    .map((row) => normalizeGameStatName(row.display_name))
+    .filter(Boolean);
+  const result = new Map<string, CurrentGameStatRow>();
+
+  const put = (row: CurrentGameStatRow): void => {
+    const normalizedName = normalizeGameStatName(row.display_name);
+    if (
+      isSyntheticFrameTeamId(row.team_id) &&
+      normalizedName &&
+      concreteNames.some((name) => name.includes(normalizedName) || normalizedName.includes(name))
+    ) {
+      return;
+    }
+
+    const key = isSyntheticFrameTeamId(row.team_id) ? normalizedName || row.team_id : row.team_id;
+    const previous = result.get(key);
+    if (!previous) {
+      result.set(key, row);
+      return;
+    }
+
+    const previousHasScore = previous.scoreValue !== null;
+    const rowHasScore = row.scoreValue !== null;
+    if ((!previousHasScore && rowHasScore) || row.meta.length > previous.meta.length) {
+      result.set(key, row);
+    }
+  };
+
+  rows.forEach(put);
+  return [...result.values()];
+}
+
+function numericFrameValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function percentFrameValue(value: number | null, max: number): number {
+  if (value === null) return 0;
+  return Math.max(0, Math.min(100, (value / max) * 100));
+}
+
+function framePlayerScoreLabel(player: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const score = player.score;
+  if (typeof score === 'number' && Number.isFinite(score)) {
+    parts.push(scoreLabel(score));
+  }
+
+  const details: Array<[string, string]> = [
+    ['очки', 'points'],
+    ['монеты', 'coins'],
+    ['жизни', 'life'],
+    ['хиты', 'hits'],
+    ['урон', 'damage'],
+  ];
+  for (const [label, key] of details) {
+    const value = player[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      parts.push(`${label} ${scoreLabel(value)}`);
+    }
+  }
+
+  return parts.length ? parts.join(' · ') : 'пока нет';
+}
+
+function framePlayerMetaLabel(player: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const details: Array<[string, string]> = [
+    ['позиция', 'position'],
+    ['роль', 'role'],
+  ];
+  for (const [label, key] of details) {
+    const value = player[key];
+    if (typeof value === 'string' && value) parts.push(`${label}: ${value}`);
+  }
+  return parts.join(' · ');
+}
+
+function isRunStatus(value: unknown): value is RunDto['status'] {
+  return typeof value === 'string'
+    && ['created', 'queued', 'running', 'finished', 'failed', 'timeout', 'canceled'].includes(value);
+}
+
+function handleEmbeddedGameFrameMessage(event: MessageEvent): void {
+  if (event.origin !== window.location.origin) return;
+  const data = event.data;
+  if (!isRecord(data) || data.type !== 'agp.watch.frame' || !isRecord(data.payload)) return;
+  const payload = data.payload;
+  if (typeof payload.runId !== 'string' || !isRecord(payload.frame)) return;
+
+  embeddedGameFrame.value = {
+    runId: payload.runId,
+    status: isRunStatus(payload.status) ? payload.status : 'running',
+    tick: typeof payload.tick === 'number' && Number.isFinite(payload.tick) ? payload.tick : 0,
+    phase: typeof payload.phase === 'string' ? payload.phase : '',
+    frame: payload.frame,
+    replayFrameIndex: typeof payload.replayFrameIndex === 'number' ? payload.replayFrameIndex : 0,
+    replayFrameCount: typeof payload.replayFrameCount === 'number' ? payload.replayFrameCount : 0,
+  };
+}
+
+function isTerminalRunStatus(status: string | null | undefined): boolean {
+  return Boolean(status && ['finished', 'failed', 'timeout', 'canceled'].includes(status));
+}
+
+function isResolvedCompetitionMatch(match: CompetitionMatchDto): boolean {
+  return ['finished', 'auto_advanced', 'awaiting_tiebreak'].includes(match.status) || match.advanced_team_ids.length > 0;
+}
+
+function effectiveCompetitionMatchStatus(match: CompetitionMatchDto): CompetitionMatchStatus {
+  if (match.status !== 'running') return match.status;
+  const runIds = Object.values(match.run_ids_by_team);
+  if (!runIds.length) return match.status;
+  const allTerminal = runIds.every((runId) => isTerminalRunStatus(competitionRunsById.value[runId]?.status));
+  return allTerminal ? 'finished' : match.status;
+}
+
+function isCompetitionMatchLoser(match: CompetitionMatchDto, teamId: string): boolean {
+  return isResolvedCompetitionMatch(match) && !match.advanced_team_ids.includes(teamId);
+}
+
+function competitionTeamMatchSummary(match: CompetitionMatchDto, teamId: string): string {
+  const score = match.scores_by_team[teamId];
+  const placement = match.placements_by_team[teamId];
+  const parts: string[] = [];
+  if (score !== undefined) parts.push(`очки ${scoreLabel(score)}`);
+  if (placement !== undefined) parts.push(`место ${placement}`);
+  if (match.advanced_team_ids.includes(teamId)) parts.push('победа');
+  else if (isCompetitionMatchLoser(match, teamId)) parts.push('поражение');
+  else {
+    const runStatus = competitionRunsById.value[match.run_ids_by_team[teamId] ?? '']?.status;
+    parts.push(isTerminalRunStatus(runStatus) ? 'завершил' : 'играет');
+  }
+  return parts.join(' · ');
 }
 
 function competitionMatchStatusLabel(status: CompetitionMatchStatus): string {
@@ -1152,6 +1678,7 @@ watch(
 watch(
   () => currentGameRunId.value,
   (runId) => {
+    if (embeddedGameFrame.value?.runId !== runId) embeddedGameFrame.value = null;
     if (runId) {
       lastGameRunId.value = runId;
       activeTab.value = 'game';
@@ -1169,6 +1696,7 @@ watch(
 );
 
 onMounted(async () => {
+  window.addEventListener('message', handleEmbeddedGameFrameMessage);
   isLoading.value = true;
   errorMessage.value = '';
   try {
@@ -1185,6 +1713,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('message', handleEmbeddedGameFrameMessage);
   stopLiveUpdates();
   stopCompetitionPolling();
 });
@@ -1197,7 +1726,23 @@ onUnmounted(() => {
   align-content: start;
   grid-auto-rows: max-content;
   padding: 0;
-  background: #f2f5f9;
+  background-color: #eef4fb;
+  background-image:
+    url("data:image/svg+xml,%3Csvg width='160' height='160' viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.12' stroke-width='2'%3E%3Cpath d='M16 16h28v28H16zM116 16h28v28h-28zM16 116h28v28H16zM116 116h28v28h-28z'/%3E%3Cpath d='M64 80h32M80 64v32M0 80h24M136 80h24M80 0v24M80 136v24'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(circle at 12% 8%, rgba(45, 212, 191, 0.22), transparent 26rem),
+    radial-gradient(circle at 85% 18%, rgba(251, 191, 36, 0.18), transparent 24rem),
+    linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+  background-size: 160px 160px, auto, auto, auto;
+}
+
+.lobby-page--game {
+  gap: 0;
+  background-color: #020617;
+  background-image:
+    url("data:image/svg+xml,%3Csvg width='144' height='144' viewBox='0 0 144 144' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.14' stroke-width='1.5'%3E%3Cpath d='M18 18h30v30H18zM96 18h30v30H96zM18 96h30v30H18zM96 96h30v30H96z'/%3E%3Cpath d='M72 0v144M0 72h144'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(circle at 14% 12%, rgba(20, 184, 166, 0.24), transparent 28rem),
+    radial-gradient(circle at 82% 20%, rgba(59, 130, 246, 0.18), transparent 24rem),
+    linear-gradient(135deg, #030712 0%, #071528 50%, #020617 100%);
 }
 
 .lobby-head {
@@ -1216,6 +1761,10 @@ onUnmounted(() => {
 
 .lobby-page > :not(.lobby-head) {
   margin-inline: 0.6rem;
+}
+
+.lobby-page--game > :not(.lobby-head) {
+  margin-inline: 0;
 }
 
 .lobby-title-block {
@@ -1344,6 +1893,10 @@ onUnmounted(() => {
   align-items: start;
 }
 
+.lobby-code-layout {
+  align-items: stretch;
+}
+
 .lobby-state-grid {
   grid-template-columns: minmax(0, 1.4fr) minmax(20rem, 0.6fr);
 }
@@ -1368,11 +1921,11 @@ onUnmounted(() => {
 }
 
 .lobby-game-layout {
-  grid-template-columns: minmax(0, 1fr) minmax(17rem, 21rem);
-  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
+  gap: 0;
   align-items: stretch;
-  height: calc(100dvh - 4.7rem);
-  min-height: 34rem;
+  height: calc(100dvh - 3.35rem);
+  min-height: 0;
 }
 
 .lobby-roles,
@@ -1380,16 +1933,77 @@ onUnmounted(() => {
 .lobby-participant-column,
 .lobby-match-list,
 .lobby-stats-list,
+.lobby-main-stack,
 .lobby-side-stack,
 .lobby-teacher-card {
   display: grid;
   gap: 0.5rem;
 }
 
+.lobby-roles,
+.lobby-editor {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(34, 211, 238, 0.24);
+  background:
+    url("data:image/svg+xml,%3Csvg width='128' height='96' viewBox='0 0 128 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.12'%3E%3Cpath d='M16 16h24v24H16zM88 16h24v24H88zM52 52h24v24H52z'/%3E%3Cpath d='M40 28h12M76 64h12M64 0v16M64 80v16'/%3E%3C/g%3E%3C/svg%3E") right 0.75rem top 0.75rem / 9rem auto no-repeat,
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98));
+  color: #e5f3ff;
+  box-shadow: 0 18px 48px rgba(2, 6, 23, 0.2);
+}
+
+.lobby-roles::before,
+.lobby-editor::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.18rem;
+  background: linear-gradient(90deg, #22d3ee, #14b8a6, #facc15);
+  opacity: 0.82;
+}
+
+.lobby-roles-head {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 0.5rem;
+}
+
+.lobby-roles-head > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.lobby-roles-head span {
+  color: #8ea7c1;
+  font-size: 0.78rem;
+}
+
+.lobby-role-progress {
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.lobby-role-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22d3ee, #14b8a6, #facc15);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.32);
+}
+
 .lobby-role-button {
-  border: 1px solid var(--agp-border);
-  border-radius: 0.45rem;
-  background: #fff;
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 0.55rem;
+  background: rgba(15, 23, 42, 0.64);
+  color: #dbeafe;
   padding: 0.55rem 0.65rem;
   display: grid;
   gap: 0.1rem;
@@ -1397,8 +2011,28 @@ onUnmounted(() => {
 }
 
 .lobby-role-button.active {
-  border-color: rgba(15, 118, 110, 0.45);
-  background: #edf8f6;
+  border-color: rgba(45, 212, 191, 0.72);
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.32), rgba(15, 23, 42, 0.72));
+  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
+}
+
+.lobby-role-button span {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.lobby-role-button span i {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 0.18rem rgba(245, 158, 11, 0.12);
+}
+
+.lobby-role-button.filled span i {
+  background: #14b8a6;
+  box-shadow: 0 0 0 0.18rem rgba(20, 184, 166, 0.14);
 }
 
 .lobby-role-button span,
@@ -1412,10 +2046,17 @@ onUnmounted(() => {
   color: var(--agp-text-muted);
 }
 
+.lobby-role-button small {
+  color: #8ea7c1;
+}
+
 .lobby-competition-panel,
+.lobby-competition-leaderboard,
+.lobby-competition-stat-list,
 .lobby-rounds,
 .lobby-round,
-.lobby-competition-match {
+.lobby-competition-match,
+.lobby-competition-team-rows {
   display: grid;
   gap: 0.75rem;
 }
@@ -1454,6 +2095,45 @@ onUnmounted(() => {
   background: #f8fafc;
 }
 
+.lobby-competition-stat-list {
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.5rem;
+}
+
+.lobby-competition-stat-row,
+.lobby-competition-team-row {
+  border: 1px solid var(--agp-border);
+  border-radius: 0.45rem;
+  background: #fff;
+  padding: 0.5rem 0.6rem;
+  display: grid;
+  gap: 0.05rem;
+}
+
+.lobby-competition-stat-row span,
+.lobby-competition-team-row span {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+}
+
+.lobby-competition-team-rows {
+  gap: 0.45rem;
+}
+
+.lobby-competition-team-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.lobby-competition-team-row.winner {
+  border-color: rgba(15, 118, 110, 0.28);
+  background: #edf8f6;
+}
+
+.lobby-competition-team-row.loser {
+  background: #fff;
+}
+
 .lobby-competition-setting {
   display: grid;
   gap: 0.15rem;
@@ -1463,8 +2143,37 @@ onUnmounted(() => {
 }
 
 .lobby-editor-toolbar {
+  position: relative;
+  z-index: 1;
   justify-content: space-between;
   margin-bottom: 0.65rem;
+}
+
+.lobby-editor-toolbar h2 {
+  color: #e5f3ff;
+}
+
+.lobby-editor-toolbar p {
+  color: #8ea7c1;
+}
+
+.lobby-editor-toolbar .btn-outline-secondary {
+  border-color: rgba(125, 211, 252, 0.34);
+  background: rgba(15, 23, 42, 0.62);
+  color: #cfe6f5;
+}
+
+.lobby-editor-toolbar .btn-outline-secondary:hover:not(:disabled) {
+  border-color: rgba(45, 212, 191, 0.68);
+  background: rgba(20, 184, 166, 0.18);
+  color: #ffffff;
+}
+
+.lobby-editor-toolbar .btn-dark {
+  border: 0;
+  background: linear-gradient(135deg, #14b8a6, #2563eb);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
 }
 
 .lobby-participant-columns {
@@ -1477,8 +2186,24 @@ onUnmounted(() => {
   align-content: start;
 }
 
+.lobby-column-empty {
+  border: 1px dashed rgba(15, 118, 110, 0.22);
+  border-radius: 0.55rem;
+  background:
+    url("data:image/svg+xml,%3Csvg width='72' height='48' viewBox='0 0 72 48' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2314b8a6' stroke-opacity='.16'%3E%3Cpath d='M12 12h14v14H12zM46 12h14v14H46zM29 26h14v14H29z'/%3E%3C/g%3E%3C/svg%3E") right 0.4rem center / 4.5rem auto no-repeat,
+    rgba(240, 253, 250, 0.46);
+  color: var(--agp-text-muted);
+  font-size: 0.84rem;
+  padding: 0.65rem;
+}
+
 .lobby-participants-card {
   min-height: 10rem;
+}
+
+.lobby-main-stack {
+  align-content: start;
+  min-width: 0;
 }
 
 .lobby-side-stack {
@@ -1532,6 +2257,12 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.lobby-match-row > span {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
 .lobby-match-row.muted {
   background: #f8fafc;
 }
@@ -1565,6 +2296,44 @@ onUnmounted(() => {
 .lobby-match-group header > div span {
   color: var(--agp-text-muted);
   font-size: 0.78rem;
+}
+
+.lobby-section-head,
+.lobby-match-pagination,
+.lobby-match-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.lobby-section-head {
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+
+.lobby-count-pill {
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 999px;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.lobby-match-meta {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+}
+
+.lobby-match-meta strong {
+  color: var(--agp-text);
+}
+
+.lobby-match-pagination {
+  justify-content: space-between;
+  margin-top: 0.65rem;
 }
 
 .lobby-leaderboard-list {
@@ -1604,6 +2373,10 @@ onUnmounted(() => {
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #020617;
+  box-shadow: none;
 }
 
 .lobby-game-view iframe {
@@ -1617,7 +2390,138 @@ onUnmounted(() => {
 
 .lobby-game-stats {
   min-height: 0;
+  padding: 0.85rem;
   overflow: auto;
+  border: 0;
+  border-left: 1px solid rgba(34, 211, 238, 0.24);
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98)),
+    url("data:image/svg+xml,%3Csvg width='104' height='104' viewBox='0 0 104 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23facc15' stroke-opacity='.12'%3E%3Cpath d='M16 52h72M52 16v72M28 28l48 48M76 28 28 76'/%3E%3C/g%3E%3C/svg%3E");
+  color: #dbeafe;
+  box-shadow: none;
+}
+
+.lobby-game-stats .text-muted {
+  color: #8ea7c1 !important;
+}
+
+.lobby-game-stats-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.lobby-game-stats-head h2,
+.lobby-game-stats-head strong {
+  color: #e5f3ff;
+}
+
+.lobby-game-stats-head span {
+  color: #8ea7c1;
+  font-size: 0.78rem;
+}
+
+.lobby-game-mini-stats {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.lobby-game-mini-stats div,
+.lobby-game-empty-stat {
+  border: 1px solid rgba(34, 211, 238, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.66);
+  padding: 0.55rem 0.65rem;
+}
+
+.lobby-game-mini-stats span {
+  display: block;
+  color: #8ea7c1;
+  font-size: 0.72rem;
+}
+
+.lobby-game-mini-stats strong {
+  color: #e5f3ff;
+}
+
+.lobby-game-scoreboard {
+  gap: 0.5rem;
+}
+
+.lobby-game-layout .lobby-stat-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem 0.65rem;
+  border-color: rgba(34, 211, 238, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.68);
+  color: #dbeafe;
+}
+
+.lobby-game-layout .lobby-stat-row--self {
+  border-color: rgba(45, 212, 191, 0.5);
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.28), rgba(15, 23, 42, 0.7));
+}
+
+.lobby-stat-title {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.lobby-stat-title strong {
+  overflow: hidden;
+  color: #e5f3ff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-stat-score {
+  color: #fef3c7;
+  font-weight: 850;
+  text-align: right;
+}
+
+.lobby-stat-bars {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+}
+
+.lobby-stat-bars span {
+  height: 0.32rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+.lobby-stat-bars i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.lobby-stat-bars span:first-child i {
+  background: linear-gradient(90deg, #fb7185, #facc15);
+}
+
+.lobby-stat-bars span:last-child i {
+  background: linear-gradient(90deg, #38bdf8, #22d3ee);
+}
+
+.lobby-game-layout .lobby-stat-row small {
+  grid-column: 1 / -1;
+  color: #8ea7c1;
+}
+
+.lobby-game-empty-stat {
+  color: #8ea7c1;
+  font-size: 0.86rem;
 }
 
 .lobby-empty {
@@ -1625,7 +2529,18 @@ onUnmounted(() => {
   min-height: 24rem;
   display: grid;
   place-content: center;
+  gap: 0.25rem;
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  background:
+    url("data:image/svg+xml,%3Csvg width='180' height='120' viewBox='0 0 180 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M32 24h32v32H32zM116 24h32v32h-32zM74 64h32v32H74z'/%3E%3Cpath d='M64 40h52M90 0v24M90 96v24'/%3E%3C/g%3E%3C/svg%3E") center / 16rem auto no-repeat,
+    radial-gradient(circle at 50% 45%, rgba(20, 184, 166, 0.18), transparent 18rem),
+    #020617;
+  color: #e5f3ff;
   text-align: center;
+}
+
+.lobby-empty .text-muted {
+  color: #8ea7c1 !important;
 }
 
 @media (max-width: 980px) {

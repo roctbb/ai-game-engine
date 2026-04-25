@@ -40,6 +40,9 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     }
     assert expected_tables.issubset(table_names)
 
+    catalog_columns = {item["name"] for item in inspector.get_columns("catalog_games")}
+    assert {"learning_section"}.issubset(catalog_columns)
+
     lobby_columns = {item["name"] for item in inspector.get_columns("training_lobbies")}
     assert "last_scheduled_run_ids_json" in lobby_columns
 

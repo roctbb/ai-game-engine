@@ -15,6 +15,7 @@ export const router = createRouter({
       component: () => import('../pages/LoginPage.vue'),
     },
     { path: '/tasks', name: 'tasks', component: () => import('../pages/TasksCatalogPage.vue') },
+    { path: '/tasks/sections/:section', name: 'tasks-section', component: () => import('../pages/TasksSectionPage.vue') },
     { path: '/lobbies', name: 'lobbies', component: () => import('../pages/LobbiesPage.vue') },
     { path: '/games', name: 'games', component: () => import('../pages/GamesPage.vue') },
     { path: '/games/:gameId/docs', name: 'game-docs', component: () => import('../pages/GameDocsPage.vue') },

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 
 
@@ -15,6 +17,31 @@ class InMemoryRunRepository:
 
     def list(self) -> list[Run]:
         return sorted(self._items.values(), key=lambda run: run.created_at, reverse=True)
+
+    def list_filtered(
+        self,
+        *,
+        team_id: str | None = None,
+        game_id: str | None = None,
+        lobby_id: str | None = None,
+        run_kind: RunKind | None = None,
+        status: RunStatus | None = None,
+        include_result_payload: bool = True,
+    ) -> list[Run]:
+        runs: list[Run] = []
+        for run in self._items.values():
+            if team_id is not None and run.team_id != team_id:
+                continue
+            if game_id is not None and run.game_id != game_id:
+                continue
+            if lobby_id is not None and run.lobby_id != lobby_id:
+                continue
+            if run_kind is not None and run.run_kind is not run_kind:
+                continue
+            if status is not None and run.status is not status:
+                continue
+            runs.append(run if include_result_payload else replace(run, result_payload=None))
+        return sorted(runs, key=lambda item: item.created_at, reverse=True)
 
     def list_active_by_requested_by_and_kind(
         self, requested_by: str, run_kind: RunKind

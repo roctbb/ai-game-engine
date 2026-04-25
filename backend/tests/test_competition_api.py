@@ -373,6 +373,59 @@ def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -
     assert finished["winner_team_ids"] == [team_b["team_id"]]
 
 
+def test_get_competition_reconciles_terminal_match_runs(client, teacher_headers, container) -> None:
+    game = _create_small_match_game(client, "competition_api_game_reconcile", headers=teacher_headers)
+    team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-reconcile-a")
+    team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-reconcile-b")
+
+    competition = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Reconcile Cup",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    ).json()
+    for team in [team_a, team_b]:
+        client.post(
+            f"/api/v1/competitions/{competition['competition_id']}/register",
+            json={"team_id": team["team_id"]},
+            headers=teacher_headers,
+        )
+
+    started = client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/start",
+        json={"requested_by": "teacher-reconcile"},
+        headers=teacher_headers,
+    ).json()
+    run_ids_by_team = started["rounds"][0]["matches"][0]["run_ids_by_team"]
+
+    for team_id, run_id in run_ids_by_team.items():
+        score = 90 if team_id == team_a["team_id"] else 10
+        container.execution.finish_run(
+            run_id=run_id,
+            payload={
+                "status": "ok",
+                "metrics": {},
+                "placements": {team_id: 1},
+                "scores": {team_id: score},
+            },
+        )
+
+    reconciled = client.get(
+        f"/api/v1/competitions/{competition['competition_id']}",
+        headers=teacher_headers,
+    ).json()
+
+    assert reconciled["status"] == "completed"
+    assert reconciled["winner_team_ids"] == [team_a["team_id"]]
+    assert reconciled["rounds"][0]["matches"][0]["status"] == "finished"
+
+
 def test_competition_advance_manual_tie_requires_resolution(client, teacher_headers) -> None:
     game = _create_small_match_game(client, "competition_api_game_tie", headers=teacher_headers)
     team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-a-3")

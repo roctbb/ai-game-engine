@@ -8,6 +8,7 @@ renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board, checkpoint_index), возвращающую up/down/left/right/stay. Добегайте до контрольных точек по порядку.
 description: Два участника бегут по случайной карте со стенами и собирают свои цепочки контрольных точек.
 difficulty: medium
+learning_section: Жадные стратегии
 topics:
   - графы
   - BFS

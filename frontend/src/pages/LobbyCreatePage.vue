@@ -95,6 +95,7 @@
           <span class="agp-pill agp-pill--neutral">{{ matchFlowLabel(selectedGame.mode) }}</span>
           <span class="agp-pill agp-pill--neutral">ролей: {{ selectedRequiredSlots.length || 'нет данных' }}</span>
           <span v-if="selectedGame.difficulty" class="agp-pill agp-pill--neutral">{{ difficultyLabel(selectedGame.difficulty) }}</span>
+          <span v-if="selectedGame.learning_section" class="agp-pill agp-pill--primary">{{ selectedGame.learning_section }}</span>
         </div>
       </section>
 

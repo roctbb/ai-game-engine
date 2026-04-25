@@ -12,6 +12,25 @@
 6. Для соревнований берите игры `small_match`: там полезно сравнивать не только свой путь, но и действия соперника.
 7. Карты генерируются со случайностью, поэтому решение должно читать входные данные, а не запоминать маршрут.
 
+## Линейка до графов
+
+Эти игры специально стоят перед BFS/DP. Они дают героев, ресурсы, очки и визуализацию, но не требуют строить граф или искать путь по лабиринту.
+
+| Учебный блок | Игры |
+| --- | --- |
+| Команды героя | `beginner_cave` |
+| Условия и выбор | `gate_guard`, `wall_archer` |
+| Циклы и повторения | `farm_row`, `crystal_corridor` |
+| Строки и коды | `rune_decoder`, `command_tape` |
+| Счетчики и ресурсы | `miner_backpack`, `battery_robot_lite`, `potion_maker` |
+| Списки и цели | `weakest_enemy`, `priority_tower`, `hero_inventory`, `space_queue` |
+| Матрицы и координаты | `pixel_painter`, `treasure_scanner`, `minesweeper_numbers`, `farm_grid` |
+| Режимы поведения | `patrol_guard`, `boss_pattern` |
+| Симуляции мира | `laser_mirrors`, `gravity_apples` |
+| Соревновательные стратегии | `archer_duel_lite`, `crystal_auction` |
+
+Удобный порядок для курса: `beginner_cave` -> `gate_guard` -> `wall_archer` -> `farm_row` -> `crystal_corridor` -> `rune_decoder` -> `miner_backpack` -> `battery_robot_lite` -> `weakest_enemy` -> `priority_tower` -> `pixel_painter` -> `treasure_scanner` -> `minesweeper_numbers` -> `laser_mirrors` -> `boss_pattern`, а затем уже `maze_escape` и другие BFS-задачи.
+
 ## Таблица игр
 
 | Игра | Папка | Режим | Сложность | Главная идея | Примеры |

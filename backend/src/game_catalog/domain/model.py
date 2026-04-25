@@ -50,6 +50,7 @@ class Game:
     mode: GameMode
     description: str | None = None
     difficulty: str | None = None
+    learning_section: str | None = None
     topics: tuple[str, ...] = ()
     catalog_metadata_status: CatalogMetadataStatus = CatalogMetadataStatus.READY
     versions: dict[str, GameVersion] = field(default_factory=dict)
@@ -62,12 +63,14 @@ class Game:
         mode: GameMode,
         description: str | None = None,
         difficulty: str | None = None,
+        learning_section: str | None = None,
         topics: tuple[str, ...] = (),
         catalog_metadata_status: CatalogMetadataStatus | None = None,
     ) -> "Game":
         normalized_topics = tuple(topic.strip() for topic in topics if topic.strip())
         normalized_description = description.strip() if description is not None else None
         normalized_difficulty = difficulty.strip().lower() if difficulty is not None else None
+        normalized_learning_section = learning_section.strip() if learning_section is not None else None
         resolved_status = catalog_metadata_status
         if resolved_status is None:
             if (
@@ -75,6 +78,7 @@ class Game:
                 and (
                     not normalized_description
                     or not normalized_difficulty
+                    or not normalized_learning_section
                     or len(normalized_topics) == 0
                 )
             ):
@@ -88,12 +92,13 @@ class Game:
             mode=mode,
             description=normalized_description or None,
             difficulty=normalized_difficulty or None,
+            learning_section=normalized_learning_section or None,
             topics=normalized_topics,
             catalog_metadata_status=resolved_status,
         )
 
     def has_required_single_task_catalog_metadata(self) -> bool:
-        return bool(self.description and self.difficulty and self.topics)
+        return bool(self.description and self.difficulty and self.learning_section and self.topics)
 
     def add_version(
         self,

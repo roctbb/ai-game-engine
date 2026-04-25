@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import desc, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, load_only, sessionmaker
 
 from execution.domain.model import (
     BuildJob,
@@ -32,6 +32,56 @@ class SqlAlchemyRunRepository:
         with self._session_factory() as session:
             rows = session.scalars(select(RunOrm).order_by(desc(RunOrm.created_at))).all()
             return [_map_run_from_orm(row) for row in rows]
+
+    def list_filtered(
+        self,
+        *,
+        team_id: str | None = None,
+        game_id: str | None = None,
+        lobby_id: str | None = None,
+        run_kind: RunKind | None = None,
+        status: RunStatus | None = None,
+        include_result_payload: bool = True,
+    ) -> list[Run]:
+        statement = select(RunOrm).order_by(desc(RunOrm.created_at))
+        if team_id is not None:
+            statement = statement.where(RunOrm.team_id == team_id)
+        if game_id is not None:
+            statement = statement.where(RunOrm.game_id == game_id)
+        if lobby_id is not None:
+            statement = statement.where(RunOrm.lobby_id == lobby_id)
+        if run_kind is not None:
+            statement = statement.where(RunOrm.run_kind == run_kind.value)
+        if status is not None:
+            statement = statement.where(RunOrm.status == status.value)
+        if not include_result_payload:
+            statement = statement.options(
+                load_only(
+                    RunOrm.run_id,
+                    RunOrm.team_id,
+                    RunOrm.game_id,
+                    RunOrm.requested_by,
+                    RunOrm.run_kind,
+                    RunOrm.lobby_id,
+                    RunOrm.target_version_id,
+                    RunOrm.status,
+                    RunOrm.snapshot_id,
+                    RunOrm.snapshot_version_id,
+                    RunOrm.revisions_by_slot,
+                    RunOrm.worker_id,
+                    RunOrm.created_at,
+                    RunOrm.queued_at,
+                    RunOrm.started_at,
+                    RunOrm.finished_at,
+                    RunOrm.error_message,
+                )
+            )
+        with self._session_factory() as session:
+            rows = session.scalars(statement).all()
+            return [
+                _map_run_from_orm(row, include_result_payload=include_result_payload)
+                for row in rows
+            ]
 
     def list_active_by_requested_by_and_kind(
         self, requested_by: str, run_kind: RunKind
@@ -111,7 +161,7 @@ def _map_run_to_orm(run: Run) -> RunOrm:
     )
 
 
-def _map_run_from_orm(row: RunOrm) -> Run:
+def _map_run_from_orm(row: RunOrm, *, include_result_payload: bool = True) -> Run:
     return Run(
         run_id=row.run_id,
         team_id=row.team_id,
@@ -129,7 +179,7 @@ def _map_run_from_orm(row: RunOrm) -> Run:
         queued_at=row.queued_at,
         started_at=row.started_at,
         finished_at=row.finished_at,
-        result_payload=row.result_payload,
+        result_payload=row.result_payload if include_result_payload else None,
         error_message=row.error_message,
     )
 

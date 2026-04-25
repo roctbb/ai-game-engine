@@ -57,6 +57,7 @@
               <th>Игра</th>
               <th>Статус</th>
               <th>Сложность</th>
+              <th>Раздел</th>
               <th>Темы</th>
               <th>Действия</th>
             </tr>
@@ -70,6 +71,7 @@
                 </td>
                 <td><span class="badge" :class="statusBadgeClass(game.catalog_metadata_status)">{{ statusLabel(game.catalog_metadata_status) }}</span></td>
                 <td class="small">{{ difficultyLabel(game.difficulty) }}</td>
+                <td class="small">{{ game.learning_section || '—' }}</td>
                 <td class="small">{{ game.topics.join(', ') || '—' }}</td>
                 <td>
                   <div class="d-flex gap-2">
@@ -82,7 +84,7 @@
               </tr>
 
               <tr v-if="isExpanded(game.game_id)">
-                <td colspan="5">
+                <td colspan="6">
                   <div class="agp-card-soft p-3 d-flex flex-column gap-2">
                     <div class="row g-2">
                       <div class="col-md-8">
@@ -113,7 +115,16 @@
                     </div>
 
                     <div>
-                      <label class="form-label small">Темы (через запятую)</label>
+                      <label class="form-label small">Учебный раздел</label>
+                      <input
+                        v-model="editorByGameId[game.game_id].learningSection"
+                        class="form-control"
+                        placeholder="Поиск пути BFS"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="form-label small">Теги (через запятую)</label>
                       <input v-model="editorByGameId[game.game_id].topicsCsv" class="form-control" placeholder="графы, bfs, симуляция" />
                     </div>
 
@@ -179,6 +190,7 @@ import { useSessionStore } from '../stores/session';
 interface CatalogEditorState {
   description: string;
   difficulty: '' | 'easy' | 'medium' | 'hard';
+  learningSection: string;
   topicsCsv: string;
   status: CatalogMetadataStatus;
   isSaving: boolean;
@@ -267,6 +279,7 @@ function ensureEditor(gameId: string): CatalogEditorState {
   const created: CatalogEditorState = {
     description: game?.description ?? '',
     difficulty: ((game?.difficulty ?? '') as CatalogEditorState['difficulty']),
+    learningSection: game?.learning_section ?? '',
     topicsCsv: (game?.topics ?? []).join(', '),
     status: game?.catalog_metadata_status ?? 'draft',
     isSaving: false,
@@ -290,6 +303,9 @@ function publishValidationError(gameId: string): string {
   }
   if (!editor.difficulty) {
     return 'укажите сложность';
+  }
+  if (!editor.learningSection.trim()) {
+    return 'укажите учебный раздел';
   }
   if (parseTopics(editor.topicsCsv).length === 0) {
     return 'добавьте хотя бы одну тему';
@@ -327,6 +343,7 @@ async function loadGames(): Promise<void> {
       nextEditors[game.game_id] = {
         description: existing?.description ?? game.description ?? '',
         difficulty: (existing?.difficulty ?? (game.difficulty ?? '')) as CatalogEditorState['difficulty'],
+        learningSection: existing?.learningSection ?? game.learning_section ?? '',
         topicsCsv: existing?.topicsCsv ?? game.topics.join(', '),
         status: existing?.status ?? game.catalog_metadata_status,
         isSaving: false,
@@ -358,6 +375,7 @@ async function saveCatalogMetadata(gameId: string): Promise<void> {
       game_id: gameId,
       description: editor.description.trim() ? editor.description.trim() : null,
       difficulty: editor.difficulty || null,
+      learning_section: editor.learningSection.trim() ? editor.learningSection.trim() : null,
       topics: parseTopics(editor.topicsCsv),
       catalog_metadata_status: editor.status,
     };
@@ -369,6 +387,7 @@ async function saveCatalogMetadata(gameId: string): Promise<void> {
     }
     editor.description = updated.description ?? '';
     editor.difficulty = ((updated.difficulty ?? '') as CatalogEditorState['difficulty']);
+    editor.learningSection = updated.learning_section ?? '';
     editor.topicsCsv = updated.topics.join(', ');
     editor.status = updated.catalog_metadata_status;
   } catch (error) {

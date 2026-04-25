@@ -114,6 +114,58 @@ def test_run_stream_emits_terminal_event_for_finished_run(client, teacher_header
     assert queued["run_id"] == run["run_id"]
 
 
+def test_run_stream_omits_heavy_replay_payload(client, teacher_headers) -> None:
+    run = _create_ready_single_task_run(client, requested_by="captain-stream-compact")
+    client.post(f"/api/v1/runs/{run['run_id']}/queue")
+
+    start_response = client.post(
+        f"/api/v1/internal/runs/{run['run_id']}/started",
+        json={"worker_id": "worker-stream-compact"},
+    )
+    if start_response.status_code == 404:
+        register = client.post(
+            "/api/v1/internal/workers/register",
+            json={
+                "worker_id": "worker-stream-compact",
+                "hostname": "stream-host",
+                "capacity_total": 1,
+                "labels": {},
+            },
+        )
+        assert register.status_code == 200, register.json()
+        start_response = client.post(
+            f"/api/v1/internal/runs/{run['run_id']}/started",
+            json={"worker_id": "worker-stream-compact"},
+        )
+    assert start_response.status_code == 200, start_response.json()
+
+    finish_response = client.post(
+        f"/api/v1/internal/runs/{run['run_id']}/finished",
+        json={
+            "payload": {
+                "status": "finished",
+                "scores": {run["team_id"]: 10},
+                "metrics": {"score": 10},
+                "frames": [{"tick": tick, "blob": "x" * 10_000} for tick in range(10)],
+            }
+        },
+    )
+    assert finish_response.status_code == 200, finish_response.json()
+
+    with client.stream(
+        "GET",
+        f"/api/v1/runs/{run['run_id']}/stream?poll_interval_ms=10",
+        headers=teacher_headers,
+    ) as response:
+        assert response.status_code == 200
+        payload = "".join(response.iter_text())
+
+    data_items = _extract_data_lines(payload)
+    snapshot_payload = next(item for item in data_items if item.get("kind") == "snapshot")
+    assert "frames" not in snapshot_payload["payload"]["result_payload"]
+    assert snapshot_payload["payload"]["result_payload"]["scores"] == {run["team_id"]: 10}
+
+
 def test_run_stream_emits_terminal_event_for_canceled_run(client, teacher_headers) -> None:
     run = _create_ready_single_task_run(client, requested_by="captain-stream-canceled")
     canceled = client.post(f"/api/v1/runs/{run['run_id']}/cancel")

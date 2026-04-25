@@ -87,6 +87,35 @@
         </div>
       </article>
 
+      <article v-if="competitionLeaderboard.length" class="agp-card p-3 competition-leaderboard">
+        <div class="competition-leaderboard-head">
+          <div>
+            <h2 class="h6 mb-1">Лидерборд</h2>
+            <div class="small text-muted">Итоги по матчам этого соревнования.</div>
+          </div>
+          <div v-if="competition.winner_team_ids.length" class="competition-winner-callout">
+            <span>Победитель</span>
+            <strong>{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</strong>
+          </div>
+        </div>
+        <div class="competition-leaderboard-list">
+          <div
+            v-for="(stat, index) in competitionLeaderboard"
+            :key="stat.team_id"
+            class="competition-leaderboard-row"
+            :class="{ winner: competition.winner_team_ids.includes(stat.team_id) }"
+          >
+            <span class="competition-leaderboard-place">{{ index + 1 }}</span>
+            <div>
+              <strong>{{ stat.name }}</strong>
+              <span>
+                побед {{ stat.wins }} · поражений {{ stat.losses }} · очков {{ scoreLabel(stat.points) }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </article>
+
       <article class="agp-card p-3" v-if="competition.status === 'draft' && canModerate">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h2 class="h6 mb-0">Настройки соревнования</h2>
@@ -523,6 +552,14 @@ import {
 } from '../lib/api';
 import { useSessionStore } from '../stores/session';
 
+interface CompetitionTeamStatRow {
+  team_id: string;
+  name: string;
+  wins: number;
+  losses: number;
+  points: number;
+}
+
 const route = useRoute();
 const sessionStore = useSessionStore();
 const view = ref<'rounds' | 'bracket'>('rounds');
@@ -602,6 +639,43 @@ const canSaveDraftSettings = computed(() => {
 const inspectedReplaySummary = computed(() => JSON.stringify(inspectedReplay.value?.summary ?? {}, null, 2));
 const readyEntrantsCount = computed(() => competition.value?.entrants.filter((entrant) => entrant.ready && !entrant.banned).length ?? 0);
 const bannedEntrantsCount = computed(() => competition.value?.entrants.filter((entrant) => entrant.banned).length ?? 0);
+const competitionLeaderboard = computed<CompetitionTeamStatRow[]>(() => {
+  const rows: Record<string, CompetitionTeamStatRow> = {};
+  const winnerSet = new Set(competition.value?.winner_team_ids ?? []);
+  const ensureRow = (teamId: string) => {
+    rows[teamId] ??= {
+      team_id: teamId,
+      name: teamName(teamId),
+      wins: 0,
+      losses: 0,
+      points: 0,
+    };
+    return rows[teamId];
+  };
+
+  for (const entrant of competition.value?.entrants ?? []) ensureRow(entrant.team_id);
+  for (const round of competition.value?.rounds ?? []) {
+    for (const match of round.matches) {
+      for (const teamId of match.team_ids) {
+        const row = ensureRow(teamId);
+        row.points += match.scores_by_team[teamId] ?? 0;
+        if (!isResolvedCompetitionMatch(match)) continue;
+        if (match.advanced_team_ids.includes(teamId)) row.wins += 1;
+        else row.losses += 1;
+      }
+    }
+  }
+
+  return Object.values(rows).sort((left, right) => {
+    const rightWinner = winnerSet.has(right.team_id) ? 1 : 0;
+    const leftWinner = winnerSet.has(left.team_id) ? 1 : 0;
+    if (rightWinner !== leftWinner) return rightWinner - leftWinner;
+    if (right.wins !== left.wins) return right.wins - left.wins;
+    if (right.points !== left.points) return right.points - left.points;
+    if (left.losses !== right.losses) return left.losses - right.losses;
+    return left.name.localeCompare(right.name);
+  });
+});
 const competitionStatusLabel = computed(() => {
   const status = competition.value?.status;
   if (status === 'draft') return 'черновик';
@@ -627,6 +701,14 @@ const competitionLiveLabel = computed(() => {
 function teamName(teamId: string): string {
   const found = teamsByGame.value.find((item) => item.team_id === teamId);
   return found?.name ?? teamId;
+}
+
+function scoreLabel(value: number): string {
+  return value.toFixed(1);
+}
+
+function isResolvedCompetitionMatch(match: CompetitionMatchDto): boolean {
+  return match.status === 'finished' || match.status === 'auto_advanced' || match.advanced_team_ids.length > 0;
 }
 
 function entrantStatusLabel(entrant: CompetitionEntrantDto): string {
@@ -1158,6 +1240,80 @@ onUnmounted(() => {
   background: rgba(255, 251, 235, 0.88);
   color: #8a4b0c;
   padding: 0.65rem 0.8rem;
+}
+
+.competition-leaderboard {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.competition-leaderboard-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.competition-winner-callout {
+  border: 1px solid rgba(20, 184, 166, 0.24);
+  border-radius: 0.65rem;
+  background: rgba(204, 251, 241, 0.5);
+  padding: 0.45rem 0.65rem;
+  display: grid;
+  gap: 0.05rem;
+  min-width: 12rem;
+}
+
+.competition-winner-callout span {
+  color: var(--agp-text-muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.competition-leaderboard-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.5rem;
+}
+
+.competition-leaderboard-row {
+  border: 1px solid var(--agp-border);
+  border-radius: 0.55rem;
+  background: #fff;
+  padding: 0.55rem 0.65rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.competition-leaderboard-row.winner {
+  border-color: rgba(20, 184, 166, 0.42);
+  background: rgba(240, 253, 250, 0.82);
+}
+
+.competition-leaderboard-row > div {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.competition-leaderboard-row span:not(.competition-leaderboard-place) {
+  color: var(--agp-text-muted);
+  font-size: 0.8rem;
+}
+
+.competition-leaderboard-place {
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
+  font-weight: 850;
+  font-size: 0.78rem;
 }
 
 .competition-replay-summary {

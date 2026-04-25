@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     auto_poll_enabled: bool = False
     auto_poll_interval_seconds: float = 1.0
     auto_poll_error_backoff_seconds: float = 3.0
+    worker_registration_ttl_seconds: float = 30.0
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

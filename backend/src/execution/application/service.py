@@ -169,22 +169,16 @@ class ExecutionService:
         lobby_id: str | None = None,
         run_kind: RunKind | None = None,
         status: RunStatus | None = None,
+        include_result_payload: bool = True,
     ) -> list[Run]:
-        runs = self._run_repository.list()
-        filtered: list[Run] = []
-        for run in runs:
-            if team_id is not None and run.team_id != team_id:
-                continue
-            if game_id is not None and run.game_id != game_id:
-                continue
-            if lobby_id is not None and run.lobby_id != lobby_id:
-                continue
-            if run_kind is not None and run.run_kind is not run_kind:
-                continue
-            if status is not None and run.status is not status:
-                continue
-            filtered.append(run)
-        return filtered
+        return self._run_repository.list_filtered(
+            team_id=team_id,
+            game_id=game_id,
+            lobby_id=lobby_id,
+            run_kind=run_kind,
+            status=status,
+            include_result_payload=include_result_payload,
+        )
 
     def register_worker(self, data: RegisterWorkerInput) -> WorkerNode:
         existing = self._worker_repository.get(data.worker_id)

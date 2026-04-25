@@ -61,6 +61,7 @@ class SingleTaskCatalogItem:
     title: str
     description: str | None
     difficulty: str | None
+    learning_section: str | None
     topics: tuple[str, ...]
     catalog_metadata_status: CatalogMetadataStatus
     attempts_finished: int
@@ -126,6 +127,7 @@ class SingleTaskProgressService:
                 title=game.title,
                 description=game.description,
                 difficulty=game.difficulty,
+                learning_section=game.learning_section,
                 topics=game.topics,
                 catalog_metadata_status=game.catalog_metadata_status,
                 attempts_finished=attempts_count_by_game.get(game.game_id, 0),

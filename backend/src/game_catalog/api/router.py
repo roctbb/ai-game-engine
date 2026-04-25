@@ -48,6 +48,7 @@ def _map_game(game: object) -> GameResponse:
         mode=typed.mode,
         description=typed.description,
         difficulty=typed.difficulty,
+        learning_section=typed.learning_section,
         topics=list(typed.topics),
         catalog_metadata_status=typed.catalog_metadata_status,
         active_version_id=typed.active_version.version_id,
@@ -86,6 +87,7 @@ def register_game(
             semver=request.semver,
             description=request.description,
             difficulty=request.difficulty,
+            learning_section=request.learning_section,
             topics=tuple(request.topics),
             required_worker_labels=dict(request.required_worker_labels),
             catalog_metadata_status=request.catalog_metadata_status,
@@ -115,6 +117,7 @@ def patch_game(
         title=request.title,
         description=request.description,
         difficulty=request.difficulty,
+        learning_section=request.learning_section,
         topics=tuple(request.topics) if request.topics is not None else None,
         catalog_metadata_status=request.catalog_metadata_status,
     )
@@ -196,7 +199,12 @@ def get_game_templates(
         GameSlotTemplateResponse(
             slot_key=slot.key,
             language="python",
-            code=_build_slot_template_code(slot_key=slot.key, code_api_mode=code_api_mode, game_slug=game.slug),
+            code=_build_slot_template_code(
+                slot_key=slot.key,
+                code_api_mode=code_api_mode,
+                game_slug=game.slug,
+                package_root=manifest_path.parent if manifest is not None else None,
+            ),
         )
         for slot in active_slots
     ]
@@ -294,6 +302,7 @@ def update_catalog_metadata(
         game_id=game_id,
         description=request.description,
         difficulty=request.difficulty,
+        learning_section=request.learning_section,
         topics=tuple(request.topics),
         catalog_metadata_status=request.catalog_metadata_status,
     )
@@ -308,13 +317,14 @@ def list_single_task_catalog(container: ServiceContainer = Depends(get_container
             game_id=item.game_id,
             slug=item.slug,
             title=item.title,
-                description=item.description,
-                difficulty=item.difficulty,
-                topics=list(item.topics),
-                catalog_metadata_status=item.catalog_metadata_status,
-                attempts_finished=item.attempts_finished,
-                solved_users=item.solved_users,
-                has_score_model=item.has_score_model,
+            description=item.description,
+            difficulty=item.difficulty,
+            learning_section=item.learning_section,
+            topics=list(item.topics),
+            catalog_metadata_status=item.catalog_metadata_status,
+            attempts_finished=item.attempts_finished,
+            solved_users=item.solved_users,
+            has_score_model=item.has_score_model,
         )
         for item in items
     ]
@@ -325,21 +335,17 @@ def list_single_task_catalog_grouped(
     container: ServiceContainer = Depends(get_container),
 ) -> list[SingleTaskCatalogGroupResponse]:
     items = list_single_task_catalog(container=container)
-    groups: dict[tuple[str, str], list[SingleTaskCatalogItemResponse]] = {}
+    groups: dict[str, list[SingleTaskCatalogItemResponse]] = {}
     for item in items:
-        topics = item.topics if item.topics else ["other"]
-        difficulty = item.difficulty or "unknown"
-        for topic in topics:
-            key = (topic, difficulty)
-            groups.setdefault(key, []).append(item)
+        learning_section = item.learning_section or "Другое"
+        groups.setdefault(learning_section, []).append(item)
 
     payload: list[SingleTaskCatalogGroupResponse] = []
-    for (topic, difficulty), group_items in sorted(groups.items(), key=lambda it: (it[0][0], it[0][1])):
+    for learning_section, group_items in sorted(groups.items(), key=lambda it: it[0].lower()):
         sorted_items = sorted(group_items, key=lambda item: (item.title.lower(), item.slug))
         payload.append(
             SingleTaskCatalogGroupResponse(
-                topic=topic,
-                difficulty=difficulty,
+                learning_section=learning_section,
                 items=sorted_items,
             )
         )
@@ -392,7 +398,19 @@ def get_single_task_leaderboard(
     )
 
 
-def _build_slot_template_code(*, slot_key: str, code_api_mode: str, game_slug: str | None = None) -> str:
+def _build_slot_template_code(
+    *,
+    slot_key: str,
+    code_api_mode: str,
+    game_slug: str | None = None,
+    package_root: object | None = None,
+) -> str:
+    if package_root is not None:
+        from pathlib import Path
+
+        template_path = Path(package_root) / "templates" / f"{slot_key}.py"
+        if template_path.is_file():
+            return template_path.read_text(encoding="utf-8")
     if game_slug == "maze_escape_v1" and slot_key == "agent":
         return (
             "def make_move(x, y, maze):\n"

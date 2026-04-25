@@ -1,0 +1,26 @@
+id: patrol_guard_v1
+title: Патрульный страж
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: "Определите функцию choose_actions(events), которая возвращает действия patrol/attack/return_to_route."
+description: Страж переключается между патрулем, атакой и возвращением на маршрут.
+difficulty: medium
+learning_section: Режимы поведения
+topics:
+  - состояния
+  - режимы
+  - условия
+slots:
+  - key: agent
+    title: Код решения
+    required: true
+demo_strategies:
+  - id: solution
+    slot_key: agent
+    title: "Демо: рабочее решение"
+    language: python
+    path: examples/solution.py
+    description: Простой пример, который решает задачу по данным, а не по заранее угаданной карте.

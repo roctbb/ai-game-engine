@@ -10,6 +10,7 @@ player_instruction: |
   Функция make_choice(state) может вернуть одно из действий: inc/dec/stay/stop.
 description: Технический шаблон для создания новой игры с базовым turn-based контрактом.
 difficulty: easy
+learning_section: Команды героя
 catalog_metadata_status: archived
 topics:
   - шаблон

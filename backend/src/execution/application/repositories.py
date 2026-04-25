@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from execution.domain.model import BuildJob, Run, RunKind, WorkerNode
+from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 
 
 class RunRepository(Protocol):
@@ -13,6 +13,18 @@ class RunRepository(Protocol):
         ...
 
     def list(self) -> list[Run]:
+        ...
+
+    def list_filtered(
+        self,
+        *,
+        team_id: str | None = None,
+        game_id: str | None = None,
+        lobby_id: str | None = None,
+        run_kind: RunKind | None = None,
+        status: RunStatus | None = None,
+        include_result_payload: bool = True,
+    ) -> list[Run]:
         ...
 
     def list_active_by_requested_by_and_kind(

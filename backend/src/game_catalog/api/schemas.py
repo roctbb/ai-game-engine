@@ -20,6 +20,7 @@ class RegisterGameRequest(BaseModel):
     required_worker_labels: dict[str, str] = Field(default_factory=dict)
     description: str | None = Field(default=None, max_length=2000)
     difficulty: str | None = Field(default=None, max_length=32)
+    learning_section: str | None = Field(default=None, max_length=80)
     topics: list[str] = Field(default_factory=list, max_length=30)
     catalog_metadata_status: CatalogMetadataStatus | None = None
 
@@ -37,6 +38,7 @@ class ActivateVersionRequest(BaseModel):
 class UpdateCatalogMetadataRequest(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     difficulty: str | None = Field(default=None, max_length=32)
+    learning_section: str | None = Field(default=None, max_length=80)
     topics: list[str] = Field(default_factory=list, max_length=30)
     catalog_metadata_status: CatalogMetadataStatus | None = None
 
@@ -45,6 +47,7 @@ class PatchGameRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
     difficulty: str | None = Field(default=None, max_length=32)
+    learning_section: str | None = Field(default=None, max_length=80)
     topics: list[str] | None = Field(default=None, max_length=30)
     catalog_metadata_status: CatalogMetadataStatus | None = None
 
@@ -105,6 +108,7 @@ class GameResponse(BaseModel):
     mode: GameMode
     description: str | None = None
     difficulty: str | None = None
+    learning_section: str | None = None
     topics: list[str] = Field(default_factory=list)
     catalog_metadata_status: CatalogMetadataStatus
     active_version_id: str
@@ -117,6 +121,7 @@ class SingleTaskCatalogItemResponse(BaseModel):
     title: str
     description: str | None = None
     difficulty: str | None = None
+    learning_section: str | None = None
     topics: list[str] = Field(default_factory=list)
     catalog_metadata_status: CatalogMetadataStatus
     attempts_finished: int
@@ -125,8 +130,7 @@ class SingleTaskCatalogItemResponse(BaseModel):
 
 
 class SingleTaskCatalogGroupResponse(BaseModel):
-    topic: str
-    difficulty: str
+    learning_section: str
     items: list[SingleTaskCatalogItemResponse] = Field(default_factory=list)
 
 

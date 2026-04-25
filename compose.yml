@@ -59,6 +59,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/auth/options', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   scheduler-service:
     build:
@@ -72,6 +83,17 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8010/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   worker-service:
     build:
@@ -93,6 +115,8 @@ services:
       AUTO_POLL_ENABLED: "true"
       AUTO_POLL_INTERVAL_SECONDS: "1"
       AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
+      REQUEST_TIMEOUT_SECONDS: "30"
+      WORKER_REGISTRATION_TTL_SECONDS: "30"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
@@ -101,9 +125,20 @@ services:
       redis:
         condition: service_healthy
       backend-api:
-        condition: service_started
+        condition: service_healthy
       scheduler-service:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8020/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   builder-service:
     build:
@@ -116,8 +151,19 @@ services:
     ports:
       - "8030:8030"
     depends_on:
-      redis:
+      backend-api:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8030/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   frontend:
     build:
@@ -128,7 +174,7 @@ services:
       - "8080:80"
     depends_on:
       backend-api:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   postgres_data:

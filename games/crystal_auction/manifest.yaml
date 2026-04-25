@@ -1,0 +1,35 @@
+id: crystal_auction_v1
+title: Аукцион кристаллов
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: "Определите функцию bid(state), которая возвращает ставку на текущий кристалл."
+description: Участники делают ставки на кристаллы с ограниченным бюджетом.
+difficulty: hard
+learning_section: Соревновательные стратегии
+topics:
+  - соревнование
+  - арифметика
+  - стратегия
+slots:
+  - key: left
+    title: Левый участник
+    required: true
+  - key: right
+    title: Правый участник
+    required: true
+demo_strategies:
+  - id: left_strategy
+    slot_key: left
+    title: "Демо: левая стратегия"
+    language: python
+    path: examples/left_strategy.py
+    description: Базовая стратегия для первого участника.
+  - id: right_strategy
+    slot_key: right
+    title: "Демо: правая стратегия"
+    language: python
+    path: examples/right_strategy.py
+    description: Базовая стратегия для второго участника.

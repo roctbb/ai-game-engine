@@ -5,141 +5,60 @@
         <div>
           <h1 class="h3 mb-2">Задачи</h1>
           <p class="text-muted mb-0">
-            Учебный режим: решайте задачи, запускайте код в игровом мире и возвращайтесь к попыткам как к истории прогресса.
+            Сначала выберите учебный раздел, затем откройте список задач внутри него.
           </p>
         </div>
         <div class="d-flex gap-2 flex-wrap align-items-start">
-          <span class="agp-pill agp-pill--primary">показано: {{ filteredTasks.length }}/{{ tasks.length }}</span>
+          <span class="agp-pill agp-pill--primary">разделов: {{ sectionCards.length }}</span>
+          <span class="agp-pill agp-pill--neutral">задач: {{ tasks.length }}</span>
           <span class="agp-pill agp-pill--neutral">решено вами: {{ solvedByCurrentUserCount }}</span>
-          <span class="agp-pill agp-pill--neutral">тем: {{ topicOptions.length }}</span>
         </div>
       </div>
     </header>
 
-    <section class="agp-card p-3 tasks-filter-panel" aria-label="Фильтры задач">
-      <div>
-        <div class="small text-muted text-uppercase fw-semibold">Фильтры обучения</div>
-        <div class="fw-semibold">Найдите следующую задачу по теме, сложности и прогрессу</div>
-      </div>
-      <label class="tasks-filter-field">
-        <span class="form-label small mb-1">Тема</span>
-        <select v-model="selectedTopic" class="form-select form-select-sm">
-          <option value="">Все темы</option>
-          <option v-for="topic in topicOptions" :key="topic" :value="topic">{{ topic }}</option>
-        </select>
-      </label>
-      <label class="tasks-filter-field">
-        <span class="form-label small mb-1">Сложность</span>
-        <select v-model="selectedDifficulty" class="form-select form-select-sm">
-          <option value="">Любая</option>
-          <option v-for="difficulty in difficultyOptions" :key="difficulty" :value="difficulty">
-            {{ difficultyLabel(difficulty) }}
-          </option>
-        </select>
-      </label>
-      <label class="tasks-filter-field">
-        <span class="form-label small mb-1">Прогресс</span>
-        <select v-model="selectedProgress" class="form-select form-select-sm">
-          <option value="all">Все</option>
-          <option value="unsolved">Не решено</option>
-          <option value="solved">Решено</option>
-        </select>
-      </label>
-      <button class="btn btn-sm btn-outline-secondary tasks-filter-reset" :disabled="!hasActiveFilters" @click="resetFilters">
-        Сбросить
-      </button>
+    <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка разделов...</article>
+    <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
+    <article v-else-if="tasks.length === 0" class="agp-card p-4 text-muted">Задачи пока не опубликованы.</article>
+
+    <section v-else class="section-card-grid" aria-label="Разделы задач">
+      <RouterLink
+        v-for="section in sectionCards"
+        :key="section.name"
+        class="agp-card p-3 section-card"
+        :class="{ 'section-card--done': section.isDone }"
+        :to="{ name: 'tasks-section', params: { section: section.name } }"
+      >
+        <div class="section-card-top">
+          <span class="section-index mono">{{ section.index }}</span>
+          <span class="agp-pill" :class="section.isDone ? 'agp-pill--primary' : 'agp-pill--neutral'">
+            {{ section.solved }}/{{ section.total }}
+          </span>
+        </div>
+        <div>
+          <h2>{{ section.name }}</h2>
+          <p>{{ sectionDescription(section.name) }}</p>
+        </div>
+        <div class="section-progress" role="progressbar" :aria-valuenow="section.percent" aria-valuemin="0" aria-valuemax="100">
+          <div :style="{ width: `${section.percent}%` }"></div>
+        </div>
+        <div class="section-card-foot">
+          <span>{{ section.percent }}%</span>
+          <span>{{ section.isDone ? 'раздел решен' : 'открыть задачи' }}</span>
+        </div>
+      </RouterLink>
     </section>
 
-    <div v-if="hasActiveFilters" class="tasks-active-filter-line">
-      <span>Фильтр:</span>
-      <strong>{{ activeFilterSummary }}</strong>
-    </div>
-
-    <div class="tasks-layout">
-      <section class="agp-grid">
-        <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка задач...</article>
-        <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
-        <article v-else-if="tasks.length === 0" class="agp-card p-4 text-muted">Задачи пока не опубликованы.</article>
-        <article v-else-if="filteredTasks.length === 0" class="agp-card p-4 text-muted">
-          По выбранным фильтрам задач нет. Сбросьте фильтры или выберите другую тему.
-        </article>
-
-        <div v-else class="tasks-list">
-          <section v-for="group in groupedFilteredTasks" :key="group.key" class="tasks-group">
-            <header class="tasks-group-head">
-              <h2>{{ difficultyLabel(group.difficulty) }}</h2>
-              <span>{{ group.items.length }}</span>
-            </header>
-            <div class="tasks-group-items">
-              <article v-for="task in group.items" :key="task.game_id" class="agp-card p-3 task-row">
-                <div class="task-row-main">
-                  <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
-                    <div class="d-flex flex-column gap-2">
-                      <span
-                        class="task-state"
-                        :class="isSolvedTask(task.game_id) ? 'task-state--solved' : 'task-state--pending'"
-                      >
-                        {{ isSolvedTask(task.game_id) ? 'Решено' : 'Не решено' }}
-                      </span>
-                      <h3 class="h6 mb-0">{{ task.title }}</h3>
-                    </div>
-                    <span v-if="task.difficulty" class="agp-pill agp-pill--neutral">{{ difficultyLabel(task.difficulty) }}</span>
-                  </div>
-                  <p class="small text-muted mb-0 task-description">
-                    {{ task.description || 'Описание задачи пока не заполнено.' }}
-                  </p>
-                  <div class="d-flex gap-1 flex-wrap">
-                    <span v-for="topic in task.topics" :key="`${task.game_id}-${topic}`" class="agp-topic-chip">
-                      {{ topic }}
-                    </span>
-                  </div>
-                  <div class="task-meta-row small text-muted">
-                    <span>Попыток: <span class="mono">{{ task.attempts_finished }}</span></span>
-                    <span>Решили: <span class="mono">{{ task.solved_users }}</span></span>
-                    <span>Успех: <span class="mono">{{ successRateLabel(task) }}</span></span>
-                  </div>
-                </div>
-                <div class="task-row-action">
-                  <RouterLink :to="`/tasks/${task.game_id}/run`" class="btn btn-dark btn-sm w-100">
-                    {{ isSolvedTask(task.game_id) ? 'Повторить' : 'Решать' }}
-                  </RouterLink>
-                </div>
-              </article>
-            </div>
-          </section>
-        </div>
-      </section>
-
-      <aside class="agp-grid tasks-sidebar">
-        <article class="agp-card p-3 leaderboard-card">
-          <h2 class="h6 mb-1">Лидерборд</h2>
-          <p class="small text-muted mb-2">Кто сколько задач решил.</p>
-          <div v-if="summaryError" class="small text-danger">{{ summaryError }}</div>
-          <div v-else-if="!solvedSummary" class="small text-muted">Загрузка...</div>
-          <div v-else-if="solvedSummary.entries.length === 0" class="small text-muted">
-            Решённых задач пока нет.
-          </div>
-          <div v-else class="d-flex flex-column gap-2">
-            <div v-if="currentUserEntry" class="agp-card-soft p-2 current-user-summary">
-              <div class="small text-muted">Ваш результат</div>
-              <div class="d-flex justify-content-between align-items-baseline gap-2">
-                <span class="mono small">#{{ currentUserEntry.place }}</span>
-                <strong class="mono">{{ currentUserEntry.solved_tasks_count }}</strong>
-              </div>
-            </div>
-            <div
-              v-for="entry in leaderboardEntries"
-              :key="entry.user_id"
-              class="agp-card-soft p-2 d-flex justify-content-between align-items-center gap-2 leaderboard-row"
-              :class="{ 'leaderboard-row--mine': isCurrentUser(entry.user_id) }"
-            >
-              <span class="mono small">#{{ entry.place }} {{ leaderboardUserLabel(entry.user_id) }}</span>
-              <strong class="mono small">{{ entry.solved_tasks_count }}</strong>
-            </div>
-          </div>
-        </article>
-      </aside>
-    </div>
+    <aside v-if="!isLoading && !errorMessage" class="agp-card p-3 tasks-summary">
+      <h2 class="h6 mb-2">Ваш прогресс</h2>
+      <div class="tasks-summary-grid">
+        <span>Всего задач</span>
+        <strong class="mono">{{ tasks.length }}</strong>
+        <span>Решено</span>
+        <strong class="mono">{{ solvedByCurrentUserCount }}</strong>
+        <span>Полностью закрыто разделов</span>
+        <strong class="mono">{{ completedSectionCount }}</strong>
+      </div>
+    </aside>
   </section>
 </template>
 
@@ -147,14 +66,14 @@
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 
-import { useSessionStore } from '../stores/session';
 import {
   getSingleTaskSolvedSummary,
   listSingleTaskCatalog,
   type SingleTaskCatalogItemDto,
-  type SingleTaskSolvedSummaryEntryDto,
   type SingleTaskSolvedSummaryDto,
 } from '../lib/api';
+import { sectionDescription, sectionOrder } from '../lib/taskCatalog';
+import { useSessionStore } from '../stores/session';
 
 const SOLVED_SUMMARY_LIMIT = 500;
 
@@ -163,10 +82,6 @@ const tasks = ref<SingleTaskCatalogItemDto[]>([]);
 const solvedSummary = ref<SingleTaskSolvedSummaryDto | null>(null);
 const isLoading = ref(false);
 const errorMessage = ref('');
-const summaryError = ref('');
-const selectedTopic = ref('');
-const selectedDifficulty = ref('');
-const selectedProgress = ref<'all' | 'solved' | 'unsolved'>('all');
 
 const currentUserKeys = computed(() => {
   const keys = [sessionStore.externalUserId, sessionStore.nickname]
@@ -186,117 +101,49 @@ const currentUserSolvedGameIds = computed(() => {
 });
 
 const solvedByCurrentUserCount = computed(() => currentUserSolvedGameIds.value.size);
-const topicOptions = computed(() =>
-  Array.from(new Set(tasks.value.flatMap((task) => task.topics))).sort((a, b) => a.localeCompare(b))
-);
-const difficultyOptions = computed(() =>
-  Array.from(new Set(tasks.value.map((task) => task.difficulty).filter((item): item is string => Boolean(item)))).sort(
-    (a, b) => difficultyOrder(a) - difficultyOrder(b) || a.localeCompare(b)
-  )
-);
-const hasActiveFilters = computed(() =>
-  Boolean(selectedTopic.value || selectedDifficulty.value || selectedProgress.value !== 'all')
-);
-const activeFilterSummary = computed(() => {
-  const parts: string[] = [];
-  if (selectedTopic.value) parts.push(`тема: ${selectedTopic.value}`);
-  if (selectedDifficulty.value) parts.push(`сложность: ${difficultyLabel(selectedDifficulty.value)}`);
-  if (selectedProgress.value === 'solved') parts.push('только решенные');
-  if (selectedProgress.value === 'unsolved') parts.push('только нерешенные');
-  return parts.join(' · ');
-});
-const filteredTasks = computed(() =>
-  tasks.value.filter((task) => {
-    if (selectedTopic.value && !task.topics.includes(selectedTopic.value)) return false;
-    if (selectedDifficulty.value && task.difficulty !== selectedDifficulty.value) return false;
-    if (selectedProgress.value === 'solved' && !isSolvedTask(task.game_id)) return false;
-    if (selectedProgress.value === 'unsolved' && isSolvedTask(task.game_id)) return false;
-    return true;
-  })
-);
 
-const groupedFilteredTasks = computed(() => {
-  const groups = new Map<string, { key: string; difficulty: string; items: SingleTaskCatalogItemDto[] }>();
-  for (const task of filteredTasks.value) {
-    const difficulty = task.difficulty || 'unknown';
-    const key = difficulty;
-    const group = groups.get(key) ?? { key, difficulty, items: [] };
-    group.items.push(task);
-    groups.set(key, group);
+const sectionCards = computed(() => {
+  const groups = new Map<string, SingleTaskCatalogItemDto[]>();
+  for (const task of tasks.value) {
+    const section = task.learning_section || 'Другое';
+    const items = groups.get(section) ?? [];
+    items.push(task);
+    groups.set(section, items);
   }
-  return Array.from(groups.values()).sort(
-    (left, right) => difficultyOrder(left.difficulty) - difficultyOrder(right.difficulty)
-  );
+
+  return Array.from(groups.entries())
+    .map(([name, items]) => {
+      const solved = items.filter((task) => currentUserSolvedGameIds.value.has(task.game_id)).length;
+      const total = items.length;
+      const percent = total > 0 ? Math.round((solved / total) * 100) : 0;
+      return {
+        name,
+        total,
+        solved,
+        percent,
+        isDone: total > 0 && solved === total,
+        index: sectionOrder(name) + 1,
+      };
+    })
+    .sort((left, right) => sectionOrder(left.name) - sectionOrder(right.name) || left.name.localeCompare(right.name, 'ru'));
 });
 
-const currentUserEntry = computed<SingleTaskSolvedSummaryEntryDto | null>(() => {
-  const entries = solvedSummary.value?.entries ?? [];
-  return entries.find((entry) => currentUserKeys.value.has(entry.user_id)) ?? null;
-});
-
-const leaderboardEntries = computed(() => {
-  const entries = solvedSummary.value?.entries ?? [];
-  const current = currentUserEntry.value;
-  const withoutCurrent = current ? entries.filter((entry) => entry.user_id !== current.user_id) : entries;
-  return withoutCurrent.slice(0, 7);
-});
-
-function isSolvedTask(gameId: string): boolean {
-  return currentUserSolvedGameIds.value.has(gameId);
-}
-
-function isCurrentUser(userId: string): boolean {
-  return currentUserKeys.value.has(userId);
-}
-
-function leaderboardUserLabel(userId: string): string {
-  return isCurrentUser(userId) ? 'Вы' : userId;
-}
-
-function difficultyOrder(difficulty: string): number {
-  const order: Record<string, number> = {
-    easy: 1,
-    medium: 2,
-    hard: 3,
-  };
-  return order[difficulty] ?? 50;
-}
-
-function difficultyLabel(difficulty: string): string {
-  const labels: Record<string, string> = {
-    easy: 'легкая',
-    medium: 'средняя',
-    hard: 'сложная',
-  };
-  return labels[difficulty] ?? difficulty;
-}
-
-function successRateLabel(task: SingleTaskCatalogItemDto): string {
-  if (task.attempts_finished <= 0) return 'нет данных';
-  return `${Math.round((task.solved_users / task.attempts_finished) * 100)}%`;
-}
-
-function resetFilters(): void {
-  selectedTopic.value = '';
-  selectedDifficulty.value = '';
-  selectedProgress.value = 'all';
-}
+const completedSectionCount = computed(() => sectionCards.value.filter((section) => section.isDone).length);
 
 onMounted(async () => {
   isLoading.value = true;
   errorMessage.value = '';
   try {
-    tasks.value = await listSingleTaskCatalog();
+    const [catalog, summary] = await Promise.all([
+      listSingleTaskCatalog(),
+      getSingleTaskSolvedSummary(SOLVED_SUMMARY_LIMIT),
+    ]);
+    tasks.value = catalog;
+    solvedSummary.value = summary;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить каталог задач';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить разделы задач';
   } finally {
     isLoading.value = false;
-  }
-
-  try {
-    solvedSummary.value = await getSingleTaskSolvedSummary(SOLVED_SUMMARY_LIMIT);
-  } catch (error) {
-    summaryError.value = error instanceof Error ? error.message : 'Не удалось загрузить лидерборд';
   }
 });
 </script>
@@ -307,188 +154,140 @@ onMounted(async () => {
 }
 
 .tasks-head {
-  background: #f8fafc;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(245, 158, 11, 0.18), transparent 16rem),
+    radial-gradient(circle at 88% 10%, rgba(37, 99, 235, 0.14), transparent 16rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 251, 235, 0.88));
 }
 
-.tasks-filter-panel {
+.section-card-grid {
   display: grid;
-  grid-template-columns: minmax(14rem, 1fr) repeat(3, minmax(10rem, 0.62fr)) auto;
-  gap: 0.75rem;
-  align-items: end;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  gap: 0.85rem;
 }
 
-.tasks-filter-field {
-  min-width: 0;
-}
-
-.tasks-filter-reset {
-  white-space: nowrap;
-}
-
-.tasks-layout {
+.section-card {
+  position: relative;
+  overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 18rem);
-  gap: 0.9rem;
-  align-items: start;
+  gap: 0.85rem;
+  min-height: 12.5rem;
+  color: inherit;
+  text-decoration: none;
+  border-color: #dbe3ee;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.tasks-active-filter-line {
-  display: flex;
-  gap: 0.4rem;
-  align-items: baseline;
-  color: var(--agp-text-muted);
-  font-size: 0.86rem;
+.section-card:hover {
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.11);
+  transform: translateY(-2px);
 }
 
-.tasks-active-filter-line strong {
-  color: var(--agp-text);
+.section-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.28rem;
+  background: linear-gradient(90deg, #f59e0b, #14b8a6, #2563eb);
 }
 
-.tasks-list {
-  display: grid;
-  gap: 0.75rem;
+.section-card::after {
+  content: '';
+  position: absolute;
+  right: -1.25rem;
+  bottom: -1.5rem;
+  width: 5.25rem;
+  height: 5.25rem;
+  border-radius: 1.2rem;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(20, 184, 166, 0.11)),
+    url("data:image/svg+xml,%3Csvg width='84' height='84' viewBox='0 0 84 84' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23d97706' stroke-opacity='.24'%3E%3Cpath d='M14 42h56M42 14v56M28 28h28v28H28z'/%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
 }
 
-.tasks-group {
-  display: grid;
-  gap: 0.55rem;
+.section-card--done {
+  border-color: #86efac;
+  background:
+    radial-gradient(circle at 85% 15%, rgba(34, 197, 94, 0.14), transparent 12rem),
+    linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
 }
 
-.tasks-group-items {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
-  gap: 0.75rem;
-  justify-content: start;
-}
-
-.tasks-group-head {
+.section-card-top,
+.section-card-foot {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 0.75rem;
-  padding: 0.1rem 0.1rem 0;
 }
 
-.tasks-group-head h2 {
-  margin: 0;
-  font-size: 0.9rem;
+.section-index {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-weight: 800;
+}
+
+.section-card--done .section-index {
+  background: #bbf7d0;
+  color: #166534;
+}
+
+.section-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
   font-weight: 850;
 }
 
-.tasks-group-head span {
+.section-card p {
+  margin: 0;
   color: var(--agp-text-muted);
-  font-size: 0.78rem;
+  font-size: 0.86rem;
+  line-height: 1.4;
 }
 
-.task-row {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.65rem;
-  align-items: start;
-  min-height: 13.25rem;
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
-}
-
-.task-row:hover {
-  transform: translateY(-1px);
-  border-color: #c8d4e0;
-  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.08);
-}
-
-.task-row-main {
-  min-width: 0;
-  display: grid;
-  gap: 0.45rem;
-}
-
-.task-row-action {
-  align-self: end;
-  display: flex;
-  align-items: flex-end;
-}
-
-.task-description {
-  min-height: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.section-progress {
+  height: 0.55rem;
   overflow: hidden;
-}
-
-.task-meta-row {
-  display: flex;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-}
-
-.task-state {
-  width: fit-content;
   border-radius: 999px;
-  border: 1px solid var(--agp-border);
-  padding: 0.14rem 0.52rem;
-  font-size: 0.72rem;
-  letter-spacing: 0.015em;
-  font-weight: 800;
-  text-transform: uppercase;
+  background: #e2e8f0;
 }
 
-.task-state--solved {
-  border-color: #83c9bf;
-  background: #eaf9f6;
-  color: var(--agp-primary);
+.section-progress div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #14b8a6);
+  transition: width 0.2s ease;
 }
 
-.task-state--pending {
-  border-color: #e1c69b;
-  background: #fff6e9;
-  color: #8a4b0c;
+.section-card--done .section-progress div {
+  background: #16a34a;
 }
 
-.tasks-sidebar {
-  gap: 0.65rem;
+.section-card-foot {
+  color: var(--agp-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
-.leaderboard-card {
-  position: sticky;
-  top: 0.85rem;
+.tasks-summary {
+  max-width: 36rem;
 }
 
-.current-user-summary {
-  background: #edf8f6;
-  border-color: #9fd7cf;
+.tasks-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem 1rem;
+  color: var(--agp-text-muted);
+  font-size: 0.9rem;
 }
 
-.leaderboard-row--mine {
-  border-color: rgba(15, 118, 110, 0.45);
-  background: #ecf9f7;
-}
-
-@media (max-width: 1100px) {
-  .tasks-filter-panel {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .tasks-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .leaderboard-card {
-    position: static;
-  }
-}
-
-@media (max-width: 800px) {
-  .tasks-filter-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .task-row {
-    grid-template-columns: 1fr;
-  }
-
-  .tasks-filter-reset {
-    width: 100%;
-  }
+.tasks-summary-grid strong {
+  color: var(--agp-text);
 }
 </style>

@@ -8,6 +8,7 @@ def test_register_game_with_catalog_metadata(client, teacher_headers) -> None:
             'semver': '1.0.0',
             'description': 'Учебная задача по графам',
             'difficulty': 'medium',
+            'learning_section': 'Поиск пути BFS',
             'topics': ['графы', 'dfs'],
             'required_slots': [
                 {
@@ -24,6 +25,7 @@ def test_register_game_with_catalog_metadata(client, teacher_headers) -> None:
     game = response.json()
     assert game['description'] == 'Учебная задача по графам'
     assert game['difficulty'] == 'medium'
+    assert game['learning_section'] == 'Поиск пути BFS'
     assert game['topics'] == ['графы', 'dfs']
     assert game['catalog_metadata_status'] == 'ready'
 
@@ -52,6 +54,7 @@ def test_patch_catalog_metadata_updates_game(client, teacher_headers) -> None:
         json={
             'description': 'Обновленное описание',
             'difficulty': 'hard',
+            'learning_section': 'Жадные стратегии',
             'topics': ['алгоритмы', 'оптимизация'],
             'catalog_metadata_status': 'draft',
         },
@@ -62,6 +65,7 @@ def test_patch_catalog_metadata_updates_game(client, teacher_headers) -> None:
     payload = patched.json()
     assert payload['description'] == 'Обновленное описание'
     assert payload['difficulty'] == 'hard'
+    assert payload['learning_section'] == 'Жадные стратегии'
     assert payload['topics'] == ['алгоритмы', 'оптимизация']
     assert payload['catalog_metadata_status'] == 'draft'
 
@@ -94,6 +98,7 @@ def test_single_task_cannot_switch_to_ready_without_required_metadata(client, te
         json={
             'description': None,
             'difficulty': None,
+            'learning_section': None,
             'topics': [],
             'catalog_metadata_status': 'ready',
         },
@@ -128,6 +133,7 @@ def test_single_task_can_switch_to_ready_when_metadata_filled(client, teacher_he
         json={
             'description': 'Описание',
             'difficulty': 'easy',
+            'learning_section': 'Матрицы и координаты',
             'topics': ['графы'],
             'catalog_metadata_status': 'ready',
         },
@@ -215,6 +221,7 @@ def test_game_catalog_version_mutations_require_teacher_or_admin(client, teacher
         json={
             'description': 'Nope',
             'difficulty': 'easy',
+            'learning_section': 'Команды героя',
             'topics': ['test'],
             'catalog_metadata_status': 'draft',
         },
@@ -275,6 +282,7 @@ def test_patch_game_updates_title_and_catalog_fields(client, teacher_headers) ->
             'title': 'Patch Game Full v2',
             'description': 'Новый текст',
             'difficulty': 'medium',
+            'learning_section': 'Списки и цели',
             'topics': ['api', 'metadata'],
             'catalog_metadata_status': 'ready',
         },
@@ -285,6 +293,7 @@ def test_patch_game_updates_title_and_catalog_fields(client, teacher_headers) ->
     assert payload['title'] == 'Patch Game Full v2'
     assert payload['description'] == 'Новый текст'
     assert payload['difficulty'] == 'medium'
+    assert payload['learning_section'] == 'Списки и цели'
     assert payload['topics'] == ['api', 'metadata']
     assert payload['catalog_metadata_status'] == 'ready'
 

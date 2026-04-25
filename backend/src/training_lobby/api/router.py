@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from app.auth import get_current_session, require_roles
@@ -29,7 +29,7 @@ from training_lobby.api.schemas import (
     SwitchGameVersionRequest,
 )
 from training_lobby.application.service import CreateLobbyInput, LobbyLiveView
-from training_lobby.domain.model import LobbyAccess, LobbyKind, LobbyStatus
+from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
 
 router = APIRouter(prefix="/lobbies", tags=["training_lobby"])
 _TERMINAL_LOBBY_STATUSES = {LobbyStatus.CLOSED}
@@ -90,6 +90,52 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
     )
 
 
+def _to_summary_response(
+    lobby: Lobby,
+    *,
+    container: ServiceContainer,
+    session: AppSession,
+    redact_private: bool = False,
+) -> LobbyResponse:
+    my_team_id = container.training_lobby.find_user_team_in_lobby(
+        lobby_id=lobby.lobby_id,
+        user_id=session.nickname,
+    )
+    my_status = "not_in_lobby"
+    if my_team_id is not None:
+        team_state = lobby.teams.get(my_team_id)
+        my_status = "queued" if team_state is not None and team_state.ready else "preparing"
+
+    return LobbyResponse(
+        lobby_id=lobby.lobby_id,
+        game_id=lobby.game_id,
+        game_version_id=lobby.game_version_id,
+        title=lobby.title,
+        kind=lobby.kind,
+        access=lobby.access,
+        status=lobby.status,
+        max_teams=lobby.max_teams,
+        teams=[
+            {
+                "team_id": team_state.team_id,
+                "ready": team_state.ready,
+                "blocker_reason": team_state.blocker_reason,
+            }
+            for team_state in ([] if redact_private else lobby.teams.values())
+        ],
+        last_scheduled_run_ids=[] if redact_private else list(lobby.last_scheduled_run_ids),
+        my_team_id=my_team_id,
+        my_status=my_status,
+        current_run_id=None,
+        playing_team_ids=[],
+        queued_team_ids=[],
+        preparing_team_ids=[],
+        current_run_ids=[],
+        archived_run_ids=[],
+        participant_stats=[],
+    )
+
+
 def _is_lobby_competition(lobby_id: str, competition: Competition) -> bool:
     return competition.lobby_id == lobby_id
 
@@ -100,6 +146,42 @@ def _has_lobby_locking_competition(container: ServiceContainer, lobby_id: str) -
         and item.status in _LOBBY_LOCKING_COMPETITION_STATUSES
         for item in container.competition.list_competitions()
     )
+
+
+def _reopen_lobby_after_finished_competition_if_needed(container: ServiceContainer, lobby_id: str) -> bool:
+    lobby = container.training_lobby.get_lobby(lobby_id)
+    if lobby.status is not LobbyStatus.PAUSED:
+        return False
+    competitions = [
+        item
+        for item in container.competition.list_competitions()
+        if _is_lobby_competition(lobby_id=lobby_id, competition=item)
+    ]
+    if not competitions:
+        return False
+    if any(item.status in _LOBBY_LOCKING_COMPETITION_STATUSES for item in competitions):
+        return False
+    if not any(item.status is CompetitionStatus.FINISHED for item in competitions):
+        return False
+    try:
+        container.training_lobby.set_status(lobby_id=lobby_id, status=LobbyStatus.OPEN)
+        return True
+    except InvariantViolationError:
+        return False
+
+
+def _kick_training_matchmaking_if_possible(container: ServiceContainer, lobby_id: str) -> None:
+    lobby = container.training_lobby.get_lobby(lobby_id)
+    if lobby.kind is not LobbyKind.TRAINING:
+        return
+    if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+        return
+    if _has_lobby_locking_competition(container=container, lobby_id=lobby_id):
+        return
+    try:
+        container.training_lobby.run_matchmaking_cycle(lobby_id=lobby_id, requested_by="system")
+    except InvariantViolationError:
+        return
 
 
 def _has_lobby_detail_access(
@@ -143,10 +225,11 @@ def list_lobbies(
         lobbies = [item for item in lobbies if item.game_id == game_id.strip()]
     response: list[LobbyResponse] = []
     for item in lobbies:
-        live_view = container.training_lobby.get_live_view(lobby_id=item.lobby_id, user_id=session.nickname)
         response.append(
-            _to_response(
-                live_view,
+            _to_summary_response(
+                item,
+                container=container,
+                session=session,
                 redact_private=not _has_lobby_detail_access(
                     container=container,
                     session=session,
@@ -159,6 +242,7 @@ def list_lobbies(
 
 @router.get("/stream")
 def stream_lobbies(
+    request: Request,
     poll_interval_ms: int = 1000,
     max_events: int = 0,
     session: AppSession = Depends(get_current_session),
@@ -167,13 +251,17 @@ def stream_lobbies(
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
 
-    def _events():
+    async def _events():
         emitted = 0
         last_signature = ""
         while True:
+            if await request.is_disconnected():
+                break
             lobbies_payload = [
-                _to_response(
-                    container.training_lobby.get_live_view(lobby_id=item.lobby_id, user_id=session.nickname),
+                _to_summary_response(
+                    item,
+                    container=container,
+                    session=session,
                     redact_private=not _has_lobby_detail_access(
                         container=container,
                         session=session,
@@ -203,7 +291,7 @@ def stream_lobbies(
                     "agp.keepalive",
                     sse_envelope(channel="lobbies", entity_id="collection", kind="keepalive"),
                 )
-            time.sleep(interval)
+            await asyncio.sleep(interval)
 
     return StreamingResponse(
         _events(),
@@ -242,11 +330,14 @@ def get_lobby(
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyResponse:
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
+    _reopen_lobby_after_finished_competition_if_needed(container=container, lobby_id=lobby_id)
+    _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname))
 
 
 @router.get("/{lobby_id}/stream")
 def stream_lobby(
+    request: Request,
     lobby_id: str,
     poll_interval_ms: int = 1000,
     max_events: int = 0,
@@ -254,14 +345,19 @@ def stream_lobby(
     container: ServiceContainer = Depends(get_container),
 ) -> StreamingResponse:
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
+    _reopen_lobby_after_finished_competition_if_needed(container=container, lobby_id=lobby_id)
+    _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
 
-    def _events():
+    async def _events():
         emitted = 0
         last_signature = ""
         while True:
+            if await request.is_disconnected():
+                break
             _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
+            _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
             lobby_payload = _to_response(
                 container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
             ).model_dump(mode="json")
@@ -299,7 +395,7 @@ def stream_lobby(
                     "agp.keepalive",
                     sse_envelope(channel="lobby", entity_id=lobby_id, kind="keepalive"),
                 )
-            time.sleep(interval)
+            await asyncio.sleep(interval)
 
     return StreamingResponse(
         _events(),
@@ -440,6 +536,7 @@ def start_lobby_competition(
         competition_id=competition.competition_id,
         title=competition.title,
         status=competition.status.value,
+        winner_team_ids=list(competition.winner_team_ids),
     )
 
 
@@ -462,6 +559,7 @@ def finish_lobby_competition(
         competition_id=competition.competition_id,
         title=competition.title,
         status=competition.status.value,
+        winner_team_ids=list(competition.winner_team_ids),
     )
 
 
@@ -486,6 +584,7 @@ def list_lobby_competition_archive(
                 competition_id=item.competition_id,
                 title=item.title,
                 status=item.status.value,
+                winner_team_ids=list(item.winner_team_ids),
             )
             for item in competitions
         ],

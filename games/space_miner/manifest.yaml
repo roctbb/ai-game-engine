@@ -8,6 +8,7 @@ renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board, fuel, ore_mined), возвращающую up/down/left/right/stay. Собирайте руду и возвращайтесь на базу за топливом.
 description: Робот добывает руду на случайном астероиде со стенами и ограниченным запасом топлива.
 difficulty: hard
+learning_section: "Состояния: время, ключи, ресурсы"
 topics:
   - графы
   - BFS

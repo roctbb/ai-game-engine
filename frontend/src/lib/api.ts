@@ -17,6 +17,7 @@ export interface GameDto {
   mode: GameMode;
   description: string | null;
   difficulty: string | null;
+  learning_section: string | null;
   topics: string[];
   catalog_metadata_status: CatalogMetadataStatus;
   active_version_id: string;
@@ -71,6 +72,7 @@ export interface SingleTaskCatalogItemDto {
   title: string;
   description: string | null;
   difficulty: string | null;
+  learning_section: string | null;
   topics: string[];
   catalog_metadata_status: CatalogMetadataStatus;
   attempts_finished: number;
@@ -79,8 +81,7 @@ export interface SingleTaskCatalogItemDto {
 }
 
 export interface SingleTaskCatalogGroupDto {
-  topic: string;
-  difficulty: string;
+  learning_section: string;
   items: SingleTaskCatalogItemDto[];
 }
 
@@ -239,6 +240,7 @@ export interface LobbyCompetitionDto {
   competition_id: string;
   title: string;
   status: string;
+  winner_team_ids: string[];
 }
 
 export interface LobbyCompetitionArchiveDto {
@@ -555,6 +557,7 @@ export function patchGame(payload: {
   title?: string | null;
   description?: string | null;
   difficulty?: string | null;
+  learning_section?: string | null;
   topics?: string[] | null;
   catalog_metadata_status?: CatalogMetadataStatus | null;
 }): Promise<GameDto> {
@@ -562,6 +565,7 @@ export function patchGame(payload: {
   if (payload.title !== undefined) body.title = payload.title;
   if (payload.description !== undefined) body.description = payload.description;
   if (payload.difficulty !== undefined) body.difficulty = payload.difficulty;
+  if (payload.learning_section !== undefined) body.learning_section = payload.learning_section;
   if (payload.topics !== undefined) body.topics = payload.topics;
   if (payload.catalog_metadata_status !== undefined) body.catalog_metadata_status = payload.catalog_metadata_status;
   return request<GameDto>(`/games/${encodeURIComponent(payload.game_id)}`, {
@@ -594,6 +598,7 @@ export function updateGameCatalogMetadata(payload: {
   game_id: string;
   description: string | null;
   difficulty: string | null;
+  learning_section: string | null;
   topics: string[];
   catalog_metadata_status: CatalogMetadataStatus;
 }): Promise<GameDto> {
@@ -602,6 +607,7 @@ export function updateGameCatalogMetadata(payload: {
     body: JSON.stringify({
       description: payload.description,
       difficulty: payload.difficulty,
+      learning_section: payload.learning_section,
       topics: payload.topics,
       catalog_metadata_status: payload.catalog_metadata_status,
     }),

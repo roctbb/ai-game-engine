@@ -1,0 +1,26 @@
+id: laser_mirrors_v1
+title: Лазер и зеркала
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: "Определите функцию trace(board, start_x, start_y, dx, dy), которая возвращает True, если луч попал в цель."
+description: Луч движется по матрице, отражается от зеркал и должен попасть в цель.
+difficulty: hard
+learning_section: Симуляции мира
+topics:
+  - симуляция
+  - координаты
+  - while
+slots:
+  - key: agent
+    title: Код решения
+    required: true
+demo_strategies:
+  - id: solution
+    slot_key: agent
+    title: "Демо: рабочее решение"
+    language: python
+    path: examples/solution.py
+    description: Простой пример, который решает задачу по данным, а не по заранее угаданной карте.

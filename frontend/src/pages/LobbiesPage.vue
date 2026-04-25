@@ -3,6 +3,7 @@
     <header class="agp-card p-4 lobbies-simple-head">
       <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
         <div>
+          <p class="lobbies-kicker mb-1">Матчи и соревнования</p>
           <h1 class="h3 mb-1">Лобби</h1>
           <p class="text-muted mb-0">
             Ученики входят как игроки, преподаватель открывает лобби для управления.
@@ -28,9 +29,23 @@
         </div>
       </div>
 
-      <div class="mt-3 small text-muted">
-        Показано: <span class="mono">{{ filteredLobbies.length }}</span>
-        из <span class="mono">{{ sortedLobbies.length }}</span>
+      <div class="lobbies-head-stats">
+        <div>
+          <span>Показано</span>
+          <strong class="mono">{{ filteredLobbies.length }}/{{ sortedLobbies.length }}</strong>
+        </div>
+        <div>
+          <span>Открыто</span>
+          <strong class="mono">{{ openLobbyCount }}</strong>
+        </div>
+        <div>
+          <span>Идет игра</span>
+          <strong class="mono">{{ runningLobbyCount }}</strong>
+        </div>
+        <div>
+          <span>По коду</span>
+          <strong class="mono">{{ codeLobbyCount }}</strong>
+        </div>
       </div>
       <div v-if="selectedGameId" class="lobbies-active-filter mt-2">
         <span>Фильтр:</span>
@@ -42,18 +57,25 @@
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
     <section class="lobbies-card-grid">
-      <article v-if="isLoading && lobbies.length === 0" class="agp-card p-4 text-muted">Загрузка лобби...</article>
+      <article v-if="isLoading && lobbies.length === 0" class="agp-card p-4 lobbies-empty-card">
+        <div class="agp-loading-state agp-loading-state--compact">Загрузка лобби...</div>
+      </article>
       <article v-else-if="filteredLobbies.length === 0" class="agp-card p-4">
-        <h2 class="h6 mb-1">{{ selectedGameId ? 'Лобби по выбранной игре не найдены' : 'Открытых лобби пока нет' }}</h2>
-        <p class="small text-muted mb-0">
-          {{ selectedGameId ? 'Смените игру в фильтре или выберите "Все игры".' : 'Когда преподаватель создаст лобби, оно появится здесь.' }}
-        </p>
+        <div class="agp-empty-state">
+          <div>
+            <h2 class="h6 mb-1">{{ selectedGameId ? 'Лобби по выбранной игре не найдены' : 'Открытых лобби пока нет' }}</h2>
+            <p class="small mb-0">
+              {{ selectedGameId ? 'Смените игру в фильтре или выберите "Все игры".' : 'Когда преподаватель создаст лобби, оно появится здесь.' }}
+            </p>
+          </div>
+        </div>
       </article>
 
       <article
         v-for="lobby in filteredLobbies"
         :key="lobby.lobby_id"
         class="agp-card agp-lobby-card p-3 lobby-card-simple"
+        :class="`lobby-card-simple--${lobby.status}`"
       >
         <div class="lobby-card-content">
           <div class="lobby-main">
@@ -63,8 +85,12 @@
             </div>
             <h2 class="h5 mb-1">{{ lobby.title }}</h2>
             <p class="small text-muted mb-0">{{ gameTitle(lobby.game_id) }}</p>
-            <div class="small text-muted mt-2">
-              Игроки: <span class="mono">{{ lobbyPlayersLabel(lobby) }}</span>
+            <div class="lobby-card-meter mt-3">
+              <div>
+                <span>Игроки</span>
+                <strong class="mono">{{ lobbyPlayersLabel(lobby) }}</strong>
+              </div>
+              <i :style="{ width: `${lobbyOccupancyPercent(lobby)}%` }"></i>
             </div>
             <label
               v-if="needsAccessCode(lobby)"
@@ -153,6 +179,9 @@ const filteredLobbies = computed(() => {
   return sortedLobbies.value.filter((lobby) => lobby.game_id === selectedGameId.value);
 });
 const selectedGameTitle = computed(() => selectedGameId.value ? gameTitle(selectedGameId.value) : '');
+const openLobbyCount = computed(() => filteredLobbies.value.filter((lobby) => lobby.status === 'open' || lobby.status === 'draft').length);
+const runningLobbyCount = computed(() => filteredLobbies.value.filter((lobby) => lobby.status === 'running').length);
+const codeLobbyCount = computed(() => filteredLobbies.value.filter((lobby) => lobby.access === 'code').length);
 
 function statusLabel(status: LobbyStatus): string {
   const labels: Record<LobbyStatus, string> = {
@@ -208,6 +237,12 @@ function hasHiddenLobbyDetails(lobby: LobbyDto): boolean {
 function lobbyPlayersLabel(lobby: LobbyDto): string {
   if (hasHiddenLobbyDetails(lobby)) return 'скрыты до входа';
   return `${lobby.teams.length} / ${lobby.max_teams}`;
+}
+
+function lobbyOccupancyPercent(lobby: LobbyDto): number {
+  if (hasHiddenLobbyDetails(lobby)) return 0;
+  if (!lobby.max_teams) return 0;
+  return Math.max(0, Math.min(100, Math.round((lobby.teams.length / lobby.max_teams) * 100)));
 }
 
 async function enterLobby(lobby: LobbyDto): Promise<void> {
@@ -325,7 +360,29 @@ onUnmounted(() => {
 }
 
 .lobbies-simple-head {
-  background: #f8fafc;
+  position: relative;
+  overflow: hidden;
+  background:
+    url("data:image/svg+xml,%3Csvg width='176' height='104' viewBox='0 0 176 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.12' stroke-width='2'%3E%3Cpath d='M18 18h28v28H18zM130 18h28v28h-28zM74 58h28v28H74z'/%3E%3Cpath d='M46 32h28M102 72h28M88 0v24M88 80v24'/%3E%3C/g%3E%3C/svg%3E") right 1rem top 0.8rem / 14rem auto no-repeat,
+    radial-gradient(circle at 10% 20%, rgba(20, 184, 166, 0.16), transparent 16rem),
+    radial-gradient(circle at 92% 10%, rgba(245, 158, 11, 0.18), transparent 15rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.95));
+}
+
+.lobbies-simple-head::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.22rem;
+  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+}
+
+.lobbies-kicker {
+  color: var(--agp-primary);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .lobbies-filter-wrap {
@@ -344,11 +401,44 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.lobbies-head-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.lobbies-head-stats > div {
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 0.6rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.52rem 0.68rem;
+  backdrop-filter: blur(8px);
+}
+
+.lobbies-head-stats span {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+}
+
+.lobbies-head-stats strong {
+  color: var(--agp-text);
+  font-size: 0.96rem;
+}
+
 .lobbies-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
   gap: 0.75rem;
   justify-content: start;
+}
+
+.lobbies-empty-card {
+  grid-column: 1 / -1;
 }
 
 .lobbies-active-filter {
@@ -364,18 +454,64 @@ onUnmounted(() => {
 }
 
 .lobby-card-simple {
+  position: relative;
+  overflow: hidden;
   gap: 0.45rem;
   align-content: start;
   min-height: 13.25rem;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.lobby-card-simple::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.28rem;
+  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+}
+
+.lobby-card-simple--running::before {
+  background: linear-gradient(90deg, #f59e0b, #14b8a6, #2563eb);
+}
+
+.lobby-card-simple--closed::before {
+  background: linear-gradient(90deg, #94a3b8, #64748b);
+}
+
+.lobby-card-simple--paused::before,
+.lobby-card-simple--updating::before {
+  background: linear-gradient(90deg, #64748b, #22d3ee);
+}
+
+.lobby-card-simple:hover {
+  transform: translateY(-2px);
+  border-color: rgba(20, 184, 166, 0.42);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.11);
 }
 
 .lobby-card-simple h2 {
   font-size: 1rem;
+  font-weight: 900;
 }
 
 .lobby-card-content {
+  position: relative;
   display: grid;
   gap: 0.75rem;
+}
+
+.lobby-card-content::after {
+  content: '';
+  position: absolute;
+  right: -1.2rem;
+  bottom: -1.4rem;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 1.2rem;
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(37, 99, 235, 0.1)),
+    url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.28'%3E%3Cpath d='M12 40h56M40 12v56M26 26h28v28H26z'/%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
 }
 
 .lobby-card-simple .btn {
@@ -392,6 +528,50 @@ onUnmounted(() => {
   width: min(15rem, 100%);
 }
 
+.lobby-card-meter {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.55rem;
+  background: rgba(248, 250, 252, 0.84);
+  padding: 0.5rem 0.6rem 0.7rem;
+}
+
+.lobby-card-meter > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.lobby-card-meter span {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.lobby-card-meter::after {
+  content: '';
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  bottom: 0.42rem;
+  height: 0.26rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.lobby-card-meter i {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 0.42rem;
+  z-index: 1;
+  height: 0.26rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #14b8a6, #2563eb);
+}
+
 .lobby-actions-simple {
   justify-content: flex-end;
 }
@@ -403,6 +583,16 @@ onUnmounted(() => {
 
   .lobby-actions-simple {
     justify-content: flex-start;
+  }
+
+  .lobbies-head-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .lobbies-head-stats {
+    grid-template-columns: 1fr;
   }
 }
 </style>

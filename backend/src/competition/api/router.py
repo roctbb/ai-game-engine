@@ -119,16 +119,33 @@ def _ensure_can_view_competition(
         raise ForbiddenError("Просматривать соревнование может только участник, преподаватель или админ")
 
 
+def _reconcile_competition_if_ready(
+    *,
+    container: ServiceContainer,
+    competition: Competition,
+) -> Competition:
+    if competition.status is not CompetitionStatus.RUNNING:
+        return competition
+    try:
+        return container.competition.advance_competition(
+            competition_id=competition.competition_id,
+            requested_by="system",
+        )
+    except InvariantViolationError:
+        return competition
+
+
 @router.get("", response_model=list[CompetitionResponse])
 def list_competitions(
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[CompetitionResponse]:
-    return [
-        _to_response(item)
-        for item in container.competition.list_competitions()
-        if _can_view_competition(container=container, session=session, competition=item)
-    ]
+    visible: list[CompetitionResponse] = []
+    for item in container.competition.list_competitions():
+        if not _can_view_competition(container=container, session=session, competition=item):
+            continue
+        visible.append(_to_response(_reconcile_competition_if_ready(container=container, competition=item)))
+    return visible
 
 
 @router.post("", response_model=CompetitionResponse)
@@ -162,6 +179,7 @@ def get_competition(
 ) -> CompetitionResponse:
     competition = container.competition.get_competition(competition_id)
     _ensure_can_view_competition(container=container, session=session, competition=competition)
+    competition = _reconcile_competition_if_ready(container=container, competition=competition)
     return _to_response(competition)
 
 

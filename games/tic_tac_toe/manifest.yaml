@@ -10,6 +10,7 @@ player_instruction: |
   Также поддерживается сигнатура make_move(observation), где observation = {"field": ..., "role": ...}.
 description: Реализуйте стратегию для игры в крестики-нолики на большой доске с целью собрать 5 в ряд.
 difficulty: easy
+learning_section: Логические головоломки
 topics:
   - стратегия
 slots:

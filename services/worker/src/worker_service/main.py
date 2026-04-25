@@ -22,6 +22,7 @@ app = FastAPI(title=settings.app_name)
 logger = logging.getLogger(__name__)
 _auto_poll_task: asyncio.Task[None] | None = None
 _auto_poll_stop_event: asyncio.Event | None = None
+_worker_registration_expires_at: float = 0.0
 
 SUPPORTED_RUN_KINDS: set[str] = {"single_task", "training_match", "competition_match"}
 SUPPORTED_CODE_API_MODES: set[str] = {"script_based", "turn_based"}
@@ -127,10 +128,6 @@ def _pull_and_execute_once() -> dict[str, object]:
 
         run_id = data.get("run_id")
         if not run_id:
-            _best_effort_send_worker_heartbeat(
-                client=client,
-                capacity_available=settings.max_slots,
-            )
             return {
                 "worker_id": settings.worker_id,
                 "status": "idle",
@@ -186,10 +183,13 @@ def _pull_and_execute_once() -> dict[str, object]:
                 },
             )
         except httpx.HTTPError as exc:
-            _best_effort_report_failed(client=client, run_id=run_id, error=str(exc))
+            reported_terminal = _best_effort_report_failed(client=client, run_id=run_id, error=str(exc))
+            if reported_terminal or _is_stale_backend_run_error(exc):
+                _best_effort_ack_scheduler(client=client, run_id=run_id)
             raise HTTPException(status_code=502, detail=f"Worker execution failed for run {run_id}") from exc
         except Exception as exc:
-            _best_effort_report_failed(client=client, run_id=run_id, error=str(exc))
+            if _best_effort_report_failed(client=client, run_id=run_id, error=str(exc)):
+                _best_effort_ack_scheduler(client=client, run_id=run_id)
             raise HTTPException(status_code=500, detail=f"Worker execution failed for run {run_id}") from exc
         finally:
             _best_effort_send_worker_heartbeat(
@@ -205,6 +205,11 @@ def _pull_and_execute_once() -> dict[str, object]:
 
 
 def _ensure_worker_registered(client: httpx.Client) -> str | None:
+    global _worker_registration_expires_at
+    now = time.monotonic()
+    if now < _worker_registration_expires_at:
+        return None
+
     response = _request_with_retry(
         client=client,
         method="POST",
@@ -218,6 +223,7 @@ def _ensure_worker_registered(client: httpx.Client) -> str | None:
     )
     payload = response.json()
     status = payload.get("status")
+    _worker_registration_expires_at = now + max(settings.worker_registration_ttl_seconds, 1.0)
     return status if isinstance(status, str) else None
 
 
@@ -396,7 +402,7 @@ def _parse_engine_payload(stdout: str) -> dict[str, object]:
     raise RuntimeError("Game engine did not print result payload")
 
 
-def _best_effort_report_failed(client: httpx.Client, run_id: str, error: str) -> None:
+def _best_effort_report_failed(client: httpx.Client, run_id: str, error: str) -> bool:
     try:
         _request_with_retry(
             client=client,
@@ -404,8 +410,25 @@ def _best_effort_report_failed(client: httpx.Client, run_id: str, error: str) ->
             url=f"{settings.backend_api_url}/internal/runs/{run_id}/failed",
             json_payload={"message": error[:3000]},
         )
+        return True
     except httpx.HTTPError:
-        return
+        return False
+
+
+def _best_effort_ack_scheduler(client: httpx.Client, run_id: str) -> bool:
+    try:
+        _request_with_retry(
+            client=client,
+            method="POST",
+            url=f"{settings.scheduler_url}/internal/runs/ack-finished",
+            json_payload={
+                "worker_id": settings.worker_id,
+                "run_id": run_id,
+            },
+        )
+        return True
+    except httpx.HTTPError:
+        return False
 
 
 def _best_effort_send_worker_heartbeat(client: httpx.Client, capacity_available: int) -> str | None:
@@ -472,3 +495,12 @@ def _is_retryable_http_error(exc: httpx.HTTPError) -> bool:
         status_code = exc.response.status_code
         return status_code >= 500 or status_code in {408, 425, 429}
     return True
+
+
+def _is_stale_backend_run_error(exc: httpx.HTTPError) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    request_url = str(exc.request.url)
+    if not request_url.startswith(f"{settings.backend_api_url.rstrip('/')}/internal/runs/"):
+        return False
+    return exc.response.status_code in {404, 409, 422}

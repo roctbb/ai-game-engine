@@ -9,6 +9,7 @@ from types import ModuleType
 import httpx
 from fastapi.testclient import TestClient
 
+import worker_service.main as worker_main
 from worker_service.main import app, settings
 
 
@@ -22,10 +23,16 @@ class ExpectedCall:
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, payload: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        payload: dict[str, Any] | None = None,
+        method: str = "GET",
+        url: str = "http://fake",
+    ) -> None:
         self.status_code = status_code
         self._payload = payload or {}
-        self.request = httpx.Request("GET", "http://fake")
+        self.request = httpx.Request(method, url)
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -95,17 +102,28 @@ class ScriptedHttpxClient:
     def _consume(self, method: str, url: str, json: dict[str, Any] | None) -> FakeResponse:
         heartbeat_url = f"{settings.backend_api_url}/internal/workers/{settings.worker_id}/heartbeat"
         if method == "POST" and url == heartbeat_url:
-            return FakeResponse(status_code=200, payload={"status": self._heartbeat_status})
+            return FakeResponse(
+                status_code=200,
+                payload={"status": self._heartbeat_status},
+                method=method,
+                url=url,
+            )
 
         assert self._calls, f"Unexpected {method} {url}"
         expected = self._calls.pop(0)
         assert expected.method == method
         assert expected.url == url
         assert expected.json == json
-        return FakeResponse(status_code=expected.status_code, payload=expected.payload)
+        return FakeResponse(
+            status_code=expected.status_code,
+            payload=expected.payload,
+            method=method,
+            url=url,
+        )
 
 
 def _set_test_settings() -> None:
+    worker_main._worker_registration_expires_at = 0.0
     settings.backend_api_url = "http://backend"
     settings.scheduler_url = "http://scheduler"
     settings.internal_api_token = "dev-internal-token"
@@ -120,6 +138,7 @@ def _set_test_settings() -> None:
     settings.request_max_attempts = 3
     settings.retry_base_delay_ms = 1
     settings.retry_max_delay_ms = 2
+    settings.worker_registration_ttl_seconds = 30.0
 
 
 def test_pull_and_execute_idle(monkeypatch: Any) -> None:
@@ -296,6 +315,11 @@ def test_pull_and_execute_reports_failed_when_execution_context_missing(monkeypa
             method="POST",
             url="http://backend/internal/runs/run-123/failed",
             json={"message": "Execution context is not available for run run-123"},
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/runs/ack-finished",
+            json={"worker_id": "worker-test-1", "run_id": "run-123"},
         ),
     ]
 
@@ -532,6 +556,11 @@ def test_pull_and_execute_reports_failed_for_unsupported_code_api_mode(monkeypat
             url="http://backend/internal/runs/run-turn/failed",
             json={"message": "Unsupported code_api_mode=legacy_sdk"},
         ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/runs/ack-finished",
+            json={"worker_id": "worker-test-1", "run_id": "run-turn"},
+        ),
     ]
 
     monkeypatch.setattr(
@@ -587,6 +616,11 @@ def test_pull_and_execute_reports_failed_for_missing_run_kind(monkeypatch: Any) 
             method="POST",
             url="http://backend/internal/runs/run-mismatch/failed",
             json={"message": "Execution context is missing run_kind"},
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/runs/ack-finished",
+            json={"worker_id": "worker-test-1", "run_id": "run-mismatch"},
         ),
     ]
 
@@ -644,6 +678,11 @@ def test_pull_and_execute_reports_failed_for_unsupported_run_kind(monkeypatch: A
             method="POST",
             url="http://backend/internal/runs/run-unknown-kind/failed",
             json={"message": "Unsupported run_kind=sandbox_probe"},
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/runs/ack-finished",
+            json={"worker_id": "worker-test-1", "run_id": "run-unknown-kind"},
         ),
     ]
 
@@ -713,6 +752,11 @@ def test_pull_and_execute_reports_failed_on_http_error(monkeypatch: Any) -> None
             url="http://backend/internal/runs/run-err/failed",
             json={"message": "HTTP 404"},
         ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/runs/ack-finished",
+            json={"worker_id": "worker-test-1", "run_id": "run-err"},
+        ),
     ]
 
     monkeypatch.setattr(
@@ -724,6 +768,75 @@ def test_pull_and_execute_reports_failed_on_http_error(monkeypatch: Any) -> None
     response = client.post("/internal/worker/pull-and-execute")
     assert response.status_code == 502
     assert "Worker execution failed for run run-err" in response.json()["detail"]
+    assert scripted_calls == []
+
+
+def test_pull_and_execute_acks_stale_backend_run(monkeypatch: Any) -> None:
+    _set_test_settings()
+    scripted_calls = [
+        ExpectedCall(
+            method="POST",
+            url="http://backend/internal/workers/register",
+            json={
+                "worker_id": "worker-test-1",
+                "hostname": "worker-host",
+                "capacity_total": 2,
+                "labels": {},
+            },
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/workers/pull-next",
+            json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
+            payload={"status": "assigned", "run_id": "run-stale"},
+        ),
+        ExpectedCall(
+            method="GET",
+            url="http://backend/internal/runs/run-stale/execution-context",
+            json=None,
+            payload={
+                "run_id": "run-stale",
+                "run_kind": "single_task",
+                "game_id": "game-stale",
+                "game_slug": "maze_escape_v1",
+                "game_package_dir": "maze_escape",
+                "code_api_mode": "script_based",
+                "engine_entrypoint": "engine.py",
+                "renderer_entrypoint": "renderer/index.html",
+                "snapshot_id": "snap-stale",
+                "snapshot_version_id": "gver-stale",
+                "codes_by_slot": {"agent": "def make_move(state):\n    return 'right'\n"},
+                "revisions_by_slot": {"agent": 1},
+            },
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://backend/internal/runs/run-stale/accepted",
+            json={"worker_id": "worker-test-1"},
+            status_code=422,
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://backend/internal/runs/run-stale/failed",
+            json={"message": "HTTP 422"},
+            status_code=422,
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/runs/ack-finished",
+            json={"worker_id": "worker-test-1", "run_id": "run-stale"},
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "worker_service.main.httpx.Client",
+        lambda timeout: ScriptedHttpxClient(scripted_calls, timeout),
+    )
+
+    client = TestClient(app)
+    response = client.post("/internal/worker/pull-and-execute")
+    assert response.status_code == 502
+    assert "Worker execution failed for run run-stale" in response.json()["detail"]
     assert scripted_calls == []
 
 
@@ -786,6 +899,11 @@ def test_pull_and_execute_reports_failed_on_engine_error(monkeypatch: Any, tmp_p
             method="POST",
             url="http://backend/internal/runs/run-broken/failed",
             json={"message": "Game engine exited with 2: boom"},
+        ),
+        ExpectedCall(
+            method="POST",
+            url="http://scheduler/internal/runs/ack-finished",
+            json={"worker_id": "worker-test-1", "run_id": "run-broken"},
         ),
     ]
 

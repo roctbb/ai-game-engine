@@ -56,3 +56,34 @@ def test_repository_demo_strategies_execute_against_their_engines() -> None:
             assert metrics["towers_built"] > 0
         elif manifest.id == "template_v1":
             assert metrics["final_value"] == 5
+
+
+def test_single_task_starter_templates_do_not_solve_tasks_unchanged() -> None:
+    games_root = _repo_root() / "games"
+
+    for manifest_path in sorted(games_root.glob("*/manifest.yaml")):
+        manifest = load_game_manifest(manifest_path)
+        if manifest.game_mode.value != "single_task":
+            continue
+        template_dir = manifest_path.parent / "templates"
+        if not template_dir.is_dir():
+            continue
+        if not all((template_dir / f"{slot.key}.py").is_file() for slot in manifest.slots):
+            continue
+
+        module = _load_module(manifest_path.parent / manifest.engine_entrypoint, f"{manifest.id}_starter_template_test")
+        codes_by_slot = {
+            slot.key: (manifest_path.parent / "templates" / f"{slot.key}.py").read_text(encoding="utf-8")
+            for slot in manifest.slots
+        }
+
+        payload = module.run(
+            {
+                "run_kind": "single_task",
+                "team_id": "starter-template",
+                "codes_by_slot": codes_by_slot,
+            }
+        )
+
+        assert payload["status"] == "finished", manifest.id
+        assert payload["metrics"].get("solved") is not True, manifest.id

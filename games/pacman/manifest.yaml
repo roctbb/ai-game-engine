@@ -8,6 +8,7 @@ renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right/stay. Собирайте точки и избегайте призраков.
 description: "Управляйте пакменом на случайной сетке: собирайте точки, берите большие точки для временной силы и не попадайтесь призракам."
 difficulty: hard
+learning_section: "Состояния: время, ключи, ресурсы"
 topics:
   - графы
   - поиск пути

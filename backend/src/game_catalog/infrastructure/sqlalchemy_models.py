@@ -18,6 +18,7 @@ class CatalogGameOrm(Base):
     mode: Mapped[str] = mapped_column(String(32), index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    learning_section: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     topics: Mapped[list[str]] = mapped_column(SqlJson, default=list)
     catalog_metadata_status: Mapped[str] = mapped_column(String(32), default="ready", index=True)
     active_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

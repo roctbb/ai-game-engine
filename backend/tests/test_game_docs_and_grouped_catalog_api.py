@@ -37,6 +37,6 @@ def test_grouped_single_task_catalog_endpoint(client) -> None:
     if not payload:
         return
     first = payload[0]
-    assert "topic" in first
-    assert "difficulty" in first
+    assert "learning_section" in first
     assert "items" in first
+    assert all("difficulty" in item and "topics" in item for item in first["items"])

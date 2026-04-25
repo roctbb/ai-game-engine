@@ -122,38 +122,60 @@
         </article>
 
         <aside v-if="!isEmbedded" class="agp-card p-3 agp-watch-side-card">
-          <h2 class="h6 mb-3">Состояние</h2>
-          <div class="agp-watch-stat">
-            <span class="text-muted small">Статус запуска</span>
-            <strong>{{ runStatusLabel }}</strong>
+          <header class="agp-match-panel-head">
+            <div>
+              <h2 class="h6 mb-1">Статистика матча</h2>
+              <span>{{ replayFrames.length ? `кадр ${replayFrameIndex + 1}/${replayFrames.length}` : runStatusLabel }}</span>
+            </div>
+            <span class="agp-run-pill" :class="`agp-run-pill--${runStatusTone}`">{{ runStatusLabel }}</span>
+          </header>
+
+          <div v-if="matchPlayerStats.length" class="agp-match-scoreboard">
+            <article
+              v-for="player in matchPlayerStats"
+              :key="player.id"
+              class="agp-match-player"
+              :class="{ 'agp-match-player--self': player.isSelf, 'agp-match-player--out': !player.alive }"
+            >
+              <div class="agp-match-player-rank">{{ player.placeLabel }}</div>
+              <div class="agp-match-player-main">
+                <strong>{{ player.name }}</strong>
+                <span v-if="player.detailLabel">{{ player.detailLabel }}</span>
+                <div class="agp-match-bars">
+                  <span>
+                    <i :style="{ width: `${player.lifePercent}%` }"></i>
+                  </span>
+                  <span>
+                    <i :style="{ width: `${player.shieldPercent}%` }"></i>
+                  </span>
+                </div>
+              </div>
+              <div class="agp-match-player-score">
+                <strong>{{ player.scoreLabel }}</strong>
+                <span>{{ player.alive ? 'в игре' : 'выбыл' }}</span>
+              </div>
+            </article>
           </div>
-          <div class="agp-watch-stat">
-            <span class="text-muted small">Визуализация</span>
-            <strong>{{ rendererStatusLabel }}</strong>
-          </div>
-          <div class="agp-watch-stat">
-            <span class="text-muted small">Тип</span>
-            <strong>{{ runKindLabel }}</strong>
-          </div>
-          <div v-if="canSeeTechnicalDetails" class="agp-watch-stat">
-            <span class="text-muted small">Обновления</span>
-            <strong class="mono">{{ liveMode }}</strong>
-          </div>
-          <div v-if="run.error_message" class="mt-3">
-            <RunReasonBadge :reason="run.error_message" :show-raw="false" />
-          </div>
-          <hr />
-          <h3 class="h6 mb-2">Повтор</h3>
-          <div v-if="isReplayLoading" class="text-muted small">Загрузка повтора...</div>
-          <div v-else-if="replayError" class="text-danger small">{{ replayError }}</div>
-          <div v-else-if="!replay" class="text-muted small">Повтор появится после завершения запуска.</div>
-          <div v-else class="agp-watch-replay-summary">
-            <span class="text-muted small">Кадр</span>
-            <strong class="mono">{{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</strong>
+          <div v-else class="agp-match-empty">
+            Статистика появится вместе с кадрами матча.
           </div>
 
-          <hr />
-          <h3 class="h6 mb-2">Лог ходов</h3>
+          <section class="agp-match-mini-stats" aria-label="Показатели матча">
+            <div>
+              <span>Лидер</span>
+              <strong>{{ matchLeaderLabel }}</strong>
+            </div>
+            <div>
+              <span>Ходов</span>
+              <strong>{{ replayFrameTick }}</strong>
+            </div>
+            <div>
+              <span>Игроков</span>
+              <strong>{{ matchPlayerStats.length || '—' }}</strong>
+            </div>
+          </section>
+
+          <h3 class="h6 mb-2 mt-3">Лог ходов</h3>
           <div v-if="!replay" class="text-muted small">Лог появится вместе с повтором.</div>
           <div v-else-if="moveLogItems.length === 0" class="text-muted small">
             В повторе нет событий ходов.
@@ -173,95 +195,34 @@
             </div>
           </div>
 
-          <details v-if="canSeeTechnicalDetails" class="mt-3">
+          <details v-if="canSeeTechnicalDetails" class="agp-tech-details mt-3">
             <summary class="agp-details-summary">Технические детали</summary>
-            <section class="agp-card-soft p-3 mt-3">
-              <h2 class="h6">Данные запуска</h2>
-              <table class="table table-sm align-middle mb-0">
-                <tbody>
-                  <tr>
-                    <th class="w-25">запуск</th>
-                    <td class="mono small">{{ run.run_id }}</td>
-                  </tr>
-                  <tr>
-                    <th>статус</th>
-                    <td class="mono small">{{ run.status }}</td>
-                  </tr>
-                  <tr>
-                    <th>причина</th>
-                    <td><RunReasonBadge :reason="run.error_message" /></td>
-                  </tr>
-                  <tr>
-                    <th>тип</th>
-                    <td>{{ runKindLabel }}</td>
-                  </tr>
-                  <tr>
-                    <th>игра</th>
-                    <td class="mono small">{{ watchContext.game_slug }}</td>
-                  </tr>
-                  <tr>
-                    <th>исполнитель</th>
-                    <td class="mono small">{{ run.worker_id ?? '—' }}</td>
-                  </tr>
-                  <tr>
-                    <th>протокол</th>
-                    <td class="mono small">{{ watchContext.renderer_protocol }}</td>
-                  </tr>
-                  <tr v-if="watchContext.renderer_url">
-                    <th>визуализация</th>
-                    <td class="mono small">{{ watchContext.renderer_url }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </section>
-
-            <section class="agp-card-soft p-3 mt-3">
-              <h2 class="h6">События визуализации</h2>
-              <div v-if="rendererLogs.length === 0" class="text-muted small">События визуализации пока не поступали.</div>
-              <ul v-else class="list-group list-group-flush">
-                <li
-                  v-for="item in rendererLogs"
-                  :key="item.id"
-                  class="list-group-item px-0 d-flex justify-content-between gap-2"
-                >
-                  <span class="mono small">{{ item.message }}</span>
-                  <span
-                    class="small"
-                    :class="item.level === 'error' ? 'text-danger' : item.level === 'warn' ? 'text-warning' : 'text-muted'"
-                  >
-                    {{ item.timestamp }}
-                  </span>
-                </li>
-              </ul>
-            </section>
-
-            <details class="mt-3">
-              <summary class="small fw-semibold">Итоговые данные</summary>
-              <pre class="mono small mb-0 mt-2">{{ resultPayloadJson }}</pre>
-            </details>
-
-            <details class="mt-3">
-              <summary class="small fw-semibold">Данные повтора</summary>
-              <div v-if="replay" class="mt-2">
-                <div class="small mb-2">
-                  повтор: <span class="mono">{{ replay.replay_id }}</span>
-                </div>
-                <div class="small text-muted mb-2">
-                  кадры: <span class="mono">{{ replay.frames.length }}</span>
-                  · события: <span class="mono">{{ replay.events.length }}</span>
-                  · видимость: <span class="mono">{{ replay.visibility }}</span>
-                </div>
-                <details class="mb-2" v-if="replay.events.length > 0">
-                  <summary class="small">События повтора ({{ replay.events.length }})</summary>
-                  <pre class="mono small mb-0">{{ replayEventsJson }}</pre>
-                </details>
-                <pre class="mono small mb-0">{{ replaySummaryJson }}</pre>
-              </div>
-              <div v-else class="text-muted small mt-2">
-                Повтор пока недоступен.
-              </div>
-            </details>
+            <div class="agp-watch-stat mt-2">
+              <span class="text-muted small">Визуализация</span>
+              <strong>{{ rendererStatusLabel }}</strong>
+            </div>
+            <div class="agp-watch-stat">
+              <span class="text-muted small">Тип</span>
+              <strong>{{ runKindLabel }}</strong>
+            </div>
+            <div class="agp-watch-stat">
+              <span class="text-muted small">Обновления</span>
+              <strong class="mono">{{ liveMode }}</strong>
+            </div>
+            <div v-if="run.error_message" class="mt-3">
+              <RunReasonBadge :reason="run.error_message" :show-raw="false" />
+            </div>
           </details>
+
+          <div class="agp-replay-foot">
+            <div v-if="isReplayLoading" class="text-muted small">Загрузка повтора...</div>
+            <div v-else-if="replayError" class="text-danger small">{{ replayError }}</div>
+            <div v-else-if="!replay" class="text-muted small">Повтор появится после завершения запуска.</div>
+            <div v-else class="agp-watch-replay-summary">
+              <span class="text-muted small">Кадр</span>
+              <strong class="mono">{{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</strong>
+            </div>
+          </div>
         </aside>
       </div>
     </template>
@@ -313,6 +274,23 @@ interface MoveLogItem {
   tone: 'move' | 'event' | 'error';
 }
 
+interface MatchPlayerStat {
+  id: string;
+  name: string;
+  teamLabel: string;
+  detailLabel: string;
+  place: number | null;
+  placeLabel: string;
+  score: number | null;
+  scoreLabel: string;
+  life: number | null;
+  shield: number | null;
+  lifePercent: number;
+  shieldPercent: number;
+  alive: boolean;
+  isSelf: boolean;
+}
+
 const route = useRoute();
 const sessionStore = useSessionStore();
 const isEmbedded = computed(() => route.query.embed === '1');
@@ -341,9 +319,6 @@ let runEventSource: EventSource | null = null;
 let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
 
 const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(watchContext.value?.renderer_url));
-const resultPayloadJson = computed(() => JSON.stringify(run.value?.result_payload ?? {}, null, 2));
-const replaySummaryJson = computed(() => JSON.stringify(replay.value?.summary ?? {}, null, 2));
-const replayEventsJson = computed(() => JSON.stringify(replay.value?.events ?? [], null, 2));
 const runStatusLabel = computed(() => {
   const status = run.value?.status ?? 'created';
   const labels: Record<RunDto['status'], string> = {
@@ -411,6 +386,23 @@ const currentReplayFrame = computed<ReplayFrameView | null>(() => {
 });
 
 const replayFrameTick = computed(() => currentReplayFrame.value?.tick ?? 0);
+const matchPlayerStats = computed<MatchPlayerStat[]>(() => {
+  const players = new Map<string, MatchPlayerStat>();
+  const frame = currentReplayFrame.value?.frame ?? null;
+  collectFramePlayers(players, frame);
+  if (players.size === 0) {
+    collectSummaryPlayers(players);
+  } else {
+    mergeSummaryPlacements(players);
+  }
+  return [...players.values()].sort((left, right) => {
+    const leftPlace = left.place ?? Number.POSITIVE_INFINITY;
+    const rightPlace = right.place ?? Number.POSITIVE_INFINITY;
+    if (leftPlace !== rightPlace) return leftPlace - rightPlace;
+    return (right.score ?? -Infinity) - (left.score ?? -Infinity);
+  });
+});
+const matchLeaderLabel = computed(() => matchPlayerStats.value[0]?.name ?? '—');
 const botConsoleLines = computed<BotConsoleLine[]>(() => {
   const lines: BotConsoleLine[] = [];
   const replayEvents = replay.value?.events ?? [];
@@ -480,6 +472,199 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeTick(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function collectFramePlayers(players: Map<string, MatchPlayerStat>, value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectFramePlayers(players, item));
+    return;
+  }
+  if (!isRecord(value)) return;
+
+  const nameRaw = value.name ?? value.player ?? value.role ?? value.key;
+  const hasPlayerShape =
+    nameRaw !== undefined &&
+    (value.score !== undefined || value.life !== undefined || value.hp !== undefined || value.coins !== undefined);
+  if (hasPlayerShape) {
+    const id = String(value.team_id ?? value.key ?? value.role ?? value.name ?? `player-${players.size + 1}`);
+    upsertPlayerStat(players, buildPlayerStat({
+      id,
+      name: String(nameRaw),
+      teamId: typeof value.team_id === 'string' ? value.team_id : id,
+      score: numericOrNull(value.score ?? value.points),
+      life: numericOrNull(value.life ?? value.hp),
+      shield: numericOrNull(value.shield),
+      alive: booleanOrDefault(value.alive, numericOrNull(value.life ?? value.hp) !== 0),
+      place: summaryPlaceFor(id),
+    }));
+  }
+
+  Object.values(value).forEach((item) => collectFramePlayers(players, item));
+}
+
+function collectSummaryPlayers(players: Map<string, MatchPlayerStat>): void {
+  const metrics = isRecord(replay.value?.summary?.metrics) ? replay.value.summary.metrics : {};
+  const rawPlayers = Array.isArray(metrics.players) ? metrics.players : [];
+  rawPlayers.forEach((raw, index) => {
+    if (!isRecord(raw)) return;
+    const id = String(raw.team_id ?? raw.key ?? raw.name ?? `summary-${index}`);
+    players.set(id, buildPlayerStat({
+      id,
+      name: String(raw.name ?? raw.key ?? id),
+      teamId: typeof raw.team_id === 'string' ? raw.team_id : id,
+      score: numericOrNull(raw.score ?? raw.points),
+      life: numericOrNull(raw.life ?? raw.hp),
+      shield: numericOrNull(raw.shield),
+      alive: booleanOrDefault(raw.alive, numericOrNull(raw.life ?? raw.hp) !== 0),
+      place: summaryPlaceFor(id),
+    }));
+  });
+
+  const scores = isRecord(replay.value?.summary?.scores)
+    ? replay.value.summary.scores
+    : isRecord(run.value?.result_payload?.scores)
+      ? run.value.result_payload.scores
+      : {};
+  Object.entries(scores).forEach(([teamId, scoreRaw]) => {
+    if (players.has(teamId)) return;
+    players.set(teamId, buildPlayerStat({
+      id: teamId,
+      name: compactTeamLabel(teamId),
+      teamId,
+      score: numericOrNull(scoreRaw),
+      life: null,
+      shield: null,
+      alive: true,
+      place: summaryPlaceFor(teamId),
+    }));
+  });
+}
+
+function mergeSummaryPlacements(players: Map<string, MatchPlayerStat>): void {
+  const scores = isRecord(replay.value?.summary?.scores) ? replay.value.summary.scores : {};
+  const placements = isRecord(replay.value?.summary?.placements) ? replay.value.summary.placements : {};
+  for (const [id, player] of players.entries()) {
+    const score = player.score ?? numericOrNull(scores[id]);
+    const place = player.place ?? numericOrNull(placements[id]);
+    players.set(id, {
+      ...player,
+      score,
+      scoreLabel: score === null ? '—' : Math.round(score).toLocaleString('ru-RU'),
+      place,
+      placeLabel: place === null ? '•' : String(place),
+    });
+  }
+}
+
+function upsertPlayerStat(players: Map<string, MatchPlayerStat>, next: MatchPlayerStat): void {
+  const duplicateId = findDuplicatePlayerId(players, next);
+  if (!duplicateId) {
+    players.set(next.id, next);
+    return;
+  }
+
+  const previous = players.get(duplicateId);
+  if (!previous) {
+    players.set(next.id, next);
+    return;
+  }
+
+  players.set(duplicateId, buildPlayerStat({
+    id: previous.id,
+    name: previous.name || next.name,
+    teamId: previous.isSelf || next.isSelf ? run.value?.team_id ?? previous.id : previous.id,
+    score: next.score ?? previous.score,
+    life: next.life ?? previous.life,
+    shield: next.shield ?? previous.shield,
+    alive: previous.alive || next.alive,
+    place: previous.place ?? next.place,
+  }));
+}
+
+function findDuplicatePlayerId(players: Map<string, MatchPlayerStat>, next: MatchPlayerStat): string | null {
+  const nextName = normalizePlayerName(next.name);
+  const nextTeam = normalizePlayerName(next.teamLabel);
+  for (const [id, existing] of players.entries()) {
+    if (id === next.id) return id;
+    const existingName = normalizePlayerName(existing.name);
+    const existingTeam = normalizePlayerName(existing.teamLabel);
+    if (!nextName || !existingName || nextName !== existingName) continue;
+    if (nextTeam === existingTeam || nextTeam === nextName || existingTeam === existingName) {
+      return id;
+    }
+  }
+  return null;
+}
+
+function normalizePlayerName(value: string): string {
+  return value.trim().toLocaleLowerCase('ru-RU');
+}
+
+function buildPlayerStat(input: {
+  id: string;
+  name: string;
+  teamId: string;
+  score: number | null;
+  life: number | null;
+  shield: number | null;
+  alive: boolean;
+  place: number | null;
+}): MatchPlayerStat {
+  const name = input.name || compactTeamLabel(input.teamId);
+  const teamLabel = compactTeamLabel(input.teamId);
+  const isSelf = input.teamId === run.value?.team_id || input.id === run.value?.team_id;
+  const detailLabel = isSelf
+    ? 'ваш бот'
+    : normalizePlayerName(name) === normalizePlayerName(teamLabel)
+      ? ''
+      : teamLabel;
+
+  return {
+    id: input.id,
+    name,
+    teamLabel,
+    detailLabel,
+    place: input.place,
+    placeLabel: input.place === null ? '•' : String(input.place),
+    score: input.score,
+    scoreLabel: input.score === null ? '—' : Math.round(input.score).toLocaleString('ru-RU'),
+    life: input.life,
+    shield: input.shield,
+    lifePercent: percentFromValue(input.life, 50),
+    shieldPercent: percentFromValue(input.shield, 25),
+    alive: input.alive,
+    isSelf,
+  };
+}
+
+function summaryPlaceFor(teamId: string): number | null {
+  const placements = isRecord(replay.value?.summary?.placements)
+    ? replay.value.summary.placements
+    : isRecord(run.value?.result_payload?.placements)
+      ? run.value.result_payload.placements
+      : {};
+  return numericOrNull(placements[teamId]);
+}
+
+function numericOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function booleanOrDefault(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function percentFromValue(value: number | null, max: number): number {
+  if (value === null) return 0;
+  return Math.max(0, Math.min(100, (value / max) * 100));
+}
+
+function compactTeamLabel(teamId: string): string {
+  if (!teamId) return 'игрок';
+  if (teamId.startsWith('builtin-')) return teamId.replace('builtin-', '');
+  if (teamId === run.value?.team_id) return 'ваш бот';
+  if (teamId.startsWith('team_')) return `team ${teamId.slice(-4)}`;
+  return teamId;
 }
 
 function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fallbackTick = 0): void {
@@ -727,6 +912,11 @@ function sendRendererStateAndResult(): void {
       frame: rendererFrame,
     },
   });
+  emitEmbeddedFrame({
+    tick: rendererTick.value,
+    phase: rendererPhase,
+    frame: rendererFrame,
+  });
   const canSendTerminalResult =
     replay.value !== null ? isReplayAtLastFrame.value : !shouldAutoplayReplay.value;
   if (isTerminalStatus(run.value.status) && canSendTerminalResult) {
@@ -740,6 +930,25 @@ function sendRendererStateAndResult(): void {
         },
     });
   }
+}
+
+function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknown }): void {
+  if (!isEmbedded.value || !run.value) return;
+  window.parent.postMessage(
+    {
+      type: 'agp.watch.frame',
+      payload: {
+        runId: run.value.run_id,
+        status: run.value.status,
+        tick: payload.tick,
+        phase: payload.phase,
+        frame: sanitizeForPostMessage(payload.frame),
+        replayFrameIndex: replayFrameIndex.value,
+        replayFrameCount: replayFrames.value.length,
+      },
+    },
+    window.location.origin,
+  );
 }
 
 function replaySpeedFromQuery(): number {
@@ -778,6 +987,9 @@ function startReplayPlayback(): void {
     return;
   }
   stopReplayPlayback();
+  if (replayFrameIndex.value >= replayFrames.value.length - 1) {
+    replayFrameIndex.value = 0;
+  }
   replayIsPlaying.value = true;
   replayPlaybackHandle = setInterval(() => {
     if (replayFrameIndex.value >= replayFrames.value.length - 1) {
@@ -1052,18 +1264,31 @@ onUnmounted(() => {
 
 <style scoped>
 .agp-watch-columns {
-  grid-template-columns: minmax(0, 1.75fr) minmax(18rem, 0.5fr);
-  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
+  gap: 0;
 }
 
 .agp-watch-page--embedded {
   height: 100dvh;
-  background: #030712;
+  background: #020617;
 }
 
 .agp-watch-page {
-  background: #06101f;
+  min-height: 100dvh;
+  background-color: #050b1a;
+  background-image:
+    url("data:image/svg+xml,%3Csvg width='180' height='180' viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.16' stroke-width='2'%3E%3Cpath d='M20 20h34v34H20zM126 20h34v34h-34zM20 126h34v34H20zM126 126h34v34h-34z'/%3E%3Cpath d='M72 90h36M90 72v36M0 90h28M152 90h28M90 0v28M90 152v28'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(circle at 12% 10%, rgba(45, 212, 191, 0.22), transparent 26rem),
+    radial-gradient(circle at 84% 22%, rgba(251, 191, 36, 0.14), transparent 22rem),
+    linear-gradient(135deg, #050b1a 0%, #071528 52%, #030712 100%);
+  background-size: 180px 180px, auto, auto, auto;
   color: #dbeafe;
+}
+
+.agp-watch-page .agp-task-header {
+  background:
+    linear-gradient(90deg, rgba(7, 16, 31, 0.98), rgba(8, 26, 48, 0.96)),
+    url("data:image/svg+xml,%3Csvg width='128' height='64' viewBox='0 0 128 64' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.14'%3E%3Cpath d='M0 32h128M32 0v64M96 0v64M48 16h32v32H48z'/%3E%3C/g%3E%3C/svg%3E");
 }
 
 .agp-watch-page--embedded .agp-watch-columns {
@@ -1073,9 +1298,13 @@ onUnmounted(() => {
 
 .agp-watch-page--embedded .agp-viewer-card {
   border: 0;
+  border-radius: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.75rem;
+  gap: 0;
+  padding: 0 !important;
+  background: #020617;
+  box-shadow: none;
 }
 
 .agp-watch-page--embedded .agp-viewer-card .agp-viewer-frame {
@@ -1084,7 +1313,38 @@ onUnmounted(() => {
 }
 
 .agp-watch-page .agp-viewer-card .agp-viewer-frame {
-  height: clamp(22rem, 64vh, 46rem);
+  height: calc(100dvh - 7.15rem);
+  min-height: 30rem;
+}
+
+.agp-watch-page .agp-viewer-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  border-radius: 0;
+  background: #020617;
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.08), 0 0 42px rgba(34, 211, 238, 0.08);
+  padding: 0 !important;
+}
+
+.agp-watch-page .agp-viewer-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  pointer-events: none;
+}
+
+.agp-watch-page .agp-viewer-card::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 0.22rem;
+  background: linear-gradient(90deg, #22d3ee, #facc15, #14b8a6, #2563eb);
+  opacity: 0.74;
+  pointer-events: none;
 }
 
 .agp-watch-renderer-state {
@@ -1095,12 +1355,21 @@ onUnmounted(() => {
 
 .agp-watch-side-card {
   position: sticky;
-  top: 0.75rem;
+  top: 0;
+  align-self: stretch;
   overflow: hidden;
-  border-color: rgba(135, 226, 255, 0.22);
+  border-width: 0 0 0 1px;
+  border-color: rgba(34, 211, 238, 0.24);
   border-radius: 0;
-  background: #07101c;
+  background:
+    radial-gradient(circle at 12% 4%, rgba(34, 211, 238, 0.16), transparent 11rem),
+    radial-gradient(circle at 92% 18%, rgba(250, 204, 21, 0.1), transparent 10rem),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98)),
+    url("data:image/svg+xml,%3Csvg width='96' height='96' viewBox='0 0 96 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23facc15' stroke-opacity='.10'%3E%3Cpath d='M12 48h72M48 12v72M24 24l48 48M72 24 24 72'/%3E%3C/g%3E%3C/svg%3E");
   color: #dbeafe;
+  max-height: calc(100dvh - 3.4rem);
+  overflow-y: auto;
+  box-shadow: none;
 }
 
 .agp-watch-side-card h2,
@@ -1183,6 +1452,214 @@ onUnmounted(() => {
   border-bottom: 1px solid rgba(148, 163, 184, 0.22);
 }
 
+.agp-match-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.agp-match-panel-head h2::before {
+  content: '';
+  display: inline-block;
+  width: 0.58rem;
+  height: 0.58rem;
+  margin-right: 0.45rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #22d3ee, #facc15);
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.55);
+  vertical-align: 0.05rem;
+}
+
+.agp-match-panel-head span {
+  color: #8ea7c1;
+  font-size: 0.78rem;
+}
+
+.agp-run-pill {
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  color: #dbeafe;
+  font-size: 0.76rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.agp-run-pill--active {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.16);
+  color: #fde68a;
+}
+
+.agp-run-pill--success {
+  border-color: rgba(45, 212, 191, 0.36);
+  background: rgba(20, 184, 166, 0.16);
+  color: #99f6e4;
+}
+
+.agp-run-pill--danger {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+}
+
+.agp-match-scoreboard {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.agp-match-player {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(3.25rem, auto);
+  gap: 0.6rem;
+  align-items: center;
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.08), transparent 42%),
+    rgba(15, 23, 42, 0.68);
+  padding: 0.6rem 0.55rem 0.6rem 0.7rem;
+}
+
+.agp-match-player::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.2rem;
+  background: linear-gradient(180deg, #22d3ee, #facc15);
+  opacity: 0.72;
+}
+
+.agp-match-player--self {
+  border-color: rgba(45, 212, 191, 0.5);
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.26), rgba(15, 23, 42, 0.68));
+}
+
+.agp-match-player--out {
+  opacity: 0.62;
+}
+
+.agp-match-player-rank {
+  width: 1.85rem;
+  height: 1.85rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.24), transparent 38%),
+    rgba(34, 211, 238, 0.16);
+  color: #a5f3fc;
+  font-weight: 900;
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.16);
+}
+
+.agp-match-player-main,
+.agp-match-player-score {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.agp-match-player-main strong {
+  overflow: hidden;
+  color: #f8fbff;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agp-match-player-main span,
+.agp-match-player-score span {
+  color: #8ea7c1;
+  font-size: 0.74rem;
+}
+
+.agp-match-player-score {
+  justify-items: end;
+  text-align: right;
+}
+
+.agp-match-player-score strong {
+  min-width: 2.8rem;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(250, 204, 21, 0.1));
+  padding: 0.16rem 0.5rem;
+  color: #fefce8;
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.agp-match-bars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+}
+
+.agp-match-bars span {
+  height: 0.3rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.agp-match-bars i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.agp-match-bars span:first-child i {
+  background: linear-gradient(90deg, #fb7185, #facc15);
+}
+
+.agp-match-bars span:last-child i {
+  background: linear-gradient(90deg, #38bdf8, #22d3ee);
+}
+
+.agp-match-mini-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.agp-match-mini-stats div,
+.agp-match-empty {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.08), rgba(250, 204, 21, 0.04)),
+    rgba(15, 23, 42, 0.62);
+  padding: 0.55rem;
+}
+
+.agp-match-mini-stats span {
+  display: block;
+  color: #8ea7c1;
+  font-size: 0.72rem;
+}
+
+.agp-match-empty {
+  color: #8ea7c1;
+  font-size: 0.86rem;
+}
+
+.agp-tech-details {
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding-top: 0.65rem;
+}
+
+.agp-replay-foot {
+  margin-top: 0.75rem;
+}
+
 .agp-watch-stat strong {
   font-size: 0.95rem;
 }
@@ -1201,7 +1678,7 @@ onUnmounted(() => {
 .agp-watch-move-log {
   display: grid;
   gap: 0.45rem;
-  max-height: 18rem;
+  max-height: 20rem;
   overflow: auto;
   padding-right: 0.2rem;
 }
@@ -1258,7 +1735,9 @@ onUnmounted(() => {
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 8px;
-  background: #050812;
+  background:
+    url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.05'%3E%3Cpath d='M0 16h32M16 0v32'/%3E%3C/g%3E%3C/svg%3E"),
+    #050812;
   color: #d1d5db;
 }
 
@@ -1269,7 +1748,8 @@ onUnmounted(() => {
   gap: 1rem;
   padding: 0.55rem 0.75rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.92);
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.96), rgba(12, 74, 110, 0.45));
   font-size: 0.78rem;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -1323,7 +1803,8 @@ onUnmounted(() => {
   }
 
   .agp-watch-page .agp-viewer-card .agp-viewer-frame {
-    height: 22rem;
+    height: 24rem;
+    min-height: 24rem;
   }
 
   .agp-bot-console-line {
@@ -1332,6 +1813,72 @@ onUnmounted(() => {
 
   .agp-bot-console-role {
     display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .agp-watch-page .agp-task-header {
+    padding: 0.45rem;
+    gap: 0.35rem;
+  }
+
+  .agp-watch-page .agp-task-header-main {
+    min-height: 2.2rem;
+  }
+
+  .agp-watch-page .agp-task-header-player {
+    display: grid;
+    grid-template-columns: auto auto auto minmax(4.5rem, 1fr) auto;
+    align-items: center;
+    width: 100%;
+    gap: 0.35rem;
+  }
+
+  .agp-watch-page .agp-task-header-player .agp-player-frame-label {
+    min-width: 0;
+    overflow: hidden;
+    color: #c7d2fe !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .agp-watch-page .agp-task-header-player .agp-speed-control {
+    grid-column: 5;
+    grid-row: 1;
+    width: auto !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    justify-content: flex-end !important;
+  }
+
+  .agp-watch-page .agp-task-header-player .agp-speed-label {
+    display: none;
+  }
+
+  .agp-watch-page .agp-task-header-player .agp-speed-select {
+    width: 6rem;
+    min-height: 2.2rem;
+  }
+
+  .agp-watch-page .agp-task-header-player .agp-player-range {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    order: initial;
+    width: 100%;
+    min-width: 0 !important;
+  }
+
+  .agp-watch-page .agp-task-header-actions {
+    justify-content: space-between;
+  }
+
+  .agp-watch-side-card {
+    max-height: none;
+    border-width: 1px 0 0;
+  }
+
+  .agp-match-mini-stats {
+    grid-template-columns: 1fr;
   }
 }
 </style>

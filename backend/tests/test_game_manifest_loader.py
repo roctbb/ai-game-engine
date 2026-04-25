@@ -30,6 +30,7 @@ def test_loads_repository_game_manifests() -> None:
     assert by_id["maze_escape_v1"].code_api_mode == "script_based"
     assert by_id["tanks_ctf_v1"].to_register_input().required_slots[0].key == "driver"
     assert by_id["maze_escape_v1"].difficulty == "medium"
+    assert by_id["maze_escape_v1"].learning_section == "Поиск пути BFS"
     assert "поиск пути" in by_id["maze_escape_v1"].topics
     assert by_id["maze_escape_v1"].demo_strategies[0].slot_key == "agent"
     assert by_id["tanks_ctf_v1"].demo_strategies[1].slot_key == "support"

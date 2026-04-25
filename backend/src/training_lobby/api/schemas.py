@@ -97,6 +97,7 @@ class LobbyCompetitionResponse(BaseModel):
     competition_id: str
     title: str
     status: str
+    winner_team_ids: list[str] = Field(default_factory=list)
 
 
 class LobbyCompetitionArchiveResponse(BaseModel):
