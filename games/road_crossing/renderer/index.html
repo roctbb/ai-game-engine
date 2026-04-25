@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #eef2f7; color: #111827; }
+    .wrap { padding: 16px; }
+    .grid { display: grid; gap: 3px; width: min(82vmin, 520px); }
+    .cell { aspect-ratio: 1; border-radius: 5px; display: grid; place-items: center; font-weight: 800; }
+    .road { background: #ffffff; }
+    .car { background: #ef4444; color: white; }
+    .finish { background: #22c55e; color: white; }
+    .player { outline: 4px solid #2563eb; outline-offset: -4px; }
+    .stats { margin-top: 12px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="board" class="grid"></div>
+    <div id="stats" class="stats"></div>
+  </div>
+  <script>
+    function render(payload) {
+      const frame = (payload.frames || []).at(-1)?.frame || payload.frame || {};
+      const board = Array.isArray(frame.board) ? frame.board : [];
+      const width = frame.width || board.length || 1;
+      const height = frame.height || board[0]?.length || 1;
+      const rows = Array.from({ length: height }, (_, y) => Array.from({ length: width }, (_, x) => board[x]?.[y] ?? 0));
+      const root = document.getElementById("board");
+      root.style.gridTemplateColumns = `repeat(${width}, 1fr)`;
+      const px = frame.position?.x;
+      const py = frame.position?.y;
+      root.innerHTML = "";
+      rows.forEach((row, y) => row.forEach((cell, x) => {
+        const el = document.createElement("div");
+        el.className = "cell " + (cell === -1 ? "car" : cell === 1 ? "finish" : "road");
+        if (x === px && y === py) el.classList.add("player");
+        el.textContent = cell === -1 ? "■" : cell === 1 ? "✓" : "";
+        root.appendChild(el);
+      }));
+      document.getElementById("stats").textContent = `Попадания: ${frame.car_hits || 0} · Ошибки: ${frame.invalid_moves || 0} · Финиш: ${frame.escaped ? "да" : "нет"}`;
+    }
+    window.render = render;
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (!message || typeof message !== "object") return;
+      if (message.type === "agp.renderer.state") render(message.payload || {});
+    });
+    render({ frame: { board: Array.from({ length: 8 }, () => Array(8).fill(0)), position: { x: 0, y: 0 } } });
+    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.0.0" } }, "*");
+  </script>
+</body>
+</html>

@@ -78,6 +78,47 @@ def test_small_match_matchmaking_schedules_only_full_pairs(client, teacher_heade
     assert tick_again["last_scheduled_run_ids"] == []
 
 
+def test_small_match_matchmaking_continues_after_finished_match(client, teacher_headers) -> None:
+    game = _create_game(client, slug="small_match_mm_continues", mode="small_match", headers=teacher_headers)
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="loop-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="loop-b", name="Bravo")
+
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Loop", headers=teacher_headers)
+    for team in (team_a, team_b):
+        client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
+            json={"ready": True},
+            headers=teacher_headers,
+        )
+
+    first_runs = client.get(
+        f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match",
+        headers=teacher_headers,
+    ).json()
+    assert len(first_runs) == 2
+
+    for index, run in enumerate(first_runs):
+        finished = client.post(
+            f"/api/v1/internal/runs/{run['run_id']}/finished",
+            json={"payload": {"status": "ok", "scores": {run["team_id"]: 10 - index}}},
+        )
+        assert finished.status_code == 200
+
+    all_runs = client.get(
+        f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match",
+        headers=teacher_headers,
+    ).json()
+    active_runs = [item for item in all_runs if item["status"] in {"created", "queued", "running"}]
+    assert len(all_runs) == 4
+    assert len(active_runs) == 2
+    assert {item["team_id"] for item in active_runs} == {team_a["team_id"], team_b["team_id"]}
+
+
 def test_massive_lobby_matchmaking_schedules_all_ready_teams(client, teacher_headers) -> None:
     game = _create_game(client, slug="massive_match_mm_game", mode="massive_lobby", headers=teacher_headers)
     team_a = _create_ready_team(client, game_id=game["game_id"], captain="mcap-a", name="Alpha")

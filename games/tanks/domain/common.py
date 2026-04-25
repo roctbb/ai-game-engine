@@ -100,6 +100,8 @@ class Object:
     def as_dict(self, point: Point = None):
         description = {
             "direction": self.direction,
+            "is_flat": self.is_flat,
+            "is_transparent": self.is_transparent,
             "properties": self.properties,
             "type": self.type,
         }

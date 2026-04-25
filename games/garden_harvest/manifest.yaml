@@ -1,0 +1,25 @@
+id: garden_harvest_v1
+title: Садовый сборщик
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board, carrying), возвращающую up/down/left/right/stay. Собирайте урожай и относите его в сарай.
+description: Робот собирает урожай на случайной карте, но может нести только три овоща за раз.
+difficulty: medium
+topics:
+  - графы
+  - BFS
+  - планирование
+slots:
+  - key: agent
+    title: Код сборщика
+    required: true
+demo_strategies:
+  - id: bfs_harvester
+    slot_key: agent
+    title: "Демо: сборщик через BFS"
+    language: python
+    path: examples/bfs_harvester.py
+    description: Собирает урожай, а когда корзина полная, возвращается в сарай.

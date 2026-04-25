@@ -12,11 +12,11 @@ direction = "right"
 def can_go(x, y, maze, action):
     next_x = x + DELTAS[action][0]
     next_y = y + DELTAS[action][1]
-    if next_y < 0 or next_y >= len(maze):
+    if next_x < 0 or next_x >= len(maze):
         return False
-    if next_x < 0 or next_x >= len(maze[next_y]):
+    if next_y < 0 or next_y >= len(maze[next_x]):
         return False
-    return maze[next_y][next_x] != -1
+    return maze[next_x][next_y] != -1
 
 
 def turn_right(action):

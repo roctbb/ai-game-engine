@@ -4,12 +4,12 @@ import random
 from typing import Any
 
 
-_MAX_STEPS = 40
-_WIDTH = 8
-_HEIGHT = 8
+_MAX_STEPS = 60
+_WIDTH = 10
+_HEIGHT = 10
 _GOAL = (_WIDTH - 1, _HEIGHT - 1)
-_COINS_TOTAL = 8
-_WALLS_TOTAL = 10
+_COINS_TOTAL = 10
+_DEAD_ENDS_MIN = 5
 _DELTAS = {
     "right": (1, 0),
     "down": (0, 1),
@@ -46,17 +46,25 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         if position == _GOAL:
             break
         print_context["tick"] = step
-        action = move_fn(_build_state(position=position, step=step, coins_left=coins_left, walls=walls))
+        board = _board(coins_left=coins_left, walls=walls)
+        action = _safe_call(
+            move_fn,
+            position=position,
+            board=board,
+            step=step,
+            coins_left=coins_left,
+            walls=walls,
+        )
         delta = _DELTAS.get(action)
         if delta is None:
             invalid_moves += 1
-            events.append({"type": "invalid_action", "tick": step, "action": action})
+            events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": step, "action": action})
             frames.append(_frame(step + 1, "running", position, coins_left, walls, collected, invalid_moves, False))
             continue
         target = (position[0] + delta[0], position[1] + delta[1])
         if not _can_enter(target, walls):
             invalid_moves += 1
-            events.append({"type": "blocked_move", "tick": step, "action": action, "target": {"x": target[0], "y": target[1]}})
+            events.append({"type": "blocked_move", "message": "Ход заблокирован: там стена, закрытая клетка или другой непроходимый объект.", "tick": step, "action": action, "target": {"x": target[0], "y": target[1]}})
             frames.append(_frame(step + 1, "running", position, coins_left, walls, collected, invalid_moves, False))
             continue
         position = target
@@ -77,6 +85,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "coins_collected": collected,
         "coins_total": len(coins),
         "walls_total": len(walls),
+        "dead_ends_total": len(_dead_end_cells(walls)),
         "invalid_moves": invalid_moves,
         "reached_goal": reached_goal,
         "score": score,
@@ -113,22 +122,153 @@ def _build_map(context: dict[str, Any]) -> dict[str, object]:
         seed = "coins_right_down_offline"
     rng = random.Random(seed)
 
-    guaranteed_path = _random_monotonic_path(rng)
-    path_cells = set(guaranteed_path)
-    candidates = [
-        (x, y)
-        for y in range(_HEIGHT)
-        for x in range(_WIDTH)
-        if (x, y) not in path_cells and (x, y) not in {(0, 0), _GOAL}
-    ]
-    rng.shuffle(candidates)
-    walls = set(candidates[:_WALLS_TOTAL])
+    for _attempt in range(200):
+        guaranteed_path = _random_monotonic_path(rng)
+        path_cells = set(guaranteed_path)
+        open_cells = path_cells | _build_dead_end_branches(rng=rng, path=guaranteed_path)
+        walls = {
+            (x, y)
+            for y in range(_HEIGHT)
+            for x in range(_WIDTH)
+            if (x, y) not in open_cells
+        }
+        if len(_dead_end_cells(walls)) >= _DEAD_ENDS_MIN:
+            break
+    else:
+        guaranteed_path = _fallback_path()
+        open_cells = set(guaranteed_path) | {
+            (1, 1), (1, 2),
+            (3, 1),
+            (5, 1), (5, 2),
+            (7, 1),
+        }
+        walls = {
+            (x, y)
+            for y in range(_HEIGHT)
+            for x in range(_WIDTH)
+            if (x, y) not in open_cells
+        }
 
     coin_candidates = [cell for cell in guaranteed_path[1:-1] if cell not in walls]
     rng.shuffle(coin_candidates)
     coins = set(coin_candidates[:_COINS_TOTAL])
 
     return {"walls": walls, "coins": coins}
+
+
+def _build_dead_end_branches(rng: random.Random, path: list[tuple[int, int]]) -> set[tuple[int, int]]:
+    path_cells = set(path)
+    branches: set[tuple[int, int]] = set()
+    branch_roots = list(range(1, len(path) - 2))
+    rng.shuffle(branch_roots)
+
+    for index in branch_roots:
+        if len(_dead_end_candidates(path_cells | branches)) >= _DEAD_ENDS_MIN:
+            break
+        start = path[index]
+        next_on_path = path[index + 1]
+        options = []
+        for _action, (dx, dy) in _DELTAS.items():
+            candidate = (start[0] + dx, start[1] + dy)
+            if candidate != next_on_path and _is_inside(candidate) and candidate not in path_cells and candidate not in branches:
+                options.append(candidate)
+        rng.shuffle(options)
+        for first_cell in options:
+            candidate_branch = _grow_branch(rng=rng, first_cell=first_cell, blocked=path_cells | branches)
+            if candidate_branch and _is_isolated_dead_branch(candidate_branch, path_cells | branches):
+                branches.update(candidate_branch)
+                break
+
+    return branches
+
+
+def _grow_branch(
+    rng: random.Random,
+    first_cell: tuple[int, int],
+    blocked: set[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    branch = [first_cell]
+    current = first_cell
+    for _ in range(rng.randint(0, 2)):
+        options = []
+        for dx, dy in _DELTAS.values():
+            nxt = (current[0] + dx, current[1] + dy)
+            if _is_inside(nxt) and nxt not in blocked and nxt not in branch:
+                options.append(nxt)
+        if not options:
+            break
+        rng.shuffle(options)
+        current = options[0]
+        branch.append(current)
+    return branch
+
+
+def _is_isolated_dead_branch(branch: list[tuple[int, int]], existing_open: set[tuple[int, int]]) -> bool:
+    branch_set = set(branch)
+    for index, cell in enumerate(branch):
+        allowed_next = branch[index + 1] if index + 1 < len(branch) else None
+        for dx, dy in _DELTAS.values():
+            nxt = (cell[0] + dx, cell[1] + dy)
+            if nxt == allowed_next:
+                continue
+            if nxt in existing_open or nxt in branch_set:
+                return False
+    return True
+
+
+def _dead_end_candidates(open_cells: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    walls = {
+        (x, y)
+        for y in range(_HEIGHT)
+        for x in range(_WIDTH)
+        if (x, y) not in open_cells
+    }
+    return _dead_end_cells(walls)
+
+
+def _dead_end_cells(walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    reachable = _reachable_cells(start=(0, 0), walls=walls)
+    can_reach_goal = _cells_that_can_reach_goal(walls)
+    return reachable - can_reach_goal
+
+
+def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    if start in walls:
+        return set()
+    seen = {start}
+    queue = [start]
+    head = 0
+    while head < len(queue):
+        current = queue[head]
+        head += 1
+        for dx, dy in _DELTAS.values():
+            nxt = (current[0] + dx, current[1] + dy)
+            if _can_enter(nxt, walls) and nxt not in seen:
+                seen.add(nxt)
+                queue.append(nxt)
+    return seen
+
+
+def _cells_that_can_reach_goal(walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    if _GOAL in walls:
+        return set()
+    seen = {_GOAL}
+    queue = [_GOAL]
+    head = 0
+    reverse_deltas = [(-dx, -dy) for dx, dy in _DELTAS.values()]
+    while head < len(queue):
+        current = queue[head]
+        head += 1
+        for dx, dy in reverse_deltas:
+            previous = (current[0] + dx, current[1] + dy)
+            if _can_enter(previous, walls) and previous not in seen:
+                seen.add(previous)
+                queue.append(previous)
+    return seen
+
+
+def _fallback_path() -> list[tuple[int, int]]:
+    return [(x, 0) for x in range(_WIDTH)] + [(_WIDTH - 1, y) for y in range(1, _HEIGHT)]
 
 
 def _random_monotonic_path(rng: random.Random) -> list[tuple[int, int]]:
@@ -191,18 +331,32 @@ def _build_player_fn(
 
     fn = namespace.get("make_move") or namespace.get("choose_move")
     if not callable(fn):
-        def _fallback(state: dict[str, object]) -> str:
-            pos = state["position"]
-            board = state.get("board")
-            if isinstance(pos, dict) and isinstance(board, list):
-                x = int(pos.get("x", 0))
-                y = int(pos.get("y", 0))
-                if x + 1 < _WIDTH and board[y][x + 1] != -1:
-                    return "right"
+        def _fallback(x: int, y: int, board: list[list[int]]) -> str:
+            if x + 1 < _WIDTH and board[x + 1][y] != -1:
+                return "right"
             return "down"
 
         return _fallback, compile_error
     return fn, compile_error
+
+
+def _safe_call(
+    fn: callable,
+    position: tuple[int, int],
+    board: list[list[int]],
+    step: int,
+    coins_left: set[tuple[int, int]],
+    walls: set[tuple[int, int]],
+) -> object:
+    try:
+        return fn(position[0], position[1], board)
+    except TypeError:
+        try:
+            return fn(_build_state(position=position, step=step, coins_left=coins_left, walls=walls))
+        except Exception:
+            return None
+    except Exception:
+        return None
 
 
 def _make_bot_print(
@@ -257,12 +411,12 @@ def _can_enter(position: tuple[int, int], walls: set[tuple[int, int]]) -> bool:
 
 
 def _board(coins_left: set[tuple[int, int]], walls: set[tuple[int, int]]) -> list[list[int]]:
-    board = [[0 for _ in range(_WIDTH)] for _ in range(_HEIGHT)]
+    board = [[0 for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
     for x, y in walls:
-        board[y][x] = -1
+        board[x][y] = -1
     for x, y in coins_left:
-        board[y][x] = 1
-    board[_GOAL[1]][_GOAL[0]] = 2
+        board[x][y] = 1
+    board[_GOAL[0]][_GOAL[1]] = 2
     return board
 
 

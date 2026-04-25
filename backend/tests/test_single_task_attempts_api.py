@@ -40,7 +40,7 @@ def _create_ready_team(client, game_id: str, user_id: str) -> tuple[str, dict[st
         headers=headers,
         json={
             'actor_user_id': user_id,
-            'code': 'def make_move(state):\n    return "right"\n',
+            'code': 'def make_move(x, y, board):\n    return "right"\n',
         },
     )
     assert update.status_code == 200

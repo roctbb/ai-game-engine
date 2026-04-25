@@ -1,0 +1,25 @@
+id: ice_slide_v1
+title: Ледяное поле
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right. Герой скользит до стены или выхода.
+description: "Найдите путь по ледяному полю: после выбора направления герой скользит до ближайшей стены, поэтому искать нужно по точкам остановки."
+difficulty: medium
+topics:
+  - графы
+  - поиск пути
+  - BFS
+slots:
+  - key: agent
+    title: Код агента
+    required: true
+demo_strategies:
+  - id: bfs_slider
+    slot_key: agent
+    title: "Демо: BFS по точкам остановки"
+    language: python
+    path: examples/bfs_slider.py
+    description: Строит граф ходов-скольжений и выбирает первый шаг кратчайшего пути.

@@ -55,11 +55,11 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             if action not in _DELTAS:
                 invalid[slot] += 1
                 action = directions[slot]
-                events.append({"type": "invalid_action", "tick": turn, "slot": slot})
+                events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": turn, "slot": slot})
             if len(snakes[slot]) > 1 and action == _OPPOSITE[directions[slot]]:
                 invalid[slot] += 1
                 action = directions[slot]
-                events.append({"type": "reverse_blocked", "tick": turn, "slot": slot})
+                events.append({"type": "reverse_blocked", "message": "Змейка не может развернуться в собственную шею.", "tick": turn, "slot": slot})
             directions[slot] = str(action)
             dx, dy = _DELTAS[str(action)]
             intents[slot] = (x + dx, y + dy)
@@ -82,7 +82,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 
         for slot in crashed:
             alive[slot] = False
-            events.append({"type": "crash", "tick": turn + 1, "slot": slot})
+            events.append({"type": "crash", "message": "Столкновение: змейка врезалась в стену, препятствие или себя.", "tick": turn + 1, "slot": slot})
 
         food_taken = False
         for slot, target in intents.items():
@@ -114,12 +114,15 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         for slot in _SLOTS
     }
     score = max(0, sum(slot_scores.values()))
-    scores = {team_ids["snake_1"]: score}
-    placements = {team_ids["snake_1"]: 1}
+    scores = {team_ids[slot]: max(0, slot_scores[slot]) for slot in _SLOTS}
+    placements = _placements(team_ids, slot_scores)
     winner_slot = max(_SLOTS, key=lambda slot: (slot_scores[slot], eaten[slot], int(alive[slot])))
+    winner_slots = _winner_slots(slot_scores)
     metrics: dict[str, object] = {
         "turns": turns,
         "winner_slot": winner_slot,
+        "winner_slots": winner_slots,
+        "is_tie": len(winner_slots) > 1,
         "food_eaten": eaten,
         "alive": alive,
         "invalid_moves": invalid,
@@ -213,25 +216,25 @@ def _fallback_move(x: int, y: int, board: list[list[int]], _slot: str = "") -> s
         moves.sort(key=lambda move: abs(x + move[1] - food[0]) + abs(y + move[2] - food[1]))
     for action, dx, dy in moves:
         nx, ny = x + dx, y + dy
-        if 0 <= ny < len(board) and 0 <= nx < len(board[ny]) and board[ny][nx] != -1:
+        if 0 <= nx < len(board) and 0 <= ny < len(board[nx]) and board[nx][ny] != -1:
             return action
     return "right"
 
 
 def _board(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], food: tuple[int, int] | None) -> list[list[int]]:
-    board = [[0 for _ in range(_WIDTH)] for _ in range(_HEIGHT)]
+    board = [[0 for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
     for x in range(_WIDTH):
-        board[0][x] = -1
-        board[_HEIGHT - 1][x] = -1
+        board[x][0] = -1
+        board[x][_HEIGHT - 1] = -1
     for y in range(_HEIGHT):
-        board[y][0] = -1
-        board[y][_WIDTH - 1] = -1
+        board[0][y] = -1
+        board[_WIDTH - 1][y] = -1
     for slot, body in snakes.items():
         if alive[slot]:
             for x, y in body:
-                board[y][x] = -1
+                board[x][y] = -1
     if food is not None:
-        board[food[1]][food[0]] = 1
+        board[food[0]][food[1]] = 1
     return board
 
 
@@ -270,6 +273,27 @@ def _team_ids(ctx: dict[str, Any]) -> dict[str, str]:
     return {slot: f"team-{slot}" for slot in _SLOTS} | (
         {"snake_1": str(ctx["team_id"])} if isinstance(ctx.get("team_id"), str) and ctx.get("team_id") else {}
     )
+
+
+def _winner_slots(slot_scores: dict[str, int]) -> list[str]:
+    best = max(slot_scores.values()) if slot_scores else 0
+    return [slot for slot in _SLOTS if slot_scores.get(slot, 0) == best]
+
+
+def _placements(team_ids: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
+    ordered = sorted(_SLOTS, key=lambda slot: slot_scores[slot], reverse=True)
+    result: dict[str, int] = {}
+    last_score: int | None = None
+    last_place = 0
+    for index, slot in enumerate(ordered, start=1):
+        score = slot_scores[slot]
+        if score != last_score:
+            last_place = index
+            last_score = score
+        result[team_ids[slot]] = last_place
+    return result
+
+
 def _frame(
     tick: int,
     phase: str,

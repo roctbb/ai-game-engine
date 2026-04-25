@@ -1,11 +1,11 @@
 def make_move(x, y, maze):
     start = (x, y)
-    height = len(maze)
-    width = len(maze[0]) if height else 0
+    width = len(maze)
+    height = len(maze[0]) if width else 0
     goal = None
 
-    for row_y, row in enumerate(maze):
-        for col_x, cell in enumerate(row):
+    for col_x, column in enumerate(maze):
+        for row_y, cell in enumerate(column):
             if cell == 1:
                 goal = (col_x, row_y)
                 break
@@ -37,7 +37,7 @@ def make_move(x, y, maze):
                 continue
             if next_cell[0] >= width or next_cell[1] >= height:
                 continue
-            if maze[next_cell[1]][next_cell[0]] == -1:
+            if maze[next_cell[0]][next_cell[1]] == -1:
                 continue
             if next_cell in came_from:
                 continue

@@ -126,7 +126,7 @@ function draw(frame){
   const W=sz.width||(Array.isArray(grid[0])?grid[0].length:31),H=sz.height||grid.length||31;
   const walls=new Set();
   if(Array.isArray(frame.walls))for(const w of frame.walls)if(w&&Number.isFinite(w.x))walls.add(w.x+","+w.y);
-  if(!walls.size&&grid.length)for(let y=0;y<grid.length;y++)if(Array.isArray(grid[y]))for(let x=0;x<grid[y].length;x++)if(grid[y][x]===-1)walls.add(x+","+y);
+  if(!walls.size&&grid.length)for(let y=0;y<grid.length;y++)if(Array.isArray(grid[y]))for(let x=0;x<grid[y].length;x++)if(grid[x]?.[y]===-1)walls.add(x+","+y);
 
   const C=Math.max(8,Math.floor(Math.min(window.innerWidth*0.92,window.innerHeight-44)/Math.max(W,H)));
   const pw=W*C,ph=H*C;

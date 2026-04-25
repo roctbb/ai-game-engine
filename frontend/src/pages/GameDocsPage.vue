@@ -1,9 +1,11 @@
 <template>
   <section class="agp-grid game-docs-page">
     <header class="agp-card p-4 game-docs-head">
-      <div>
+      <div class="game-docs-title-line">
         <RouterLink class="agp-back-link" :to="backTarget">←</RouterLink>
-        <h1 class="h3 mb-1">{{ game?.title || 'Документация' }}</h1>
+        <h1 class="h3 mb-0">{{ game?.title || 'Документация' }}</h1>
+      </div>
+      <div class="game-docs-head-copy">
         <p class="text-muted mb-0">{{ docs?.player_instruction || 'Документация игры' }}</p>
       </div>
     </header>
@@ -59,7 +61,7 @@ function gameId(): string {
 onMounted(async () => {
   const id = gameId();
   if (!id) {
-    errorMessage.value = 'Не передан gameId';
+    errorMessage.value = 'Не найдена игра для документации';
     return;
   }
   isLoading.value = true;
@@ -85,9 +87,31 @@ onMounted(async () => {
   background: #f8fafc;
 }
 
+.game-docs-title-line {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.game-docs-title-line h1 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.game-docs-head-copy {
+  margin-left: 2.6rem;
+}
+
 .game-doc-section header {
   border-bottom: 1px solid var(--agp-border);
   margin-bottom: 0.9rem;
   padding-bottom: 0.65rem;
+}
+
+@media (max-width: 720px) {
+  .game-docs-head-copy {
+    margin-left: 0;
+  }
 }
 </style>

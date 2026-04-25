@@ -65,6 +65,7 @@ class RunExecutionContextResponse(BaseModel):
     snapshot_version_id: str
     codes_by_slot: dict[str, str]
     revisions_by_slot: dict[str, int]
+    participants: list[dict[str, object]] = Field(default_factory=list)
 
 
 class RunWatchContextResponse(BaseModel):

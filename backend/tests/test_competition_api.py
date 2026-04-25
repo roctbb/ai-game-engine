@@ -117,6 +117,26 @@ def test_create_competition_rejects_future_tie_break_policy(client, teacher_head
     assert denied.status_code == 422
 
 
+def test_create_competition_rejects_direct_lobby_attachment(client, teacher_headers) -> None:
+    game = _create_small_match_game(client, "competition_api_direct_lobby", headers=teacher_headers)
+
+    denied = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "lobby_id": "lobby-direct-attachment",
+            "title": "Bypass Lobby",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    )
+
+    assert denied.status_code == 422
+
+
 def test_unrelated_student_cannot_read_competition_details(client, teacher_headers) -> None:
     game = _create_small_match_game(client, "competition_api_read_scope", headers=teacher_headers)
     team = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-read-scope")

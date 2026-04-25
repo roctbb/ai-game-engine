@@ -68,7 +68,7 @@
         </div>
         <div class="col-md-3">
           <div class="agp-card-soft p-2">
-            <div class="small text-muted">Лучший score</div>
+            <div class="small text-muted">Лучший счет</div>
             <div class="mono">{{ bestScore ?? '—' }}</div>
           </div>
         </div>
@@ -80,7 +80,8 @@
     <article v-if="game" class="agp-card p-3">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h2 class="h6 mb-0">Попытки</h2>
-        <div class="d-flex gap-2">
+        <div class="attempts-pager">
+          <span class="small text-muted">страница {{ currentPage }}</span>
           <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading || offset === 0" @click="prevPage">Назад</button>
           <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading || attempts.length < normalizedLimit" @click="nextPage">Вперед</button>
         </div>
@@ -92,25 +93,30 @@
         <table class="table table-sm align-middle mb-0">
           <thead>
             <tr>
-              <th v-if="canManage">ID запуска</th>
               <th v-if="canManage">Пользователь</th>
               <th>Статус</th>
               <th v-if="canManage">Причина</th>
               <th>Счет</th>
               <th>Решено</th>
               <th>Время</th>
+              <th v-if="canManage">Детали</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="attempt in attempts" :key="attempt.run_id">
-              <td v-if="canManage" class="mono small">{{ attempt.run_id }}</td>
               <td v-if="canManage" class="mono small">{{ attempt.requested_by }}</td>
               <td>{{ statusLabel(attempt.status) }}</td>
               <td v-if="canManage"><RunReasonBadge :reason="attempt.error_message" /></td>
               <td class="mono small">{{ attemptScore(attempt) }}</td>
               <td>{{ attemptSolved(attempt) }}</td>
               <td class="small">{{ formatIso(attempt.finished_at || attempt.created_at) }}</td>
+              <td v-if="canManage">
+                <details class="small">
+                  <summary class="text-muted">Технический ID</summary>
+                  <span class="mono small">{{ attempt.run_id }}</span>
+                </details>
+              </td>
               <td class="text-end d-flex gap-1 justify-content-end">
                 <RouterLink :to="`/runs/${attempt.run_id}/watch`" class="btn btn-sm btn-outline-secondary">Повтор</RouterLink>
                 <button
@@ -127,7 +133,16 @@
         </table>
       </div>
 
-      <pre v-if="selectedLogs" class="mono small mt-3 mb-0">{{ selectedLogs }}</pre>
+      <section v-if="selectedLogs" class="attempts-log-panel mt-3">
+        <div class="attempts-log-head mb-2">
+          <div>
+            <div class="fw-semibold">Логи попытки</div>
+            <div v-if="selectedLogsRunId" class="small text-muted mono">{{ selectedLogsRunId }}</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" type="button" @click="closeLogs">Закрыть</button>
+        </div>
+        <pre class="mono small mb-0">{{ selectedLogs }}</pre>
+      </section>
     </article>
   </section>
 </template>
@@ -163,10 +178,12 @@ const limit = ref(20);
 const offset = ref(0);
 
 const selectedLogs = ref('');
+const selectedLogsRunId = ref('');
 const logsLoadingRunId = ref('');
 
 const normalizedLimit = computed(() => Math.max(5, Math.min(100, Number(limit.value) || 20)));
 const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
+const currentPage = computed(() => Math.floor(offset.value / normalizedLimit.value) + 1);
 
 const solvedCount = computed(() => attempts.value.filter((attempt) => attemptSolved(attempt) === 'да').length);
 const activeCount = computed(
@@ -189,7 +206,7 @@ function gameIdFromRoute(): string {
 async function loadGame(): Promise<void> {
   const gameId = gameIdFromRoute();
   if (!gameId) {
-    gameError.value = 'Не передан gameId';
+    gameError.value = 'Не найдена задача для просмотра попыток';
     return;
   }
   isGameLoading.value = true;
@@ -209,6 +226,7 @@ async function loadAttempts(): Promise<void> {
   isLoading.value = true;
   attemptsError.value = '';
   selectedLogs.value = '';
+  selectedLogsRunId.value = '';
   try {
     attempts.value = await listSingleTaskAttempts({
       game_id: gameId,
@@ -250,6 +268,7 @@ async function prevPage(): Promise<void> {
 async function showLogs(runId: string): Promise<void> {
   logsLoadingRunId.value = runId;
   selectedLogs.value = '';
+  selectedLogsRunId.value = runId;
   try {
     const logs = await getSingleTaskAttemptLogs(runId);
     selectedLogs.value = logs.lines.length > 0 ? logs.lines.join('\n') : 'Логи отсутствуют';
@@ -258,6 +277,11 @@ async function showLogs(runId: string): Promise<void> {
   } finally {
     logsLoadingRunId.value = '';
   }
+}
+
+function closeLogs(): void {
+  selectedLogs.value = '';
+  selectedLogsRunId.value = '';
 }
 
 function attemptScoreValue(run: RunDto): number | null {
@@ -310,3 +334,33 @@ onMounted(async () => {
   await loadAttempts();
 });
 </script>
+
+<style scoped>
+.attempts-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.attempts-log-panel {
+  border: 1px solid var(--agp-border);
+  background: var(--agp-surface-soft);
+  border-radius: 8px;
+  padding: 0.85rem;
+}
+
+.attempts-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.attempts-log-panel pre {
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+</style>

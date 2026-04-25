@@ -28,7 +28,7 @@ def _prepare_team(client, game_id: str, user_id: str) -> str:
         f"/api/v1/teams/{team['team_id']}/slots/{slot_key}",
         json={
             'actor_user_id': user_id,
-            'code': 'def make_move(state):\n    return "right"\n',
+            'code': 'def make_move(x, y, board):\n    return "right"\n',
         },
     )
     assert update.status_code == 200

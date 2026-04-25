@@ -6,6 +6,15 @@ def _find_game_id(client, slug: str) -> str:
     return next(item["game_id"] for item in games if item["slug"] == slug)
 
 
+def _auth_headers(client, nickname: str, role: str = "student") -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/dev-login",
+        json={"nickname": nickname, "role": role},
+    )
+    assert response.status_code == 200
+    return {"X-Session-Id": response.json()["session_id"]}
+
+
 def test_get_game_templates_for_script_based_game(client) -> None:
     game_id = _find_game_id(client, "maze_escape_v1")
     response = client.get(f"/api/v1/games/{game_id}/templates")
@@ -19,6 +28,27 @@ def test_get_game_templates_for_script_based_game(client) -> None:
     assert pathfinder["slot_key"] == "agent"
     assert "BFS" in pathfinder["title"]
     assert "def make_move(x, y, maze):" in pathfinder["code"]
+
+
+def test_get_game_templates_hides_demo_strategies_from_students(client) -> None:
+    game_id = _find_game_id(client, "maze_escape_v1")
+    student_headers = _auth_headers(client, "templates-student")
+    response = client.get(f"/api/v1/games/{game_id}/templates", headers=student_headers)
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["templates"]
+    assert payload["demo_strategies"] == []
+
+
+def test_get_game_templates_returns_demo_strategies_to_teacher(client, teacher_headers) -> None:
+    game_id = _find_game_id(client, "maze_escape_v1")
+    response = client.get(f"/api/v1/games/{game_id}/templates", headers=teacher_headers)
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["demo_strategies"]
+    assert "code" in payload["demo_strategies"][0]
 
 
 def test_get_game_templates_uses_slot_specific_stub_for_defender(client) -> None:

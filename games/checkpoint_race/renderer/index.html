@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Checkpoint Race Renderer</title>
+  <style>
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#111827;color:#e5edf5;font-family:Arial,sans-serif}
+    .wrap{width:min(92vmin,780px)}
+    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
+    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+  </style>
+</head>
+<body>
+<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<script>
+const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
+function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
+function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
+function draw(frame){
+  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||13, h=Array.isArray(grid[0])?grid[0].length:13, C=30;
+  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=grid[x]?.[y]??0;
+    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:v===-1?"#334155":v===1?"#fef3c7":"#f8fafc"}));
+    if(v===1){const t=el("text",{x:x*C+C/2,y:y*C+C*0.66,"text-anchor":"middle","font-size":17,fill:"#b45309"});t.textContent="C";boardEl.appendChild(t)}
+  }
+  const positions=frame.positions||{};
+  for(const [slot,p] of Object.entries(positions)){
+    const color=slot==="orange"?"#f97316":"#0891b2";
+    if(Number.isFinite(p.x)&&Number.isFinite(p.y)){const cx=p.x*C+C/2,cy=p.y*C+C/2;boardEl.appendChild(el("circle",{cx,cy,r:C*0.3,fill:color}));drawMiniBadge(cx,cy,C,(frame.progress||{})[slot]||0,color)}
+  }
+  const p=frame.progress||{}, s=frame.slot_scores||{};
+  hudEl.textContent=`orange=${p.orange||0} cyan=${p.cyan||0} total=${frame.checkpoints_total??"-"} score_orange=${s.orange??"-"} score_cyan=${s.cyan??"-"}`;
+}
+window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
+draw({board:Array.from({length:13},()=>Array(13).fill(0)),positions:{orange:{x:1,y:1},cyan:{x:11,y:11}},progress:{orange:0,cyan:0},checkpoints_total:5});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+</script>
+</body>
+</html>

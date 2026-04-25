@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from game_catalog.infrastructure.manifest_loader import load_game_manifest, load_game_manifests
+from game_catalog.infrastructure.manifest_loader import (
+    find_game_manifest_path,
+    load_game_manifest,
+    load_game_manifests,
+)
 from shared.kernel import InvariantViolationError
 
 
@@ -75,6 +79,35 @@ slots:
         load_game_manifest(manifest)
 
 
+def test_bulk_manifest_loading_skips_invalid_packages_unless_strict(tmp_path: Path) -> None:
+    valid_dir = tmp_path / "valid_game"
+    valid_dir.mkdir()
+    (valid_dir / "engine.py").write_text("", encoding="utf-8")
+    (valid_dir / "manifest.yaml").write_text(
+        """
+id: valid_game
+title: Valid Game
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+slots:
+  - key: agent
+    title: Agent
+""".strip(),
+        encoding="utf-8",
+    )
+
+    broken_dir = tmp_path / "broken_game"
+    broken_dir.mkdir()
+    (broken_dir / "manifest.yaml").write_text("id: [", encoding="utf-8")
+
+    assert [manifest.id for manifest in load_game_manifests(tmp_path)] == ["valid_game"]
+    assert find_game_manifest_path(tmp_path, "valid_game") == valid_dir / "manifest.yaml"
+    with pytest.raises(InvariantViolationError):
+        load_game_manifests(tmp_path, strict=True)
+
+
 def test_new_reference_game_graphics_are_svg() -> None:
     games_root = _repo_root() / "games"
     for game_dir in ("maze_escape", "coins_right_down", "tower_defense"):
@@ -83,12 +116,10 @@ def test_new_reference_game_graphics_are_svg() -> None:
 
 
 def test_repository_game_demo_strategies_point_to_existing_slots_and_files() -> None:
-    games_root = _repo_root() / "games"
-
-    for manifest_path in sorted(games_root.glob("*/manifest.yaml")):
-        manifest = load_game_manifest(manifest_path)
+    for manifest in load_game_manifests(_repo_root() / "games"):
         assert manifest.demo_strategies, f"{manifest.id} must provide at least one demo strategy"
         slot_keys = {slot.key for slot in manifest.slots}
+        manifest_path = find_game_manifest_path(_repo_root() / "games", manifest.id)
         for strategy in manifest.demo_strategies:
             assert strategy.slot_key in slot_keys
             assert (manifest_path.parent / strategy.path).is_file()

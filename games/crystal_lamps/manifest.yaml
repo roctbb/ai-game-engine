@@ -1,0 +1,25 @@
+id: crystal_lamps_v1
+title: Кристальные маяки
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board, lamps_lit), возвращающую up/down/left/right/stay. Зажгите все маяки и идите к выходу.
+description: Робот зажигает кристальные маяки в случайном лабиринте. Зажженные маяки продолжают гореть, а выход появляется только после всех маяков.
+difficulty: hard
+topics:
+  - графы
+  - BFS
+  - планирование маршрута
+slots:
+  - key: agent
+    title: Код робота
+    required: true
+demo_strategies:
+  - id: bfs_lamps
+    slot_key: agent
+    title: "Демо: маяки через BFS"
+    language: python
+    path: examples/bfs_lamps.py
+    description: Идет к ближайшему маяку, затем к выходу.

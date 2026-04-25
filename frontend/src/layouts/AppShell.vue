@@ -2,14 +2,14 @@
   <div class="agp-shell" :class="{ 'agp-shell--workspace': isChromeHiddenRoute }">
     <nav v-if="!isChromeHiddenRoute" class="agp-navbar">
       <div class="agp-topbar">
-        <RouterLink class="agp-brand" to="/tasks">AI Game Platform</RouterLink>
+        <RouterLink class="agp-brand" to="/tasks">Игровая платформа</RouterLink>
 
         <div class="agp-primary-nav" aria-label="Главная навигация">
           <RouterLink class="agp-nav-link" to="/tasks">Задачи</RouterLink>
           <RouterLink class="agp-nav-link" to="/lobbies">Лобби и соревнования</RouterLink>
           <RouterLink class="agp-nav-link" to="/games">Игры</RouterLink>
-          <RouterLink v-if="sessionStore.role === 'admin'" class="agp-nav-link" to="/admin/game-sources">
-            Статус системы
+          <RouterLink v-if="canManage" class="agp-nav-link" to="/admin/game-sources">
+            {{ systemNavLabel }}
           </RouterLink>
         </div>
 
@@ -24,8 +24,13 @@
             <span v-else>Войти</span>
           </summary>
           <div class="agp-user-popover">
-            <div class="small text-muted" v-if="sessionStore.isAuthenticated">
-              {{ sessionStore.role }} · {{ sessionStore.provider }}
+            <div class="agp-user-card" v-if="sessionStore.isAuthenticated">
+              <div>
+                <div class="small text-muted">Пользователь</div>
+                <strong>{{ sessionStore.nickname }}</strong>
+              </div>
+              <span class="agp-pill agp-pill--neutral">{{ roleLabel }}</span>
+              <div class="small text-muted">{{ providerLabel }}</div>
             </div>
 
             <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/admin/catalog" @click="closeUserMenu">
@@ -67,12 +72,23 @@ const isUserMenuOpen = ref(false);
 const canManage = computed(
   () => sessionStore.role === 'teacher' || sessionStore.role === 'admin'
 );
+const systemNavLabel = computed(() => (sessionStore.role === 'admin' ? 'Статус системы' : 'Источники игр'));
+const roleLabel = computed(() => {
+  if (sessionStore.role === 'admin') return 'администратор';
+  if (sessionStore.role === 'teacher') return 'преподаватель';
+  return 'ученик';
+});
+const providerLabel = computed(() => {
+  if (sessionStore.provider === 'geekclass') return 'Вход через GeekClass';
+  if (sessionStore.provider === 'dev') return 'Учебный вход';
+  return 'Сессия активна';
+});
 const isEmbeddedRoute = computed(() => route.query.embed === '1');
 const isChromeHiddenRoute = computed(() =>
-  ['login', 'task-run', 'run-watch'].includes(String(route.name ?? '')) || isEmbeddedRoute.value
+  ['login', 'task-run', 'run-watch', 'lobby'].includes(String(route.name ?? '')) || isEmbeddedRoute.value
 );
 const isWorkspaceRoute = computed(() =>
-  ['task-run', 'run-watch', 'competition', 'workspace'].includes(String(route.name ?? ''))
+  ['task-run', 'run-watch', 'competition', 'player-code', 'lobby'].includes(String(route.name ?? ''))
 );
 
 function closeUserMenu(): void {

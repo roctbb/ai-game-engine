@@ -32,11 +32,16 @@
         Показано: <span class="mono">{{ filteredLobbies.length }}</span>
         из <span class="mono">{{ sortedLobbies.length }}</span>
       </div>
+      <div v-if="selectedGameId" class="lobbies-active-filter mt-2">
+        <span>Фильтр:</span>
+        <strong>{{ selectedGameTitle }}</strong>
+        <button class="btn btn-sm btn-link p-0" type="button" @click="selectedGameId = ''">сбросить</button>
+      </div>
     </header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
-    <section class="agp-grid">
+    <section class="lobbies-card-grid">
       <article v-if="isLoading && lobbies.length === 0" class="agp-card p-4 text-muted">Загрузка лобби...</article>
       <article v-else-if="filteredLobbies.length === 0" class="agp-card p-4">
         <h2 class="h6 mb-1">{{ selectedGameId ? 'Лобби по выбранной игре не найдены' : 'Открытых лобби пока нет' }}</h2>
@@ -50,7 +55,7 @@
         :key="lobby.lobby_id"
         class="agp-card agp-lobby-card p-3 lobby-card-simple"
       >
-        <div class="d-flex justify-content-between gap-3 align-items-start">
+        <div class="lobby-card-content">
           <div class="lobby-main">
             <div class="d-flex gap-2 flex-wrap mb-2">
               <span class="agp-pill" :class="statusClass(lobby.status)">{{ statusLabel(lobby.status) }}</span>
@@ -71,8 +76,10 @@
                 v-model.trim="accessCodeByLobbyId[lobby.lobby_id]"
                 class="form-control form-control-sm"
                 autocomplete="off"
+                placeholder="Введите код"
                 @keyup.enter="enterLobby(lobby)"
               />
+              <span class="small text-muted">Участники и матчи откроются после входа.</span>
             </label>
           </div>
           <div class="agp-lobby-actions lobby-actions-simple">
@@ -145,6 +152,7 @@ const filteredLobbies = computed(() => {
   if (!selectedGameId.value) return sortedLobbies.value;
   return sortedLobbies.value.filter((lobby) => lobby.game_id === selectedGameId.value);
 });
+const selectedGameTitle = computed(() => selectedGameId.value ? gameTitle(selectedGameId.value) : '');
 
 function statusLabel(status: LobbyStatus): string {
   const labels: Record<LobbyStatus, string> = {
@@ -336,8 +344,43 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.lobbies-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
+  gap: 0.75rem;
+  justify-content: start;
+}
+
+.lobbies-active-filter {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  color: var(--agp-text-muted);
+}
+
+.lobbies-active-filter strong {
+  color: var(--agp-text);
+}
+
 .lobby-card-simple {
-  gap: 0.6rem;
+  gap: 0.45rem;
+  align-content: start;
+  min-height: 13.25rem;
+}
+
+.lobby-card-simple h2 {
+  font-size: 1rem;
+}
+
+.lobby-card-content {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.lobby-card-simple .btn {
+  white-space: nowrap;
+  width: 100%;
 }
 
 .lobby-main {

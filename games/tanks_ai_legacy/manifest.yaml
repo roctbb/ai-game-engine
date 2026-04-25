@@ -1,0 +1,28 @@
+id: tanks_ai_legacy_v1
+title: TanksAI Classic
+game_mode: massive_lobby
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: |
+  Напишите функцию make_choice(x, y, field), которая возвращает одно действие:
+  go_up/go_down/go_left/go_right, fire_up/fire_down/fire_left/fire_right,
+  shield или self_destruct.
+description: "Классические танчики из TanksAI: массовая пошаговая арена с монетами, стрельбой, щитом, самоуничтожением и старым визуалом."
+difficulty: hard
+topics:
+  - графы
+  - игровые стратегии
+  - массовое лобби
+slots:
+  - key: bot
+    title: Код танка
+    required: true
+demo_strategies:
+  - id: miner_bfs
+    slot_key: bot
+    title: "Демо: поиск монет"
+    language: python
+    path: examples/miner_bfs.py
+    description: Ищет ближайшую монету через BFS и стреляет, если монет не видно.

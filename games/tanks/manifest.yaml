@@ -1,15 +1,16 @@
 id: tanks_ctf_v1
-title: Танки CTF
+title: Танки
 game_mode: massive_lobby
 semver: 1.0.0
 code_api_mode: turn_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
 player_instruction: |
-  Слот driver: напишите функцию make_choice(x, y, map_state), которая возвращает одно из действий
-  up/down/left/right/stay.
+  Слот driver: напишите функцию make_choice(x, y, map_state), которая возвращает действие
+  go_up/go_down/go_left/go_right, fire_up/fire_down/fire_left/fire_right или use HealthKit/use SniperBooster.
+  Для совместимости также принимаются up/down/left/right как обычное движение.
   Слот support (опционально): напишите функцию make_support(state), которая возвращает "boost" или "none".
-description: Командная CTF-игра танков, где важно сочетать движение, прикрытие и захват флага.
+description: "Большая танковая арена со старой графикой: танки ездят по карте, собирают предметы, стреляют по башням и разрушаемым объектам."
 difficulty: hard
 topics:
   - мультиагентные системы
@@ -22,15 +23,15 @@ slots:
     title: Логика поддержки
     required: false
 demo_strategies:
-  - id: capture_flag_driver
+  - id: coin_shooter
     slot_key: driver
-    title: "Демо: захват флага"
+    title: "Демо: монеты и стрельба"
     language: python
-    path: examples/driver_capture_flag.py
-    description: Едет к флагу, а после захвата возвращается на свою базу.
+    path: examples/coin_shooter.py
+    description: Ищет монеты и стреляет по видимым целям.
   - id: boost_support
     slot_key: support
     title: "Демо: ускорение"
     language: python
     path: examples/support_boost.py
-    description: Включает ускорение, когда цель достаточно далеко и cooldown готов.
+    description: Включает короткое ускорение, когда cooldown готов.

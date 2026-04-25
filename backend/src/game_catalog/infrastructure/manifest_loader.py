@@ -107,19 +107,27 @@ class GameManifest(BaseModel):
         )
 
 
-def load_game_manifests(games_root: Path) -> list[GameManifest]:
+def load_game_manifests(games_root: Path, *, strict: bool = False) -> list[GameManifest]:
     manifests: list[GameManifest] = []
     if not games_root.exists():
         return manifests
 
     for manifest_path in sorted(games_root.glob("*/manifest.yaml")):
-        manifests.append(load_game_manifest(manifest_path))
+        try:
+            manifests.append(load_game_manifest(manifest_path))
+        except InvariantViolationError:
+            if strict:
+                raise
+            continue
     return manifests
 
 
 def find_game_manifest_path(games_root: Path, game_id: str) -> Path:
     for manifest_path in sorted(games_root.glob("*/manifest.yaml")):
-        manifest = load_game_manifest(manifest_path)
+        try:
+            manifest = load_game_manifest(manifest_path)
+        except InvariantViolationError:
+            continue
         if manifest.id == game_id:
             return manifest_path
     raise InvariantViolationError(f"Manifest для игры {game_id} не найден")

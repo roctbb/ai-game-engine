@@ -1,21 +1,20 @@
-def make_move(state):
-    position = state["position"]
-    goal = state["goal"]
-    board = state["board"]
-    x0 = position["x"]
-    y0 = position["y"]
-    goal_x = goal["x"]
-    goal_y = goal["y"]
+def make_move(x, y, board):
+    x0 = x
+    y0 = y
+    goal_x = len(board) - 1
+    goal_y = len(board[0]) - 1 if board else 0
 
     coins = set()
-    for coin in state["coins"]:
-        coins.add((coin["x"], coin["y"]))
+    for xx, column in enumerate(board):
+        for yy, cell in enumerate(column):
+            if cell == 1:
+                coins.add((xx, yy))
 
     scores = {}
     choices = {}
     for x in range(goal_x, x0 - 1, -1):
         for y in range(goal_y, y0 - 1, -1):
-            if board[y][x] == -1:
+            if board[x][y] == -1:
                 scores[(x, y)] = -100000
                 choices[(x, y)] = "right"
                 continue
@@ -44,8 +43,8 @@ def make_move(state):
             choices[(x, y)] = best_action
 
     action = choices.get((x0, y0), "right")
-    if action == "right" and x0 + 1 <= goal_x and board[y0][x0 + 1] != -1:
+    if action == "right" and x0 + 1 <= goal_x and board[x0 + 1][y0] != -1:
         return "right"
-    if y0 + 1 <= goal_y and board[y0 + 1][x0] != -1:
+    if y0 + 1 <= goal_y and board[x0][y0 + 1] != -1:
         return "down"
     return action

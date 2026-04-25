@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #e8f5f8; color: #102027; }
+    .wrap { padding: 16px; }
+    .grid { display: grid; gap: 3px; width: min(82vmin, 520px); }
+    .cell { position: relative; aspect-ratio: 1; border-radius: 5px; display: grid; place-items: center; font-weight: 800; }
+    .wall { background: #263238; }
+    .ice { background: #ffffff; }
+    .crystal { background: #80deea; color: #006064; }
+    .ruby { outline: 4px solid #c2185b; outline-offset: -4px; }
+    .sapphire { outline: 4px solid #1565c0; outline-offset: -4px; }
+    .stats { margin-top: 12px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; }
+      .cell[data-badge]::after { content: attr(data-badge); position: absolute; right: -7px; top: -7px; min-width: 18px; height: 18px; padding: 0 3px; display: grid; place-items: center; border-radius: 999px; background: #111827; color: #fff; border: 2px solid #fff; font-size: 11px; line-height: 1; z-index: 3; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="board" class="grid"></div>
+    <div id="stats" class="stats"></div>
+  </div>
+  <script>
+    function render(payload) {
+      const frame = (payload.frames || []).at(-1)?.frame || payload.frame || {};
+      const board = frame.board || [];
+      const positions = frame.positions || {};
+      const width = frame.width || board.length || 1;
+      const height = frame.height || board[0]?.length || 1;
+      const rows = Array.from({ length: height }, (_, y) => Array.from({ length: width }, (_, x) => board[x]?.[y] ?? 0));
+      const root = document.getElementById("board");
+      root.style.gridTemplateColumns = `repeat(${width}, 1fr)`;
+      root.innerHTML = "";
+      rows.forEach((row, y) => row.forEach((cell, x) => {
+        const el = document.createElement("div");
+        el.className = "cell " + (cell === -1 ? "wall" : cell === 1 ? "crystal" : "ice");
+        if (positions.ruby?.x === x && positions.ruby?.y === y) { el.classList.add("ruby"); el.dataset.badge = String((frame.collected || {}).ruby || 0); }
+        if (positions.sapphire?.x === x && positions.sapphire?.y === y) { el.classList.add("sapphire"); el.dataset.badge = String((frame.collected || {}).sapphire || 0); }
+        el.textContent = cell === 1 ? "◆" : "";
+        root.appendChild(el);
+      }));
+      const collected = frame.collected || {};
+      document.getElementById("stats").textContent = `Ruby: ${collected.ruby || 0} · Sapphire: ${collected.sapphire || 0} · Осталось: ${frame.crystals_left || 0}`;
+    }
+    window.render = render;
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (!message || typeof message !== "object") return;
+      if (message.type === "agp.renderer.state") render(message.payload || {});
+    });
+    render({ frame: { board: Array.from({ length: 8 }, () => Array(8).fill(0)), position: { x: 0, y: 0 } } });
+    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.0.0" } }, "*");
+  </script>
+</body>
+</html>

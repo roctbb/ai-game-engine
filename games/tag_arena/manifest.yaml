@@ -1,0 +1,34 @@
+id: tag_arena_v1
+title: Охотник и беглец
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Для каждой роли определите make_move(x, y, board). Беглец собирает звезды, охотник пытается его поймать.
+description: "Асимметричная игра на случайной карте: беглец собирает звезды, а охотник идет к нему."
+difficulty: medium
+topics:
+  - графы
+  - BFS
+  - разные роли
+slots:
+  - key: runner
+    title: Беглец
+    required: true
+  - key: hunter
+    title: Охотник
+    required: true
+demo_strategies:
+  - id: runner_bfs
+    slot_key: runner
+    title: "Демо: беглец к звезде"
+    language: python
+    path: examples/runner_bfs.py
+    description: Идет к ближайшей звезде и избегает клетки охотника.
+  - id: hunter_bfs
+    slot_key: hunter
+    title: "Демо: охотник к беглецу"
+    language: python
+    path: examples/hunter_bfs.py
+    description: Идет к клетке беглеца через BFS.

@@ -4,6 +4,7 @@ from administration.infrastructure.sqlalchemy_models import GameSourceOrm, GameS
 from competition.infrastructure.sqlalchemy_models import CompetitionOrm
 from execution.infrastructure.sqlalchemy_models import BuildOrm, RunOrm, WorkerOrm
 from game_catalog.infrastructure.sqlalchemy_models import CatalogGameOrm, CatalogGameVersionOrm
+from identity.infrastructure.sqlalchemy_models import IdentitySessionOrm
 from spectator_replay.infrastructure.sqlalchemy_models import ReplayOrm
 from shared.db.base import Base
 from team_workspace.infrastructure.sqlalchemy_models import WorkspaceTeamOrm, WorkspaceTeamSnapshotOrm
@@ -20,6 +21,7 @@ __all__ = [
     "CompetitionOrm",
     "CatalogGameOrm",
     "CatalogGameVersionOrm",
+    "IdentitySessionOrm",
     "WorkspaceTeamOrm",
     "WorkspaceTeamSnapshotOrm",
     "LobbyOrm",

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from execution.application.service import CreateRunInput, ExecutionService
 from execution.domain.model import Run, RunKind, RunStatus
 from game_catalog.application.service import GameCatalogService
+from game_catalog.domain.model import CatalogMetadataStatus, GameMode
 from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
@@ -70,6 +71,10 @@ class TrainingLobbyService:
 
     def create_lobby(self, data: CreateLobbyInput) -> Lobby:
         game = self._game_catalog.get_game(data.game_id)
+        if game.mode is GameMode.SINGLE_TASK:
+            raise InvariantViolationError("Лобби можно создать только для игры, а не для задачи")
+        if game.catalog_metadata_status is not CatalogMetadataStatus.READY:
+            raise InvariantViolationError("Лобби можно создать только для опубликованной игры")
         lobby = Lobby.create(
             game_id=game.game_id,
             game_version_id=game.active_version.version_id,

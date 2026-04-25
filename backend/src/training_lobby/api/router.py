@@ -91,9 +91,7 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
 
 
 def _is_lobby_competition(lobby_id: str, competition: Competition) -> bool:
-    if competition.lobby_id is not None:
-        return competition.lobby_id == lobby_id
-    return competition.title.startswith(f"[lobby:{lobby_id}] ")
+    return competition.lobby_id == lobby_id
 
 
 def _has_lobby_locking_competition(container: ServiceContainer, lobby_id: str) -> bool:

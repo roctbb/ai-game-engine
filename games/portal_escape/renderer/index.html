@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Portal Escape Renderer</title>
+  <style>
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#151827;color:#e5edf5;font-family:Arial,sans-serif}
+    .wrap{width:min(92vmin,760px)}
+    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
+    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+  </style>
+</head>
+<body>
+<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<script>
+const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
+function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
+const portalColors=["#7c3aed","#0891b2","#ea580c","#be123c","#4d7c0f"];
+function draw(frame){
+  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||26, h=Array.isArray(grid[0])?grid[0].length:20, C=32;
+  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=grid[x]?.[y]??0;
+    const isPortal=v>=2, color=portalColors[Math.abs(v)%portalColors.length];
+    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:v===-1?"#334155":v===1?"#dcfce7":isPortal?"#ede9fe":"#f8fafc"}));
+    if(isPortal){boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.24,fill:color}));const t=el("text",{x:x*C+C/2,y:y*C+C*0.65,"text-anchor":"middle","font-size":14,"font-weight":800,fill:"#fff"});t.textContent=String(v);boardEl.appendChild(t)}
+    if(v===1){const t=el("text",{x:x*C+C/2,y:y*C+C*0.66,"text-anchor":"middle","font-size":18,fill:"#15803d"});t.textContent="E";boardEl.appendChild(t)}
+  }
+  const pairs=Array.isArray(frame.portal_pairs)?frame.portal_pairs:[];
+  for(const pair of pairs){const a=pair.a,b=pair.b,id=Number(pair.id)||0,color=portalColors[Math.abs(id)%portalColors.length];if(a&&b)boardEl.appendChild(el("line",{x1:a.x*C+C/2,y1:a.y*C+C/2,x2:b.x*C+C/2,y2:b.y*C+C/2,stroke:color,"stroke-width":4,"stroke-dasharray":"8 6",opacity:.6}))}
+  const p=frame.position||{};
+  if(Number.isFinite(p.x)&&Number.isFinite(p.y))boardEl.appendChild(el("circle",{cx:p.x*C+C/2,cy:p.y*C+C/2,r:C*0.3,fill:"#2563eb"}));
+  hudEl.textContent=`pairs=${pairs.length} escaped=${frame.escaped===true} invalid=${frame.invalid_moves||0} score=${frame.score??"-"}`;
+}
+window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
+draw({board:Array.from({length:26},()=>Array(20).fill(0)),position:{x:1,y:1},portal_pairs:[]});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+</script>
+</body>
+</html>

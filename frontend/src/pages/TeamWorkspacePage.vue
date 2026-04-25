@@ -14,9 +14,9 @@
         </p>
       </div>
       <div class="workspace-hero-stats">
-        <span class="agp-pill agp-pill--primary">слотов: {{ slotCount }}</span>
+        <span class="agp-pill agp-pill--primary">ролей: {{ slotCount }}</span>
         <span class="agp-pill" :class="emptySlotCount > 0 ? 'agp-pill--warning' : 'agp-pill--primary'">
-          пустых: {{ emptySlotCount }}
+          не заполнено: {{ emptySlotCount }}
         </span>
       </div>
     </header>
@@ -28,7 +28,7 @@
       <aside class="agp-card p-3 workspace-slots">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
           <div>
-            <h2 class="h6 mb-1">Слоты игрока</h2>
+            <h2 class="h6 mb-1">Роли игрока</h2>
             <div class="small text-muted">Роли, которые игра ожидает от участника.</div>
           </div>
         </div>
@@ -55,9 +55,9 @@
 
       <article class="agp-card p-3 workspace-editor">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="h6 mb-0">Редактор слота `{{ selectedSlotKey || '—' }}`</h2>
+          <h2 class="h6 mb-0">Редактор роли `{{ selectedSlotKey || '—' }}`</h2>
           <div v-if="canEditWorkspace" class="d-flex gap-2">
-            <button class="btn btn-sm btn-outline-secondary" :disabled="!selectedSlotKey" @click="resetSelectedSlotCode">
+            <button class="btn btn-sm btn-outline-secondary" :disabled="!selectedSlotKey || !isEditorDirty" @click="resetSelectedSlotCode">
               Сбросить
             </button>
             <button
@@ -68,6 +68,7 @@
               {{ isTemplateLoading ? 'Загрузка шаблона...' : 'Шаблон' }}
             </button>
             <select
+              v-if="canUseDemoStrategy"
               v-model="selectedDemoStrategyId"
               class="form-select form-select-sm demo-select"
               :disabled="!selectedSlotKey || selectedSlotDemoStrategies.length === 0 || isTemplateLoading"
@@ -82,17 +83,34 @@
               </option>
             </select>
             <button
+              v-if="canUseDemoStrategy"
               class="btn btn-sm btn-outline-primary"
               :disabled="!selectedSlotKey || isTemplateLoading"
               @click="applyDemoStrategyToSelectedSlot"
             >
               Демо
             </button>
-            <button class="btn btn-sm btn-dark" :disabled="!selectedSlotKey || isSaving" @click="saveSelectedSlotCode">
-              {{ isSaving ? 'Сохранение...' : 'Сохранить' }}
+            <button class="btn btn-sm btn-dark" :disabled="!selectedSlotKey || isSaving || !isEditorDirty" @click="saveSelectedSlotCode">
+              {{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}
             </button>
           </div>
           <span v-else class="badge text-bg-light">только просмотр</span>
+        </div>
+        <div v-if="canEditWorkspace && isEditorDirty" class="workspace-editor-notice mb-2">
+          Есть несохраненные изменения. Они попадут в новые запуски только после сохранения.
+        </div>
+        <div v-if="pendingSlotKey" class="workspace-switch-notice mb-2">
+          <div>
+            <div class="fw-semibold">Перейти к роли `{{ pendingSlotKey }}`?</div>
+            <div class="small text-muted">В текущей роли есть несохраненный код.</div>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-dark" :disabled="isSaving" @click="saveAndSwitchSlot">
+              {{ isSaving ? 'Сохраняем...' : 'Сохранить и перейти' }}
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @click="discardAndSwitchSlot">Перейти без сохранения</button>
+            <button class="btn btn-sm btn-link" @click="pendingSlotKey = ''">Остаться</button>
+          </div>
         </div>
         <CodeEditor
           v-model="editorCode"
@@ -101,7 +119,12 @@
         />
         <div class="small text-muted mt-2">Подсветка синтаксиса Python доступна в редакторе.</div>
         <div v-if="canEditWorkspace" class="small text-muted mt-1">
-          Кнопки «Шаблон» и «Демо» подставляют стартовый код или готовую демо-стратегию.
+          <template v-if="canUseDemoStrategy">
+            Кнопки «Шаблон» и «Демо» подставляют стартовый код или готовую демо-стратегию.
+          </template>
+          <template v-else>
+            Кнопка «Шаблон» подставляет стартовый код для выбранной роли.
+          </template>
         </div>
         <div class="small text-muted mt-1">
           <template v-if="canEditWorkspace">
@@ -123,17 +146,19 @@
           <span>Владелец</span>
           <strong class="mono">{{ workspace?.captain_user_id }}</strong>
         </div>
-        <div v-if="canInspectTechnicalDetails" class="workspace-inspector-row">
-          <span>Версия</span>
-          <strong class="mono">{{ workspace?.version_id }}</strong>
-        </div>
         <div class="workspace-inspector-row">
-          <span>Выбранный слот</span>
+          <span>Выбранная роль</span>
           <strong class="mono">{{ selectedSlotKey || '—' }}</strong>
         </div>
         <div class="workspace-inspector-row">
-          <span>Состояние слота</span>
+          <span>Состояние роли</span>
           <strong>{{ selectedSlot ? slotStateLabel(selectedSlot.state) : '—' }}</strong>
+        </div>
+        <div v-if="canEditWorkspace" class="workspace-inspector-row">
+          <span>Изменения</span>
+          <strong :class="isEditorDirty ? 'text-warning-emphasis' : ''">
+            {{ isEditorDirty ? 'не сохранены' : 'сохранены' }}
+          </strong>
         </div>
         <div class="workspace-callout mt-3">
           <div class="fw-semibold mb-1">Что попадет в матч?</div>
@@ -142,11 +167,16 @@
           </div>
         </div>
         <div v-if="incompatibleSlotCount > 0" class="workspace-callout workspace-callout--warning mt-2">
-          <div class="fw-semibold mb-1">Есть несовместимые слоты</div>
+          <div class="fw-semibold mb-1">Есть несовместимые роли</div>
           <div class="small">
-            {{ incompatibleSlotCount }} слот(ов) больше не требуется текущей версией игры. Код виден, но не участвует в новых матчах.
+            {{ incompatibleSlotCount }} роль(ей) больше не требуется текущей версией игры. Код виден, но не участвует в новых матчах.
           </div>
         </div>
+        <details v-if="canInspectTechnicalDetails" class="workspace-technical mt-3">
+          <summary class="small text-muted">Технические детали</summary>
+          <div class="mono small mt-2">version: {{ workspace?.version_id }}</div>
+          <div class="mono small text-muted">player_id: {{ workspace?.team_id }}</div>
+        </details>
       </aside>
     </div>
   </section>
@@ -172,6 +202,7 @@ const sessionStore = useSessionStore();
 
 const workspace = ref<TeamWorkspaceDto | null>(null);
 const selectedSlotKey = ref('');
+const pendingSlotKey = ref('');
 const editorCode = ref('');
 const isLoading = ref(false);
 const isSaving = ref(false);
@@ -188,11 +219,14 @@ const selectedSlot = computed(() =>
 const canEditWorkspace = computed(() => workspace.value?.captain_user_id === sessionStore.nickname);
 const selectedSlotDemoStrategies = computed(() => demoStrategiesBySlot.value[selectedSlotKey.value] ?? []);
 const canInspectTechnicalDetails = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
+const canUseDemoStrategy = computed(() => canInspectTechnicalDetails.value);
 const slotCount = computed(() => workspace.value?.slot_states.length ?? 0);
 const emptySlotCount = computed(() => workspace.value?.slot_states.filter((slot) => slot.state === 'empty').length ?? 0);
 const incompatibleSlotCount = computed(
   () => workspace.value?.slot_states.filter((slot) => slot.state === 'incompatible').length ?? 0
 );
+const savedSelectedSlotCode = computed(() => selectedSlot.value?.code ?? '');
+const isEditorDirty = computed(() => editorCode.value !== savedSelectedSlotCode.value);
 
 function slotStateLabel(state: string): string {
   const labels: Record<string, string> = {
@@ -208,7 +242,7 @@ function slotStateLabel(state: string): string {
 async function loadWorkspace(): Promise<void> {
   const teamId = String(route.params.teamId || '').trim();
   if (!teamId) {
-    errorMessage.value = 'Некорректный id игрока в маршруте';
+    errorMessage.value = 'Не найден игрок для просмотра кода';
     return;
   }
 
@@ -236,9 +270,33 @@ async function loadWorkspace(): Promise<void> {
 }
 
 function selectSlot(slotKey: string): void {
+  if (slotKey === selectedSlotKey.value) return;
+  if (canEditWorkspace.value && isEditorDirty.value) {
+    pendingSlotKey.value = slotKey;
+    return;
+  }
+  switchToSlot(slotKey);
+}
+
+function switchToSlot(slotKey: string): void {
   selectedSlotKey.value = slotKey;
+  pendingSlotKey.value = '';
   editorCode.value = workspace.value?.slot_states.find((slot) => slot.slot_key === slotKey)?.code ?? '';
   selectedDemoStrategyId.value = selectedSlotDemoStrategies.value[0]?.strategy_id ?? '';
+}
+
+async function saveAndSwitchSlot(): Promise<void> {
+  if (!pendingSlotKey.value) return;
+  const targetSlotKey = pendingSlotKey.value;
+  await saveSelectedSlotCode();
+  if (!errorMessage.value) {
+    switchToSlot(targetSlotKey);
+  }
+}
+
+function discardAndSwitchSlot(): void {
+  if (!pendingSlotKey.value) return;
+  switchToSlot(pendingSlotKey.value);
 }
 
 function resetSelectedSlotCode(): void {
@@ -253,7 +311,7 @@ async function applyTemplateToSelectedSlot(): Promise<void> {
     await ensureGameTemplates(workspace.value.game_id);
     const templateCode = templatesBySlot.value[selectedSlotKey.value];
     if (!templateCode) {
-      errorMessage.value = `Для слота ${selectedSlotKey.value} шаблон не найден`;
+      errorMessage.value = `Для роли ${selectedSlotKey.value} шаблон не найден`;
       return;
     }
     editorCode.value = templateCode;
@@ -265,6 +323,7 @@ async function applyTemplateToSelectedSlot(): Promise<void> {
 }
 
 async function applyDemoStrategyToSelectedSlot(): Promise<void> {
+  if (!canUseDemoStrategy.value) return;
   if (!workspace.value || !selectedSlotKey.value) return;
   isTemplateLoading.value = true;
   errorMessage.value = '';
@@ -274,7 +333,7 @@ async function applyDemoStrategyToSelectedSlot(): Promise<void> {
     const strategy =
       strategies.find((item) => item.strategy_id === selectedDemoStrategyId.value) ?? strategies[0] ?? null;
     if (!strategy) {
-      errorMessage.value = `Для слота ${selectedSlotKey.value} демо-стратегия не найдена`;
+      errorMessage.value = `Для роли ${selectedSlotKey.value} демо-стратегия не найдена`;
       return;
     }
     selectedDemoStrategyId.value = strategy.strategy_id;
@@ -320,6 +379,7 @@ async function saveSelectedSlotCode(): Promise<void> {
       code: editorCode.value,
     });
     await loadWorkspace();
+    pendingSlotKey.value = '';
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось сохранить код';
   } finally {
@@ -374,6 +434,26 @@ onMounted(async () => {
 
 .workspace-editor {
   min-width: 0;
+}
+
+.workspace-editor-notice {
+  border: 1px solid rgba(217, 119, 6, 0.26);
+  border-radius: 8px;
+  background: rgba(255, 251, 235, 0.88);
+  color: #8a4b0c;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.86rem;
+}
+
+.workspace-switch-notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.65rem 0.75rem;
 }
 
 .slot-selected {

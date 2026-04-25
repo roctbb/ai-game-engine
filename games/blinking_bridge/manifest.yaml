@@ -1,0 +1,25 @@
+id: blinking_bridge_v1
+title: Мигающие мосты
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board), возвращающую up/right/down/left/stay. Идите к выходу, ожидая открытия мостов.
+description: Робот проходит случайную карту с несколькими стенными линиями, где мосты каждый ход меняются между открытым и закрытым состоянием.
+difficulty: hard
+topics:
+  - BFS
+  - время в алгоритмах
+  - динамическая карта
+slots:
+  - key: agent
+    title: Код робота
+    required: true
+demo_strategies:
+  - id: time_bfs
+    slot_key: agent
+    title: "Демо: BFS по времени"
+    language: python
+    path: examples/time_bfs.py
+    description: Ищет путь к выходу, учитывая, что мосты мигают каждый ход.

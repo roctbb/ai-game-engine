@@ -2,8 +2,8 @@
   <section class="agp-grid">
     <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <h1 class="h3 mb-1">Админка: Каталог задач</h1>
-        <p class="text-muted mb-0">Публикация задач: черновик → опубликовано → архив.</p>
+        <h1 class="h3 mb-1">Каталог задач</h1>
+        <p class="text-muted mb-0">Подготовка учебных задач: черновик → опубликовано → архив.</p>
       </div>
       <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading || !canManage" @click="loadGames">
         {{ isLoading ? 'Обновление...' : 'Обновить' }}
@@ -11,7 +11,7 @@
     </header>
 
     <article class="agp-card p-3" v-if="!canManage">
-      <div class="text-warning-emphasis fw-semibold">Требуется роль teacher/admin</div>
+      <div class="text-warning-emphasis fw-semibold">Требуется роль преподавателя или администратора</div>
       <div class="small text-muted">У текущего пользователя нет прав редактирования каталога.</div>
     </article>
 
@@ -28,16 +28,22 @@
         </div>
         <div class="col-md-4">
           <label class="form-label small">Поиск</label>
-          <input v-model.trim="searchQuery" class="form-control" placeholder="название / slug" />
+          <input v-model.trim="searchQuery" class="form-control" placeholder="Название или технический код" />
         </div>
-        <div class="col-md-5 small text-muted">
-          задач: <span class="mono">{{ rows.length }}</span>
+        <div class="col-md-5 small text-muted catalog-summary">
+          Показано: <span class="mono">{{ rows.length }}</span>
+          из <span class="mono">{{ totalTaskCount }}</span>
           · черновиков: <span class="mono">{{ draftCount }}</span>
           · опубликовано: <span class="mono">{{ readyCount }}</span>
           · архив: <span class="mono">{{ archivedCount }}</span>
         </div>
       </div>
     </article>
+
+    <div v-if="hasActiveFilters" class="catalog-active-filter-line">
+      <span>Фильтр:</span>
+      <strong>{{ activeFilterSummary }}</strong>
+    </div>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
@@ -111,7 +117,7 @@
                       <input v-model="editorByGameId[game.game_id].topicsCsv" class="form-control" placeholder="графы, bfs, симуляция" />
                     </div>
 
-                    <div class="d-flex gap-2 flex-wrap">
+                    <div class="d-flex gap-2 flex-wrap align-items-center">
                       <button
                         class="btn btn-sm btn-outline-secondary"
                         :disabled="editorByGameId[game.game_id].isSaving || !canManage"
@@ -140,6 +146,7 @@
                       >
                         Архивировать
                       </button>
+                      <span class="small text-muted">{{ editorHint(game.game_id) }}</span>
                     </div>
 
                     <div v-if="editorByGameId[game.game_id].error" class="small text-danger">
@@ -202,9 +209,21 @@ const rows = computed(() => {
     .sort((left, right) => left.title.localeCompare(right.title, 'ru'));
 });
 
+const totalTaskCount = computed(() => games.value.filter((game) => game.mode === 'single_task').length);
 const draftCount = computed(() => rows.value.filter((game) => game.catalog_metadata_status === 'draft').length);
 const readyCount = computed(() => rows.value.filter((game) => game.catalog_metadata_status === 'ready').length);
 const archivedCount = computed(() => rows.value.filter((game) => game.catalog_metadata_status === 'archived').length);
+const hasActiveFilters = computed(() => Boolean(statusFilter.value || searchQuery.value));
+const activeFilterSummary = computed(() => {
+  const parts: string[] = [];
+  if (statusFilter.value) {
+    parts.push(`статус: ${statusLabel(statusFilter.value)}`);
+  }
+  if (searchQuery.value) {
+    parts.push(`поиск: ${searchQuery.value}`);
+  }
+  return parts.join(' · ');
+});
 
 function statusBadgeClass(status: CatalogMetadataStatus): string {
   if (status === 'ready') return 'text-bg-success';
@@ -282,6 +301,16 @@ function canPublishReady(gameId: string): boolean {
   return publishValidationError(gameId) === '';
 }
 
+function editorHint(gameId: string): string {
+  const editor = ensureEditor(gameId);
+  if (editor.isSaving) return 'Сохраняем изменения...';
+  const validationError = publishValidationError(gameId);
+  if (editor.status === 'ready' && validationError) return `Нельзя опубликовать: ${validationError}.`;
+  if (editor.status === 'ready') return 'Задача появится в каталоге учеников.';
+  if (editor.status === 'archived') return 'Архивные задачи скрыты из каталога учеников.';
+  return 'Черновик виден только преподавателю и администратору.';
+}
+
 async function loadGames(): Promise<void> {
   if (!canManage.value) {
     games.value = [];
@@ -319,7 +348,7 @@ async function saveCatalogMetadata(gameId: string): Promise<void> {
   if (editor.status === 'ready') {
     const validationError = publishValidationError(gameId);
     if (validationError) {
-      editor.error = `Для ready: ${validationError}`;
+      editor.error = `Для публикации: ${validationError}`;
       return;
     }
   }
@@ -353,7 +382,7 @@ async function publishReady(gameId: string): Promise<void> {
   const editor = ensureEditor(gameId);
   const validationError = publishValidationError(gameId);
   if (validationError) {
-    editor.error = `Для ready: ${validationError}`;
+    editor.error = `Для публикации: ${validationError}`;
     return;
   }
   editor.status = 'ready';
@@ -386,3 +415,25 @@ watch(
   { flush: 'post' }
 );
 </script>
+
+<style scoped>
+.catalog-summary {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.catalog-active-filter-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  color: var(--agp-text-muted);
+  font-size: 0.86rem;
+}
+
+.catalog-active-filter-line strong {
+  color: var(--agp-text);
+  font-weight: 600;
+}
+</style>

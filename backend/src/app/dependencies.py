@@ -43,6 +43,7 @@ from game_catalog.infrastructure.manifest_loader import load_game_manifests
 from game_catalog.infrastructure.sqlalchemy_repository import SqlAlchemyGameRepository
 from identity.application.service import IdentityService
 from identity.infrastructure.in_memory_repository import InMemorySessionRepository
+from identity.infrastructure.sqlalchemy_repository import SqlAlchemySessionRepository
 from spectator_replay.application.service import SpectatorReplayService
 from spectator_replay.infrastructure.in_memory_repository import InMemoryReplayRepository
 from spectator_replay.infrastructure.sqlalchemy_repository import SqlAlchemyReplayRepository
@@ -124,7 +125,8 @@ class ServiceContainer:
 def _build_container() -> ServiceContainer:
     use_core_sqlalchemy = settings.core_repository_backend == "sqlalchemy"
     use_execution_sqlalchemy = settings.execution_repository_backend == "sqlalchemy"
-    use_any_sqlalchemy = use_core_sqlalchemy or use_execution_sqlalchemy
+    use_session_sqlalchemy = settings.session_repository_backend == "sqlalchemy"
+    use_any_sqlalchemy = use_core_sqlalchemy or use_execution_sqlalchemy or use_session_sqlalchemy
 
     sql_session_factory = None
     if use_any_sqlalchemy:
@@ -135,6 +137,8 @@ def _build_container() -> ServiceContainer:
             and settings.core_repository_auto_create_tables
             or use_execution_sqlalchemy
             and settings.execution_repository_auto_create_tables
+            or use_session_sqlalchemy
+            and settings.session_repository_auto_create_tables
         ):
             Base.metadata.create_all(bind=sql_engine)
         sql_session_factory = sessionmaker(bind=sql_engine, autocommit=False, autoflush=False)
@@ -169,7 +173,11 @@ def _build_container() -> ServiceContainer:
         worker_repo = InMemoryWorkerRepository()
         build_repo = InMemoryBuildRepository()
 
-    session_repo = InMemorySessionRepository()
+    if use_session_sqlalchemy:
+        assert sql_session_factory is not None
+        session_repo = SqlAlchemySessionRepository(sql_session_factory)
+    else:
+        session_repo = InMemorySessionRepository()
     scheduler_gateway: SchedulerGateway
     if settings.scheduler_service_url:
         scheduler_gateway = HttpSchedulerGateway(settings.scheduler_service_url)

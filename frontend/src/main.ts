@@ -44,6 +44,14 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: { next: to.fullPath } };
   }
 
+  const allowedRoles = Array.isArray(to.meta.roles) ? to.meta.roles : [];
+  if (
+    allowedRoles.length > 0 &&
+    !allowedRoles.includes(sessionStore.role)
+  ) {
+    return { name: 'tasks', replace: true };
+  }
+
   return true;
 });
 

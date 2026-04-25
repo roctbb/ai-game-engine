@@ -29,7 +29,7 @@ from game_catalog.application.single_task_progress import SingleTaskProgressServ
 from game_catalog.application.service import RegisterGameInput
 from game_catalog.domain.model import SlotDefinition
 from game_catalog.infrastructure.manifest_loader import find_game_manifest_path, load_game_manifest
-from identity.domain.model import UserRole
+from identity.domain.model import AppSession, UserRole
 from shared.kernel import ConflictError, InvariantViolationError
 
 router = APIRouter(prefix="/games", tags=["game_catalog"], dependencies=[Depends(get_current_session)])
@@ -157,7 +157,11 @@ def get_game_topics(game_id: str, container: ServiceContainer = Depends(get_cont
 
 
 @router.get("/{game_id}/templates", response_model=GameTemplatesResponse)
-def get_game_templates(game_id: str, container: ServiceContainer = Depends(get_container)) -> GameTemplatesResponse:
+def get_game_templates(
+    game_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> GameTemplatesResponse:
     game = container.game_catalog.get_game(game_id)
     code_api_mode: str = "script_based" if game.mode.value == "single_task" else "turn_based"
     player_instruction: str | None = None
@@ -166,20 +170,24 @@ def get_game_templates(game_id: str, container: ServiceContainer = Depends(get_c
         manifest = load_game_manifest(manifest_path)
     except InvariantViolationError:
         manifest = None
+    can_view_demo_strategies = session.role in {UserRole.TEACHER, UserRole.ADMIN}
     if manifest is not None:
         code_api_mode = manifest.code_api_mode
         player_instruction = manifest.player_instruction
-        demo_strategies = [
-            GameDemoStrategyResponse(
-                strategy_id=strategy.id,
-                slot_key=strategy.slot_key,
-                title=strategy.title,
-                language=strategy.language,
-                description=strategy.description,
-                code=(manifest_path.parent / strategy.path).read_text(encoding="utf-8"),
-            )
-            for strategy in manifest.demo_strategies
-        ]
+        if can_view_demo_strategies:
+            demo_strategies = [
+                GameDemoStrategyResponse(
+                    strategy_id=strategy.id,
+                    slot_key=strategy.slot_key,
+                    title=strategy.title,
+                    language=strategy.language,
+                    description=strategy.description,
+                    code=(manifest_path.parent / strategy.path).read_text(encoding="utf-8"),
+                )
+                for strategy in manifest.demo_strategies
+            ]
+        else:
+            demo_strategies = []
     else:
         demo_strategies = []
 
@@ -394,7 +402,7 @@ def _build_slot_template_code(*, slot_key: str, code_api_mode: str, game_slug: s
         )
     if game_slug == "coins_right_down_v1" and slot_key == "agent":
         return (
-            "def make_move(state):\n"
+            "def make_move(x, y, board):\n"
             f"    \"\"\"Starter template for slot '{slot_key}'.\"\"\"\n"
             "    # Верните right или down\n"
             "    return \"right\"\n"
@@ -410,8 +418,8 @@ def _build_slot_template_code(*, slot_key: str, code_api_mode: str, game_slug: s
         return (
             "def make_choice(x, y, map_state):\n"
             f"    \"\"\"Starter template for slot '{slot_key}'.\"\"\"\n"
-            "    # Верните up/down/left/right/stay\n"
-            "    return \"stay\"\n"
+            "    # Верните go_up/go_down/go_left/go_right или fire_up/fire_down/fire_left/fire_right\n"
+            "    return \"go_right\"\n"
         )
     function_name = _resolve_template_function_name(slot_key=slot_key, code_api_mode=code_api_mode)
     if function_name == "place_tower":

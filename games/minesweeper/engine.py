@@ -20,7 +20,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     print_context = {"tick": 0}
     choose_fn, compile_error = _build_player_fn(ctx, events, print_context)
 
-    visible = [[_UNKNOWN for _ in range(_WIDTH)] for _ in range(_HEIGHT)]
+    visible = [[_UNKNOWN for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
     opened: set[tuple[int, int]] = set()
     flags: set[tuple[int, int]] = set()
     mines: set[tuple[int, int]] | None = None
@@ -39,7 +39,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         kind, cell = _normalize_action(action)
         if kind is None or cell is None:
             invalid_moves += 1
-            events.append({"type": "invalid_action", "tick": turn, "action": repr(action)})
+            events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": turn, "action": repr(action)})
             frames.append(_frame(turn + 1, "running", visible, flags, opened, hit_mine, won, invalid_moves, mines))
             continue
 
@@ -50,11 +50,11 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 events.append({"type": "invalid_flag", "tick": turn, "x": x, "y": y})
             elif cell in flags:
                 flags.remove(cell)
-                visible[y][x] = _UNKNOWN
+                visible[x][y] = _UNKNOWN
                 events.append({"type": "unflag", "tick": turn, "x": x, "y": y})
             elif len(flags) < _MINES_TOTAL:
                 flags.add(cell)
-                visible[y][x] = _FLAG
+                visible[x][y] = _FLAG
                 events.append({"type": "flag", "tick": turn, "x": x, "y": y})
             else:
                 invalid_moves += 1
@@ -68,7 +68,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                     mines = _build_mines(ctx, first_open=cell)
                 if cell in mines:
                     hit_mine = True
-                    visible[y][x] = 9
+                    visible[x][y] = 9
                     events.append({"type": "mine_hit", "tick": turn, "x": x, "y": y})
                 else:
                     opened_now = _open_cell(visible, opened, cell, mines)
@@ -204,7 +204,7 @@ def _build_mines(context: dict[str, Any], first_open: tuple[int, int]) -> set[tu
 
 
 def _is_solvable_without_guessing(first_open: tuple[int, int], mines: set[tuple[int, int]]) -> tuple[bool, int]:
-    visible = [[_UNKNOWN for _ in range(_WIDTH)] for _ in range(_HEIGHT)]
+    visible = [[_UNKNOWN for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
     opened: set[tuple[int, int]] = set()
     flags: set[tuple[int, int]] = set()
     _open_cell(visible, opened, first_open, mines)
@@ -214,7 +214,7 @@ def _is_solvable_without_guessing(first_open: tuple[int, int], mines: set[tuple[
         changed = False
         for y in range(_HEIGHT):
             for x in range(_WIDTH):
-                number = visible[y][x]
+                number = visible[x][y]
                 if number < 0:
                     continue
 
@@ -223,7 +223,7 @@ def _is_solvable_without_guessing(first_open: tuple[int, int], mines: set[tuple[
                 for nx, ny in _neighbors(x, y):
                     if (nx, ny) in flags:
                         flag_count += 1
-                    elif visible[ny][nx] == _UNKNOWN:
+                    elif visible[nx][ny] == _UNKNOWN:
                         unknown.append((nx, ny))
 
                 if unknown and number == flag_count:
@@ -235,7 +235,7 @@ def _is_solvable_without_guessing(first_open: tuple[int, int], mines: set[tuple[
                     for cell in unknown:
                         if cell not in flags:
                             flags.add(cell)
-                            visible[cell[1]][cell[0]] = _FLAG
+                            visible[cell[0]][cell[1]] = _FLAG
                             changed = True
 
     return _all_safe_opened(opened, mines), len(opened)
@@ -252,7 +252,7 @@ def _open_cell(visible: list[list[int]], opened: set[tuple[int, int]], start: tu
         opened.add(cell)
         count += 1
         number = _neighbor_mines(x, y, mines)
-        visible[y][x] = number
+        visible[x][y] = number
         if number == 0:
             for nx, ny in _neighbors(x, y):
                 if (nx, ny) not in opened:

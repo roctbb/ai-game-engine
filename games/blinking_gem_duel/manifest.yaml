@@ -1,0 +1,34 @@
+id: blinking_gem_duel_v1
+title: Самоцветы на мигающих мостах
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board, score), возвращающую up/right/down/left/stay. Собирайте самоцветы и ждите открытия мостов.
+description: Два игрока соревнуются на случайной карте, где мосты каждый ход открываются и закрываются.
+difficulty: hard
+topics:
+  - BFS
+  - время в алгоритмах
+  - соревнование
+slots:
+  - key: sun
+    title: Солнечный игрок
+    required: true
+  - key: moon
+    title: Лунный игрок
+    required: true
+demo_strategies:
+  - id: sun_bfs
+    slot_key: sun
+    title: "Демо: BFS по времени"
+    language: python
+    path: examples/sun_bfs.py
+    description: Ищет ближайший самоцвет, учитывая мигающие мосты.
+  - id: moon_bfs
+    slot_key: moon
+    title: "Демо: BFS по времени"
+    language: python
+    path: examples/moon_bfs.py
+    description: Ищет ближайший самоцвет другим порядком направлений.

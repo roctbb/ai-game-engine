@@ -926,22 +926,6 @@ export function patchCompetition(payload: {
   });
 }
 
-export function createCompetition(payload: {
-  game_id: string;
-  title: string;
-  lobby_id?: string | null;
-  format: CompetitionFormat;
-  tie_break_policy: TieBreakPolicy;
-  code_policy: CompetitionCodePolicy;
-  advancement_top_k: number;
-  match_size: number;
-}): Promise<CompetitionDto> {
-  return request<CompetitionDto>('/competitions', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
 export function registerCompetitionTeam(payload: {
   competition_id: string;
   team_id: string;

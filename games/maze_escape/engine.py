@@ -74,11 +74,11 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             if move_fn._err_count <= 3:
                 events.append({"type": "bot_print", "tick": step, "role": "agent", "message": f"[ERROR] {error_msg}"})
             if move_fn._err_count == 1:
-                events.append({"type": "runtime_error", "tick": step, "message": error_msg})
+                events.append({"type": "runtime_error", "message": "Код участника упал с ошибкой выполнения.", "tick": step, "message": error_msg})
         delta = _DIRECTIONS.get(action)
         if delta is None:
             invalid_moves += 1
-            events.append({"type": "invalid_action", "tick": step, "action": action})
+            events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": step, "action": action})
             direction = _normalize_direction(direction=direction, action=action)
             frames.append(
                 {
@@ -102,7 +102,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         direction = action
         if not _can_enter(target, maze):
             invalid_moves += 1
-            events.append({"type": "blocked_move", "tick": step, "action": action, "target": {"x": target[0], "y": target[1]}})
+            events.append({"type": "blocked_move", "message": "Ход заблокирован: там стена, закрытая клетка или другой непроходимый объект.", "tick": step, "action": action, "target": {"x": target[0], "y": target[1]}})
             frames.append(
                 {
                     "tick": step + 1,
@@ -499,16 +499,16 @@ def _maze_grid(maze: dict[str, object]) -> list[list[int]]:
     assert isinstance(walls, set) and isinstance(exit_cell, tuple)
 
     grid: list[list[int]] = []
-    for y in range(height):
-        row: list[int] = []
-        for x in range(width):
+    for x in range(width):
+        column: list[int] = []
+        for y in range(height):
             if (x, y) == exit_cell:
-                row.append(1)
+                column.append(1)
             elif (x, y) in walls:
-                row.append(-1)
+                column.append(-1)
             else:
-                row.append(0)
-        grid.append(row)
+                column.append(0)
+        grid.append(column)
     return grid
 
 

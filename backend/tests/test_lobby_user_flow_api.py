@@ -60,6 +60,53 @@ def test_lobby_create_rejects_competition_kind(client, teacher_headers) -> None:
     assert response.status_code == 422
 
 
+def test_lobby_create_rejects_task_or_unpublished_game(client, teacher_headers) -> None:
+    task = client.post(
+        "/api/v1/games",
+        json={
+            "slug": "lobby_reject_task",
+            "title": "Task Not Lobby",
+            "mode": "single_task",
+            "semver": "1.0.0",
+            "required_slots": [{"key": "bot", "title": "Bot", "required": True}],
+            "description": "Task",
+            "difficulty": "easy",
+            "topics": ["basics"],
+            "catalog_metadata_status": "ready",
+        },
+        headers=teacher_headers,
+    )
+    assert task.status_code == 200
+
+    draft_game = client.post(
+        "/api/v1/games",
+        json={
+            "slug": "lobby_reject_draft_game",
+            "title": "Draft Lobby Game",
+            "mode": "small_match",
+            "semver": "1.0.0",
+            "required_slots": [{"key": "bot", "title": "Bot", "required": True}],
+            "catalog_metadata_status": "draft",
+        },
+        headers=teacher_headers,
+    )
+    assert draft_game.status_code == 200
+
+    for game_id in (task.json()["game_id"], draft_game.json()["game_id"]):
+        response = client.post(
+            "/api/v1/lobbies",
+            json={
+                "game_id": game_id,
+                "title": "Invalid Lobby",
+                "kind": "training",
+                "access": "public",
+                "max_teams": 16,
+            },
+            headers=teacher_headers,
+        )
+        assert response.status_code == 422
+
+
 def test_lobby_competition_start_rejects_future_tie_break_policy(client, teacher_headers) -> None:
     game = _create_game(client, teacher_headers)
     lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
@@ -442,3 +489,28 @@ def test_lobby_competition_start_preflight_does_not_create_orphan_competition(cl
     competitions = client.get("/api/v1/competitions", headers=teacher_headers)
     assert competitions.status_code == 200
     assert all(item["lobby_id"] != lobby_id for item in competitions.json())
+
+
+def test_legacy_lobby_title_prefix_does_not_attach_competition(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+
+    created = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": f"[lobby:{lobby_id}] Legacy Cup",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "code_policy": "locked_on_start",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    )
+    assert created.status_code == 200
+    assert created.json()["lobby_id"] is None
+
+    archive = client.get(f"/api/v1/lobbies/{lobby_id}/competitions/archive", headers=teacher_headers)
+    assert archive.status_code == 200
+    assert all(item["competition_id"] != created.json()["competition_id"] for item in archive.json()["items"])

@@ -9,7 +9,7 @@ player_instruction: |
   Напишите функцию make_choice(field, role), которая возвращает координаты хода (x, y).
   Также поддерживается сигнатура make_move(observation), где observation = {"field": ..., "role": ...}.
 description: Реализуйте стратегию для игры в крестики-нолики на большой доске с целью собрать 5 в ряд.
-difficulty: medium
+difficulty: easy
 topics:
   - стратегия
 slots:

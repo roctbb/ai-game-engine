@@ -1,0 +1,25 @@
+id: gate_keys_v1
+title: Ключи и ворота
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board, keys), возвращающую up/down/left/right/stay. Собирайте ключи, открывайте ворота и идите к выходу.
+description: Робот проходит случайный лабиринт с несколькими линиями ворот, где каждое закрытое ворото требует один ключ.
+difficulty: hard
+topics:
+  - графы
+  - BFS
+  - состояние поиска
+slots:
+  - key: agent
+    title: Код робота
+    required: true
+demo_strategies:
+  - id: bfs_gate_keys
+    slot_key: agent
+    title: "Демо: BFS с ключами"
+    language: python
+    path: examples/bfs_gate_keys.py
+    description: Ищет путь к выходу, учитывая количество ключей.

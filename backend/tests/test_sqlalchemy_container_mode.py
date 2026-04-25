@@ -14,6 +14,8 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
         'core_repository_auto_create_tables': settings.core_repository_auto_create_tables,
         'execution_repository_backend': settings.execution_repository_backend,
         'execution_repository_auto_create_tables': settings.execution_repository_auto_create_tables,
+        'session_repository_backend': settings.session_repository_backend,
+        'session_repository_auto_create_tables': settings.session_repository_auto_create_tables,
         'scheduler_service_url': settings.scheduler_service_url,
     }
 
@@ -24,6 +26,8 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
         settings.core_repository_auto_create_tables = True
         settings.execution_repository_backend = 'sqlalchemy'
         settings.execution_repository_auto_create_tables = True
+        settings.session_repository_backend = 'sqlalchemy'
+        settings.session_repository_auto_create_tables = True
         settings.scheduler_service_url = None
 
         app.dependency_overrides.clear()
@@ -126,11 +130,22 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
             assert replay.json()['status'] == 'finished'
             assert replay.json()['run_id'] == run['run_id']
 
+        app.dependency_overrides.clear()
+        restarted_container = _build_container()
+        app.dependency_overrides[get_container] = lambda: restarted_container
+
+        with TestClient(app) as client:
+            me = client.get('/api/v1/identity/me', headers=headers)
+            assert me.status_code == 200
+            assert me.json()['nickname'] == 'captain-sql'
+
     finally:
         settings.database_url_override = original['database_url_override']
         settings.core_repository_backend = original['core_repository_backend']
         settings.core_repository_auto_create_tables = original['core_repository_auto_create_tables']
         settings.execution_repository_backend = original['execution_repository_backend']
         settings.execution_repository_auto_create_tables = original['execution_repository_auto_create_tables']
+        settings.session_repository_backend = original['session_repository_backend']
+        settings.session_repository_auto_create_tables = original['session_repository_auto_create_tables']
         settings.scheduler_service_url = original['scheduler_service_url']
         app.dependency_overrides.clear()

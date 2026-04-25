@@ -1,0 +1,25 @@
+id: pacman_v1
+title: Пакмен
+game_mode: single_task
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right/stay. Собирайте точки и избегайте призраков.
+description: "Управляйте пакменом на случайной сетке: собирайте точки, берите большие точки для временной силы и не попадайтесь призракам."
+difficulty: hard
+topics:
+  - графы
+  - поиск пути
+  - игровые стратегии
+slots:
+  - key: agent
+    title: Код пакмена
+    required: true
+demo_strategies:
+  - id: nearest_dot
+    slot_key: agent
+    title: "Демо: ближайшая точка"
+    language: python
+    path: examples/nearest_dot.py
+    description: Идет к ближайшим точкам и старается держаться подальше от призраков.

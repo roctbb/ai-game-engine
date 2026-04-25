@@ -2,7 +2,7 @@
   <section class="agp-grid agp-task-workspace agp-watch-page" :class="{ 'agp-watch-page--embedded': isEmbedded }">
     <header v-if="!isEmbedded" class="agp-task-header">
       <div class="agp-task-header-main">
-        <RouterLink to="/lobbies" class="agp-back-link" title="К лобби" aria-label="К лобби">←</RouterLink>
+        <RouterLink :to="backTarget" class="agp-back-link" :title="backLabel" :aria-label="backLabel">←</RouterLink>
         <h1>{{ watchContext?.game_slug || 'Просмотр запуска' }}</h1>
       </div>
 
@@ -147,35 +147,31 @@
           <div v-if="isReplayLoading" class="text-muted small">Загрузка повтора...</div>
           <div v-else-if="replayError" class="text-danger small">{{ replayError }}</div>
           <div v-else-if="!replay" class="text-muted small">Повтор появится после завершения запуска.</div>
-          <div class="d-flex flex-wrap gap-2 align-items-center mb-3" v-if="replayFrames.length > 0">
-            <button class="btn btn-sm btn-outline-secondary" :disabled="!canStepBackward" @click="stepReplay(-1)">
-              ◀
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" :disabled="!canPlayReplay" @click="toggleReplayPlay">
-              {{ replayIsPlaying ? 'Пауза' : 'Пуск' }}
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" :disabled="!canStepForward" @click="stepReplay(1)">
-              ▶
-            </button>
-            <select v-model.number="replaySpeedMs" class="form-select form-select-sm mono" style="width: 7rem">
-              <option :value="250">x4</option>
-              <option :value="500">x2</option>
-              <option :value="1000">x1</option>
-              <option :value="2000">x0.5</option>
-            </select>
-            <span class="small text-muted">
-              кадр <span class="mono">{{ replayFrameIndex + 1 }}</span>/<span class="mono">{{ replayFrames.length }}</span>
-            </span>
+          <div v-else class="agp-watch-replay-summary">
+            <span class="text-muted small">Кадр</span>
+            <strong class="mono">{{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</strong>
           </div>
-          <input
-            v-if="replayFrames.length > 0"
-            v-model.number="replayFrameIndex"
-            type="range"
-            class="form-range mb-3"
-            :min="0"
-            :max="Math.max(0, replayFrames.length - 1)"
-            step="1"
-          />
+
+          <hr />
+          <h3 class="h6 mb-2">Лог ходов</h3>
+          <div v-if="!replay" class="text-muted small">Лог появится вместе с повтором.</div>
+          <div v-else-if="moveLogItems.length === 0" class="text-muted small">
+            В повторе нет событий ходов.
+          </div>
+          <div v-else class="agp-watch-move-log">
+            <div
+              v-for="item in visibleMoveLogItems"
+              :key="item.id"
+              class="agp-watch-move-row"
+              :class="`agp-watch-move-row--${item.tone}`"
+            >
+              <span class="mono small">#{{ item.tick }}</span>
+              <strong v-if="item.actor">{{ item.actor }}</strong>
+              <span v-else class="text-muted small">событие</span>
+              <span class="agp-watch-move-action">{{ item.action }}</span>
+              <small v-if="item.detail">{{ item.detail }}</small>
+            </div>
+          </div>
 
           <details v-if="canSeeTechnicalDetails" class="mt-3">
             <summary class="agp-details-summary">Технические детали</summary>
@@ -184,7 +180,7 @@
               <table class="table table-sm align-middle mb-0">
                 <tbody>
                   <tr>
-                    <th class="w-25">id запуска</th>
+                    <th class="w-25">запуск</th>
                     <td class="mono small">{{ run.run_id }}</td>
                   </tr>
                   <tr>
@@ -197,19 +193,15 @@
                   </tr>
                   <tr>
                     <th>тип</th>
-                    <td class="mono small">{{ run.run_kind }}</td>
+                    <td>{{ runKindLabel }}</td>
                   </tr>
                   <tr>
                     <th>игра</th>
                     <td class="mono small">{{ watchContext.game_slug }}</td>
                   </tr>
                   <tr>
-                    <th>worker</th>
+                    <th>исполнитель</th>
                     <td class="mono small">{{ run.worker_id ?? '—' }}</td>
-                  </tr>
-                  <tr>
-                    <th>снимок кода</th>
-                    <td class="mono small">{{ run.snapshot_id ?? '—' }}</td>
                   </tr>
                   <tr>
                     <th>протокол</th>
@@ -251,19 +243,19 @@
             <details class="mt-3">
               <summary class="small fw-semibold">Данные повтора</summary>
               <div v-if="replay" class="mt-2">
-              <div class="small mb-2">
-                id повтора: <span class="mono">{{ replay.replay_id }}</span>
-              </div>
-              <div class="small text-muted mb-2">
-                кадры: <span class="mono">{{ replay.frames.length }}</span>
-                · события: <span class="mono">{{ replay.events.length }}</span>
-                · видимость: <span class="mono">{{ replay.visibility }}</span>
-              </div>
-              <details class="mb-2" v-if="replay.events.length > 0">
-                <summary class="small">События повтора ({{ replay.events.length }})</summary>
-                <pre class="mono small mb-0">{{ replayEventsJson }}</pre>
-              </details>
-              <pre class="mono small mb-0">{{ replaySummaryJson }}</pre>
+                <div class="small mb-2">
+                  повтор: <span class="mono">{{ replay.replay_id }}</span>
+                </div>
+                <div class="small text-muted mb-2">
+                  кадры: <span class="mono">{{ replay.frames.length }}</span>
+                  · события: <span class="mono">{{ replay.events.length }}</span>
+                  · видимость: <span class="mono">{{ replay.visibility }}</span>
+                </div>
+                <details class="mb-2" v-if="replay.events.length > 0">
+                  <summary class="small">События повтора ({{ replay.events.length }})</summary>
+                  <pre class="mono small mb-0">{{ replayEventsJson }}</pre>
+                </details>
+                <pre class="mono small mb-0">{{ replaySummaryJson }}</pre>
               </div>
               <div v-else class="text-muted small mt-2">
                 Повтор пока недоступен.
@@ -310,6 +302,15 @@ interface BotConsoleLine {
   tick: number;
   role: string;
   message: string;
+}
+
+interface MoveLogItem {
+  id: string;
+  tick: number;
+  actor: string;
+  action: string;
+  detail: string;
+  tone: 'move' | 'event' | 'error';
 }
 
 const route = useRoute();
@@ -368,7 +369,15 @@ const runKindLabel = computed(() => {
   if (kind === 'single_task') return 'задача';
   if (kind === 'training_match') return 'тренировка';
   if (kind === 'competition_match') return 'соревнование';
-  return 'run';
+  return 'запуск';
+});
+const backTarget = computed(() => {
+  if (run.value?.run_kind === 'single_task') return '/tasks';
+  return '/lobbies';
+});
+const backLabel = computed(() => {
+  if (run.value?.run_kind === 'single_task') return 'К задачам';
+  return 'К лобби';
 });
 const rendererStatusLabel = computed(() => {
   if (!watchContext.value?.renderer_url) return 'без визуализации';
@@ -433,6 +442,23 @@ const currentConsoleLines = computed(() => {
     return botConsoleLines.value;
   }
   return botConsoleLines.value.filter((line) => line.tick <= replayFrameTick.value);
+});
+const moveLogItems = computed<MoveLogItem[]>(() => {
+  const items: MoveLogItem[] = [];
+  const replayEvents = replay.value?.events ?? [];
+  replayEvents.forEach((event, index) => {
+    const item = createMoveLogItem(event, index);
+    if (item) {
+      items.push(item);
+    }
+  });
+  return items.sort((left, right) => left.tick - right.tick || left.id.localeCompare(right.id));
+});
+const visibleMoveLogItems = computed(() => {
+  const items = replayFrames.value.length === 0
+    ? moveLogItems.value
+    : moveLogItems.value.filter((item) => item.tick <= replayFrameTick.value);
+  return items.slice(-14);
 });
 const canPlayReplay = computed(() => replayFrames.value.length > 1);
 const canStepBackward = computed(() => replayFrames.value.length > 0 && replayFrameIndex.value > 0);
@@ -518,6 +544,124 @@ function appendConsoleMessage(
       message: chunk,
     });
   });
+}
+
+function createMoveLogItem(raw: Record<string, unknown>, index: number): MoveLogItem | null {
+  const type = typeof raw.type === 'string' ? raw.type : '';
+  if (isConsoleEventType(type) || 'stdout' in raw) {
+    return null;
+  }
+
+  const actionRaw = raw.action ?? raw.choice ?? raw.decision ?? raw.move ?? raw.command ?? raw.value;
+  const hasAction = actionRaw !== undefined && actionRaw !== null && actionRaw !== '';
+  const hasCoordinates = raw.x !== undefined || raw.y !== undefined || raw.row !== undefined || raw.col !== undefined;
+  if (!type && !hasAction && !hasCoordinates) {
+    return null;
+  }
+
+  const tick = normalizeTick(raw.tick ?? raw.turn ?? raw.step ?? raw.frame, index);
+  const actorRaw = raw.role ?? raw.slot ?? raw.slot_key ?? raw.team_id ?? raw.bot ?? raw.player ?? raw.agent;
+  const actor = typeof actorRaw === 'string' || typeof actorRaw === 'number' ? String(actorRaw) : '';
+  const action = hasAction ? formatMoveValue(actionRaw) : formatEventType(type || 'move');
+  const detail = formatMoveDetail(raw, hasAction);
+  const tone = eventTone(type);
+  return {
+    id: `move-${index}-${tick}`,
+    tick,
+    actor,
+    action,
+    detail,
+    tone,
+  };
+}
+
+function isConsoleEventType(type: string): boolean {
+  return ['bot_print', 'print', 'stdout', 'bot_stdout', 'console'].includes(type);
+}
+
+function eventTone(type: string): MoveLogItem['tone'] {
+  if (type.includes('error') || type.includes('invalid') || type.includes('blocked') || type.includes('failed')) {
+    return 'error';
+  }
+  if (type === 'move' || type.includes('move') || type.includes('choice') || type.includes('decision')) {
+    return 'move';
+  }
+  return 'event';
+}
+
+function formatEventType(type: string): string {
+  const labels: Record<string, string> = {
+    move: 'ход',
+    action: 'действие',
+    choice: 'выбор',
+    decision: 'решение',
+    invalid_action: 'недопустимый ход',
+    invalid_move: 'недопустимый ход',
+    blocked_move: 'ход заблокирован',
+    blocked_step: 'ход заблокирован',
+    pickup: 'подбор',
+    delivered: 'доставка',
+    delivery: 'доставка',
+    score: 'очки',
+    winner: 'победа',
+    timeout: 'таймаут',
+    runtime_error: 'ошибка выполнения',
+    compile_error: 'ошибка кода',
+  };
+  return labels[type] ?? type.replace(/_/g, ' ');
+}
+
+function formatMoveDetail(raw: Record<string, unknown>, actionAlreadyShown: boolean): string {
+  const parts: string[] = [];
+  const type = typeof raw.type === 'string' ? raw.type : '';
+  if (actionAlreadyShown && type) {
+    parts.push(formatEventType(type));
+  }
+  const coordinates = formatCoordinates(raw);
+  if (coordinates) {
+    parts.push(coordinates);
+  }
+  appendDetailPart(parts, 'цель', raw.target);
+  appendDetailPart(parts, 'от', raw.from);
+  appendDetailPart(parts, 'к', raw.to);
+  appendDetailPart(parts, 'линия', raw.lane);
+  appendDetailPart(parts, 'счет', raw.score);
+  const message = raw.message ?? raw.reason ?? raw.error;
+  if (typeof message === 'string' && message.trim()) {
+    parts.push(message.trim());
+  }
+  return parts.join(' · ');
+}
+
+function formatCoordinates(raw: Record<string, unknown>): string {
+  const x = raw.x ?? raw.col;
+  const y = raw.y ?? raw.row;
+  if (x === undefined && y === undefined) {
+    return '';
+  }
+  return `(${formatMoveValue(x)}, ${formatMoveValue(y)})`;
+}
+
+function appendDetailPart(parts: string[], label: string, value: unknown): void {
+  if (value === undefined || value === null || value === '') return;
+  parts.push(`${label}: ${formatMoveValue(value)}`);
+}
+
+function formatMoveValue(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => formatMoveValue(item)).join(', ');
+  }
+  if (value === undefined || value === null) {
+    return '';
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function appendRendererLog(level: RendererLogItem['level'], message: string): void {
@@ -687,7 +831,7 @@ function onRendererMessage(event: MessageEvent): void {
   if (type === 'agp.renderer.ready') {
     rendererReady.value = true;
     const version = (data as { payload?: { version?: string } }).payload?.version;
-    appendRendererLog('info', version ? `renderer ready v${version}` : 'renderer ready');
+    appendRendererLog('info', version ? `визуализация готова v${version}` : 'визуализация готова');
     sendRendererInit();
     sendRendererStateAndResult();
     return;
@@ -695,13 +839,13 @@ function onRendererMessage(event: MessageEvent): void {
   if (type === 'agp.renderer.error') {
     const message =
       (data as { payload?: { message?: string } }).payload?.message ??
-      'renderer reported unknown error';
+      'визуализация сообщила об ошибке';
     appendRendererLog('error', String(message));
     return;
   }
   if (type === 'agp.renderer.event') {
-    const eventName = (data as { payload?: { name?: string } }).payload?.name ?? 'event';
-    appendRendererLog('info', `renderer event: ${String(eventName)}`);
+    const eventName = (data as { payload?: { name?: string } }).payload?.name ?? 'событие';
+    appendRendererLog('info', `событие визуализации: ${String(eventName)}`);
     return;
   }
   appendRendererLog('info', `message: ${type}`);
@@ -723,7 +867,7 @@ async function ensureReplayLoaded(runId: string): Promise<void> {
     replay.value = await getRunReplay(runId);
     clampReplayFrameIndex();
     if (replayFrames.value.length > 0) {
-      replayFrameIndex.value = shouldAutoplayReplay.value ? 0 : replayFrames.value.length - 1;
+      replayFrameIndex.value = 0;
       sendRendererStateAndResult();
       if (shouldAutoplayReplay.value && replayFrames.value.length > 1) {
         startReplayPlayback();
@@ -739,7 +883,7 @@ async function ensureReplayLoaded(runId: string): Promise<void> {
 async function bootstrapPage(): Promise<void> {
   const runId = String(route.params.runId || '').trim();
   if (!runId) {
-    errorMessage.value = 'Не передан runId';
+    errorMessage.value = 'Не найден запуск для просмотра';
     return;
   }
   isLoading.value = true;
@@ -754,7 +898,7 @@ async function bootstrapPage(): Promise<void> {
       await ensureReplayLoaded(runId);
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить run';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить запуск';
   } finally {
     isLoading.value = false;
   }
@@ -763,7 +907,7 @@ async function bootstrapPage(): Promise<void> {
 function startRunLiveUpdates(runId: string): void {
   stopRunLiveUpdates();
   if (typeof EventSource === 'undefined') {
-    appendRendererLog('warn', 'EventSource недоступен, переключено на polling');
+    appendRendererLog('warn', 'Поток обновлений недоступен, включен периодический опрос');
     startRunPolling(runId);
     return;
   }
@@ -773,11 +917,11 @@ function startRunLiveUpdates(runId: string): void {
   );
   runEventSource = source;
   liveMode.value = 'sse';
-  appendRendererLog('info', 'SSE stream connected');
+  appendRendererLog('info', 'Поток обновлений подключен');
 
   const applyRunUpdate = (candidate: RunDto | null): void => {
     if (!candidate) {
-      appendRendererLog('warn', 'Некорректное сообщение run из SSE');
+      appendRendererLog('warn', 'Некорректное сообщение запуска из потока');
       return;
     }
     run.value = candidate;
@@ -790,7 +934,7 @@ function startRunLiveUpdates(runId: string): void {
       if (envelope.channel !== 'run') return;
       applyRunUpdate(envelope.payload ?? null);
     } catch {
-      appendRendererLog('warn', 'Некорректное agp.update сообщение из SSE');
+      appendRendererLog('warn', 'Некорректное сообщение обновления из потока');
     }
   });
 
@@ -798,7 +942,7 @@ function startRunLiveUpdates(runId: string): void {
     try {
       applyRunUpdate(JSON.parse(event.data) as RunDto);
     } catch {
-      appendRendererLog('warn', 'Некорректное legacy run сообщение из SSE');
+      appendRendererLog('warn', 'Некорректное старое сообщение запуска из потока');
     }
   });
 
@@ -835,7 +979,7 @@ function startRunLiveUpdates(runId: string): void {
       stopRunLiveUpdates();
       return;
     }
-    appendRendererLog('warn', 'SSE stream disconnected, fallback to polling');
+    appendRendererLog('warn', 'Поток обновлений отключился, включен периодический опрос');
     stopRunLiveUpdates();
     startRunPolling(runId);
   };
@@ -908,7 +1052,7 @@ onUnmounted(() => {
 
 <style scoped>
 .agp-watch-columns {
-  grid-template-columns: minmax(0, 1.25fr) minmax(20rem, 0.75fr);
+  grid-template-columns: minmax(0, 1.75fr) minmax(18rem, 0.5fr);
   gap: 0.5rem;
 }
 
@@ -1041,6 +1185,73 @@ onUnmounted(() => {
 
 .agp-watch-stat strong {
   font-size: 0.95rem;
+}
+
+.agp-watch-replay-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.45rem;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 0.55rem 0.65rem;
+}
+
+.agp-watch-move-log {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.agp-watch-move-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.1rem 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.45rem;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 0.5rem 0.6rem;
+}
+
+.agp-watch-move-row > .mono {
+  color: #8ea7c1;
+}
+
+.agp-watch-move-row strong,
+.agp-watch-move-row > .text-muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agp-watch-move-action {
+  grid-column: 2;
+  color: #e5f3ff;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.agp-watch-move-row small {
+  grid-column: 2;
+  color: #8ea7c1;
+  overflow-wrap: anywhere;
+}
+
+.agp-watch-move-row--move {
+  border-color: rgba(45, 212, 191, 0.28);
+}
+
+.agp-watch-move-row--event {
+  border-color: rgba(125, 211, 252, 0.24);
+}
+
+.agp-watch-move-row--error {
+  border-color: rgba(248, 113, 113, 0.38);
+  background: rgba(127, 29, 29, 0.18);
 }
 
 .agp-bot-console {

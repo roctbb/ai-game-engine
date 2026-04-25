@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flood Escape Renderer</title>
+  <style>
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#102033;color:#e5edf5;font-family:Arial,sans-serif}
+    .wrap{width:min(92vmin,760px)}
+    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
+    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+  </style>
+</head>
+<body>
+<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<script>
+const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
+function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
+function draw(frame){
+  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||12, h=Array.isArray(grid[0])?grid[0].length:12, C=32;
+  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=grid[x]?.[y]??0;
+    const fill=v===-1?"#334155":v===-2?"#38bdf8":v===1?"#bbf7d0":"#f8fafc";
+    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill}));
+    if(v===1){const t=el("text",{x:x*C+C/2,y:y*C+C*0.66,"text-anchor":"middle","font-size":18,fill:"#166534"});t.textContent="E";boardEl.appendChild(t)}
+  }
+  const p=frame.position||{};
+  if(Number.isFinite(p.x)&&Number.isFinite(p.y))boardEl.appendChild(el("circle",{cx:p.x*C+C/2,cy:p.y*C+C/2,r:C*0.3,fill:frame.alive===false?"#ef4444":"#f97316"}));
+  hudEl.textContent=`water=${frame.water_cells||0} escaped=${frame.escaped===true} alive=${frame.alive!==false} invalid=${frame.invalid_moves||0} score=${frame.score??"-"}`;
+}
+window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
+draw({board:Array.from({length:12},()=>Array(12).fill(0)),position:{x:1,y:1},water_cells:3,alive:true});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+</script>
+</body>
+</html>

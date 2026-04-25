@@ -3,6 +3,25 @@ import random
 from domain.common import *
 
 
+class MapState(list):
+    def __init__(self, cells, metadata=None):
+        super().__init__(cells)
+        self.metadata = metadata or {}
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return self.metadata[key]
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if isinstance(key, str):
+            return self.metadata.get(key, default)
+        try:
+            return self[key]
+        except (IndexError, TypeError):
+            return default
+
+
 class Game:
     def __init__(self):
         self.size = (0, 0)
@@ -10,15 +29,19 @@ class Game:
         self.items = {}
         self.objects = {}
         self.backgrounds = {}
+        self.metadata = {}
 
     def get_state(self):
-        state = [[{"player": None, "items": [], "object": None} for _ in range(self.height)] for _ in range(self.width)]
+        state = MapState(
+            [[{"player": None, "items": [], "object": None} for _ in range(self.height)] for _ in range(self.width)],
+            self.metadata,
+        )
 
         for (x, y), player in self.players.items():
             state[x][y]['player'] = player.as_dict(Point(x, y))
 
         for (x, y), item in self.items.items():
-            state[x][y]['items'] = item.as_dict(Point(x, y))
+            state[x][y]['items'].append(item.as_dict(Point(x, y)))
 
         for (x, y), object in self.objects.items():
             state[x][y]['object'] = object.as_dict(Point(x, y))

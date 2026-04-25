@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TanksAI Legacy</title>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #141414;
+      color: #f8fafc;
+      font-family: Arial, sans-serif;
+    }
+    body {
+      display: grid;
+      place-items: center;
+      background-image: url("static/bg.jpg");
+      background-size: cover;
+      background-position: center;
+    }
+    canvas {
+      display: block;
+      width: min(100vw, calc(100vh * 30 / 18));
+      height: min(100vh, calc(100vw * 18 / 30));
+      background: #33451f;
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.38);
+      outline: none;
+    }
+    .hud {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      max-width: min(520px, calc(100vw - 24px));
+      padding: 8px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.56);
+      color: #f8fafc;
+      font: 13px Arial, sans-serif;
+      pointer-events: none;
+    }
+    .mono {
+      margin-top: 4px;
+      color: #d9f99d;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" aria-label="TanksAI Legacy"></canvas>
+  <div class="hud">
+    <div id="status">TanksAI</div>
+    <div class="mono" id="details">tick=0 players=0</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.getElementById("status");
+    const detailsEl = document.getElementById("details");
+    const textures = {};
+    let currentFrame = null;
+    let previousMap = null;
+    let renderedMap = null;
+    let players = {};
+    let oldPlayers = {};
+    let tick = 0;
+    let phase = "init";
+    let tileSize = 40;
+    let animationFrameId = 0;
+    let animationStart = 0;
+    const animationDuration = 620;
+
+    const textureFiles = {
+      player: "static/player.png",
+      grass: "static/grass.jpg",
+      brick: "static/brick.jpg",
+      coin: "static/coin.png",
+      horiz: "static/horizontal.png",
+      verti: "static/vertical.png"
+    };
+
+    function loadTextures() {
+      for (const [key, src] of Object.entries(textureFiles)) {
+        const img = new Image();
+        img.src = src;
+        textures[key] = img;
+      }
+    }
+
+    function equalNames(nameA, nameB) {
+      if (typeof nameA !== "string" || typeof nameB !== "string") return false;
+      return nameA === nameB || nameA === nameB.split("(")[0];
+    }
+
+    function uniqueName(name) {
+      let candidate = name || "bot";
+      let suffix = 1;
+      while (players[candidate]) {
+        candidate = `${name || "bot"}(${suffix})`;
+        suffix += 1;
+      }
+      return candidate;
+    }
+
+    function estimateMovement(map, x, y) {
+      const cell = map[x][y];
+      const name = uniqueName(cell.name);
+      let action = "stay";
+      if (previousMap) {
+        if (x > 0 && equalNames(cell.name, previousMap[x - 1]?.[y]?.name)) action = "go_right";
+        else if (x < map.length - 1 && equalNames(cell.name, previousMap[x + 1]?.[y]?.name)) action = "go_left";
+        else if (y > 0 && equalNames(cell.name, previousMap[x]?.[y - 1]?.name)) action = "go_down";
+        else if (y < map[x].length - 1 && equalNames(cell.name, previousMap[x]?.[y + 1]?.name)) action = "go_up";
+      }
+      players[name] = {
+        x, y,
+        life: cell.life,
+        hit: cell.hit,
+        action,
+        shield: cell.shield || 0,
+        shielding: cell.shielding || 0,
+        score: cell.score || 0
+      };
+    }
+
+    function preprocess(frame) {
+      const map = Array.isArray(frame.map) ? frame.map : [];
+      const width = map.length || 30;
+      const height = Array.isArray(map[0]) ? map[0].length : 18;
+      const cssWidth = Math.min(window.innerWidth, window.innerHeight * width / height);
+      const cssHeight = cssWidth * height / width;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+      canvas.width = Math.max(1, Math.floor(cssWidth * dpr));
+      canvas.height = Math.max(1, Math.floor(cssHeight * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      tileSize = cssWidth / width;
+      ctx.font = `${Math.max(10, tileSize / 3.8)}px Arial`;
+
+      renderedMap = [];
+      players = {};
+      for (let x = 0; x < width; x += 1) {
+        const column = [];
+        for (let y = 0; y < height; y += 1) {
+          const layers = [];
+          const cell = map[x]?.[y] ?? ".";
+          if (cell !== "@" && previousMap && previousMap[x]?.[y] === "@") layers.push("@");
+          switch (cell) {
+            case "#":
+              layers.push("#");
+              break;
+            case "@":
+              layers.push("@");
+              break;
+            case "&larr;":
+            case "&rarr;":
+              layers.push("-");
+              break;
+            case "&uarr;":
+            case "&darr;":
+              layers.push("|");
+              break;
+            case "*":
+              layers.push("E");
+              break;
+            case ".":
+              break;
+            default:
+              if (cell && typeof cell === "object") {
+                estimateMovement(map, x, y);
+                layers.push("P");
+              }
+          }
+          column.push(layers);
+        }
+        renderedMap.push(column);
+      }
+      for (const [name, old] of Object.entries(oldPlayers)) {
+        if (!players[name] && renderedMap[old.x]?.[old.y]) renderedMap[old.x][old.y].push("E");
+      }
+      oldPlayers = Object.fromEntries(Object.entries(players).map(([name, p]) => [name, { x: p.x, y: p.y }]));
+      previousMap = map;
+    }
+
+    function drawExplosion(x, y, progress) {
+      const alpha = 1 - progress;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "#f97316";
+      ctx.beginPath();
+      ctx.arc((x + 0.5) * tileSize, (y + 0.5) * tileSize, tileSize * 0.44, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fde68a";
+      ctx.beginPath();
+      ctx.arc((x + 0.5) * tileSize, (y + 0.5) * tileSize, tileSize * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawTexture(name, x, y, alpha = 1) {
+      const img = textures[name];
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      if (img && img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, x * tileSize, y * tileSize, tileSize, tileSize);
+      } else {
+        ctx.fillStyle = name === "brick" ? "#6b4f3a" : name === "coin" ? "#facc15" : "#4d6b2f";
+        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+      }
+      ctx.restore();
+    }
+
+    function animate(timestamp) {
+      if (!animationStart) animationStart = timestamp;
+      const progress = Math.min((timestamp - animationStart) / animationDuration, 1);
+      if (!renderedMap) return;
+      const width = renderedMap.length;
+      const height = renderedMap[0]?.length || 0;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let x = 0; x < width; x += 1) {
+        for (let y = 0; y < height; y += 1) {
+          drawTexture("grass", x, y);
+          for (const layer of renderedMap[x][y]) {
+            if (layer === "#") drawTexture("brick", x, y);
+            else if (layer === "@") drawTexture("coin", x, y);
+            else if (layer === "-") drawTexture("horiz", x, y, 1 - progress);
+            else if (layer === "|") drawTexture("verti", x, y, 1 - progress);
+            else if (layer === "E") drawExplosion(x, y, progress);
+          }
+        }
+      }
+
+      for (const [name, p] of Object.entries(players)) {
+        let baseX = p.x;
+        let baseY = p.y;
+        if (p.action === "go_left") baseX += 1 - progress;
+        if (p.action === "go_right") baseX -= 1 - progress;
+        if (p.action === "go_up") baseY += 1 - progress;
+        if (p.action === "go_down") baseY -= 1 - progress;
+        drawTexture("player", baseX, baseY);
+        if (p.shielding) {
+          ctx.save();
+          ctx.globalAlpha = 0.36;
+          ctx.fillStyle = "#3b82f6";
+          ctx.beginPath();
+          ctx.arc((baseX + 0.5) * tileSize, (baseY + 0.5) * tileSize, tileSize * 0.56, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.fillStyle = p.hit ? "#ff2020" : "#ffffff";
+        const label = name.length > 12 ? `${name.slice(0, 11)}.` : name;
+        const value = String(p.shielding ? p.shield : p.life);
+        const labelWidth = ctx.measureText(label).width;
+        const valueWidth = ctx.measureText(value).width;
+        ctx.fillText(label, (baseX + 0.5) * tileSize - labelWidth / 2, (baseY + 0.32) * tileSize);
+        ctx.fillText(value, (baseX + 0.5) * tileSize - valueWidth / 2, (baseY + 0.63) * tileSize);
+      }
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(animate);
+      } else {
+        animationStart = 0;
+      }
+    }
+
+    function render(payload) {
+      currentFrame = payload?.frame || payload || {};
+      tick = payload?.tick ?? currentFrame.tick ?? tick;
+      phase = payload?.phase || currentFrame.phase || phase;
+      preprocess(currentFrame);
+      statusEl.textContent = phase === "finished" ? "TanksAI: finished" : "TanksAI: running";
+      detailsEl.textContent = `tick=${tick} players=${currentFrame.alive?.length ?? 0} map=${currentFrame.width || 30}x${currentFrame.height || 18}`;
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      animationStart = 0;
+      animationFrameId = requestAnimationFrame(animate);
+    }
+
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (!message || typeof message !== "object") return;
+      if (message.type === "agp.renderer.state") render(message.payload);
+      if (message.type === "agp.renderer.result") phase = "finished";
+    });
+    window.addEventListener("resize", () => {
+      if (currentFrame) render({ tick, phase, frame: currentFrame });
+    });
+
+    loadTextures();
+    render({ tick: 0, phase: "running", frame: { width: 30, height: 18, map: Array.from({ length: 30 }, () => Array(18).fill(".")), alive: [] } });
+    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.0.0" } }, "*");
+  </script>
+</body>
+</html>

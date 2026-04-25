@@ -3,143 +3,482 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Танки CTF</title>
+  <title>Танки</title>
   <style>
-    body {
+    html, body {
+      width: 100%;
+      height: 100%;
       margin: 0;
+      overflow: hidden;
+      background: #111827;
+      color: #eef2ff;
       font-family: "Segoe UI", Arial, sans-serif;
-      background: #0f1724;
-      color: #eaf1ff;
-      display: grid;
-      place-items: center;
-      min-height: 100vh;
     }
-    .wrap { width: min(900px, 96vw); }
-    .board { background: #0b111b; border: 1px solid #2f3d55; border-radius: 14px; overflow: hidden; }
-    .status { margin-top: 8px; font-size: 13px; color: #c5d4ea; }
-    .details { margin-top: 4px; font-size: 12px; color: #95a9c8; min-height: 16px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    #game {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #f8fafc;
+      outline: none;
+    }
+    .hud {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      display: grid;
+      gap: 6px;
+      padding: 8px 10px;
+      background: rgba(15, 23, 42, 0.76);
+      color: #e5e7eb;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 6px;
+      font-size: 13px;
+      pointer-events: none;
+      max-width: min(560px, calc(100vw - 24px));
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      color: #bfdbfe;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <svg id="board" class="board" viewBox="0 0 900 500" role="img" aria-label="Tanks CTF board"></svg>
-    <div class="status" id="status">Renderer: initializing</div>
-    <div class="details mono" id="details"></div>
+  <canvas id="game" tabindex="0" aria-label="Танки"></canvas>
+  <div class="hud">
+    <div id="status">Renderer: loading assets</div>
+    <div class="mono" id="details">arrows/WASD - camera, wheel/+/- - zoom, 0 - reset</div>
   </div>
-  <script>
-    const WIDTH = 9;
-    const HEIGHT = 7;
-    const CELL = 70;
 
-    const boardEl = document.getElementById("board");
+  <script>
+    const path = "static/";
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
     const statusEl = document.getElementById("status");
     const detailsEl = document.getElementById("details");
 
     let runId = "";
+    let loaded = 0;
+    let total = 0;
+    let imagesReady = false;
+    let frame = null;
+    let tick = 0;
+    let phase = "init";
+    let cameraX = 0;
+    let cameraY = 0;
+    let zoom = 1;
+    let cellSide = 32;
+    let baseCellSide = 32;
+    let centeredOnce = false;
+    const images = {};
 
-    function setStatus(text, details) {
+    const imageUrls = {
+      Wall: path + "objects/wall/wall.png",
+      Coin: path + "objects/Coin/coin.png",
+      Grass: path + "grass.png",
+      Stump: path + "stump.png",
+      Road: path + "road.png",
+      RadientAncient: path + "objects/ancient/radient.png",
+      DareAncient: path + "objects/ancient/dare.png",
+      Rocks: path + "rocks.png",
+      Snow: path + "snow.png",
+      Water: path + "water.png",
+      Explosion: path + "explosion.png",
+      SniperBooster: path + "objects/Sniper/sniper.png",
+      HealthKit: path + "objects/Healthkit/healthkit.png",
+      Player: {
+        left: path + "objects/Player/left.png",
+        right: path + "objects/Player/right.png",
+        up: path + "objects/Player/up.png",
+        down: path + "objects/Player/down.png"
+      },
+      RadientPlayer: {
+        left: path + "objects/RadientPlayer/left.png",
+        right: path + "objects/RadientPlayer/right.png",
+        up: path + "objects/RadientPlayer/up.png",
+        down: path + "objects/RadientPlayer/down.png"
+      },
+      DarePlayer: {
+        left: path + "objects/DarePlayer/left.png",
+        right: path + "objects/DarePlayer/right.png",
+        up: path + "objects/DarePlayer/up.png",
+        down: path + "objects/DarePlayer/down.png"
+      },
+      RadientRay: {
+        left: path + "objects/Ray/radient_horizontal.png",
+        right: path + "objects/Ray/radient_horizontal.png",
+        up: path + "objects/Ray/radient_vertical.png",
+        down: path + "objects/Ray/radient_vertical.png"
+      },
+      DareRay: {
+        left: path + "objects/Ray/dare_horizontal.png",
+        right: path + "objects/Ray/dare_horizontal.png",
+        up: path + "objects/Ray/dare_vertical.png",
+        down: path + "objects/Ray/dare_vertical.png"
+      },
+      NeutralRay: {
+        left: path + "objects/Ray/neutral_horizontal.png",
+        right: path + "objects/Ray/neutral_horizontal.png",
+        up: path + "objects/Ray/neutral_vertical.png",
+        down: path + "objects/Ray/neutral_vertical.png"
+      },
+      Tower: {
+        left: path + "objects/Tower/left.png",
+        right: path + "objects/Tower/right.png",
+        up: path + "objects/Tower/up.png",
+        down: path + "objects/Tower/down.png"
+      },
+      Tree: {
+        left: path + "objects/Tree/left.png",
+        right: path + "objects/Tree/right.png",
+        up: path + "objects/Tree/up.png",
+        down: path + "objects/Tree/down.png"
+      }
+    };
+
+    function setStatus(text) {
       statusEl.textContent = text;
-      detailsEl.textContent = details || "";
+      const width = frame?.width || 0;
+      const height = frame?.height || 0;
+      detailsEl.textContent = `run=${runId || "-"} tick=${tick} phase=${phase} map=${width}x${height} zoom=${zoom.toFixed(2)}`;
     }
 
-    function svg(tag) {
-      return document.createElementNS("http://www.w3.org/2000/svg", tag);
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawFrame();
     }
 
-    function draw(frame) {
-      boardEl.replaceChildren();
-      const player = frame && typeof frame.player === "object" ? frame.player : { x: 1, y: 3 };
-      const enemy = frame && typeof frame.enemy === "object" ? frame.enemy : { x: 7, y: 3 };
-      const flag = frame && typeof frame.flag === "object" ? frame.flag : { x: 4, y: 3, carrier: "none" };
-      const winner = typeof frame?.winner === "string" ? frame.winner : "none";
+    function loadImage(url) {
+      total += 1;
+      const img = new Image();
+      img.onload = () => {
+        loaded += 1;
+        if (loaded === total) {
+          imagesReady = true;
+          setStatus("Renderer: ready");
+          drawFrame();
+        }
+      };
+      img.onerror = () => {
+        loaded += 1;
+        if (loaded === total) {
+          imagesReady = true;
+          setStatus("Renderer: ready with missing assets");
+          drawFrame();
+        }
+      };
+      img.src = url;
+      return img;
+    }
 
-      const bg = svg("rect");
-      bg.setAttribute("x", "0");
-      bg.setAttribute("y", "0");
-      bg.setAttribute("width", "900");
-      bg.setAttribute("height", "500");
-      bg.setAttribute("fill", "#101a28");
-      boardEl.appendChild(bg);
+    function loadAssets() {
+      Object.keys(imageUrls).forEach((type) => {
+        if (typeof imageUrls[type] === "string") {
+          images[type] = loadImage(imageUrls[type]);
+        } else {
+          images[type] = {};
+          ["left", "right", "up", "down"].forEach((direction) => {
+            images[type][direction] = loadImage(imageUrls[type][direction]);
+          });
+        }
+      });
+    }
 
-      for (let y = 0; y < HEIGHT; y += 1) {
-        for (let x = 0; x < WIDTH; x += 1) {
-          const cell = svg("rect");
-          cell.setAttribute("x", String(100 + x * CELL));
-          cell.setAttribute("y", String(40 + y * CELL));
-          cell.setAttribute("width", String(CELL - 4));
-          cell.setAttribute("height", String(CELL - 4));
-          cell.setAttribute("fill", "#162336");
-          cell.setAttribute("stroke", "#2f3d55");
-          boardEl.appendChild(cell);
+    function normalizeDirection(direction) {
+      const raw = String(direction || "no").toLowerCase();
+      if (raw.includes("left")) return "left";
+      if (raw.includes("right")) return "right";
+      if (raw.includes("up")) return "up";
+      if (raw.includes("down")) return "down";
+      return "no";
+    }
+
+    function imageFor(object) {
+      const type = object?.type || "";
+      const team = object?.properties?.team || "";
+      const teamKey = team && images[team + type] ? team + type : "";
+      return images[teamKey || type] || images[type] || null;
+    }
+
+    function clampCamera() {
+      if (!frame) return;
+      const worldWidth = frame.width * cellSide;
+      const worldHeight = frame.height * cellSide;
+      const viewWidth = window.innerWidth;
+      const viewHeight = window.innerHeight;
+      cameraX = Math.max(0, Math.min(cameraX, Math.max(0, worldWidth - viewWidth)));
+      cameraY = Math.max(0, Math.min(cameraY, Math.max(0, worldHeight - viewHeight)));
+    }
+
+    function recalcCellSide() {
+      if (!frame) return;
+      const fitW = Math.floor(window.innerWidth / frame.width);
+      const fitH = Math.floor(window.innerHeight / frame.height);
+      baseCellSide = Math.max(Math.min(fitW, fitH), 32);
+      cellSide = Math.max(16, Math.min(128, Math.round(baseCellSide * zoom)));
+      clampCamera();
+    }
+
+    function centerOnPlayer() {
+      if (!frame || !Array.isArray(frame.players) || centeredOnce) return;
+      const player = frame.players.find((p) => p?.properties?.team === "Radient") || frame.players[0];
+      if (!player) return;
+      cameraX = player.x * cellSide - window.innerWidth / 2 + cellSide / 2;
+      cameraY = player.y * cellSide - window.innerHeight / 2 + cellSide / 2;
+      centeredOnce = true;
+      clampCamera();
+    }
+
+    function moveCamera(dx, dy) {
+      cameraX += dx * cellSide;
+      cameraY += dy * cellSide;
+      clampCamera();
+      drawFrame();
+    }
+
+    function setZoom(nextZoom, anchorX = window.innerWidth / 2, anchorY = window.innerHeight / 2) {
+      if (!frame) return;
+      const oldCell = cellSide;
+      zoom = Math.max(0.5, Math.min(3, nextZoom));
+      recalcCellSide();
+      if (oldCell > 0) {
+        const worldX = cameraX + anchorX;
+        const worldY = cameraY + anchorY;
+        const ratio = cellSide / oldCell;
+        cameraX = worldX * ratio - anchorX;
+        cameraY = worldY * ratio - anchorY;
+      }
+      clampCamera();
+      drawFrame();
+    }
+
+    function drawObject(object, offsetLeft, offsetTop) {
+      if (!object) return;
+      const image = imageFor(object);
+      const direction = normalizeDirection(object.direction);
+      const x = offsetLeft + object.x * cellSide;
+      const y = offsetTop + object.y * cellSide;
+
+      if (image) {
+        if (direction !== "no" && image[direction]) {
+          ctx.drawImage(image[direction], x, y, cellSide, cellSide);
+        } else if (image instanceof HTMLImageElement) {
+          ctx.drawImage(image, x, y, cellSide, cellSide);
+        } else if (image.down) {
+          ctx.drawImage(image.down, x, y, cellSide, cellSide);
+        }
+      } else {
+        ctx.fillStyle = "#64748b";
+        ctx.fillRect(x, y, cellSide, cellSide);
+      }
+
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "rgba(15, 23, 42, 0.8)";
+      ctx.lineWidth = Math.max(2, cellSide / 18);
+      ctx.font = `${Math.max(10, Math.round(cellSide / 3.4))}px sans-serif`;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      const label = object.properties?.name || "";
+      const life = object.properties?.life;
+      if (label) {
+        drawText(label, x + cellSide / 2, y + cellSide * 0.28);
+      }
+      if (life !== undefined && life !== null && cellSide >= 24) {
+        drawText(String(life), x + cellSide / 2, y + cellSide * 0.62);
+      }
+      drawObjectStateMarkers(object, x, y);
+    }
+
+    function drawText(text, x, y) {
+      ctx.strokeText(text, x, y);
+      ctx.fillText(text, x, y);
+    }
+
+    function drawObjectStateMarkers(object, x, y) {
+      const life = Number(object.properties?.life);
+      if (Number.isFinite(life)) {
+        const maxLife = Math.max(life, Number(object.properties?.max_life) || 10);
+        const pct = Math.max(0, Math.min(1, life / maxLife));
+        const barWidth = cellSide * 0.72;
+        const barHeight = Math.max(4, cellSide * 0.08);
+        const barX = x + (cellSide - barWidth) / 2;
+        const barY = y + cellSide * 0.82;
+        ctx.fillStyle = "rgba(15, 23, 42, 0.7)";
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        ctx.fillStyle = pct < 0.25 ? "#ef4444" : "#22c55e";
+        ctx.fillRect(barX, barY, barWidth * pct, barHeight);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+        ctx.lineWidth = Math.max(1, cellSide / 38);
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+      }
+
+      const inventoryCount = Array.isArray(object.inventory) ? object.inventory.length : 0;
+      if (inventoryCount > 0) {
+        const r = Math.max(7, cellSide * 0.18);
+        const cx = x + cellSide * 0.78;
+        const cy = y + cellSide * 0.2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = "#0f172a";
+        ctx.fill();
+        ctx.lineWidth = Math.max(1, cellSide / 28);
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `${Math.max(9, Math.round(cellSide * 0.26))}px sans-serif`;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "center";
+        ctx.fillText(String(inventoryCount).slice(0, 2), cx, cy);
+      }
+    }
+
+    function drawShot(event, offsetLeft, offsetTop) {
+      const params = event?.params || {};
+      const from = params.from || [];
+      const to = params.to || [];
+      const team = params.team || "Neutral";
+      const rayKey = `${team}Ray`;
+      const ray = images[rayKey] || images.NeutralRay;
+      const sx = Number(from[0]);
+      const sy = Number(from[1]);
+      const ex = Number(to[0]);
+      const ey = Number(to[1]);
+      if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(ex) || !Number.isFinite(ey)) return;
+
+      if (sx === ex) {
+        const step = ey > sy ? 1 : -1;
+        const dir = ey > sy ? "down" : "up";
+        for (let y = sy + step; y !== ey; y += step) {
+          ctx.drawImage(ray[dir], offsetLeft + sx * cellSide, offsetTop + y * cellSide, cellSide, cellSide);
+        }
+      } else if (sy === ey) {
+        const step = ex > sx ? 1 : -1;
+        const dir = ex > sx ? "right" : "left";
+        for (let x = sx + step; x !== ex; x += step) {
+          ctx.drawImage(ray[dir], offsetLeft + x * cellSide, offsetTop + sy * cellSide, cellSide, cellSide);
+        }
+      }
+    }
+
+    function drawEvent(event, offsetLeft, offsetTop) {
+      if (!event || !event.type) return;
+      if (event.type === "death") {
+        const at = event.params?.at || [];
+        if (images.Explosion && Number.isFinite(at[0]) && Number.isFinite(at[1])) {
+          ctx.drawImage(images.Explosion, offsetLeft + at[0] * cellSide, offsetTop + at[1] * cellSide, cellSide, cellSide);
+        }
+      }
+      if (event.type === "shot") {
+        drawShot(event, offsetLeft, offsetTop);
+      }
+    }
+
+    function drawFrame() {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+      if (!frame || !imagesReady) {
+        setStatus(imagesReady ? "Renderer: waiting for frame" : `Renderer: loading assets ${loaded}/${total}`);
+        return;
+      }
+
+      recalcCellSide();
+      centerOnPlayer();
+      const offsetLeft = -cameraX;
+      const offsetTop = -cameraY;
+
+      for (let x = 0; x < frame.width; x += 1) {
+        for (let y = 0; y < frame.height; y += 1) {
+          ctx.drawImage(images.Grass, offsetLeft + x * cellSide, offsetTop + y * cellSide, cellSide, cellSide);
         }
       }
 
-      const playerTank = svg("rect");
-      playerTank.setAttribute("x", String(100 + player.x * CELL + 14));
-      playerTank.setAttribute("y", String(40 + player.y * CELL + 14));
-      playerTank.setAttribute("width", "40");
-      playerTank.setAttribute("height", "40");
-      playerTank.setAttribute("rx", "8");
-      playerTank.setAttribute("fill", "#60a5fa");
-      boardEl.appendChild(playerTank);
+      (frame.backgrounds || []).forEach((object) => drawObject(object, offsetLeft, offsetTop));
+      (frame.objects || []).forEach((object) => drawObject(object, offsetLeft, offsetTop));
+      (frame.players || []).forEach((object) => drawObject(object, offsetLeft, offsetTop));
+      (frame.items || []).forEach((object) => drawObject(object, offsetLeft, offsetTop));
+      (frame.events || []).forEach((event) => drawEvent(event, offsetLeft, offsetTop));
 
-      const enemyTank = svg("rect");
-      enemyTank.setAttribute("x", String(100 + enemy.x * CELL + 14));
-      enemyTank.setAttribute("y", String(40 + enemy.y * CELL + 14));
-      enemyTank.setAttribute("width", "40");
-      enemyTank.setAttribute("height", "40");
-      enemyTank.setAttribute("rx", "8");
-      enemyTank.setAttribute("fill", "#f87171");
-      boardEl.appendChild(enemyTank);
-
-      const flagDot = svg("circle");
-      flagDot.setAttribute("cx", String(100 + flag.x * CELL + 33));
-      flagDot.setAttribute("cy", String(40 + flag.y * CELL + 33));
-      flagDot.setAttribute("r", "10");
-      flagDot.setAttribute("fill", flag.carrier === "player" ? "#60a5fa" : flag.carrier === "enemy" ? "#f87171" : "#facc15");
-      boardEl.appendChild(flagDot);
-
-      const info = svg("text");
-      info.setAttribute("x", "16");
-      info.setAttribute("y", "24");
-      info.setAttribute("font-size", "13");
-      info.setAttribute("fill", "#eaf1ff");
-      info.textContent = `flag_carrier=${flag.carrier || "none"} winner=${winner}`;
-      boardEl.appendChild(info);
+      setStatus("Renderer: frame");
     }
 
-    function onState(payload) {
-      const tick = Number.isFinite(payload?.tick) ? payload.tick : "-";
-      const phase = typeof payload?.phase === "string" ? payload.phase : "unknown";
-      const frame = payload && typeof payload.frame === "object" ? payload.frame : {};
-      draw(frame);
-      setStatus(`Renderer: state update (${phase})`, `run_id=${runId || "-"} tick=${tick}`);
+    function consumeFrame(payload) {
+      tick = Number.isFinite(payload?.tick) ? payload.tick : tick;
+      phase = typeof payload?.phase === "string" ? payload.phase : phase;
+      const nextFrame = payload?.frame || payload;
+      if (nextFrame && typeof nextFrame === "object" && Number.isFinite(nextFrame.width)) {
+        frame = nextFrame;
+        recalcCellSide();
+        drawFrame();
+      }
     }
 
-    function onResult(payload) {
-      const status = typeof payload?.status === "string" ? payload.status : "finished";
-      const metrics = payload && typeof payload.metrics === "object" ? payload.metrics : {};
-      const winner = typeof metrics.winner === "string" ? metrics.winner : "draw";
-      setStatus("Renderer: result received", `run_id=${runId || "-"} status=${status} winner=${winner}`);
+    function consumeResult(payload) {
+      phase = "finished";
+      const frames = Array.isArray(payload?.frames) ? payload.frames : [];
+      if (frames.length) {
+        consumeFrame(frames[frames.length - 1]);
+      } else {
+        drawFrame();
+      }
     }
 
     window.addEventListener("message", (event) => {
       const message = event.data;
       if (!message || typeof message !== "object" || typeof message.type !== "string") return;
       if (message.type === "agp.renderer.init") {
-        runId = message.payload && message.payload.runId ? String(message.payload.runId) : "";
-        setStatus("Renderer: init received", runId ? `run_id=${runId}` : "");
+        runId = message.payload?.runId ? String(message.payload.runId) : "";
+        setStatus("Renderer: init");
       } else if (message.type === "agp.renderer.state") {
-        onState(message.payload || {});
+        consumeFrame(message.payload || {});
       } else if (message.type === "agp.renderer.result") {
-        onResult(message.payload || {});
+        consumeResult(message.payload || {});
       }
     });
 
-    draw({ player: { x: 1, y: 3 }, enemy: { x: 7, y: 3 }, flag: { x: 4, y: 3, carrier: "none" }, winner: "none" });
-    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.1.0" } }, "*");
-    setStatus("Renderer: ready");
+    window.addEventListener("resize", resizeCanvas);
+    window.addEventListener("keydown", (event) => {
+      const key = event.key.toLowerCase();
+      if (["arrowup", "w"].includes(key)) {
+        event.preventDefault();
+        moveCamera(0, -1);
+      } else if (["arrowdown", "s"].includes(key)) {
+        event.preventDefault();
+        moveCamera(0, 1);
+      } else if (["arrowleft", "a"].includes(key)) {
+        event.preventDefault();
+        moveCamera(-1, 0);
+      } else if (["arrowright", "d"].includes(key)) {
+        event.preventDefault();
+        moveCamera(1, 0);
+      } else if (key === "+" || key === "=") {
+        event.preventDefault();
+        setZoom(zoom * 1.15);
+      } else if (key === "-" || key === "_") {
+        event.preventDefault();
+        setZoom(zoom / 1.15);
+      } else if (key === "0" || key === "home") {
+        event.preventDefault();
+        zoom = 1;
+        cameraX = 0;
+        cameraY = 0;
+        centeredOnce = false;
+        drawFrame();
+      }
+    });
+    canvas.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      setZoom(event.deltaY < 0 ? zoom * 1.12 : zoom / 1.12, event.clientX, event.clientY);
+    }, { passive: false });
+
+    resizeCanvas();
+    loadAssets();
+    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "2.0.0" } }, "*");
   </script>
 </body>
 </html>

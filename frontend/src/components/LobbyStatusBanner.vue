@@ -17,10 +17,10 @@ const props = defineProps<{
 
 const message = computed(() => {
   if (props.status === 'updating') return 'Лобби временно заблокировано: идет обновление версии игры.';
-  if (props.status === 'paused') return 'Матчи приостановлены. Действия ready/join могут быть недоступны.';
+  if (props.status === 'paused') return 'Матчи приостановлены. Готовность и вход могут быть временно недоступны.';
   if (props.status === 'closed') return 'Лобби закрыто. Новые подключения отключены.';
   if (props.status === 'running') return 'Матчи запущены. Доступность действий зависит от режима.';
-  if (props.status === 'draft') return 'Лобби в черновике. Админ может завершать настройку.';
+  if (props.status === 'draft') return 'Лобби в черновике. Преподаватель или администратор может завершить настройку.';
   return 'Лобби открыто для действий по правилам текущего режима.';
 });
 

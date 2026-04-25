@@ -1,20 +1,48 @@
 <template>
   <section class="agp-grid lobby-page">
-    <header class="agp-card p-3 lobby-head">
-      <div>
-        <RouterLink class="agp-back-link" to="/lobbies">←</RouterLink>
-        <h1 class="h4 mb-1">{{ lobby?.title || 'Лобби' }}</h1>
-        <div v-if="lobby" class="d-flex gap-2 flex-wrap">
-          <span class="agp-pill" :class="statusPillClass(lobby.status)">{{ statusLabel(lobby.status) }}</span>
-          <span class="agp-pill agp-pill--neutral">{{ game?.title || lobby.game_id }}</span>
-          <span class="agp-pill agp-pill--neutral">{{ lobby.teams.length }}/{{ lobby.max_teams }} игроков</span>
+    <header class="agp-card p-2 lobby-head">
+      <div class="lobby-title-block">
+        <div class="lobby-title-line">
+          <RouterLink class="agp-back-link" to="/lobbies">←</RouterLink>
+          <h1 class="h4 mb-0">{{ lobby?.title || 'Лобби' }}</h1>
         </div>
       </div>
-      <div v-if="lobby && hasPlayerInLobby" class="lobby-head-actions">
-        <button class="btn btn-dark" :disabled="!canPlay || isBusy" @click="play">
-          {{ isBusy ? '...' : 'Play' }}
+      <nav v-if="lobby" class="lobby-tabs" aria-label="Разделы лобби">
+        <button v-if="hasPlayerInLobby" :class="{ active: activeTab === 'code' }" @click="activeTab = 'code'">Код</button>
+        <button :class="{ active: activeTab === 'lobby' }" @click="activeTab = 'lobby'">Лобби</button>
+        <button v-if="hasPlayerInLobby" :class="{ active: activeTab === 'game' }" @click="activeTab = 'game'">Игра</button>
+        <button v-if="activeCompetition" :class="{ active: activeTab === 'competition' }" @click="activeTab = 'competition'">
+          Соревнование
         </button>
-        <button class="btn btn-outline-secondary" :disabled="!canStop || isBusy" @click="stop">Stop</button>
+        <button v-if="competitionArchive.length" :class="{ active: activeTab === 'archive' }" @click="activeTab = 'archive'">
+          Архив
+        </button>
+      </nav>
+      <div v-if="lobby && hasPlayerInLobby" class="lobby-head-actions">
+        <div class="lobby-ready-summary">
+          <strong>{{ readyStatusLabel }}</strong>
+          <span>{{ readyStatusHint }}</span>
+        </div>
+        <button
+          v-if="showPlayAction"
+          class="lobby-ready-icon lobby-ready-icon--play"
+          :disabled="!canPlay || isBusy"
+          :title="isBusy ? 'Обновляем статус' : 'Готов играть'"
+          aria-label="Готов играть"
+          @click="play"
+        >
+          {{ isBusy ? '…' : '▶' }}
+        </button>
+        <button
+          v-if="showStopAction"
+          class="lobby-ready-icon lobby-ready-icon--stop"
+          :disabled="!canStop || isBusy"
+          title="Не готов"
+          aria-label="Не готов"
+          @click="stop"
+        >
+          ■
+        </button>
       </div>
       <div v-else-if="lobby && canManage" class="lobby-head-actions">
         <button class="btn btn-outline-secondary" :disabled="!canJoinAsPlayer || isBusy" @click="joinAsPlayer">
@@ -46,18 +74,6 @@
     </article>
 
     <template v-else-if="lobby">
-      <nav class="agp-card p-2 lobby-tabs" aria-label="Разделы лобби">
-        <button v-if="hasPlayerInLobby" :class="{ active: activeTab === 'code' }" @click="activeTab = 'code'">Код</button>
-        <button :class="{ active: activeTab === 'lobby' }" @click="activeTab = 'lobby'">Лобби</button>
-        <button v-if="hasPlayerInLobby" :class="{ active: activeTab === 'game' }" @click="activeTab = 'game'">Игра</button>
-        <button v-if="activeCompetition" :class="{ active: activeTab === 'competition' }" @click="activeTab = 'competition'">
-          Соревнование
-        </button>
-        <button v-if="competitionArchive.length" :class="{ active: activeTab === 'archive' }" @click="activeTab = 'archive'">
-          Архив
-        </button>
-      </nav>
-
       <article v-if="activeCompetition" class="agp-card p-3 lobby-competition-banner">
         <div>
           <strong>{{ activeCompetition.status === 'completed' ? 'Победитель определен' : 'Идет соревнование' }}</strong>
@@ -109,6 +125,14 @@
               <button class="btn btn-sm btn-outline-secondary" :disabled="!activeTemplate || codeLockedByCompetition" @click="applyTemplate">
                 Шаблон
               </button>
+              <button
+                v-if="canUseDemoStrategy"
+                class="btn btn-sm btn-outline-secondary"
+                :disabled="!activeDemoStrategy || codeLockedByCompetition"
+                @click="applyDemoStrategy"
+              >
+                Пример
+              </button>
               <button class="btn btn-sm btn-dark" :disabled="!canSaveCode" @click="saveCode">
                 {{ isSavingCode ? 'Сохранение...' : 'Сохранить' }}
               </button>
@@ -119,7 +143,25 @@
       </section>
 
       <section v-else-if="activeTab === 'lobby'" class="lobby-state-grid">
-        <article class="agp-card p-3">
+        <article class="agp-card p-3 lobby-overview-strip">
+          <div>
+            <span class="small text-muted">Играют</span>
+            <strong class="mono">{{ lobby.playing_team_ids.length }}</strong>
+          </div>
+          <div>
+            <span class="small text-muted">В очереди</span>
+            <strong class="mono">{{ lobby.queued_team_ids.length }}</strong>
+          </div>
+          <div>
+            <span class="small text-muted">Готовятся</span>
+            <strong class="mono">{{ preparingTeamIds.length }}</strong>
+          </div>
+          <div>
+            <span class="small text-muted">Матчей</span>
+            <strong class="mono">{{ currentTrainingMatchGroups.length + archivedTrainingMatchGroups.length }}</strong>
+          </div>
+        </article>
+        <article class="agp-card p-3 lobby-participants-card">
           <h2 class="h6 mb-3">Участники</h2>
           <div class="lobby-participant-columns">
             <ParticipantColumn title="Играют" :team-ids="lobby.playing_team_ids" :stats="statsByTeam" empty="Сейчас никто не играет" />
@@ -128,58 +170,103 @@
           </div>
         </article>
 
-        <article class="agp-card p-3">
-          <h2 class="h6 mb-3">Матчи</h2>
-          <div class="lobby-match-list">
-            <article
-              v-for="group in currentTrainingMatchGroups"
-              :key="group.group_id"
-              class="lobby-match-group"
-            >
-              <header>
-                <span>Текущий матч</span>
-                <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
-              </header>
-              <div class="lobby-run-links">
-                <RouterLink
-                  v-for="run in group.runs"
-                  :key="run.run_id"
-                  class="btn btn-sm btn-outline-secondary"
-                  :to="`/runs/${run.run_id}/watch`"
-                  target="_blank"
-                  @click.stop
-                >
-                  {{ run.team_id ? teamLabel(run.team_id) : 'Смотреть' }}
-                </RouterLink>
+        <aside class="lobby-side-stack">
+          <article class="agp-card p-3">
+            <h2 class="h6 mb-3">Матчи</h2>
+            <div class="lobby-match-list">
+              <article
+                v-for="group in currentTrainingMatchGroups"
+                :key="group.group_id"
+                class="lobby-match-group"
+              >
+                <header>
+                  <span>Текущий матч</span>
+                  <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
+                </header>
+                <div class="lobby-run-links">
+                  <RouterLink
+                    v-for="run in group.runs"
+                    :key="run.run_id"
+                    class="btn btn-sm btn-outline-secondary"
+                    :to="`/runs/${run.run_id}/watch`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    {{ run.team_id ? teamLabel(run.team_id) : 'Смотреть' }}
+                  </RouterLink>
+                </div>
+              </article>
+              <article
+                v-for="group in archivedTrainingMatchGroups"
+                :key="group.group_id"
+                class="lobby-match-group muted"
+              >
+                <header>
+                  <span>Архивный матч</span>
+                  <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
+                </header>
+                <div class="lobby-run-links">
+                  <RouterLink
+                    v-for="run in group.runs"
+                    :key="run.run_id"
+                    class="btn btn-sm btn-outline-secondary"
+                    :to="`/runs/${run.run_id}/watch`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    {{ run.team_id ? teamLabel(run.team_id) : 'Смотреть' }}
+                  </RouterLink>
+                </div>
+              </article>
+              <div v-if="!currentTrainingMatchGroups.length && !archivedTrainingMatchGroups.length" class="small text-muted">
+                Матчей пока нет.
               </div>
-            </article>
-            <article
-              v-for="group in archivedTrainingMatchGroups"
-              :key="group.group_id"
-              class="lobby-match-group muted"
-            >
-              <header>
-                <span>Архивный матч</span>
-                <strong>{{ group.runs.length }} {{ pluralizePlayers(group.runs.length) }}</strong>
-              </header>
-              <div class="lobby-run-links">
-                <RouterLink
-                  v-for="run in group.runs"
-                  :key="run.run_id"
-                  class="btn btn-sm btn-outline-secondary"
-                  :to="`/runs/${run.run_id}/watch`"
-                  target="_blank"
-                  @click.stop
-                >
-                  {{ run.team_id ? teamLabel(run.team_id) : 'Смотреть' }}
-                </RouterLink>
-              </div>
-            </article>
-            <div v-if="!currentTrainingMatchGroups.length && !archivedTrainingMatchGroups.length" class="small text-muted">
-              Матчей пока нет.
             </div>
-          </div>
-        </article>
+          </article>
+
+          <article v-if="canManage" class="agp-card p-3 lobby-teacher-card">
+            <div>
+              <h2 class="h6 mb-1">Соревнование</h2>
+              <p class="small text-muted mb-0">Старт блокирует обычную подготовку в лобби.</p>
+            </div>
+            <div class="lobby-competition-settings-grid">
+              <label class="lobby-competition-setting">
+                <span>Размер матча</span>
+                <input v-model.number="competitionMatchSize" class="form-control form-control-sm" type="number" min="2" max="64" />
+              </label>
+              <label class="lobby-competition-setting">
+                <span>Проходят</span>
+                <input
+                  v-model.number="competitionAdvanceTopK"
+                  class="form-control form-control-sm"
+                  type="number"
+                  min="1"
+                  :max="competitionMatchSize"
+                />
+              </label>
+              <label class="lobby-competition-setting lobby-competition-setting--wide">
+                <span>Тай-брейк</span>
+                <select v-model="competitionTieBreakPolicy" class="form-select form-select-sm">
+                  <option value="manual">Ручное решение</option>
+                  <option value="shared_advancement">Пропустить всех на границе</option>
+                </select>
+              </label>
+              <label class="lobby-competition-setting lobby-competition-setting--wide">
+                <span>Код</span>
+                <select v-model="competitionCodePolicy" class="form-select form-select-sm">
+                  <option value="locked_on_start">Заблокировать на старте</option>
+                  <option value="allowed_between_matches">Разрешить между матчами</option>
+                  <option value="locked_on_registration">Заблокировать при регистрации</option>
+                </select>
+              </label>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary w-100" :disabled="isBusy || Boolean(activeCompetition)" @click="startCompetitionFromLobby">
+              Начать соревнование
+            </button>
+          </article>
+        </aside>
       </section>
 
       <section v-else-if="activeTab === 'game'" class="lobby-game-layout">
@@ -194,14 +281,15 @@
             <p class="small text-muted mb-0">Заполните код и нажмите Play. Изменения попадут в следующую игру.</p>
           </div>
         </article>
-        <aside class="agp-card p-3">
-          <h2 class="h6 mb-3">Статистика игроков</h2>
-          <div class="lobby-stats-list">
-            <div v-for="stat in lobby.participant_stats" :key="stat.team_id" class="lobby-stat-row">
+        <aside class="agp-card p-3 lobby-game-stats">
+          <h2 class="h6 mb-3">Текущая игра</h2>
+          <div v-if="currentGameStats.length" class="lobby-stats-list">
+            <div v-for="stat in currentGameStats" :key="`${stat.run_id}-${stat.team_id}`" class="lobby-stat-row">
               <strong>{{ stat.display_name }}</strong>
-              <span>победы {{ stat.wins }} · игр {{ stat.matches_total }} · средний счет {{ scoreLabel(stat.average_score) }}</span>
+              <span>{{ stat.status }} · счет {{ stat.score }}</span>
             </div>
           </div>
+          <div v-else class="small text-muted">Статистика появится, когда начнется матч.</div>
         </aside>
       </section>
 
@@ -265,6 +353,7 @@
                   class="btn btn-sm btn-outline-secondary"
                   :to="`/runs/${runId}/watch`"
                   target="_blank"
+                  rel="noopener noreferrer"
                 >
                   {{ teamLabel(teamId) }}
                 </RouterLink>
@@ -285,49 +374,11 @@
             :to="`/competitions/${item.competition_id}`"
           >
             <span>{{ cleanCompetitionTitle(item.title) }}</span>
-            <strong>{{ item.status }}</strong>
+            <strong>{{ competitionStatusLabel(item.status) }}</strong>
           </RouterLink>
         </div>
       </section>
 
-      <section v-if="canManage && activeTab === 'lobby'" class="agp-card p-3 lobby-teacher-row">
-        <div>
-          <h2 class="h6 mb-1">Соревнование</h2>
-          <p class="small text-muted mb-0">Старт блокирует обычную подготовку в лобби.</p>
-        </div>
-        <label class="lobby-competition-setting">
-          <span>Размер матча</span>
-          <input v-model.number="competitionMatchSize" class="form-control form-control-sm" type="number" min="2" max="64" />
-        </label>
-        <label class="lobby-competition-setting">
-          <span>Проходят</span>
-          <input
-            v-model.number="competitionAdvanceTopK"
-            class="form-control form-control-sm"
-            type="number"
-            min="1"
-            :max="competitionMatchSize"
-          />
-        </label>
-        <label class="lobby-competition-setting">
-          <span>Тай-брейк</span>
-          <select v-model="competitionTieBreakPolicy" class="form-select form-select-sm">
-            <option value="manual">Ручное решение</option>
-            <option value="shared_advancement">Пропустить всех на границе</option>
-          </select>
-        </label>
-        <label class="lobby-competition-setting">
-          <span>Код</span>
-          <select v-model="competitionCodePolicy" class="form-select form-select-sm">
-            <option value="locked_on_start">Заблокировать на старте</option>
-            <option value="allowed_between_matches">Разрешить между матчами</option>
-            <option value="locked_on_registration">Заблокировать при регистрации</option>
-          </select>
-        </label>
-        <button class="btn btn-sm btn-outline-secondary" :disabled="isBusy || Boolean(activeCompetition)" @click="startCompetitionFromLobby">
-          Начать соревнование
-        </button>
-      </section>
     </template>
   </section>
 </template>
@@ -365,7 +416,6 @@ import {
   type LobbyCompetitionDto,
   type LobbyDto,
   type LobbyParticipantStatsDto,
-  type LobbyStatus,
   type RunDto,
   type SlotStateDto,
   type StreamEnvelopeDto,
@@ -390,7 +440,14 @@ const ParticipantColumn = defineComponent({
               const stat = props.stats[teamId];
               return h('div', { class: 'lobby-player-row', key: teamId }, [
                 h('strong', stat?.display_name ?? teamId),
-                h('span', `победы ${stat?.wins ?? 0} · игр ${stat?.matches_total ?? 0}`),
+                h(
+                  'span',
+                  `победы ${stat?.wins ?? 0} · игр ${stat?.matches_total ?? 0} · средний счет ${
+                    stat?.average_score === null || stat?.average_score === undefined
+                      ? 'нет данных'
+                      : stat.average_score.toFixed(1)
+                  }`,
+                ),
               ]);
             })
           : h('div', { class: 'small text-muted' }, props.empty),
@@ -406,6 +463,14 @@ interface TrainingRunLink {
 interface TrainingMatchGroup {
   group_id: string;
   runs: TrainingRunLink[];
+}
+
+interface CurrentGameStatRow {
+  run_id: string;
+  team_id: string;
+  display_name: string;
+  status: string;
+  score: string;
 }
 
 const route = useRoute();
@@ -440,6 +505,7 @@ let pollingHandle: ReturnType<typeof setInterval> | null = null;
 let competitionPollingHandle: ReturnType<typeof setInterval> | null = null;
 
 const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
+const canUseDemoStrategy = computed(() => canManage.value);
 const hasPlayerInLobby = computed(() => Boolean(lobby.value?.my_team_id));
 const slotStates = computed(() => workspace.value?.slot_states ?? []);
 const activeSlot = computed(() => slotStates.value.find((slot) => slot.slot_key === activeSlotKey.value) ?? null);
@@ -448,6 +514,9 @@ const requiredSlotCount = computed(() => requiredSlotStates.value.length);
 const filledRequiredSlots = computed(() => requiredSlotStates.value.filter((slot) => Boolean(slot.code?.trim())).length);
 const isDirty = computed(() => editorCode.value !== savedCode.value);
 const activeTemplate = computed(() => templates.value?.templates.find((item) => item.slot_key === activeSlotKey.value)?.code ?? '');
+const activeDemoStrategy = computed(
+  () => templates.value?.demo_strategies.find((item) => item.slot_key === activeSlotKey.value) ?? null,
+);
 const canSaveCode = computed(() =>
   Boolean(
     lobby.value?.my_team_id &&
@@ -464,6 +533,8 @@ const canPlay = computed(() =>
   Boolean(
     lobby.value?.my_team_id &&
       canUseTrainingQueue.value &&
+      lobby.value.my_status !== 'queued' &&
+      lobby.value.my_status !== 'playing' &&
       requiredSlotCount.value > 0 &&
       filledRequiredSlots.value === requiredSlotCount.value &&
       !isDirty.value,
@@ -472,6 +543,30 @@ const canPlay = computed(() =>
 const canStop = computed(
   () => canUseTrainingQueue.value && (lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing'),
 );
+const showPlayAction = computed(() => lobby.value?.my_status !== 'queued' && lobby.value?.my_status !== 'playing');
+const showStopAction = computed(() => lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing');
+const readyStatusLabel = computed(() => {
+  if (lobby.value?.my_status === 'playing') return 'Вы играете';
+  if (lobby.value?.my_status === 'queued') return 'Вы в очереди';
+  if (codeLockedByCompetition.value) return 'Код заблокирован';
+  if (isDirty.value) return 'Есть изменения';
+  if (requiredSlotCount.value === 0) return 'Нет ролей';
+  if (filledRequiredSlots.value < requiredSlotCount.value) return 'Код не готов';
+  return 'Можно играть';
+});
+const readyStatusHint = computed(() => {
+  if (!canUseTrainingQueue.value && activeCompetition.value) return 'Во время соревнования обычная очередь отключена.';
+  if (!canUseTrainingQueue.value) return 'Очередь сейчас недоступна.';
+  if (lobby.value?.my_status === 'playing') return 'Кнопка “Не готов” остановит участие после текущего состояния.';
+  if (lobby.value?.my_status === 'queued') return 'Матч начнется автоматически, когда найдутся соперники.';
+  if (codeLockedByCompetition.value) return 'Политика соревнования запрещает менять код.';
+  if (isDirty.value) return 'Сохраните код, чтобы встать в очередь.';
+  if (requiredSlotCount.value === 0) return 'Игра не описала обязательные роли.';
+  if (filledRequiredSlots.value < requiredSlotCount.value) {
+    return `Заполнено ${filledRequiredSlots.value} из ${requiredSlotCount.value} обязательных ролей.`;
+  }
+  return 'Нажмите “Готов”, чтобы встать в очередь.';
+});
 const currentCompetitionRun = computed(() => {
   const myTeamId = lobby.value?.my_team_id ?? '';
   if (!activeCompetition.value || !myTeamId) return null;
@@ -524,6 +619,25 @@ const currentTrainingMatchGroups = computed(() =>
 const archivedTrainingMatchGroups = computed(() =>
   buildTrainingMatchGroups((lobby.value?.archived_run_ids ?? []).slice(0, 8), true)
 );
+const displayedTrainingRunIds = computed(() => {
+  if (!displayedGameRunId.value) return [];
+  const group = [...currentTrainingMatchGroups.value, ...archivedTrainingMatchGroups.value]
+    .find((item) => item.runs.some((run) => run.run_id === displayedGameRunId.value));
+  if (group) return group.runs.map((run) => run.run_id);
+  return [displayedGameRunId.value];
+});
+const currentGameStats = computed<CurrentGameStatRow[]>(() =>
+  displayedTrainingRunIds.value
+    .map((runId) => trainingRunsById.value[runId])
+    .filter((run): run is RunDto => Boolean(run))
+    .map((run) => ({
+      run_id: run.run_id,
+      team_id: run.team_id,
+      display_name: teamLabel(run.team_id),
+      status: runStatusLabel(run.status),
+      score: runScoreLabel(run),
+    })),
+);
 const statsByTeam = computed(() => {
   const result: Record<string, LobbyParticipantStatsDto> = {};
   for (const stat of lobby.value?.participant_stats ?? []) result[stat.team_id] = stat;
@@ -562,27 +676,45 @@ function lobbyId(): string {
   return String(route.params.lobbyId || '');
 }
 
-function statusLabel(status: LobbyStatus): string {
-  const labels: Record<LobbyStatus, string> = {
-    draft: 'готовится',
-    open: 'открыто',
-    running: 'игра идет',
-    paused: 'пауза',
-    updating: 'обновляется',
-    closed: 'закрыто',
+function scoreLabel(value: number | null): string {
+  return value === null ? 'нет данных' : value.toFixed(1);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function runStatusLabel(status: RunDto['status']): string {
+  const labels: Record<RunDto['status'], string> = {
+    created: 'создан',
+    queued: 'в очереди',
+    running: 'идет',
+    finished: 'завершен',
+    failed: 'ошибка',
+    timeout: 'таймаут',
+    canceled: 'остановлен',
   };
   return labels[status];
 }
 
-function statusPillClass(status: LobbyStatus): string {
-  if (status === 'open') return 'agp-pill--primary';
-  if (status === 'running' || status === 'paused') return 'agp-pill--warning';
-  if (status === 'closed') return 'agp-pill--danger';
-  return 'agp-pill--neutral';
+function runScoreLabel(run: RunDto): string {
+  const payload = isRecord(run.result_payload) ? run.result_payload : {};
+  const metrics = isRecord(payload.metrics) ? payload.metrics : {};
+  const score = extractRunScore(payload, run.team_id) ?? extractRunScore(metrics, run.team_id);
+  return score === null ? 'пока нет' : score.toFixed(1);
 }
 
-function scoreLabel(value: number | null): string {
-  return value === null ? 'нет данных' : value.toFixed(1);
+function extractRunScore(source: Record<string, unknown>, teamId: string): number | null {
+  for (const key of ['score', 'points']) {
+    const raw = source[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  }
+  const scores = source.scores;
+  if (!isRecord(scores)) return null;
+  const ownScore = scores[teamId];
+  if (typeof ownScore === 'number' && Number.isFinite(ownScore)) return ownScore;
+  const values = Object.values(scores).filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
+  return values.length === 1 ? values[0] : null;
 }
 
 function pluralizePlayers(count: number): string {
@@ -637,8 +769,8 @@ function competitionRoundStatusLabel(status: CompetitionRoundStatus): string {
   return labels[status];
 }
 
-function competitionStatusLabel(status: CompetitionStatus): string {
-  const labels: Record<CompetitionStatus, string> = {
+function competitionStatusLabel(status: CompetitionStatus | string): string {
+  const labels: Record<string, string> = {
     draft: 'черновик',
     running: 'идет',
     paused: 'пауза',
@@ -658,6 +790,12 @@ function selectSlot(slotKey: string): void {
 function applyTemplate(): void {
   if (!activeTemplate.value) return;
   editorCode.value = activeTemplate.value;
+}
+
+function applyDemoStrategy(): void {
+  if (!canUseDemoStrategy.value) return;
+  if (!activeDemoStrategy.value) return;
+  editorCode.value = activeDemoStrategy.value.code;
 }
 
 async function refreshWorkspace(): Promise<void> {
@@ -681,13 +819,10 @@ async function refreshWorkspace(): Promise<void> {
 async function refreshCompetitions(): Promise<void> {
   if (!lobby.value) return;
   const lobbyIdValue = lobby.value.lobby_id;
-  const legacyPrefix = `[lobby:${lobbyIdValue}] `;
   const competitions = await listCompetitions();
   activeCompetition.value =
     competitions.find(
-      (item) =>
-        (item.lobby_id === lobbyIdValue || (!item.lobby_id && item.title.startsWith(legacyPrefix))) &&
-        item.status !== 'finished',
+      (item) => item.lobby_id === lobbyIdValue && item.status !== 'finished',
     ) ?? null;
   competitionRuns.value = activeCompetition.value
     ? await listCompetitionRuns(activeCompetition.value.competition_id)
@@ -991,20 +1126,55 @@ onUnmounted(() => {
 
 <style scoped>
 .lobby-page {
-  gap: 0.75rem;
+  min-height: 100dvh;
+  gap: 0.6rem;
+  align-content: start;
+  grid-auto-rows: max-content;
+  padding: 0;
+  background: #f2f5f9;
 }
 
 .lobby-head {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: minmax(13rem, 0.7fr) minmax(16rem, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 3.35rem;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
+
+.lobby-page > :not(.lobby-head) {
+  margin-inline: 0.6rem;
+}
+
+.lobby-title-block {
+  min-width: 0;
+}
+
+.lobby-title-line {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.lobby-title-line h1 {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lobby-head-actions,
 .lobby-tabs,
 .lobby-editor-toolbar,
-.lobby-teacher-row,
 .lobby-access-card,
 .lobby-access-form {
   display: flex;
@@ -1013,9 +1183,54 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.lobby-head-actions,
-.lobby-teacher-row {
+.lobby-head-actions {
   justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.lobby-ready-summary {
+  display: grid;
+  gap: 0.05rem;
+  max-width: 14rem;
+  text-align: right;
+}
+
+.lobby-ready-summary strong {
+  font-size: 0.86rem;
+}
+
+.lobby-ready-summary span {
+  color: var(--agp-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.lobby-ready-icon {
+  width: 2.45rem;
+  height: 2.45rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.lobby-ready-icon:disabled {
+  opacity: 0.38;
+}
+
+.lobby-ready-icon--play {
+  background: #0f9f8e;
+  box-shadow: 0 8px 18px rgba(15, 159, 142, 0.22);
+  color: #fff;
+}
+
+.lobby-ready-icon--stop {
+  border-color: #d4dde7;
+  background: #fff;
+  color: #8b98a8;
 }
 
 .lobby-access-card {
@@ -1045,7 +1260,7 @@ onUnmounted(() => {
   border-radius: 0.45rem;
   background: transparent;
   color: var(--agp-text-muted);
-  padding: 0.45rem 0.75rem;
+  padding: 0.4rem 0.7rem;
   font-weight: 800;
 }
 
@@ -1064,19 +1279,43 @@ onUnmounted(() => {
 }
 
 .lobby-state-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(20rem, 24rem);
+  grid-template-columns: minmax(0, 1.4fr) minmax(20rem, 0.6fr);
+}
+
+.lobby-overview-strip {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+  background: #f8fafc;
+}
+
+.lobby-overview-strip > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 0.45rem;
+  background: #fff;
+  padding: 0.45rem 0.6rem;
 }
 
 .lobby-game-layout {
-  grid-template-columns: minmax(0, 1fr) minmax(15rem, 20rem);
+  grid-template-columns: minmax(0, 1fr) minmax(17rem, 21rem);
   gap: 0.6rem;
+  align-items: stretch;
+  height: calc(100dvh - 4.7rem);
+  min-height: 34rem;
 }
 
 .lobby-roles,
 .lobby-editor,
 .lobby-participant-column,
 .lobby-match-list,
-.lobby-stats-list {
+.lobby-stats-list,
+.lobby-side-stack,
+.lobby-teacher-card {
   display: grid;
   gap: 0.5rem;
 }
@@ -1165,11 +1404,33 @@ onUnmounted(() => {
 .lobby-participant-columns {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
 .lobby-participant-column {
   align-content: start;
+}
+
+.lobby-participants-card {
+  min-height: 10rem;
+}
+
+.lobby-side-stack {
+  align-content: start;
+}
+
+.lobby-teacher-card {
+  align-content: start;
+}
+
+.lobby-competition-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.lobby-competition-setting--wide {
+  grid-column: 1 / -1;
 }
 
 .lobby-participant-column h3 {
@@ -1229,21 +1490,28 @@ onUnmounted(() => {
 }
 
 .lobby-game-view {
-  min-height: clamp(26rem, 68vh, 42rem);
+  min-height: 0;
   padding: 0;
   overflow: hidden;
 }
 
 .lobby-game-view iframe {
   width: 100%;
-  height: clamp(26rem, 68vh, 42rem);
+  height: 100%;
+  min-height: 0;
   border: 0;
   border-radius: 0;
   background: #0f172a;
 }
 
+.lobby-game-stats {
+  min-height: 0;
+  overflow: auto;
+}
+
 .lobby-empty {
-  min-height: clamp(24rem, 58vh, 36rem);
+  height: 100%;
+  min-height: 24rem;
   display: grid;
   place-content: center;
   text-align: center;
@@ -1260,8 +1528,32 @@ onUnmounted(() => {
   }
 
   .lobby-head-actions,
-  .lobby-teacher-row {
+  .lobby-teacher-card {
     justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .lobby-ready-summary {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .lobby-overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lobby-game-layout {
+    height: auto;
+    min-height: 0;
+  }
+
+  .lobby-game-view iframe {
+    height: 70dvh;
+    min-height: 28rem;
+  }
+
+  .lobby-competition-settings-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

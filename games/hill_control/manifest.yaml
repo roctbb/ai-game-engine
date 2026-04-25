@@ -1,0 +1,34 @@
+id: hill_control_v1
+title: Контроль холмов
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right/stay. Занимайте контрольные точки и удерживайте их.
+description: Два участника набирают очки, стоя на контрольных точках случайной карты.
+difficulty: medium
+topics:
+  - графы
+  - BFS
+  - игровые стратегии
+slots:
+  - key: lime
+    title: Лаймовый игрок
+    required: true
+  - key: navy
+    title: Темно-синий игрок
+    required: true
+demo_strategies:
+  - id: lime_bfs
+    slot_key: lime
+    title: "Демо: лаймовый BFS"
+    language: python
+    path: examples/lime_bfs.py
+    description: Идет к ближайшей контрольной точке и стоит на ней.
+  - id: navy_bfs
+    slot_key: navy
+    title: "Демо: темно-синий BFS"
+    language: python
+    path: examples/navy_bfs.py
+    description: Идет к ближайшей контрольной точке с другим порядком обхода.

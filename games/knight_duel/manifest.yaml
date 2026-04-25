@@ -1,0 +1,34 @@
+id: knight_duel_v1
+title: Дуэль коней
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board, score), возвращающую один из ходов коня. Собирайте звезды быстрее соперника.
+description: Два игрока ходят как шахматные кони по случайной карте с ямами и соревнуются за звезды.
+difficulty: medium
+topics:
+  - графы
+  - BFS
+  - соревнование
+slots:
+  - key: white
+    title: Белый конь
+    required: true
+  - key: black
+    title: Черный конь
+    required: true
+demo_strategies:
+  - id: white_bfs
+    slot_key: white
+    title: "Демо: ближайшая звезда"
+    language: python
+    path: examples/white_bfs.py
+    description: Ищет ближайшую звезду ходами коня.
+  - id: black_bfs
+    slot_key: black
+    title: "Демо: ближайшая звезда"
+    language: python
+    path: examples/black_bfs.py
+    description: Ищет ближайшую звезду ходами коня, но перебирает ходы в другом порядке.

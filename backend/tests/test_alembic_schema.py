@@ -35,6 +35,7 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
         "execution_workers",
         "execution_builds",
         "spectator_replays",
+        "identity_sessions",
         "alembic_version",
     }
     assert expected_tables.issubset(table_names)
@@ -49,3 +50,8 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
 
     replay_columns = {item["name"] for item in inspector.get_columns("spectator_replays")}
     assert {"run_id", "frames_json", "events_json", "summary_json"}.issubset(replay_columns)
+
+    session_columns = {item["name"] for item in inspector.get_columns("identity_sessions")}
+    assert {"session_id", "external_user_id", "nickname", "role", "provider", "created_at"}.issubset(
+        session_columns
+    )

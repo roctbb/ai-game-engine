@@ -10,7 +10,7 @@ from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event
-from shared.kernel import ForbiddenError
+from shared.kernel import ForbiddenError, InvariantViolationError
 from competition.api.schemas import (
     AdvanceCompetitionRequest,
     BanEntrantRequest,
@@ -137,10 +137,12 @@ def create_competition(
     _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> CompetitionResponse:
+    if request.lobby_id is not None:
+        raise InvariantViolationError("Соревнование для лобби запускается через endpoint лобби")
     competition = container.competition.create_competition(
         CreateCompetitionInput(
             game_id=request.game_id,
-            lobby_id=request.lobby_id,
+            lobby_id=None,
             title=request.title,
             format=CompetitionFormat(request.format),
             tie_break_policy=TieBreakPolicy(request.tie_break_policy),

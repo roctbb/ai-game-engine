@@ -4,13 +4,22 @@ from typing import Any
 
 
 _LANES = 3
-_TRACK_LENGTH = 10
-_MAX_TICKS = 20
-_BASE_HP_START = 30
-_TOWER_COST = 5
-_ENEMY_HP = 5
-_ENEMY_DAMAGE = 3
-_ENEMY_SPAWN_PLAN = (0, 1, 2, 1, 0, 2, 2, 1, 0, 1)
+_TRACK_LENGTH = 14
+_MAX_TICKS = 44
+_BASE_HP_START = 45
+_TOWER_COST = 6
+_ENEMY_HP_START = 6
+_ENEMY_DAMAGE = 2
+_STARTING_BUDGET = 18
+_BUDGET_PER_TICK = 2
+_ENEMY_SPAWN_PLAN = (
+    (0,), (1,), (2,), (1,), (0,), (2,),
+    (2,), (1,), (0, 2), (1,), (2,), (0,),
+    (0, 1), (2,), (1,), (1, 2), (0,), (2,),
+    (2, 0), (0,), (1,), (2, 1), (1,), (0,),
+    (0, 2), (1,), (2,), (1, 0), (0,), (2,),
+    (2, 1), (0,),
+)
 
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
@@ -27,9 +36,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     towers = [0] * _LANES
     enemies: list[dict[str, int]] = []
     base_hp = _BASE_HP_START
-    budget = 15
+    budget = _STARTING_BUDGET
     towers_built = 0
     enemies_destroyed = 0
+    enemies_spawned = 0
     leaks = 0
     frames: list[dict[str, object]] = [
         {
@@ -41,15 +51,20 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 "towers": list(towers),
                 "enemies": [],
                 "enemies_destroyed": enemies_destroyed,
+                "enemies_spawned": enemies_spawned,
                 "leaks": leaks,
+                "track_length": _TRACK_LENGTH,
+                "base_hp_max": _BASE_HP_START,
             },
         }
     ]
 
     for tick in range(_MAX_TICKS):
-        if tick < len(_ENEMY_SPAWN_PLAN):
-            enemies.append({"lane": _ENEMY_SPAWN_PLAN[tick], "position": 0, "hp": _ENEMY_HP})
-            events.append({"type": "enemy_spawned", "tick": tick, "lane": _ENEMY_SPAWN_PLAN[tick]})
+        for lane_to_spawn in _spawn_lanes_for_tick(tick):
+            enemy_hp = _enemy_hp_for_tick(tick)
+            enemies.append({"lane": lane_to_spawn, "position": 0, "hp": enemy_hp})
+            enemies_spawned += 1
+            events.append({"type": "enemy_spawned", "tick": tick, "lane": lane_to_spawn, "hp": enemy_hp})
 
         print_context["tick"] = tick
         action = action_fn(_build_state(tick=tick, towers=towers, enemies=enemies, base_hp=base_hp, budget=budget))
@@ -74,7 +89,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 continue
             next_enemies.append(enemy)
         enemies = next_enemies
-        budget += 1
+        budget += _BUDGET_PER_TICK
         frames.append(
             {
                 "tick": tick + 1,
@@ -85,7 +100,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                     "towers": list(towers),
                     "enemies": [dict(enemy) for enemy in enemies],
                     "enemies_destroyed": enemies_destroyed,
+                    "enemies_spawned": enemies_spawned,
                     "leaks": leaks,
+                    "track_length": _TRACK_LENGTH,
+                    "base_hp_max": _BASE_HP_START,
                 },
             }
         )
@@ -98,6 +116,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     metrics: dict[str, object] = {
         "base_hp": max(base_hp, 0),
         "enemies_destroyed": enemies_destroyed,
+        "enemies_spawned": enemies_spawned,
+        "ticks": min(_MAX_TICKS, len(frames) - 1),
+        "max_ticks": _MAX_TICKS,
+        "track_length": _TRACK_LENGTH,
         "towers_built": towers_built,
         "leaks": leaks,
         "score": score,
@@ -116,7 +138,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 "towers": list(towers),
                 "enemies": [dict(enemy) for enemy in enemies],
                 "enemies_destroyed": enemies_destroyed,
+                "enemies_spawned": enemies_spawned,
                 "leaks": leaks,
+                "track_length": _TRACK_LENGTH,
+                "base_hp_max": _BASE_HP_START,
                 "score": score,
             },
         }
@@ -226,11 +251,22 @@ def _build_state(
         "tick": tick,
         "lanes": _LANES,
         "track_length": _TRACK_LENGTH,
+        "tower_cost": _TOWER_COST,
         "base_hp": base_hp,
         "budget": budget,
         "towers": list(towers),
         "enemies": [dict(enemy) for enemy in enemies],
     }
+
+
+def _enemy_hp_for_tick(tick: int) -> int:
+    return _ENEMY_HP_START + tick // 9
+
+
+def _spawn_lanes_for_tick(tick: int) -> tuple[int, ...]:
+    if tick < 0 or tick >= len(_ENEMY_SPAWN_PLAN):
+        return ()
+    return _ENEMY_SPAWN_PLAN[tick]
 
 
 def _normalize_lane(action: object) -> int | None:

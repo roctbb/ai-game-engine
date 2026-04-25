@@ -48,6 +48,29 @@
       return document.createElementNS("http://www.w3.org/2000/svg", tag);
     }
 
+    function drawPlayerBadge(cx, cy, cellSize, text) {
+      const badge = svg("circle");
+      const r = Math.max(6, cellSize * 0.18);
+      badge.setAttribute("cx", String(cx + cellSize * 0.24));
+      badge.setAttribute("cy", String(cy - cellSize * 0.24));
+      badge.setAttribute("r", String(r));
+      badge.setAttribute("fill", "#0f172a");
+      badge.setAttribute("stroke", "#ffffff");
+      badge.setAttribute("stroke-width", String(Math.max(1, cellSize * 0.04)));
+      boardEl.appendChild(badge);
+
+      const label = svg("text");
+      label.setAttribute("x", String(cx + cellSize * 0.24));
+      label.setAttribute("y", String(cy - cellSize * 0.24));
+      label.setAttribute("text-anchor", "middle");
+      label.setAttribute("dominant-baseline", "middle");
+      label.setAttribute("font-size", String(Math.max(8, cellSize * 0.24)));
+      label.setAttribute("font-weight", "800");
+      label.setAttribute("fill", "#ffffff");
+      label.textContent = String(text).slice(0, 3);
+      boardEl.appendChild(label);
+    }
+
     function draw(frame) {
       boardEl.replaceChildren();
 
@@ -76,7 +99,7 @@
 
       for (let y = 0; y < height; y += 1) {
         for (let x = 0; x < width; x += 1) {
-          const value = Array.isArray(grid[y]) ? grid[y][x] : 0;
+          const value = Array.isArray(grid[x]) ? grid[x][y] : 0;
           const cell = svg("rect");
           cell.setAttribute("x", String(x * cellSize));
           cell.setAttribute("y", String(y * cellSize));
@@ -104,6 +127,7 @@
       player.setAttribute("r", String(Math.max(8, cellSize * 0.24)));
       player.setAttribute("fill", "#2563eb");
       boardEl.appendChild(player);
+      drawPlayerBadge(px * cellSize + cellSize / 2, py * cellSize + cellSize / 2, cellSize, collected);
 
       const text = svg("text");
       text.setAttribute("x", "10");

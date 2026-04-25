@@ -125,41 +125,58 @@
           <span class="small text-muted">Запуск</span>
           <strong>{{ runStatusLabel }}</strong>
         </div>
-        <button
-          v-if="!isRunActive"
-          class="agp-icon-button agp-icon-button--play"
-          :disabled="!canLaunch || isLaunching || isRestarting || isSaving"
-          title="Запустить код"
-          aria-label="Запустить код"
-          @click="launchRun"
-        >
-          ▶
-        </button>
-        <button
-          v-if="isRunActive"
-          class="agp-icon-button agp-icon-button--stop"
-          :disabled="!canStop || isCancelling || isRestarting"
-          title="Остановить запуск"
-          aria-label="Остановить запуск"
-          @click="stopRun"
-        >
-          ■
-        </button>
-        <button
-          v-if="isRunActive"
-          class="agp-icon-button agp-icon-button--restart"
-          :disabled="!canRestart || isRestarting || isCancelling"
-          title="Перезапустить зависший запуск"
-          aria-label="Перезапустить запуск"
-          @click="restartRun"
-        >
-          ↻
-        </button>
+        <div class="agp-launch-hint">
+          {{ launchHint }}
+        </div>
+        <div class="agp-run-action-cluster" :class="{ 'agp-run-action-cluster--active': isRunActive }">
+          <button
+            class="agp-icon-button agp-icon-button--play"
+            :disabled="isRunActive || !canLaunch || isLaunching || isRestarting || isSaving"
+            title="Запустить код"
+            aria-label="Запустить код"
+            @click="launchRun"
+          >
+            ▶
+          </button>
+          <button
+            v-if="isRunActive"
+            class="agp-icon-button agp-icon-button--stop"
+            :disabled="!isRunActive || !canStop || isCancelling || isRestarting"
+            title="Остановить запуск"
+            aria-label="Остановить запуск"
+            @click="stopRun"
+          >
+            ■
+          </button>
+          <button
+            v-if="isRunActive"
+            class="agp-icon-button agp-icon-button--restart"
+            :disabled="!isRunActive || !canRestart || isRestarting || isCancelling"
+            title="Перезапустить зависший запуск"
+            aria-label="Перезапустить запуск"
+            @click="restartRun"
+          >
+            ↻
+          </button>
+        </div>
       </div>
     </header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
     <article v-if="isBootstrapping" class="agp-card p-4 text-muted">Готовим рабочее место...</article>
+
+    <transition name="agp-victory-pop">
+      <div v-if="victoryCelebrationVisible" class="agp-victory-celebration" aria-live="polite">
+        <div class="agp-victory-burst" aria-hidden="true">
+          <span v-for="index in 18" :key="index"></span>
+        </div>
+        <div class="agp-victory-card">
+          <span class="agp-victory-kicker">Победа</span>
+          <strong>Задача решена!</strong>
+          <small>Реплей досмотрен до конца</small>
+        </div>
+      </div>
+    </transition>
 
     <template v-if="game && !isBootstrapping">
       <button
@@ -245,7 +262,14 @@
               {{ isDirty ? 'изменен' : 'синхронизирован' }}
             </span>
             <button class="agp-panel-toggle" :disabled="!selectedSlotKey" @click="applyTemplate">Шаблон</button>
-            <button class="agp-panel-toggle" :disabled="!selectedSlotKey || !firstDemoCode" @click="applyDemo">Пример</button>
+            <button
+              v-if="canUseDemoStrategy"
+              class="agp-panel-toggle"
+              :disabled="!selectedSlotKey || !firstDemoCode"
+              @click="applyDemo"
+            >
+              Пример
+            </button>
           </div>
           <CodeEditor v-model="editorCode" :readonly="!selectedSlotKey || isSaving || isRunActive" language="python" />
         </article>
@@ -342,7 +366,7 @@
                 <RouterLink
                   v-if="canInspectLeaderboardCode && teamIdForLeaderboardEntry(entry)"
                   class="small"
-                  :to="`/workspace/${teamIdForLeaderboardEntry(entry)}`"
+                  :to="`/players/${teamIdForLeaderboardEntry(entry)}/code`"
                 >
                   Код
                 </RouterLink>
@@ -452,6 +476,7 @@ const isCancelling = ref(false);
 const isRestarting = ref(false);
 const isReplayLoading = ref(false);
 const isRefreshingStats = ref(false);
+const victoryCelebrationVisible = ref(false);
 const errorMessage = ref('');
 const replayError = ref('');
 const launchNotice = ref('');
@@ -464,6 +489,8 @@ const viewMode = ref<WorkspaceViewMode>(loadViewMode());
 const isHeaderCondensed = ref(false);
 let pollingHandle: ReturnType<typeof setInterval> | null = null;
 let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
+let victoryCelebrationHandle: ReturnType<typeof setTimeout> | null = null;
+const celebratedRunIds = new Set<string>();
 
 const rendererUrl = computed(() => (game.value ? `/api/v1/renderers/${game.value.slug}/renderer/index.html` : ''));
 const selectedTemplateCode = computed(
@@ -499,6 +526,17 @@ const runSummary = computed(() => {
   if (!currentRun.value) return isDirty.value ? 'Есть несохраненные изменения. При запуске они сохранятся.' : 'Готово к запуску.';
   if (isRunActive.value) return 'Запуск уже идет. Его можно остановить кнопкой ■ сверху.';
   return 'Последняя попытка завершена.';
+});
+const launchHint = computed(() => {
+  if (isRestarting.value) return 'Перезапускаем попытку';
+  if (isLaunching.value) return 'Сохраняем и запускаем';
+  if (isCancelling.value) return 'Останавливаем запуск';
+  if (isRunActive.value) return 'Дождитесь результата или остановите запуск';
+  if (!selectedSlotKey.value) return 'Роль для кода еще не выбрана';
+  if (!editorCode.value.trim()) return 'Добавьте код, чтобы запустить';
+  if (isDirty.value) return 'При запуске изменения сохранятся';
+  if (currentRun.value && !isRunActive.value) return 'Можно запустить новую попытку';
+  return 'Готово к запуску';
 });
 const replayFrames = computed<ReplayFrameView[]>(() =>
   (replay.value?.frames ?? []).map((item, index) => {
@@ -539,6 +577,7 @@ const myLeaderboardEntry = computed(() =>
   leaderboard.value?.entries.find((entry) => entry.user_id === sessionStore.nickname) ?? null
 );
 const canInspectLeaderboardCode = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
+const canUseDemoStrategy = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const competitionButtonLabel = computed(() => {
   const place = myLeaderboardEntry.value?.place;
   return typeof place === 'number' ? `Лидерборд #${place}` : 'Лидерборд';
@@ -694,7 +733,7 @@ function closeViewerFullscreen(): void {
 }
 
 function updateHeaderCondensed(): void {
-  isHeaderCondensed.value = window.scrollY > 28;
+  isHeaderCondensed.value = false;
 }
 
 function isTypingContext(target: EventTarget | null): boolean {
@@ -844,7 +883,7 @@ function syncEditorFromWorkspace(payload: TeamWorkspaceDto): void {
 async function loadPage(): Promise<void> {
   const gameId = gameIdFromRoute();
   if (!gameId) {
-    errorMessage.value = 'Не передан gameId';
+    errorMessage.value = 'Не найдена задача для запуска';
     return;
   }
 
@@ -878,6 +917,7 @@ function applyTemplate(): void {
 }
 
 function applyDemo(): void {
+  if (!canUseDemoStrategy.value) return;
   if (!firstDemoCode.value) return;
   editorCode.value = firstDemoCode.value;
 }
@@ -1090,7 +1130,8 @@ function sendRendererState(): void {
       frame: activeFrame?.frame ?? currentRun.value?.result_payload ?? {},
     },
   });
-  if (currentRun.value && !isRunActive.value) {
+  const canSendTerminalResult = replayFrames.value.length === 0 || replayFrameIndex.value >= replayFrames.value.length - 1;
+  if (currentRun.value && !isRunActive.value && canSendTerminalResult) {
     sendToRenderer({
       type: 'agp.renderer.result',
       payload: currentRun.value.result_payload ?? { status: currentRun.value.status },
@@ -1122,11 +1163,15 @@ function startReplayPlayback(): void {
   }
   replayIsPlaying.value = true;
   replayPlaybackHandle = setInterval(() => {
-    if (replayFrameIndex.value >= replayFrames.value.length - 1) {
-      stopReplayPlayback();
+    const lastFrameIndex = replayFrames.value.length - 1;
+    if (replayFrameIndex.value >= lastFrameIndex) {
+      stopReplayPlayback({ completed: true });
       return;
     }
     replayFrameIndex.value += 1;
+    if (replayFrameIndex.value >= lastFrameIndex) {
+      stopReplayPlayback({ completed: true });
+    }
   }, replayPlaybackDelayMs.value);
 }
 
@@ -1136,9 +1181,29 @@ function clearReplayPlaybackTimer(): void {
   replayPlaybackHandle = null;
 }
 
-function stopReplayPlayback(): void {
+function stopReplayPlayback(options: { completed?: boolean } = {}): void {
   clearReplayPlaybackTimer();
   replayIsPlaying.value = false;
+  if (options.completed) {
+    maybeShowVictoryCelebration();
+  }
+}
+
+function maybeShowVictoryCelebration(): void {
+  const run = currentRun.value;
+  if (!run || run.status !== 'finished' || !isSolvedRun(run)) return;
+  if (!replay.value || replay.value.run_id !== run.run_id || replayFrames.value.length <= 1) return;
+  if (replayFrameIndex.value < replayFrames.value.length - 1) return;
+  if (celebratedRunIds.has(run.run_id)) return;
+  celebratedRunIds.add(run.run_id);
+  victoryCelebrationVisible.value = true;
+  if (victoryCelebrationHandle) {
+    clearTimeout(victoryCelebrationHandle);
+  }
+  victoryCelebrationHandle = setTimeout(() => {
+    victoryCelebrationVisible.value = false;
+    victoryCelebrationHandle = null;
+  }, 3200);
 }
 
 function attemptScoreValue(attempt: RunDto | null): number | null {
@@ -1146,6 +1211,21 @@ function attemptScoreValue(attempt: RunDto | null): number | null {
   if (isRecord(metrics) && typeof metrics.score === 'number') return metrics.score;
   const score = attempt?.result_payload?.score;
   return typeof score === 'number' ? score : null;
+}
+
+function isSolvedRun(run: RunDto): boolean {
+  const payload = run.result_payload;
+  const metrics = isRecord(payload?.metrics) ? payload.metrics : {};
+  if (typeof metrics.compile_error === 'string' && metrics.compile_error.trim()) return false;
+  if (typeof metrics.solved === 'boolean') return metrics.solved;
+  if (typeof payload?.solved === 'boolean') return payload.solved;
+  if (typeof payload?.status === 'string') {
+    return ['success', 'solved', 'passed', 'win', 'won'].includes(payload.status.trim().toLowerCase());
+  }
+  for (const key of ['solved', 'success', 'passed', 'win', 'won']) {
+    if (typeof metrics[key] === 'boolean' && metrics[key]) return true;
+  }
+  return false;
 }
 
 function attemptScore(attempt: RunDto): string {
@@ -1208,7 +1288,6 @@ watch(viewMode, (nextMode) => {
 
 onMounted(async () => {
   window.addEventListener('keydown', handlePageKeydown);
-  window.addEventListener('scroll', updateHeaderCondensed, { passive: true });
   window.addEventListener('pointermove', handleSplitPointerMove);
   window.addEventListener('pointerup', stopSplitResize);
   window.addEventListener('pointercancel', stopSplitResize);
@@ -1218,12 +1297,15 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handlePageKeydown);
-  window.removeEventListener('scroll', updateHeaderCondensed);
   window.removeEventListener('pointermove', handleSplitPointerMove);
   window.removeEventListener('pointerup', stopSplitResize);
   window.removeEventListener('pointercancel', stopSplitResize);
   stopRunPolling();
   stopReplayPlayback();
+  if (victoryCelebrationHandle) {
+    clearTimeout(victoryCelebrationHandle);
+    victoryCelebrationHandle = null;
+  }
   stopSplitResize();
   closeViewerFullscreen();
   closeSidePanels();

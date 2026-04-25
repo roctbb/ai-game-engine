@@ -1,0 +1,34 @@
+id: trap_coin_duel_v1
+title: Монеты и ловушки
+game_mode: small_match
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right/stay. Собирайте монеты и обходите ловушки.
+description: Два участника собирают монеты на случайной карте со стенами и видимыми ловушками.
+difficulty: medium
+topics:
+  - графы
+  - BFS
+  - игровые стратегии
+slots:
+  - key: gold
+    title: Золотой игрок
+    required: true
+  - key: silver
+    title: Серебряный игрок
+    required: true
+demo_strategies:
+  - id: gold_bfs
+    slot_key: gold
+    title: "Демо: золотой BFS"
+    language: python
+    path: examples/gold_bfs.py
+    description: Идет к ближайшей монете, избегая стен, ловушек и соперника.
+  - id: silver_bfs
+    slot_key: silver
+    title: "Демо: серебряный BFS"
+    language: python
+    path: examples/silver_bfs.py
+    description: Идет к ближайшей монете с другим порядком обхода соседей.

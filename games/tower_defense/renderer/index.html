@@ -28,13 +28,13 @@
 </head>
 <body>
   <div class="wrap">
-    <svg id="board" class="board" viewBox="0 0 700 260" role="img" aria-label="Tower defense board"></svg>
+    <svg id="board" class="board" viewBox="0 0 952 300" role="img" aria-label="Tower defense board"></svg>
     <div class="status" id="status">Renderer: initializing</div>
     <div class="details mono" id="details"></div>
   </div>
   <script>
     const LANES = 3;
-    const TRACK = 10;
+    const DEFAULT_TRACK = 14;
     const LEFT = 50;
     const TOP = 40;
     const LANE_H = 70;
@@ -60,13 +60,17 @@
       const towers = Array.isArray(frame?.towers) ? frame.towers : [0, 0, 0];
       const enemies = Array.isArray(frame?.enemies) ? frame.enemies : [];
       const baseHp = Number.isFinite(frame?.base_hp) ? frame.base_hp : "-";
+      const baseHpMax = Number.isFinite(frame?.base_hp_max) ? frame.base_hp_max : 45;
       const budget = Number.isFinite(frame?.budget) ? frame.budget : "-";
+      const trackLength = Number.isFinite(frame?.track_length) ? frame.track_length : DEFAULT_TRACK;
+      const boardWidth = LEFT + trackLength * CELL_W + 90;
 
       const bg = svg("rect");
+      boardEl.setAttribute("viewBox", `0 0 ${boardWidth} 300`);
       bg.setAttribute("x", "0");
       bg.setAttribute("y", "0");
-      bg.setAttribute("width", "700");
-      bg.setAttribute("height", "260");
+      bg.setAttribute("width", String(boardWidth));
+      bg.setAttribute("height", "300");
       bg.setAttribute("fill", "#f8fbff");
       boardEl.appendChild(bg);
 
@@ -75,22 +79,90 @@
         const laneRect = svg("rect");
         laneRect.setAttribute("x", String(LEFT));
         laneRect.setAttribute("y", String(y));
-        laneRect.setAttribute("width", String(TRACK * CELL_W));
+        laneRect.setAttribute("width", String(trackLength * CELL_W));
         laneRect.setAttribute("height", "46");
         laneRect.setAttribute("rx", "8");
         laneRect.setAttribute("fill", "#ecf2fe");
         laneRect.setAttribute("stroke", "#d2dff4");
         boardEl.appendChild(laneRect);
 
+        const label = svg("text");
+        label.setAttribute("x", "18");
+        label.setAttribute("y", String(y + 29));
+        label.setAttribute("font-size", "13");
+        label.setAttribute("fill", "#607796");
+        label.textContent = `lane ${lane}`;
+        boardEl.appendChild(label);
+
+        for (let cell = 0; cell <= trackLength; cell += 1) {
+          const marker = svg("line");
+          marker.setAttribute("x1", String(LEFT + cell * CELL_W));
+          marker.setAttribute("x2", String(LEFT + cell * CELL_W));
+          marker.setAttribute("y1", String(y));
+          marker.setAttribute("y2", String(y + 46));
+          marker.setAttribute("stroke", "#dbe7f8");
+          marker.setAttribute("stroke-width", "1");
+          boardEl.appendChild(marker);
+        }
+
         const towerCount = Number.isFinite(towers[lane]) ? towers[lane] : 0;
         for (let t = 0; t < towerCount; t += 1) {
-          const tower = svg("rect");
-          tower.setAttribute("x", String(LEFT + 8 + t * 10));
-          tower.setAttribute("y", String(y + 8));
-          tower.setAttribute("width", "8");
-          tower.setAttribute("height", "30");
-          tower.setAttribute("fill", "#2563eb");
+          const tower = svg("g");
+          const tx = LEFT + 18 + t * 18;
+          const range = svg("circle");
+          range.setAttribute("cx", String(tx));
+          range.setAttribute("cy", String(y + 23));
+          range.setAttribute("r", "28");
+          range.setAttribute("fill", "#bfdbfe");
+          range.setAttribute("opacity", "0.22");
+          const base = svg("rect");
+          base.setAttribute("x", String(tx - 8));
+          base.setAttribute("y", String(y + 13));
+          base.setAttribute("width", "16");
+          base.setAttribute("height", "20");
+          base.setAttribute("rx", "4");
+          base.setAttribute("fill", "#2563eb");
+          const barrel = svg("line");
+          barrel.setAttribute("x1", String(tx));
+          barrel.setAttribute("x2", String(tx + 18));
+          barrel.setAttribute("y1", String(y + 18));
+          barrel.setAttribute("y2", String(y + 18));
+          barrel.setAttribute("stroke", "#1e3a8a");
+          barrel.setAttribute("stroke-width", "4");
+          tower.appendChild(range);
+          tower.appendChild(base);
+          tower.appendChild(barrel);
           boardEl.appendChild(tower);
+        }
+
+        const baseGate = svg("rect");
+        baseGate.setAttribute("x", String(LEFT + trackLength * CELL_W + 12));
+        baseGate.setAttribute("y", String(y + 3));
+        baseGate.setAttribute("width", "28");
+        baseGate.setAttribute("height", "40");
+        baseGate.setAttribute("rx", "6");
+        baseGate.setAttribute("fill", baseHp === "-" || baseHp > 10 ? "#22c55e" : "#ef4444");
+        boardEl.appendChild(baseGate);
+
+        if (baseHp !== "-") {
+          const hpPct = Math.max(0, Math.min(1, baseHp / baseHpMax));
+          const hpBg = svg("rect");
+          hpBg.setAttribute("x", String(LEFT + trackLength * CELL_W + 18));
+          hpBg.setAttribute("y", String(y + 8));
+          hpBg.setAttribute("width", "16");
+          hpBg.setAttribute("height", "30");
+          hpBg.setAttribute("rx", "4");
+          hpBg.setAttribute("fill", "rgba(15, 23, 42, 0.5)");
+          boardEl.appendChild(hpBg);
+
+          const hpFill = svg("rect");
+          hpFill.setAttribute("x", String(LEFT + trackLength * CELL_W + 18));
+          hpFill.setAttribute("y", String(y + 8 + 30 * (1 - hpPct)));
+          hpFill.setAttribute("width", "16");
+          hpFill.setAttribute("height", String(30 * hpPct));
+          hpFill.setAttribute("rx", "4");
+          hpFill.setAttribute("fill", hpPct < 0.3 ? "#fecaca" : "#bbf7d0");
+          boardEl.appendChild(hpFill);
         }
       }
 
@@ -108,6 +180,14 @@
         dot.setAttribute("fill", "#ef4444");
         boardEl.appendChild(dot);
 
+        const hpBar = svg("rect");
+        hpBar.setAttribute("x", String(ex - 14));
+        hpBar.setAttribute("y", String(ey - 22));
+        hpBar.setAttribute("width", String(Math.max(3, Math.min(28, hp * 5))));
+        hpBar.setAttribute("height", "4");
+        hpBar.setAttribute("fill", "#dc2626");
+        boardEl.appendChild(hpBar);
+
         const hpText = svg("text");
         hpText.setAttribute("x", String(ex - 5));
         hpText.setAttribute("y", String(ey + 4));
@@ -124,6 +204,14 @@
       info.setAttribute("font-size", "13");
       info.textContent = `base_hp=${baseHp} budget=${budget} enemies=${enemies.length}`;
       boardEl.appendChild(info);
+
+      const legend = svg("text");
+      legend.setAttribute("x", "20");
+      legend.setAttribute("y", "282");
+      legend.setAttribute("fill", "#607796");
+      legend.setAttribute("font-size", "12");
+      legend.textContent = "blue=towers, red=enemies, green/red gate=base, pale circles=tower range";
+      boardEl.appendChild(legend);
     }
 
     function onState(payload) {
@@ -154,7 +242,7 @@
       }
     });
 
-    draw({ towers: [0, 0, 0], enemies: [], base_hp: 30, budget: 15 });
+    draw({ towers: [0, 0, 0], enemies: [], base_hp: 45, base_hp_max: 45, budget: 18, track_length: 14 });
     window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.1.0" } }, "*");
     setStatus("Renderer: ready");
   </script>

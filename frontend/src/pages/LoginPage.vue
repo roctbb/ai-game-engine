@@ -2,7 +2,7 @@
   <section class="agp-login-page">
     <div class="agp-login-panel">
       <div>
-        <p class="agp-login-kicker">AI Game Platform</p>
+        <p class="agp-login-kicker">Игровая платформа</p>
         <h1>Вход в систему</h1>
         <p class="text-muted mb-0">
           Каталог задач, лобби, соревнования и просмотр матчей доступны только участникам.
@@ -21,10 +21,13 @@
 
         <label class="form-label">Роль</label>
         <select v-model="role" class="form-select">
-          <option value="student">student</option>
-          <option value="teacher">teacher</option>
-          <option value="admin">admin</option>
+          <option value="student">Ученик</option>
+          <option value="teacher">Преподаватель</option>
+          <option value="admin">Администратор</option>
         </select>
+        <div class="agp-login-role-hint">
+          {{ roleHint }}
+        </div>
 
         <button class="btn btn-primary w-100" :disabled="isSubmitting || !nickname" @click="loginAsDev">
           {{ isSubmitting ? 'Входим...' : 'Войти' }}
@@ -88,6 +91,11 @@ const nextPath = computed(() => {
 const geekClassLoginUrl = computed(
   () => `/api/v1/auth/login?next=${encodeURIComponent(nextPath.value)}`
 );
+const roleHint = computed(() => {
+  if (role.value === 'admin') return 'Полный доступ к настройкам системы и служебной диагностике.';
+  if (role.value === 'teacher') return 'Создание лобби, соревнований и управление учебным каталогом.';
+  return 'Решение задач, участие в лобби и просмотр своих матчей.';
+});
 
 async function loginAsDev(): Promise<void> {
   const cleanNickname = nickname.value.trim();

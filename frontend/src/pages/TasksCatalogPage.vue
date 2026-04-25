@@ -50,6 +50,11 @@
       </button>
     </section>
 
+    <div v-if="hasActiveFilters" class="tasks-active-filter-line">
+      <span>Фильтр:</span>
+      <strong>{{ activeFilterSummary }}</strong>
+    </div>
+
     <div class="tasks-layout">
       <section class="agp-grid">
         <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка задач...</article>
@@ -62,42 +67,45 @@
         <div v-else class="tasks-list">
           <section v-for="group in groupedFilteredTasks" :key="group.key" class="tasks-group">
             <header class="tasks-group-head">
-              <h2>{{ group.topic }}</h2>
-              <span>{{ difficultyLabel(group.difficulty) }} · {{ group.items.length }}</span>
+              <h2>{{ difficultyLabel(group.difficulty) }}</h2>
+              <span>{{ group.items.length }}</span>
             </header>
-            <article v-for="task in group.items" :key="task.game_id" class="agp-card p-3 task-row">
-              <div class="task-row-main">
-                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
-                  <div class="d-flex flex-column gap-2">
-                    <span
-                      class="task-state"
-                      :class="isSolvedTask(task.game_id) ? 'task-state--solved' : 'task-state--pending'"
-                    >
-                      {{ isSolvedTask(task.game_id) ? 'Решено' : 'Не решено' }}
-                    </span>
-                    <h3 class="h6 mb-0">{{ task.title }}</h3>
+            <div class="tasks-group-items">
+              <article v-for="task in group.items" :key="task.game_id" class="agp-card p-3 task-row">
+                <div class="task-row-main">
+                  <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                    <div class="d-flex flex-column gap-2">
+                      <span
+                        class="task-state"
+                        :class="isSolvedTask(task.game_id) ? 'task-state--solved' : 'task-state--pending'"
+                      >
+                        {{ isSolvedTask(task.game_id) ? 'Решено' : 'Не решено' }}
+                      </span>
+                      <h3 class="h6 mb-0">{{ task.title }}</h3>
+                    </div>
+                    <span v-if="task.difficulty" class="agp-pill agp-pill--neutral">{{ difficultyLabel(task.difficulty) }}</span>
                   </div>
-                  <span v-if="task.difficulty" class="agp-pill agp-pill--neutral">{{ task.difficulty }}</span>
+                  <p class="small text-muted mb-0 task-description">
+                    {{ task.description || 'Описание задачи пока не заполнено.' }}
+                  </p>
+                  <div class="d-flex gap-1 flex-wrap">
+                    <span v-for="topic in task.topics" :key="`${task.game_id}-${topic}`" class="agp-topic-chip">
+                      {{ topic }}
+                    </span>
+                  </div>
+                  <div class="task-meta-row small text-muted">
+                    <span>Попыток: <span class="mono">{{ task.attempts_finished }}</span></span>
+                    <span>Решили: <span class="mono">{{ task.solved_users }}</span></span>
+                    <span>Успех: <span class="mono">{{ successRateLabel(task) }}</span></span>
+                  </div>
                 </div>
-                <p class="small text-muted mb-0 task-description">
-                  {{ task.description || 'Описание задачи пока не заполнено.' }}
-                </p>
-                <div class="d-flex gap-1 flex-wrap">
-                  <span v-for="topic in task.topics" :key="`${task.game_id}-${topic}`" class="agp-topic-chip">
-                    {{ topic }}
-                  </span>
+                <div class="task-row-action">
+                  <RouterLink :to="`/tasks/${task.game_id}/run`" class="btn btn-dark btn-sm w-100">
+                    {{ isSolvedTask(task.game_id) ? 'Повторить' : 'Решать' }}
+                  </RouterLink>
                 </div>
-                <div class="task-meta-row small text-muted">
-                  <span>Попыток: <span class="mono">{{ task.attempts_finished }}</span></span>
-                  <span>Решили: <span class="mono">{{ task.solved_users }}</span></span>
-                  <span>Успех: <span class="mono">{{ successRateLabel(task) }}</span></span>
-                  <span>{{ task.has_score_model ? 'со счетом' : 'зачет/незачет' }}</span>
-                </div>
-              </div>
-              <div class="task-row-action">
-                <RouterLink :to="`/tasks/${task.game_id}/run`" class="btn btn-dark w-100">Решать</RouterLink>
-              </div>
-            </article>
+              </article>
+            </div>
           </section>
         </div>
       </section>
@@ -189,6 +197,14 @@ const difficultyOptions = computed(() =>
 const hasActiveFilters = computed(() =>
   Boolean(selectedTopic.value || selectedDifficulty.value || selectedProgress.value !== 'all')
 );
+const activeFilterSummary = computed(() => {
+  const parts: string[] = [];
+  if (selectedTopic.value) parts.push(`тема: ${selectedTopic.value}`);
+  if (selectedDifficulty.value) parts.push(`сложность: ${difficultyLabel(selectedDifficulty.value)}`);
+  if (selectedProgress.value === 'solved') parts.push('только решенные');
+  if (selectedProgress.value === 'unsolved') parts.push('только нерешенные');
+  return parts.join(' · ');
+});
 const filteredTasks = computed(() =>
   tasks.value.filter((task) => {
     if (selectedTopic.value && !task.topics.includes(selectedTopic.value)) return false;
@@ -200,21 +216,16 @@ const filteredTasks = computed(() =>
 );
 
 const groupedFilteredTasks = computed(() => {
-  const groups = new Map<string, { key: string; topic: string; difficulty: string; items: SingleTaskCatalogItemDto[] }>();
+  const groups = new Map<string, { key: string; difficulty: string; items: SingleTaskCatalogItemDto[] }>();
   for (const task of filteredTasks.value) {
     const difficulty = task.difficulty || 'unknown';
-    const topics = selectedTopic.value ? [selectedTopic.value] : task.topics.length ? task.topics : ['Без темы'];
-    for (const topic of topics) {
-      const key = `${topic}::${difficulty}`;
-      const group = groups.get(key) ?? { key, topic, difficulty, items: [] };
-      group.items.push(task);
-      groups.set(key, group);
-    }
+    const key = difficulty;
+    const group = groups.get(key) ?? { key, difficulty, items: [] };
+    group.items.push(task);
+    groups.set(key, group);
   }
   return Array.from(groups.values()).sort(
-    (left, right) =>
-      left.topic.localeCompare(right.topic) ||
-      difficultyOrder(left.difficulty) - difficultyOrder(right.difficulty)
+    (left, right) => difficultyOrder(left.difficulty) - difficultyOrder(right.difficulty)
   );
 });
 
@@ -321,6 +332,18 @@ onMounted(async () => {
   align-items: start;
 }
 
+.tasks-active-filter-line {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  color: var(--agp-text-muted);
+  font-size: 0.86rem;
+}
+
+.tasks-active-filter-line strong {
+  color: var(--agp-text);
+}
+
 .tasks-list {
   display: grid;
   gap: 0.75rem;
@@ -329,6 +352,13 @@ onMounted(async () => {
 .tasks-group {
   display: grid;
   gap: 0.55rem;
+}
+
+.tasks-group-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
+  gap: 0.75rem;
+  justify-content: start;
 }
 
 .tasks-group-head {
@@ -352,9 +382,10 @@ onMounted(async () => {
 
 .task-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.8rem;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.65rem;
   align-items: start;
+  min-height: 13.25rem;
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
 }
 
@@ -371,9 +402,9 @@ onMounted(async () => {
 }
 
 .task-row-action {
-  align-self: start;
+  align-self: end;
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
 }
 
 .task-description {
@@ -388,7 +419,7 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.55rem;
 }
 
 .task-state {

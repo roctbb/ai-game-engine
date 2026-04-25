@@ -139,8 +139,15 @@ def _reconcile_training_lobby_for_terminal_run(container: ServiceContainer, run:
     if run.run_kind is not RunKind.TRAINING_MATCH or run.lobby_id is None:
         return
     try:
-        container.training_lobby.reconcile_training_lobby_status(lobby_id=run.lobby_id)
+        lobby = container.training_lobby.reconcile_training_lobby_status(lobby_id=run.lobby_id)
+        if lobby.status.value in {"open", "running"}:
+            container.training_lobby.run_matchmaking_cycle(
+                lobby_id=run.lobby_id,
+                requested_by="system",
+            )
     except NotFoundError:
+        return
+    except InvariantViolationError:
         return
 
 
@@ -464,7 +471,41 @@ def get_run_execution_context(
         snapshot_version_id=snapshot.version_id,
         codes_by_slot=snapshot.codes_by_slot,
         revisions_by_slot=snapshot.revisions_by_slot,
+        participants=_execution_context_participants(container=container, current_run_id=run.run_id),
     )
+
+
+def _execution_context_participants(container: ServiceContainer, current_run_id: str) -> list[dict[str, object]]:
+    run = container.execution.get_run(current_run_id)
+    run_ids = [current_run_id]
+    if run.lobby_id is not None and run.run_kind is RunKind.TRAINING_MATCH:
+        lobby = container.training_lobby.get_lobby(run.lobby_id)
+        if current_run_id in lobby.last_scheduled_run_ids:
+            run_ids = list(lobby.last_scheduled_run_ids)
+
+    participants: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for run_id in run_ids:
+        participant_run = container.execution.get_run(run_id)
+        if participant_run.snapshot_id is None:
+            continue
+        if participant_run.team_id in seen:
+            continue
+        seen.add(participant_run.team_id)
+        team = container.team_workspace.get_team(participant_run.team_id)
+        snapshot = container.team_workspace.get_snapshot(participant_run.snapshot_id)
+        participants.append(
+            {
+                "run_id": participant_run.run_id,
+                "team_id": participant_run.team_id,
+                "display_name": team.name or team.captain_user_id,
+                "captain_user_id": team.captain_user_id,
+                "codes_by_slot": snapshot.codes_by_slot,
+                "revisions_by_slot": snapshot.revisions_by_slot,
+                "is_current": participant_run.run_id == current_run_id,
+            }
+        )
+    return participants
 
 
 @router.post("/internal/workers/register", response_model=WorkerResponse)

@@ -21,10 +21,10 @@
       </div>
     </header>
 
-    <article class="agp-card p-3" v-if="syncingSourcesCount > 0">
+    <article class="agp-card p-3 agp-status-card" v-if="syncingSourcesCount > 0">
       <div class="d-flex align-items-center gap-2">
         <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-        <div class="fw-semibold">Есть активные sync-процессы</div>
+        <div class="fw-semibold">Есть активные синхронизации</div>
       </div>
       <div class="small text-muted mt-1">
         Страница автоматически обновляет статусы каждые {{ pollingIntervalSeconds }} сек.
@@ -32,21 +32,24 @@
     </article>
 
     <article class="agp-card p-3" v-if="!canManageSources">
-      <div class="text-warning-emphasis fw-semibold">Требуется роль teacher или admin</div>
+      <div class="text-warning-emphasis fw-semibold">Требуется роль преподавателя или администратора</div>
       <div class="small text-muted">
-        Для текущего пользователя действия создания и sync источников недоступны.
+        Для текущего пользователя действия создания и синхронизации источников недоступны.
       </div>
     </article>
 
-    <article class="agp-card p-3">
+    <article v-if="canManageSources" class="agp-card p-3">
       <h2 class="h6">Добавить игру из Git</h2>
+      <p class="small text-muted mb-3">
+        После добавления источник можно синхронизировать вручную. Новые игры появятся в разделе «Игры» после успешной сборки.
+      </p>
       <div class="row g-2 align-items-end">
         <div class="col-12 col-lg-7">
           <label class="form-label small">Репозиторий</label>
           <input v-model.trim="repoUrl" class="form-control mono" placeholder="https://github.com/org/repo" />
         </div>
         <div class="col-6 col-lg-2">
-          <label class="form-label small">branch</label>
+          <label class="form-label small">Ветка</label>
           <input v-model.trim="defaultBranch" class="form-control mono" />
         </div>
         <div class="col-6 col-lg-3">
@@ -69,95 +72,97 @@
       <article class="agp-card p-3">
         <h2 class="h6">Источники игр</h2>
         <div v-if="isLoading" class="text-muted small">Загрузка...</div>
-        <table v-else class="table align-middle mb-0">
-          <thead>
-            <tr>
-              <th>repo</th>
-              <th>branch</th>
-              <th>source</th>
-              <th>last sync</th>
-              <th>actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="source in sources"
-              :key="source.source_id"
-              :class="{ 'table-active': selectedSourceId === source.source_id }"
-            >
-              <td class="small mono">{{ source.repo_url }}</td>
-              <td class="small mono">{{ source.default_branch }}</td>
-              <td>
-                <span class="badge mono" :class="sourceStatusBadgeClass(source.status)">
-                  {{ source.status }}
-                </span>
-              </td>
-              <td>
-                <div class="d-flex flex-column gap-1">
-                  <span class="badge mono" :class="syncStatusBadgeClass(source.last_sync_status)">
-                    {{ source.last_sync_status }}
+        <div v-else class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Репозиторий</th>
+                <th>Ветка</th>
+                <th>Состояние</th>
+                <th>Синхронизация</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="source in sources"
+                :key="source.source_id"
+                :class="{ 'table-active': selectedSourceId === source.source_id }"
+              >
+                <td class="small mono">{{ source.repo_url }}</td>
+                <td class="small mono">{{ source.default_branch }}</td>
+                <td>
+                  <span class="badge mono" :class="sourceStatusBadgeClass(source.status)">
+                    {{ sourceStatusLabel(source.status) }}
                   </span>
-                  <span class="small mono text-muted" v-if="source.last_synced_commit_sha">
-                    {{ shortSha(source.last_synced_commit_sha) }}
-                  </span>
-                </div>
-              </td>
-              <td>
-                <div class="d-flex gap-2">
-                  <button class="btn btn-sm btn-outline-secondary" @click="selectSource(source.source_id)">
-                    History
-                  </button>
-                  <button
-                    class="btn btn-sm btn-outline-primary"
-                    :disabled="!canManageSources || syncingSourceId === source.source_id || source.status !== 'active' || source.last_sync_status === 'syncing'"
-                    @click="syncSource(source.source_id)"
-                  >
-                    {{ syncingSourceId === source.source_id ? 'Sync...' : 'Sync now' }}
-                  </button>
-                  <button
-                    class="btn btn-sm btn-outline-warning"
-                    :disabled="!canManageSources || statusChangingSourceId === source.source_id || source.last_sync_status === 'syncing'"
-                    @click="toggleSourceStatus(source)"
-                  >
-                    {{
-                      statusChangingSourceId === source.source_id
-                        ? '...'
-                        : source.status === 'active'
-                          ? 'Disable'
-                          : 'Enable'
-                    }}
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="sources.length === 0">
-              <td colspan="5" class="text-muted small">Источники пока не добавлены.</td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+                <td>
+                  <div class="d-flex flex-column gap-1">
+                    <span class="badge mono" :class="syncStatusBadgeClass(source.last_sync_status)">
+                      {{ syncStatusLabel(source.last_sync_status) }}
+                    </span>
+                    <span class="small text-muted" v-if="source.last_synced_commit_sha">
+                      {{ shortSha(source.last_synced_commit_sha) }}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" @click="selectSource(source.source_id)">
+                      История
+                    </button>
+                    <button
+                      class="btn btn-sm btn-outline-primary"
+                      :disabled="!canManageSources || syncingSourceId === source.source_id || source.status !== 'active' || source.last_sync_status === 'syncing'"
+                      @click="syncSource(source.source_id)"
+                    >
+                      {{ syncingSourceId === source.source_id ? 'Синхронизация...' : 'Синхронизировать' }}
+                    </button>
+                    <button
+                      class="btn btn-sm btn-outline-warning"
+                      :disabled="!canManageSources || statusChangingSourceId === source.source_id || source.last_sync_status === 'syncing'"
+                      @click="toggleSourceStatus(source)"
+                    >
+                      {{
+                        statusChangingSourceId === source.source_id
+                          ? '...'
+                          : source.status === 'active'
+                            ? 'Отключить'
+                            : 'Включить'
+                      }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="sources.length === 0">
+                <td colspan="5" class="text-muted small">Источники пока не добавлены.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </article>
 
       <article class="agp-card p-3">
-        <h2 class="h6">История sync и диагностика</h2>
-        <div v-if="!selectedSource" class="text-muted small">Выберите source, чтобы увидеть историю.</div>
+        <h2 class="h6">История синхронизации и диагностика</h2>
+        <div v-if="!selectedSource" class="text-muted small">Выберите источник, чтобы увидеть историю.</div>
         <div v-else class="d-flex flex-column gap-3">
           <div class="agp-card-soft p-3">
             <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
               <div>
                 <div class="fw-semibold">{{ selectedSource.repo_url }}</div>
-                <div class="small mono text-muted">source_id={{ selectedSource.source_id }}</div>
+                <div class="small text-muted">{{ selectedSource.default_branch }}</div>
               </div>
               <span class="badge mono" :class="sourceStatusBadgeClass(selectedSource.status)">
-                {{ selectedSource.status }}
+                {{ sourceStatusLabel(selectedSource.status) }}
               </span>
             </div>
 
             <hr class="my-2" />
 
             <div class="small mb-1">
-              Последний sync:
+              Последняя синхронизация:
               <span class="badge mono" :class="syncStatusBadgeClass(selectedSource.last_sync_status)">
-                {{ selectedSource.last_sync_status }}
+                {{ syncStatusLabel(selectedSource.last_sync_status) }}
               </span>
             </div>
             <div class="mb-2" v-if="canManageSources">
@@ -170,66 +175,79 @@
                   statusChangingSourceId === selectedSource.source_id
                     ? 'Смена статуса...'
                     : selectedSource.status === 'active'
-                      ? 'Отключить source'
-                      : 'Включить source'
+                      ? 'Отключить источник'
+                      : 'Включить источник'
                 }}
               </button>
             </div>
 
-            <div v-if="latestSync" class="small d-flex flex-column gap-1">
-              <div>
-                started: <span class="mono">{{ formatDate(latestSync.started_at) }}</span>
-                <span v-if="latestSync.finished_at">
-                  · finished: <span class="mono">{{ formatDate(latestSync.finished_at) }}</span>
-                </span>
+            <div v-if="latestSync" class="source-sync-summary">
+              <div class="source-sync-row">
+                <span>Старт</span>
+                <strong>{{ formatDate(latestSync.started_at) }}</strong>
               </div>
-              <div>
-                requested_by: <span class="mono">{{ latestSync.requested_by }}</span>
-                · build_id: <span class="mono">{{ latestSync.build_id || '—' }}</span>
+              <div class="source-sync-row" v-if="latestSync.finished_at">
+                <span>Финиш</span>
+                <strong>{{ formatDate(latestSync.finished_at) }}</strong>
               </div>
-              <div>
-                commit_sha: <span class="mono">{{ latestSync.commit_sha || selectedSource.last_synced_commit_sha || '—' }}</span>
-              </div>
-              <div>
-                image_digest: <span class="mono">{{ latestSync.image_digest || '—' }}</span>
+              <div class="source-sync-row">
+                <span>Инициатор</span>
+                <strong>{{ latestSync.requested_by }}</strong>
               </div>
               <div v-if="latestSync.status === 'syncing'" class="text-info-emphasis fw-semibold">
-                Sync выполняется...
+                Синхронизация выполняется...
               </div>
               <div v-if="latestSync.error_message" class="text-danger-emphasis fw-semibold">
                 Ошибка: {{ latestSync.error_message }}
               </div>
+              <details class="source-tech-details">
+                <summary class="small text-muted">Технические детали</summary>
+                <div class="mono small mt-2">source_id: {{ selectedSource.source_id }}</div>
+                <div class="mono small">build_id: {{ latestSync.build_id || '—' }}</div>
+                <div class="mono small">commit_sha: {{ latestSync.commit_sha || selectedSource.last_synced_commit_sha || '—' }}</div>
+                <div class="mono small">image_digest: {{ latestSync.image_digest || '—' }}</div>
+              </details>
             </div>
-            <div v-else class="small text-muted">Для source еще нет записей sync.</div>
+            <div v-else class="small text-muted">Для источника еще нет записей синхронизации.</div>
           </div>
 
-          <table class="table align-middle mb-0">
-            <thead>
-              <tr>
-                <th>started</th>
-                <th>status</th>
-                <th>build</th>
-                <th>digest/commit/error</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in history" :key="item.sync_id">
-                <td class="small mono">{{ formatDate(item.started_at) }}</td>
-                <td>
-                  <span class="badge mono" :class="syncStatusBadgeClass(item.status)">
-                    {{ item.status }}
-                  </span>
-                </td>
-                <td class="small mono">{{ item.build_id || '—' }}</td>
-                <td class="small mono">
-                  {{ item.image_digest || item.commit_sha || item.error_message || '—' }}
-                </td>
-              </tr>
-              <tr v-if="history.length === 0">
-                <td colspan="4" class="text-muted small">Для источника пока нет sync-записей.</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Начало</th>
+                  <th>Статус</th>
+                  <th>Результат</th>
+                  <th>Детали</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in history" :key="item.sync_id">
+                  <td class="small mono">{{ formatDate(item.started_at) }}</td>
+                  <td>
+                    <span class="badge mono" :class="syncStatusBadgeClass(item.status)">
+                      {{ syncStatusLabel(item.status) }}
+                    </span>
+                  </td>
+                  <td class="small">
+                    {{ syncResultLabel(item) }}
+                  </td>
+                  <td>
+                    <details class="small">
+                      <summary class="text-muted">Технические детали</summary>
+                      <div class="mono small mt-1">sync_id: {{ item.sync_id }}</div>
+                      <div class="mono small">build_id: {{ item.build_id || '—' }}</div>
+                      <div class="mono small">commit_sha: {{ item.commit_sha || '—' }}</div>
+                      <div class="mono small">image_digest: {{ item.image_digest || '—' }}</div>
+                    </details>
+                  </td>
+                </tr>
+                <tr v-if="history.length === 0">
+                  <td colspan="4" class="text-muted small">Для источника пока нет записей синхронизации.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </article>
     </div>
@@ -237,62 +255,88 @@
     <article v-if="canManageWorkers" class="agp-card p-3">
       <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
         <div>
-          <h2 class="h6 mb-1">Worker Control</h2>
-          <div class="small text-muted">Управление удаленными worker-нодами execution plane.</div>
+          <h2 class="h6 mb-1">Исполнители запусков</h2>
+          <div class="small text-muted">Управление исполнителями запусков.</div>
         </div>
         <button
           class="btn btn-sm btn-outline-secondary"
           :disabled="workersLoading || !canManageWorkers"
           @click="loadWorkers()"
         >
-          Обновить workers
+          Обновить
         </button>
       </div>
 
       <div v-if="workerErrorMessage" class="text-danger small mb-2">{{ workerErrorMessage }}</div>
-      <div v-if="workersLoading" class="text-muted small">Загрузка worker-нод...</div>
-      <table v-else class="table align-middle mb-0">
-        <thead>
-          <tr>
-            <th>worker</th>
-            <th>status</th>
-            <th>capacity</th>
-            <th>labels</th>
-            <th>actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="worker in workers" :key="worker.worker_id">
-            <td>
-              <div class="mono small fw-semibold">{{ worker.worker_id }}</div>
-              <div class="small text-muted">{{ worker.hostname }}</div>
-            </td>
-            <td>
-              <span class="badge mono" :class="workerStatusBadgeClass(worker.status)">
-                {{ worker.status }}
-              </span>
-            </td>
-            <td class="mono small">{{ worker.capacity_available }}/{{ worker.capacity_total }}</td>
-            <td class="mono small">{{ workerLabelSummary(worker.labels) }}</td>
-            <td>
-              <div class="d-flex gap-1 flex-wrap">
-                <button
-                  v-for="targetStatus in workerStatusOptions"
-                  :key="`${worker.worker_id}-${targetStatus}`"
-                  class="btn btn-sm btn-outline-secondary"
-                  :disabled="!canManageWorkers || workerStatusChangingId === worker.worker_id || worker.status === targetStatus"
-                  @click="updateWorkerStatus(worker.worker_id, targetStatus)"
-                >
-                  {{ targetStatus }}
-                </button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="workers.length === 0">
-            <td colspan="5" class="text-muted small">Worker-ноды пока не зарегистрированы.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-if="workersLoading" class="text-muted small">Загрузка исполнителей...</div>
+      <div v-else class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Исполнитель</th>
+              <th>Статус</th>
+              <th>Емкость</th>
+              <th>Метки</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="worker in workers" :key="worker.worker_id">
+              <td>
+                <div class="fw-semibold">{{ worker.hostname || 'Без имени' }}</div>
+                <details class="small">
+                  <summary class="text-muted">Технический ID</summary>
+                  <span class="mono small">{{ worker.worker_id }}</span>
+                </details>
+              </td>
+              <td>
+                <span class="badge mono" :class="workerStatusBadgeClass(worker.status)">
+                  {{ workerStatusLabel(worker.status) }}
+                </span>
+              </td>
+              <td>
+                <div class="worker-capacity">
+                  <div class="d-flex justify-content-between small">
+                    <span>{{ worker.capacity_available }} свободно</span>
+                    <span class="text-muted">из {{ worker.capacity_total }}</span>
+                  </div>
+                  <div class="worker-capacity-bar" aria-hidden="true">
+                    <span :style="{ width: workerCapacityPercent(worker) }"></span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div v-if="workerLabelEntries(worker.labels).length" class="worker-label-list">
+                  <span
+                    v-for="[key, value] in workerLabelEntries(worker.labels)"
+                    :key="`${worker.worker_id}-${key}`"
+                    class="agp-topic-chip"
+                  >
+                    {{ key }}: {{ value }}
+                  </span>
+                </div>
+                <span v-else class="text-muted small">без меток</span>
+              </td>
+              <td>
+                <div class="d-flex gap-1 flex-wrap">
+                  <button
+                    v-for="targetStatus in workerStatusOptions"
+                    :key="`${worker.worker_id}-${targetStatus}`"
+                    class="btn btn-sm btn-outline-secondary"
+                    :disabled="!canManageWorkers || workerStatusChangingId === worker.worker_id || worker.status === targetStatus"
+                    @click="updateWorkerStatus(worker.worker_id, targetStatus)"
+                  >
+                    {{ workerStatusLabel(targetStatus) }}
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="workers.length === 0">
+              <td colspan="5" class="text-muted small">Исполнители пока не зарегистрированы.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </article>
   </section>
 </template>
@@ -342,7 +386,7 @@ const canManageWorkers = computed(() => sessionStore.role === 'admin');
 const pageTitle = computed(() => (canManageWorkers.value ? 'Статус системы' : 'Источники игр'));
 const pageSubtitle = computed(() =>
   canManageWorkers.value
-    ? 'Источники игр, ручной sync и диагностика worker-нод.'
+    ? 'Источники игр, ручная синхронизация и диагностика исполнителей.'
     : 'Подключение и обновление игр из Git-репозиториев.'
 );
 const selectedSource = computed(
@@ -370,8 +414,21 @@ function syncStatusBadgeClass(status: GameSourceSyncStatus): string {
   return 'text-bg-secondary';
 }
 
+function syncStatusLabel(status: GameSourceSyncStatus): string {
+  if (status === 'finished') return 'готово';
+  if (status === 'failed') return 'ошибка';
+  if (status === 'syncing') return 'идет';
+  return status;
+}
+
 function sourceStatusBadgeClass(status: GameSourceStatus): string {
   return status === 'active' ? 'text-bg-success' : 'text-bg-secondary';
+}
+
+function sourceStatusLabel(status: GameSourceStatus): string {
+  if (status === 'active') return 'активен';
+  if (status === 'disabled') return 'отключен';
+  return status;
 }
 
 function workerStatusBadgeClass(status: WorkerStatus): string {
@@ -381,10 +438,30 @@ function workerStatusBadgeClass(status: WorkerStatus): string {
   return 'text-bg-danger';
 }
 
-function workerLabelSummary(labels: Record<string, string>): string {
-  const entries = Object.entries(labels);
-  if (entries.length === 0) return '—';
-  return entries.map(([key, value]) => `${key}:${value}`).join(', ');
+function workerStatusLabel(status: WorkerStatus): string {
+  if (status === 'online') return 'онлайн';
+  if (status === 'offline') return 'оффлайн';
+  if (status === 'draining') return 'завершает';
+  if (status === 'disabled') return 'отключен';
+  return status;
+}
+
+function workerLabelEntries(labels: Record<string, string>): [string, string][] {
+  return Object.entries(labels);
+}
+
+function workerCapacityPercent(worker: WorkerDto): string {
+  if (worker.capacity_total <= 0) return '0%';
+  const busy = Math.max(0, worker.capacity_total - worker.capacity_available);
+  return `${Math.min(100, Math.round((busy / worker.capacity_total) * 100))}%`;
+}
+
+function syncResultLabel(item: GameSourceSyncDto): string {
+  if (item.error_message) return item.error_message;
+  if (item.status === 'syncing') return 'Выполняется';
+  if (item.image_digest) return 'Образ собран';
+  if (item.commit_sha) return `Commit ${shortSha(item.commit_sha)}`;
+  return '—';
 }
 
 function stopPolling(): void {
@@ -434,7 +511,7 @@ async function loadSources(options: { silent?: boolean } = {}): Promise<void> {
     }
   } catch (error) {
     if (!options.silent) {
-      errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить game sources';
+      errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить источники игр';
     }
   } finally {
     if (!options.silent) {
@@ -455,7 +532,7 @@ async function loadWorkers(): Promise<void> {
   try {
     workers.value = await listWorkers();
   } catch (error) {
-    workerErrorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить worker-ноды';
+    workerErrorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить исполнителей';
   } finally {
     workersLoading.value = false;
   }
@@ -475,7 +552,7 @@ async function createSource(): Promise<void> {
     await loadSources();
     await selectSource(created.source_id);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось создать source';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось создать источник';
   } finally {
     isCreating.value = false;
   }
@@ -486,7 +563,7 @@ async function refreshHistory(sourceId: string, options: { silent?: boolean } = 
     history.value = await listGameSourceSyncHistory(sourceId);
   } catch (error) {
     if (!options.silent) {
-      errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить историю sync';
+      errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить историю синхронизации';
     }
     throw error;
   }
@@ -514,7 +591,7 @@ async function syncSource(sourceId: string): Promise<void> {
     await loadSources();
     await selectSource(sourceId);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Sync завершился с ошибкой';
+    errorMessage.value = error instanceof Error ? error.message : 'Синхронизация завершилась с ошибкой';
     await loadSources();
     await selectSource(sourceId);
   } finally {
@@ -535,7 +612,7 @@ async function toggleSourceStatus(source: GameSourceDto): Promise<void> {
     await loadSources();
     await selectSource(source.source_id);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось изменить статус source';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось изменить статус источника';
   } finally {
     statusChangingSourceId.value = '';
   }
@@ -553,7 +630,7 @@ async function updateWorkerStatus(workerId: string, status: WorkerStatus): Promi
     await loadWorkers();
   } catch (error) {
     workerErrorMessage.value =
-      error instanceof Error ? error.message : 'Не удалось изменить статус worker';
+      error instanceof Error ? error.message : 'Не удалось изменить статус исполнителя';
   } finally {
     workerStatusChangingId.value = '';
   }
@@ -593,3 +670,63 @@ watch(
   { flush: 'post' }
 );
 </script>
+
+<style scoped>
+.agp-status-card {
+  border-color: rgba(14, 116, 144, 0.22);
+  background: #f0f9ff;
+}
+
+.source-sync-summary {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+}
+
+.source-sync-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.source-sync-row span {
+  color: var(--agp-muted);
+}
+
+.source-sync-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.source-tech-details {
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding-top: 0.35rem;
+}
+
+.worker-capacity {
+  min-width: 9rem;
+}
+
+.worker-capacity-bar {
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+.worker-capacity-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+}
+
+.worker-label-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+</style>

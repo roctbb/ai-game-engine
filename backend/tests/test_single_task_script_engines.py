@@ -26,8 +26,8 @@ def test_maze_escape_engine_uses_script() -> None:
                 "def make_move(x, y, maze):\n"
                 "    start = (x, y)\n"
                 "    goal = None\n"
-                "    for row_y, row in enumerate(maze):\n"
-                "        for col_x, cell in enumerate(row):\n"
+                "    for col_x, column in enumerate(maze):\n"
+                "        for row_y, cell in enumerate(column):\n"
                 "            if cell == 1:\n"
                 "                goal = (col_x, row_y)\n"
                 "                break\n"
@@ -48,9 +48,9 @@ def test_maze_escape_engine_uses_script() -> None:
                 "            nx = current[0] + dx\n"
                 "            ny = current[1] + dy\n"
                 "            next_cell = (nx, ny)\n"
-                "            if ny < 0 or ny >= len(maze) or nx < 0 or nx >= len(maze[ny]):\n"
+                "            if nx < 0 or nx >= len(maze) or ny < 0 or ny >= len(maze[nx]):\n"
                 "                continue\n"
-                "            if maze[ny][nx] == -1 or next_cell in came_from:\n"
+                "            if maze[nx][ny] == -1 or next_cell in came_from:\n"
                 "                continue\n"
                 "            came_from[next_cell] = (action, current)\n"
                 "            queue.append(next_cell)\n"
@@ -85,6 +85,7 @@ def test_coins_engine_collects_with_script() -> None:
     assert payload["status"] == "finished"
     assert metrics["reached_goal"] is True
     assert metrics["coins_collected"] >= 3
+    assert metrics["dead_ends_total"] >= 5
     assert isinstance(payload.get("frames"), list) and payload["frames"]
     assert isinstance(payload.get("events"), list)
 
@@ -107,6 +108,9 @@ def test_tower_defense_engine_places_towers_from_script() -> None:
     assert payload["status"] == "finished"
     assert metrics["towers_built"] > 0
     assert metrics["base_hp"] >= 0
+    assert metrics["max_ticks"] == 44
+    assert metrics["track_length"] == 14
+    assert metrics["enemies_spawned"] == 40
     assert isinstance(payload.get("frames"), list) and payload["frames"]
     assert isinstance(payload.get("events"), list)
 

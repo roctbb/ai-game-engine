@@ -1,5 +1,6 @@
 def place_tower(state):
-    if state["budget"] < 5:
+    tower_cost = state.get("tower_cost", 6)
+    if state["budget"] < tower_cost:
         return None
 
     lanes_count = state["lanes"]

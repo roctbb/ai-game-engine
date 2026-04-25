@@ -126,6 +126,21 @@ pre,
   gap: 0.5rem;
 }
 
+.agp-user-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.65rem;
+  border: 1px solid var(--agp-border);
+  border-radius: 0.55rem;
+  background: var(--agp-surface-soft);
+}
+
+.agp-user-card strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .agp-main {
   width: 100%;
   margin: 0 auto;
@@ -201,10 +216,9 @@ pre,
   min-width: 0;
 }
 
-.agp-page-head,
-.agp-task-header {
+.agp-page-head {
   display: grid;
-  grid-template-columns: minmax(12rem, 0.72fr) minmax(24rem, 1.55fr) auto;
+  grid-template-columns: minmax(10rem, 0.7fr) minmax(18rem, 1.7fr) auto;
   align-items: center;
   gap: 0.35rem;
 }
@@ -232,7 +246,14 @@ pre,
   position: sticky;
   top: 0;
   z-index: 15;
-  min-height: 2.8rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title actions'
+    'player player';
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+  min-height: 5rem;
   padding: 0.22rem 0.35rem;
   border: 0;
   border-bottom: 1px solid rgba(112, 232, 220, 0.28);
@@ -242,11 +263,15 @@ pre,
   backdrop-filter: blur(10px);
 }
 
+.agp-task-header-main {
+  grid-area: title;
+}
+
 .agp-back-link,
 .agp-task-header-main h1,
 .agp-task-header-player,
 .agp-run-status {
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .agp-back-link {
@@ -275,7 +300,7 @@ pre,
 }
 
 .agp-task-header--condensed {
-  gap: 0.35rem;
+  gap: 0.3rem 0.5rem;
   padding: 0.2rem 0.35rem;
 }
 
@@ -312,14 +337,17 @@ pre,
 }
 
 .agp-task-header-player {
+  grid-area: player;
   min-width: 0;
+  width: 100%;
   border: 1px solid rgba(135, 226, 255, 0.22);
-  border-radius: 999px;
+  border-radius: 1.75rem;
   background: rgba(255, 255, 255, 0.065);
   padding: 0.22rem 0.35rem;
   display: flex;
   align-items: center;
   gap: 0.32rem;
+  flex-wrap: nowrap;
   overflow: hidden;
 }
 
@@ -349,16 +377,39 @@ pre,
 .agp-player-frame-label {
   color: #b8cadb !important;
   white-space: nowrap;
+  flex: 0 0 auto;
+  min-width: 6.75rem;
 }
 
 .agp-run-top-actions,
 .agp-task-header-actions {
+  grid-area: actions;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 0.35rem;
   flex-wrap: wrap;
   justify-self: end;
+}
+
+.agp-run-action-cluster {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 2.25rem;
+  gap: 0.25rem;
+}
+
+.agp-run-action-cluster .agp-icon-button:disabled {
+  opacity: 0.34;
+}
+
+.agp-run-action-cluster:not(.agp-run-action-cluster--active) .agp-icon-button--stop,
+.agp-run-action-cluster:not(.agp-run-action-cluster--active) .agp-icon-button--restart {
+  pointer-events: none;
+}
+
+.agp-run-action-cluster--active .agp-icon-button--play {
+  pointer-events: none;
 }
 
 .agp-view-mode-toggle {
@@ -418,6 +469,14 @@ pre,
 
 .agp-run-status > :not(.agp-run-state-badge) {
   grid-column: 2;
+}
+
+.agp-launch-hint {
+  max-width: 12rem;
+  color: #b8cadb;
+  font-size: 0.74rem;
+  line-height: 1.18;
+  text-align: right;
 }
 
 .agp-run-state-badge {
@@ -649,7 +708,7 @@ pre,
 .agp-main-columns {
   display: grid;
   grid-template-columns: minmax(0, var(--agp-viewer-col, 46%)) 0.28rem minmax(0, var(--agp-code-col, 54%));
-  height: calc(100dvh - 2.8rem);
+  height: calc(100dvh - 5.05rem);
   gap: 0;
   align-items: stretch;
   min-height: 0;
@@ -828,6 +887,185 @@ pre,
   overflow: auto;
 }
 
+.agp-victory-celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.agp-victory-celebration::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 22% 22%, rgba(250, 204, 21, 0.28), transparent 18rem),
+    radial-gradient(circle at 78% 24%, rgba(56, 189, 248, 0.26), transparent 18rem),
+    radial-gradient(circle at 50% 78%, rgba(244, 114, 182, 0.24), transparent 20rem),
+    rgba(2, 6, 23, 0.18);
+  animation: agpVictoryBackdrop 3200ms ease both;
+}
+
+.agp-victory-card {
+  position: relative;
+  z-index: 2;
+  min-width: min(28rem, calc(100vw - 2rem));
+  border: 2px solid rgba(255, 255, 255, 0.74);
+  border-radius: 0.8rem;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+  padding: 1.3rem 1.6rem;
+  text-align: center;
+  transform-origin: center;
+  animation: agpVictoryCard 3200ms cubic-bezier(0.2, 1.2, 0.22, 1) both;
+}
+
+.agp-victory-kicker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 0.22rem 0.65rem;
+  text-transform: uppercase;
+}
+
+.agp-victory-card strong {
+  display: block;
+  margin-top: 0.55rem;
+  font-size: clamp(1.8rem, 4vw, 3.4rem);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.agp-victory-card small {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--agp-text-muted);
+  font-weight: 800;
+}
+
+.agp-victory-burst {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.agp-victory-burst span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.8rem;
+  height: 1.4rem;
+  border-radius: 0.18rem;
+  background: var(--agp-confetti-color, #22c55e);
+  transform: translate(-50%, -50%) rotate(var(--agp-confetti-rotate, 0deg));
+  animation: agpVictoryConfetti 3000ms cubic-bezier(0.16, 0.82, 0.28, 1) both;
+}
+
+.agp-victory-burst span:nth-child(4n + 1) {
+  --agp-confetti-color: #22c55e;
+}
+
+.agp-victory-burst span:nth-child(4n + 2) {
+  --agp-confetti-color: #facc15;
+}
+
+.agp-victory-burst span:nth-child(4n + 3) {
+  --agp-confetti-color: #38bdf8;
+}
+
+.agp-victory-burst span:nth-child(4n) {
+  --agp-confetti-color: #f472b6;
+}
+
+.agp-victory-burst span:nth-child(1) { --agp-confetti-x: -42vw; --agp-confetti-y: -34vh; --agp-confetti-rotate: 18deg; }
+.agp-victory-burst span:nth-child(2) { --agp-confetti-x: -30vw; --agp-confetti-y: 22vh; --agp-confetti-rotate: 72deg; }
+.agp-victory-burst span:nth-child(3) { --agp-confetti-x: -18vw; --agp-confetti-y: -40vh; --agp-confetti-rotate: 140deg; }
+.agp-victory-burst span:nth-child(4) { --agp-confetti-x: -6vw; --agp-confetti-y: 32vh; --agp-confetti-rotate: 210deg; }
+.agp-victory-burst span:nth-child(5) { --agp-confetti-x: 10vw; --agp-confetti-y: -36vh; --agp-confetti-rotate: 300deg; }
+.agp-victory-burst span:nth-child(6) { --agp-confetti-x: 22vw; --agp-confetti-y: 30vh; --agp-confetti-rotate: 32deg; }
+.agp-victory-burst span:nth-child(7) { --agp-confetti-x: 36vw; --agp-confetti-y: -22vh; --agp-confetti-rotate: 96deg; }
+.agp-victory-burst span:nth-child(8) { --agp-confetti-x: 44vw; --agp-confetti-y: 18vh; --agp-confetti-rotate: 180deg; }
+.agp-victory-burst span:nth-child(9) { --agp-confetti-x: -46vw; --agp-confetti-y: 8vh; --agp-confetti-rotate: 260deg; }
+.agp-victory-burst span:nth-child(10) { --agp-confetti-x: 46vw; --agp-confetti-y: -8vh; --agp-confetti-rotate: 330deg; }
+.agp-victory-burst span:nth-child(11) { --agp-confetti-x: -24vw; --agp-confetti-y: -18vh; --agp-confetti-rotate: 116deg; }
+.agp-victory-burst span:nth-child(12) { --agp-confetti-x: 28vw; --agp-confetti-y: 12vh; --agp-confetti-rotate: 208deg; }
+.agp-victory-burst span:nth-child(13) { --agp-confetti-x: -12vw; --agp-confetti-y: 42vh; --agp-confetti-rotate: 18deg; }
+.agp-victory-burst span:nth-child(14) { --agp-confetti-x: 14vw; --agp-confetti-y: -44vh; --agp-confetti-rotate: 72deg; }
+.agp-victory-burst span:nth-child(15) { --agp-confetti-x: -38vw; --agp-confetti-y: 36vh; --agp-confetti-rotate: 144deg; }
+.agp-victory-burst span:nth-child(16) { --agp-confetti-x: 38vw; --agp-confetti-y: -36vh; --agp-confetti-rotate: 288deg; }
+.agp-victory-burst span:nth-child(17) { --agp-confetti-x: -3vw; --agp-confetti-y: -28vh; --agp-confetti-rotate: 234deg; }
+.agp-victory-burst span:nth-child(18) { --agp-confetti-x: 3vw; --agp-confetti-y: 28vh; --agp-confetti-rotate: 306deg; }
+
+.agp-victory-pop-enter-active,
+.agp-victory-pop-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.agp-victory-pop-enter-from,
+.agp-victory-pop-leave-to {
+  opacity: 0;
+}
+
+@keyframes agpVictoryBackdrop {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes agpVictoryCard {
+  0% {
+    opacity: 0;
+    transform: scale(0.72) rotate(-4deg);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1.08) rotate(2deg);
+  }
+  22%,
+  78% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.92) rotate(0deg);
+  }
+}
+
+@keyframes agpVictoryConfetti {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4) rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--agp-confetti-x)), calc(-50% + var(--agp-confetti-y))) scale(1) rotate(calc(var(--agp-confetti-rotate) + 540deg));
+  }
+}
+
 .agp-bot-console {
   overflow: hidden;
   border-top: 1px solid rgba(148, 163, 184, 0.28);
@@ -928,24 +1166,27 @@ pre,
 }
 
 .agp-player-range {
-  flex: 1 1 12rem;
+  flex: 1 1 10rem;
   margin: 0;
-  min-width: 8rem;
+  min-width: 7rem;
 }
 
 .agp-speed-control {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin-left: auto;
+  flex: 0 0 auto;
+  margin-left: 0;
+  min-width: 10.25rem;
 }
 
 .agp-speed-label {
+  color: #b8cadb;
   white-space: nowrap;
 }
 
 .agp-speed-select {
-  width: 6.8rem;
+  width: 6.4rem;
 }
 
 .agp-code-card {
@@ -1334,9 +1575,12 @@ pre,
 
   .agp-task-header-player {
     grid-column: 1 / -1;
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
   .agp-main-columns {
+    height: calc(100dvh - 6.4rem);
     min-height: auto;
   }
 
@@ -1368,6 +1612,7 @@ pre,
 @media (max-width: 900px) {
   .agp-main-columns {
     grid-template-columns: 1fr;
+    height: auto;
     min-height: auto;
   }
 
@@ -1387,12 +1632,21 @@ pre,
 @media (max-width: 720px) {
   .agp-task-header {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'title'
+      'actions'
+      'player';
   }
 
   .agp-task-header-actions {
     width: 100%;
     justify-content: flex-start;
     justify-self: start;
+  }
+
+  .agp-launch-hint {
+    max-width: 100%;
+    text-align: left;
   }
 
   .agp-view-mode-toggle {
@@ -1473,4 +1727,11 @@ pre,
 .agp-login-form {
   display: grid;
   gap: 0.65rem;
+}
+
+.agp-login-role-hint {
+  margin-top: -0.25rem;
+  color: var(--agp-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.3;
 }

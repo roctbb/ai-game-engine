@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hill Control Renderer</title>
+  <style>
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#111827;color:#e5edf5;font-family:Arial,sans-serif}
+    .wrap{width:min(92vmin,760px)}
+    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
+    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+  </style>
+</head>
+<body>
+<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<script>
+const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
+function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
+function draw(frame){
+  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||12, h=Array.isArray(grid[0])?grid[0].length:12, C=32;
+  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=grid[x]?.[y]??0;
+    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:v===-1?"#334155":v===1?"#dcfce7":"#f8fafc"}));
+    if(v===1)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.18,fill:"#16a34a"}));
+  }
+  const positions=frame.positions||{};
+  for(const [slot,p] of Object.entries(positions)){
+    const color=slot==="lime"?"#84cc16":"#1d4ed8";
+    if(Number.isFinite(p.x)&&Number.isFinite(p.y))boardEl.appendChild(el("circle",{cx:p.x*C+C/2,cy:p.y*C+C/2,r:C*0.3,fill:color}));
+  }
+  const c=frame.control_ticks||{}, s=frame.slot_scores||{};
+  hudEl.textContent=`lime=${c.lime||0} navy=${c.navy||0} hills=${frame.hills_total??"-"} score_lime=${s.lime??"-"} score_navy=${s.navy??"-"}`;
+}
+window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
+draw({board:Array.from({length:12},()=>Array(12).fill(0)),positions:{lime:{x:1,y:1},navy:{x:10,y:10}},control_ticks:{lime:0,navy:0},hills_total:5});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+</script>
+</body>
+</html>

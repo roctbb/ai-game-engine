@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pacman Renderer</title>
+  <style>
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#050814;color:#dbeafe;font-family:Arial,sans-serif}
+    .wrap{width:min(92vmin,780px)}
+    svg{width:100%;aspect-ratio:1/1;background:#07111f;border:1px solid #223b68}
+    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#b6c7da}
+  </style>
+</head>
+<body>
+<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<script>
+const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
+function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
+function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
+function drawMiniBar(cx,cy,C,value,max,fill="#22c55e"){const m=Number(max),v=Number(value);if(!Number.isFinite(m)||m<=0||!Number.isFinite(v))return;const pct=Math.max(0,Math.min(1,v/m)),w=C*0.7,h=Math.max(3,C*0.09),x=cx-w/2,y=cy+C*0.36;boardEl.appendChild(el("rect",{x,y,width:w,height:h,rx:h/2,fill:"rgba(15,23,42,.62)"}));boardEl.appendChild(el("rect",{x,y,width:w*pct,height:h,rx:h/2,fill:pct<.25?"#ef4444":fill}))}
+function draw(frame){
+  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||15, h=Array.isArray(grid[0])?grid[0].length:15, C=30;
+  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
+  boardEl.appendChild(el("rect",{x:0,y:0,width:w*C,height:h*C,fill:"#07111f"}));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=grid[x]?.[y]??0;
+    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:v===-1?"#1d4ed8":"#07111f"}));
+    if(v===1)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.09,fill:"#fde68a"}));
+    if(v===2)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.22,fill:"#facc15"}));
+    if(v===-2)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.28,fill:"#f472b6"}));
+  }
+  const p=frame.pacman||{};
+  if(Number.isFinite(p.x)&&Number.isFinite(p.y)){
+    boardEl.appendChild(el("circle",{cx:p.x*C+C/2,cy:p.y*C+C/2,r:C*0.34,fill:"#facc15"}));
+    boardEl.appendChild(el("path",{d:`M ${p.x*C+C/2} ${p.y*C+C/2} L ${p.x*C+C} ${p.y*C+C*0.35} L ${p.x*C+C} ${p.y*C+C*0.65} Z`,fill:"#07111f"}));drawMiniBadge(p.x*C+C/2,p.y*C+C/2,C,frame.score||0,"#b45309");
+  }
+  const vision=Number(frame.ghost_vision)||0;
+  for(const g of (frame.ghost_states||[])){
+    const color=g.resting?"#94a3b8":g.active?"#ef4444":"#f472b6", cx=g.x*C+C/2, cy=g.y*C+C/2;
+    if(vision>0)boardEl.appendChild(el("circle",{cx,cy,r:vision*C,fill:g.active?"rgba(239,68,68,.12)":"rgba(244,114,182,.08)",stroke:color,"stroke-width":2,"stroke-dasharray":"6 6",opacity:g.resting ? .45 : .7}));
+  }
+  for(const g of (frame.ghost_states||[])){const color=g.resting?"#94a3b8":g.active?"#ef4444":"#f472b6";boardEl.appendChild(el("circle",{cx:g.x*C+C/2,cy:g.y*C+C/2,r:C*0.36,fill:"none",stroke:color,"stroke-width":3}));if(g.active)boardEl.appendChild(el("circle",{cx:g.x*C+C/2,cy:g.y*C+C/2,r:C*0.1,fill:"#ef4444"}));}
+  const status=frame.alive===false?"CAUGHT":frame.dots_left===0&&frame.power_dots_left===0?"CLEAR":"RUNNING";
+  const active=(frame.ghost_states||[]).filter(g=>g.active).length, resting=(frame.ghost_states||[]).filter(g=>g.resting).length;
+  hudEl.textContent=`${status} score=${frame.score||0} dots=${frame.dots_left??"-"} power=${frame.power_dots_left??"-"} ghosts_active=${active} resting=${resting} invalid=${frame.invalid_moves||0}`;
+}
+window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
+draw({board:Array.from({length:15},()=>Array(15).fill(0)),pacman:{x:1,y:1},ghost_states:[{x:13,y:13,active:false,resting:false}],ghost_vision:6,dots_left:0,alive:true});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+</script>
+</body>
+</html>

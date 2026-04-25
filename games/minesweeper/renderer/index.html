@@ -17,11 +17,11 @@
 const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
 function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
 function draw(frame){
-  const grid=Array.isArray(frame.board)?frame.board:[], h=grid.length||12, w=Array.isArray(grid[0])?grid[0].length:12, C=40;
+  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||12, h=Array.isArray(grid[0])?grid[0].length:12, C=40;
   const numberColors=["#94a3b8","#2563eb","#16a34a","#dc2626","#7c3aed","#be123c","#0891b2","#111827","#475569"];
   boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const v=grid[y]?.[x]??-2, fill=v===-2?"#334155":v===-1?"#7f1d1d":v===9?"#dc2626":"#d8e2ec";
+    const v=grid[x]?.[y]??-2, fill=v===-2?"#334155":v===-1?"#7f1d1d":v===9?"#dc2626":"#d8e2ec";
     boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-2,height:C-2,fill}));
     if(v>=0&&v!==9){const text=el("text",{x:x*C+C/2,y:y*C+C*0.64,"text-anchor":"middle","font-size":18,"font-weight":700,fill:numberColors[v]||"#0f172a"});text.textContent=v===0?"":String(v);boardEl.appendChild(text)}
     if(v===-1){const text=el("text",{x:x*C+C/2,y:y*C+C*0.66,"text-anchor":"middle","font-size":20,fill:"#fee2e2"});text.textContent="F";boardEl.appendChild(text)}

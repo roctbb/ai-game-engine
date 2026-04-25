@@ -2,26 +2,53 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
+import random
+import sys
 from typing import Any, Callable
 
 
-_WIDTH = 9
-_HEIGHT = 7
-_MAX_TICKS = 80
-_PLAYER_START = (1, 3)
-_ENEMY_START = (7, 3)
-_FLAG_START = (4, 3)
-_ACTIONS = {"up", "down", "left", "right", "stay"}
+_GAME_ROOT = Path(__file__).resolve().parent
+if str(_GAME_ROOT) not in sys.path:
+    sys.path.insert(0, str(_GAME_ROOT))
+
+from domain.common import Booster, Decision, Point  # noqa: E402
+from domain.game import Game  # noqa: E402
+from domain.general_player import GeneralPlayer  # noqa: E402
+from domain.maps.tanks import TankMap  # noqa: E402
+
+
+_MAX_TICKS = 120
+_SUPPORT_COOLDOWN = 5
+_TEAM_PLAYER_ID = "team-player"
+_TEAM_ENEMY_ID = "team-bot"
+
+_ACTION_ALIASES = {
+    "up": Decision.GO_UP,
+    "down": Decision.GO_DOWN,
+    "left": Decision.GO_LEFT,
+    "right": Decision.GO_RIGHT,
+    "go_up": Decision.GO_UP,
+    "go_down": Decision.GO_DOWN,
+    "go_left": Decision.GO_LEFT,
+    "go_right": Decision.GO_RIGHT,
+    "fire_up": Decision.FIRE_UP,
+    "fire_down": Decision.FIRE_DOWN,
+    "fire_left": Decision.FIRE_LEFT,
+    "fire_right": Decision.FIRE_RIGHT,
+}
 
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
+
     driver_fn, driver_compile_error = _build_slot_callable(
         ctx=ctx,
         slot_key="driver",
         function_names=("make_choice", "make_move"),
+        fallback=_fallback_driver,
         events=events,
         print_context=print_context,
     )
@@ -34,153 +61,116 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         print_context=print_context,
     )
 
-    player_pos = list(_PLAYER_START)
-    enemy_pos = list(_ENEMY_START)
-    player_base = _PLAYER_START
-    enemy_base = _ENEMY_START
-    flag_pos = list(_FLAG_START)
-    carrier: str | None = None
+    seed = str(ctx.get("run_id") or "tanks_legacy_offline")
+    random.seed(seed)
+
+    game = Game()
+    TankMap.init(game, players=[])
+    player = RuntimeTank(
+        slot_key="driver",
+        strategy=driver_fn,
+        events=events,
+        print_context=print_context,
+        properties={"team": "Radient", "name": "you"},
+    )
+    spawn = _pick_spawn(game)
+    game.players[(spawn.x, spawn.y)] = player
+    player_spawn = (spawn.x, spawn.y)
+
+    frames: list[dict[str, object]] = []
+    support_cooldown = 0
+    support_invalid_actions = 0
+    ticks_played = 0
     winner: str | None = None
 
-    player_invalid_actions = 0
-    enemy_invalid_actions = 0
-    support_invalid_actions = 0
-    boost_cooldown = 0
-    ticks_played = 0
-    frames: list[dict[str, object]] = [
-        {
-            "tick": 0,
-            "phase": "running",
-            "frame": {
-                "player": {"x": player_pos[0], "y": player_pos[1]},
-                "enemy": {"x": enemy_pos[0], "y": enemy_pos[1]},
-                "flag": {"x": flag_pos[0], "y": flag_pos[1], "carrier": carrier or "none"},
-                "boost_cooldown": boost_cooldown,
-                "winner": "none",
-            },
-        }
-    ]
+    _update_metadata(
+        game=game,
+        tick=0,
+        player=player,
+        player_spawn=player_spawn,
+        support_cooldown=support_cooldown,
+    )
+    frames.append(_frame_envelope(tick=0, phase="running", frame=game.as_dict()))
 
     for tick in range(_MAX_TICKS):
         print_context["tick"] = tick
         ticks_played = tick + 1
-        state = _build_state(
-            tick=tick,
-            player_pos=player_pos,
-            enemy_pos=enemy_pos,
-            flag_pos=flag_pos,
-            carrier=carrier,
-            player_base=player_base,
-            enemy_base=enemy_base,
-            boost_cooldown=boost_cooldown,
-        )
 
-        support_action = _call_support(support_fn=support_fn, state=state)
-        use_boost = False
+        _update_metadata(
+            game=game,
+            tick=tick,
+            player=player,
+            player_spawn=player_spawn,
+            support_cooldown=support_cooldown,
+        )
+        support_action = _call_support(
+            support_fn=support_fn,
+            state=dict(game.metadata),
+        )
         if support_action == "boost":
-            if boost_cooldown == 0:
-                use_boost = True
-                boost_cooldown = 4
-                events.append({"type": "support_boost", "tick": tick + 1})
+            if support_cooldown == 0:
+                player.boosters.append(Booster("speed", 1, 2))
+                player.boosters[-1].apply(player)
+                support_cooldown = _SUPPORT_COOLDOWN
+                events.append({"type": "support_boost", "tick": tick + 1, "message": "Speed boost applied for one move."})
             else:
                 support_invalid_actions += 1
-                events.append({"type": "invalid_support_action", "tick": tick + 1, "action": support_action})
+                events.append(
+                    {
+                        "type": "invalid_support_action",
+                        "tick": tick + 1,
+                        "action": support_action,
+                        "message": "Boost is still on cooldown.",
+                    }
+                )
         elif support_action != "none":
             support_invalid_actions += 1
-            events.append({"type": "invalid_support_action", "tick": tick + 1, "action": support_action})
-
-        player_action = _call_driver(driver_fn=driver_fn, x=player_pos[0], y=player_pos[1], state=state)
-        player_steps = 2 if use_boost else 1
-        if not _apply_action(player_pos, player_action, steps=player_steps):
-            player_invalid_actions += 1
-            events.append({"type": "invalid_driver_action", "tick": tick + 1, "action": player_action})
-
-        enemy_action = _enemy_policy(enemy_pos=enemy_pos, carrier=carrier, flag_pos=flag_pos, enemy_base=enemy_base)
-        if not _apply_action(enemy_pos, enemy_action, steps=1):
-            enemy_invalid_actions += 1
-            events.append({"type": "invalid_enemy_action", "tick": tick + 1, "action": enemy_action})
-
-        if boost_cooldown > 0:
-            boost_cooldown -= 1
-
-        carrier, flag_pos = _resolve_flag_logic(
-            player_pos=player_pos,
-            enemy_pos=enemy_pos,
-            flag_pos=flag_pos,
-            carrier=carrier,
-            player_base=player_base,
-            enemy_base=enemy_base,
-        )
-        events.append(
-            {
-                "type": "tick_resolved",
-                "tick": tick + 1,
-                "player": {"x": player_pos[0], "y": player_pos[1]},
-                "enemy": {"x": enemy_pos[0], "y": enemy_pos[1]},
-                "flag": {"x": flag_pos[0], "y": flag_pos[1], "carrier": carrier or "none"},
-            }
-        )
-
-        if carrier == "player" and tuple(player_pos) == player_base:
-            winner = "player"
-            events.append({"type": "winner", "tick": tick + 1, "winner": winner})
-            frames.append(
+            events.append(
                 {
+                    "type": "invalid_support_action",
                     "tick": tick + 1,
-                    "phase": "running",
-                    "frame": {
-                        "player": {"x": player_pos[0], "y": player_pos[1]},
-                        "enemy": {"x": enemy_pos[0], "y": enemy_pos[1]},
-                        "flag": {"x": flag_pos[0], "y": flag_pos[1], "carrier": carrier or "none"},
-                        "boost_cooldown": boost_cooldown,
-                        "winner": winner,
-                    },
+                    "action": support_action,
+                    "message": "Support action must be 'boost' or 'none'.",
                 }
             )
-            break
-        if carrier == "enemy" and tuple(enemy_pos) == enemy_base:
+
+        game.metadata["support"] = {"boost_cooldown": support_cooldown}
+        frame = game.make_step()
+        _append_legacy_events(events=events, tick=tick + 1, frame=frame)
+        frames.append(_frame_envelope(tick=tick + 1, phase="running", frame=frame))
+
+        if support_cooldown > 0:
+            support_cooldown -= 1
+
+        if not _is_player_alive(game, player):
             winner = "enemy"
-            events.append({"type": "winner", "tick": tick + 1, "winner": winner})
-            frames.append(
-                {
-                    "tick": tick + 1,
-                    "phase": "running",
-                    "frame": {
-                        "player": {"x": player_pos[0], "y": player_pos[1]},
-                        "enemy": {"x": enemy_pos[0], "y": enemy_pos[1]},
-                        "flag": {"x": flag_pos[0], "y": flag_pos[1], "carrier": carrier or "none"},
-                        "boost_cooldown": boost_cooldown,
-                        "winner": winner,
-                    },
-                }
-            )
+            events.append({"type": "winner", "tick": tick + 1, "winner": winner, "message": "Your tank was destroyed."})
             break
-        frames.append(
-            {
-                "tick": tick + 1,
-                "phase": "running",
-                "frame": {
-                    "player": {"x": player_pos[0], "y": player_pos[1]},
-                    "enemy": {"x": enemy_pos[0], "y": enemy_pos[1]},
-                    "flag": {"x": flag_pos[0], "y": flag_pos[1], "carrier": carrier or "none"},
-                    "boost_cooldown": boost_cooldown,
-                    "winner": winner or "none",
-                },
-            }
-        )
+        if _dare_core_destroyed(game):
+            winner = "player"
+            events.append({"type": "winner", "tick": tick + 1, "winner": winner, "message": "Dare base was destroyed."})
+            break
+
+    if winner is None:
+        winner = "draw"
+
+    final_frame = game.as_dict()
+    frames.append(_frame_envelope(tick=ticks_played, phase="finished", frame=final_frame))
 
     team_player_id = _resolve_team_player_id(ctx)
-    team_enemy_id = "team-bot"
-    scores = _build_scores(team_player_id=team_player_id, team_enemy_id=team_enemy_id, winner=winner)
-    placements = _build_placements(team_player_id=team_player_id, team_enemy_id=team_enemy_id, winner=winner)
+    scores = _build_scores(team_player_id=team_player_id, team_enemy_id=_TEAM_ENEMY_ID, winner=winner)
+    placements = _build_placements(team_player_id=team_player_id, team_enemy_id=_TEAM_ENEMY_ID, winner=winner)
+    is_tie = winner == "draw"
 
     metrics: dict[str, object] = {
         "ticks_played": ticks_played,
-        "winner": winner or "draw",
-        "player_invalid_actions": player_invalid_actions,
-        "enemy_invalid_actions": enemy_invalid_actions,
+        "winner": winner,
+        "draw": is_tie,
+        "player_alive": _is_player_alive(game, player),
+        "player_position": _player_position_dict(game, player),
         "support_invalid_actions": support_invalid_actions,
-        "flag_carrier_final": carrier or "none",
+        "shots": sum(1 for event in events if event.get("type") == "shot"),
+        "deaths": sum(1 for event in events if event.get("type") == "death"),
     }
     if driver_compile_error:
         metrics["compile_error_driver"] = driver_compile_error
@@ -192,35 +182,87 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     payload: dict[str, object] = {
         "status": "finished",
         "metrics": metrics,
+        "frames": frames,
+        "events": events,
+        "scores": scores,
+        "winner_slots": [] if is_tie else ([team_player_id] if winner == "player" else [_TEAM_ENEMY_ID]),
+        "is_tie": is_tie,
     }
     run_kind = str(ctx.get("run_kind") or "training_match")
     if run_kind == "competition_match":
-        payload["scores"] = scores
         payload["placements"] = placements
-        if winner is None:
+        if is_tie:
             payload["tie_resolution"] = "explicit_tie"
     elif run_kind == "training_match":
-        payload["scores"] = scores
+        payload["placements"] = placements
     else:
         payload["replay_ref"] = None
 
-    frames.append(
-        {
-            "tick": len(frames),
-            "phase": "finished",
-            "frame": {
-                "player": {"x": player_pos[0], "y": player_pos[1]},
-                "enemy": {"x": enemy_pos[0], "y": enemy_pos[1]},
-                "flag": {"x": flag_pos[0], "y": flag_pos[1], "carrier": carrier or "none"},
-                "boost_cooldown": boost_cooldown,
-                "winner": winner or "draw",
-            },
-        }
-    )
-    payload["frames"] = frames
-    payload["events"] = events
-
     return payload
+
+
+class RuntimeTank(GeneralPlayer):
+    def __init__(
+        self,
+        *,
+        slot_key: str,
+        strategy: Callable[..., object],
+        events: list[dict[str, object]],
+        print_context: dict[str, int],
+        properties: dict[str, object],
+    ):
+        super().__init__()
+        self.slot_key = slot_key
+        self.strategy = strategy
+        self.events = events
+        self.print_context = print_context
+        self.properties.update(properties)
+
+    def as_dict(self, point):
+        data = super().as_dict(point)
+        data["type"] = "Player"
+        return data
+
+    def step(self, point: Point, map_state: object):
+        for booster in self.boosters[:]:
+            booster.tick()
+            if booster.over():
+                booster.deapply(self)
+                self.boosters.remove(booster)
+
+        choice = _call_driver_strategy(self.strategy, point.x, point.y, map_state)
+        if not choice:
+            self.history.append("stay")
+            return None
+
+        parts = choice.split()
+        if not parts or not Decision.has_value(parts[0]):
+            self.errors.append(Exception("Invalid choice: " + choice))
+            self.history.append("invalid_choice")
+            self.events.append(
+                {
+                    "type": "invalid_driver_action",
+                    "tick": int(self.print_context.get("tick", 0)) + 1,
+                    "message": str(self.errors[-1]) if self.errors else "Invalid driver action.",
+                }
+            )
+            return None
+
+        self.history.append(choice)
+        if parts[0] == Decision.USE.value:
+            if len(parts) != 2:
+                self.errors.append(Exception("Invalid choice: " + choice))
+                self.history.append("invalid_choice")
+                return None
+            item = self.inventory.pop(parts[1])
+            if not item:
+                self.errors.append(Exception("No item in inventory: " + choice))
+                self.history.append("invalid_choice")
+                return None
+            item.apply(self)
+            return None
+
+        return Decision(parts[0])
 
 
 def _load_context() -> dict[str, Any]:
@@ -238,18 +280,15 @@ def _build_slot_callable(
     ctx: dict[str, Any],
     slot_key: str,
     function_names: tuple[str, ...],
-    fallback: Callable[..., object] | None = None,
-    events: list[dict[str, object]] | None = None,
-    print_context: dict[str, int] | None = None,
+    fallback: Callable[..., object],
+    events: list[dict[str, object]],
+    print_context: dict[str, int],
 ) -> tuple[Callable[..., object], str | None]:
     code = _code_for_slot(ctx=ctx, slot_key=slot_key)
     namespace: dict[str, Any] = {
+        "__name__": f"tanks_slot_{slot_key}",
         "__builtins__": _safe_builtins(
-            print_fn=_make_bot_print(
-                events=events if events is not None else [],
-                role=slot_key,
-                print_context=print_context if print_context is not None else {"tick": 0},
-            ),
+            print_fn=_make_bot_print(events=events, role=slot_key, print_context=print_context)
         )
     }
     compile_error: str | None = None
@@ -276,11 +315,12 @@ def _build_slot_callable(
         except Exception as exc:  # pragma: no cover - runtime path
             compile_error = str(exc)
 
-    return (fallback or _fallback_driver), compile_error
+    return fallback, compile_error
 
 
-def _safe_builtins(print_fn: Callable[..., None] | None = None) -> dict[str, object]:
+def _safe_builtins(print_fn: Callable[..., None]) -> dict[str, object]:
     return {
+        "__build_class__": __build_class__,
         "abs": abs,
         "all": all,
         "any": any,
@@ -288,21 +328,26 @@ def _safe_builtins(print_fn: Callable[..., None] | None = None) -> dict[str, obj
         "dict": dict,
         "enumerate": enumerate,
         "float": float,
+        "getattr": getattr,
+        "hasattr": hasattr,
         "int": int,
+        "isinstance": isinstance,
         "len": len,
         "list": list,
         "max": max,
         "min": min,
-        "print": print_fn or print,
+        "object": object,
+        "print": print_fn,
         "range": range,
+        "reversed": reversed,
+        "round": round,
         "set": set,
+        "sorted": sorted,
         "str": str,
         "sum": sum,
         "tuple": tuple,
         "zip": zip,
-        "hasattr": hasattr,
-        "getattr": getattr,
-        "setattr": setattr,
+        "Exception": Exception,
     }
 
 
@@ -317,8 +362,7 @@ def _make_bot_print(
         message = sep.join(str(value) for value in values)
         if end and end != "\n":
             message = f"{message}{end}"
-        lines = message.splitlines() or [""]
-        for line in lines:
+        for line in message.splitlines() or [""]:
             events.append(
                 {
                     "type": "bot_print",
@@ -339,41 +383,29 @@ def _code_for_slot(ctx: dict[str, Any], slot_key: str) -> str:
     return raw if isinstance(raw, str) else ""
 
 
-def _build_state(
-    tick: int,
-    player_pos: list[int],
-    enemy_pos: list[int],
-    flag_pos: list[int],
-    carrier: str | None,
-    player_base: tuple[int, int],
-    enemy_base: tuple[int, int],
-    boost_cooldown: int,
-) -> dict[str, object]:
-    return {
-        "tick": tick,
-        "map": {"width": _WIDTH, "height": _HEIGHT},
-        "self": {"x": player_pos[0], "y": player_pos[1]},
-        "enemy": {"x": enemy_pos[0], "y": enemy_pos[1]},
-        "flag": {"x": flag_pos[0], "y": flag_pos[1], "carrier": carrier or "none"},
-        "bases": {
-            "player": {"x": player_base[0], "y": player_base[1]},
-            "enemy": {"x": enemy_base[0], "y": enemy_base[1]},
-        },
-        "support": {"boost_cooldown": boost_cooldown},
-    }
-
-
-def _call_driver(driver_fn: Callable[..., object], x: int, y: int, state: dict[str, object]) -> str:
+def _call_driver_strategy(strategy: Callable[..., object], x: int, y: int, map_state: object) -> str | None:
     try:
-        result = driver_fn(x, y, state)
+        raw = strategy(x, y, map_state)
     except TypeError:
         try:
-            result = driver_fn(state)
+            raw = strategy(map_state)
         except Exception:  # pragma: no cover - runtime path
-            return "stay"
+            return None
     except Exception:  # pragma: no cover - runtime path
-        return "stay"
-    return _normalize_action(result)
+        return None
+    return _normalize_driver_action(raw)
+
+
+def _normalize_driver_action(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    action = raw.strip().lower()
+    if not action or action == "stay":
+        return None
+    if action.startswith("use "):
+        return action
+    mapped = _ACTION_ALIASES.get(action)
+    return str(mapped.value if isinstance(mapped, Decision) else mapped) if mapped else action
 
 
 def _call_support(support_fn: Callable[..., object], state: dict[str, object]) -> str:
@@ -388,116 +420,152 @@ def _call_support(support_fn: Callable[..., object], state: dict[str, object]) -
     return "none"
 
 
-def _normalize_action(raw: object) -> str:
-    if isinstance(raw, str):
-        action = raw.strip().lower()
-        if action in _ACTIONS:
-            return action
-    return "stay"
-
-
-def _apply_action(position: list[int], action: str, steps: int) -> bool:
-    if action not in _ACTIONS:
-        return False
-    moved = True
-    for _ in range(max(steps, 1)):
-        x, y = position
-        if action == "up":
-            y -= 1
-        elif action == "down":
-            y += 1
-        elif action == "left":
-            x -= 1
-        elif action == "right":
-            x += 1
-        else:
-            continue
-        if x < 0 or y < 0 or x >= _WIDTH or y >= _HEIGHT:
-            moved = False
-            continue
-        position[0] = x
-        position[1] = y
-    return moved
-
-
-def _enemy_policy(enemy_pos: list[int], carrier: str | None, flag_pos: list[int], enemy_base: tuple[int, int]) -> str:
-    if carrier == "enemy":
-        target = enemy_base
-    else:
-        target = (flag_pos[0], flag_pos[1])
-    return _move_towards(enemy_pos=enemy_pos, target=target)
-
-
-def _move_towards(enemy_pos: list[int], target: tuple[int, int]) -> str:
-    dx = target[0] - enemy_pos[0]
-    dy = target[1] - enemy_pos[1]
-    if abs(dx) >= abs(dy) and dx != 0:
-        return "right" if dx > 0 else "left"
-    if dy != 0:
-        return "down" if dy > 0 else "up"
-    return "stay"
-
-
-def _resolve_flag_logic(
-    player_pos: list[int],
-    enemy_pos: list[int],
-    flag_pos: list[int],
-    carrier: str | None,
-    player_base: tuple[int, int],
-    enemy_base: tuple[int, int],
-) -> tuple[str | None, list[int]]:
-    if carrier == "player":
-        flag_pos = [player_pos[0], player_pos[1]]
-    elif carrier == "enemy":
-        flag_pos = [enemy_pos[0], enemy_pos[1]]
-
-    if tuple(player_pos) == tuple(enemy_pos):
-        if carrier == "player":
-            carrier = None
-            flag_pos = [player_pos[0], player_pos[1]]
-        elif carrier == "enemy":
-            carrier = None
-            flag_pos = [enemy_pos[0], enemy_pos[1]]
-
-    if carrier is None:
-        player_on_flag = tuple(player_pos) == tuple(flag_pos)
-        enemy_on_flag = tuple(enemy_pos) == tuple(flag_pos)
-        if player_on_flag and not enemy_on_flag:
-            carrier = "player"
-        elif enemy_on_flag and not player_on_flag:
-            carrier = "enemy"
-
-    if carrier == "player":
-        flag_pos = [player_pos[0], player_pos[1]]
-        if tuple(player_pos) == player_base:
-            return carrier, flag_pos
-    elif carrier == "enemy":
-        flag_pos = [enemy_pos[0], enemy_pos[1]]
-        if tuple(enemy_pos) == enemy_base:
-            return carrier, flag_pos
-
-    return carrier, flag_pos
-
-
-def _fallback_driver(_x: int, _y: int, state: dict[str, object]) -> str:
-    flag = state["flag"]
-    own = state["self"]
-    if not isinstance(flag, dict) or not isinstance(own, dict):
-        return "stay"
-    dx = int(flag.get("x", 0)) - int(own.get("x", 0))
-    dy = int(flag.get("y", 0)) - int(own.get("y", 0))
-    if abs(dx) >= abs(dy) and dx != 0:
-        return "right" if dx > 0 else "left"
-    if dy != 0:
-        return "down" if dy > 0 else "up"
-    return "stay"
+def _fallback_driver(x: int, y: int, map_state: object) -> str:
+    target = _nearest_target(x=x, y=y, map_state=map_state)
+    if target is None:
+        return "fire_right"
+    tx, ty = target
+    if abs(tx - x) >= abs(ty - y) and tx != x:
+        return "go_right" if tx > x else "go_left"
+    if ty != y:
+        return "go_down" if ty > y else "go_up"
+    return "fire_right"
 
 
 def _fallback_support(_state: dict[str, object]) -> str:
     return "none"
 
 
-def _build_scores(team_player_id: str, team_enemy_id: str, winner: str | None) -> dict[str, int]:
+def _nearest_target(x: int, y: int, map_state: object) -> tuple[int, int] | None:
+    if not isinstance(map_state, list):
+        return None
+    best: tuple[int, int] | None = None
+    best_dist = 10**9
+    for tx, column in enumerate(map_state):
+        if not isinstance(column, list):
+            continue
+        for ty, cell in enumerate(column):
+            if not isinstance(cell, dict):
+                continue
+            items = cell.get("items") or []
+            obj = cell.get("object")
+            is_coin = any(isinstance(item, dict) and item.get("type") == "Coin" for item in items)
+            is_enemy_core = isinstance(obj, dict) and obj.get("type") in {"DareAncient", "Tower"}
+            if not is_coin and not is_enemy_core:
+                continue
+            dist = abs(tx - x) + abs(ty - y)
+            if dist < best_dist:
+                best = (tx, ty)
+                best_dist = dist
+    return best
+
+
+def _pick_spawn(game: Game) -> Point:
+    for _ in range(2000):
+        x = random.randint(0, game.width - 1)
+        y = random.randint(0, game.height - 1)
+        point = Point(x, y)
+        if game.can_move(point) and (x, y) not in game.items and (x, y) not in game.players:
+            return point
+    for x in range(game.width):
+        for y in range(game.height):
+            point = Point(x, y)
+            if game.can_move(point) and (x, y) not in game.items and (x, y) not in game.players:
+                return point
+    return Point(0, 0)
+
+
+def _update_metadata(
+    *,
+    game: Game,
+    tick: int,
+    player: RuntimeTank,
+    player_spawn: tuple[int, int],
+    support_cooldown: int,
+) -> None:
+    player_pos = _player_position(game, player)
+    target = _nearest_target(player_pos[0], player_pos[1], game.get_state()) if player_pos else None
+    game.metadata = {
+        "tick": tick,
+        "map": {"width": game.width, "height": game.height},
+        "self": {"x": player_pos[0], "y": player_pos[1]} if player_pos else None,
+        "support": {"boost_cooldown": support_cooldown},
+        "spawn": {"x": player_spawn[0], "y": player_spawn[1]},
+        # Compatibility with the temporary simplified version.
+        "flag": {"x": target[0], "y": target[1], "carrier": "none"} if target else {"x": player_spawn[0], "y": player_spawn[1], "carrier": "none"},
+        "bases": {"player": {"x": player_spawn[0], "y": player_spawn[1]}},
+        "enemy": _nearest_enemy_dict(game=game, player=player),
+    }
+
+
+def _nearest_enemy_dict(game: Game, player: RuntimeTank) -> dict[str, int]:
+    player_pos = _player_position(game, player)
+    if player_pos is None:
+        return {"x": 0, "y": 0}
+    px, py = player_pos
+    best = None
+    best_dist = 10**9
+    for (x, y), obj in {**game.players, **game.objects}.items():
+        if obj is player:
+            continue
+        props = getattr(obj, "properties", {})
+        if props.get("team") == player.properties.get("team"):
+            continue
+        if not getattr(obj, "is_flat", False):
+            dist = abs(px - x) + abs(py - y)
+            if dist < best_dist:
+                best = (x, y)
+                best_dist = dist
+    if best is None:
+        return {"x": 0, "y": 0}
+    return {"x": best[0], "y": best[1]}
+
+
+def _append_legacy_events(events: list[dict[str, object]], tick: int, frame: dict[str, object]) -> None:
+    for legacy_event in frame.get("events", []):
+        if not isinstance(legacy_event, dict):
+            continue
+        event = dict(legacy_event)
+        event["tick"] = tick
+        params = event.get("params")
+        if isinstance(params, dict) and "message" not in event:
+            event["message"] = _event_message(event_type=str(event.get("type") or ""), params=params)
+        events.append(event)
+
+
+def _event_message(event_type: str, params: dict[str, object]) -> str:
+    if event_type == "shot":
+        return f"Shot from {params.get('from')} to {params.get('to')}."
+    if event_type == "death":
+        return f"Object destroyed at {params.get('at')}."
+    return event_type
+
+
+def _frame_envelope(tick: int, phase: str, frame: dict[str, object]) -> dict[str, object]:
+    return {"tick": tick, "phase": phase, "frame": frame}
+
+
+def _player_position(game: Game, player: RuntimeTank) -> tuple[int, int] | None:
+    for (x, y), candidate in game.players.items():
+        if candidate is player:
+            return (x, y)
+    return None
+
+
+def _player_position_dict(game: Game, player: RuntimeTank) -> dict[str, int] | None:
+    pos = _player_position(game, player)
+    return {"x": pos[0], "y": pos[1]} if pos else None
+
+
+def _is_player_alive(game: Game, player: RuntimeTank) -> bool:
+    return _player_position(game, player) is not None
+
+
+def _dare_core_destroyed(game: Game) -> bool:
+    return not any(obj.__class__.__name__ == "DareAncient" for obj in game.objects.values())
+
+
+def _build_scores(team_player_id: str, team_enemy_id: str, winner: str) -> dict[str, int]:
     if winner == "player":
         return {team_player_id: 3, team_enemy_id: 0}
     if winner == "enemy":
@@ -505,7 +573,7 @@ def _build_scores(team_player_id: str, team_enemy_id: str, winner: str | None) -
     return {team_player_id: 1, team_enemy_id: 1}
 
 
-def _build_placements(team_player_id: str, team_enemy_id: str, winner: str | None) -> dict[str, int]:
+def _build_placements(team_player_id: str, team_enemy_id: str, winner: str) -> dict[str, int]:
     if winner == "player":
         return {team_player_id: 1, team_enemy_id: 2}
     if winner == "enemy":
@@ -517,7 +585,7 @@ def _resolve_team_player_id(ctx: dict[str, Any]) -> str:
     team_id = ctx.get("team_id")
     if isinstance(team_id, str) and team_id.strip():
         return team_id
-    return "team-player"
+    return _TEAM_PLAYER_ID
 
 
 if __name__ == "__main__":

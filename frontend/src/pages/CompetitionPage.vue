@@ -28,10 +28,7 @@
             <span class="agp-pill" :class="competitionStatusToneClass">{{ competitionStatusLabel }}</span>
             <span v-if="canModerate" class="agp-pill agp-pill--neutral">{{ competition.format }}</span>
             <span v-if="canModerate" class="agp-pill agp-pill--neutral">код: {{ competitionCodePolicyLabel(competition.code_policy) }}</span>
-            <span v-if="canModerate" class="agp-pill agp-pill--neutral">live: {{ competitionLiveLabel }}</span>
-          </div>
-          <div v-if="canModerate" class="small text-muted mt-2">
-            id <span class="mono">{{ competition.competition_id }}</span> · версия <span class="mono">{{ shortVersionId }}</span>
+            <span v-if="canModerate" class="agp-pill agp-pill--neutral">{{ competitionLiveLabel }}</span>
           </div>
           <div v-if="competition.pending_reason" class="competition-warning mt-2">
             <span class="fw-semibold">Ожидает решения:</span> {{ competition.pending_reason }}
@@ -46,7 +43,7 @@
               <strong>{{ readyEntrantsCount }}</strong>
             </div>
             <div class="competition-stat">
-              <span>забанены</span>
+              <span>ограничены</span>
               <strong>{{ bannedEntrantsCount }}</strong>
             </div>
             <div class="competition-stat">
@@ -75,7 +72,7 @@
               Зарегистрировать
             </button>
             <button class="btn btn-sm btn-outline-primary" :disabled="!canStart" @click="startCurrentCompetition">
-              {{ isStarting ? 'Старт...' : 'Старт' }}
+              {{ isStarting ? 'Запуск...' : 'Начать' }}
             </button>
             <button class="btn btn-sm btn-outline-success" :disabled="!canAdvance" @click="advanceCurrentCompetition">
               {{ isAdvancing ? 'Обработка...' : 'Следующий раунд' }}
@@ -92,7 +89,7 @@
 
       <article class="agp-card p-3" v-if="competition.status === 'draft' && canModerate">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="h6 mb-0">Настройки Draft-соревнования</h2>
+          <h2 class="h6 mb-0">Настройки соревнования</h2>
           <div class="d-flex gap-2">
             <button class="btn btn-sm btn-outline-secondary" :disabled="isSavingDraftSettings" @click="resetDraftSettings">
               Сбросить
@@ -151,17 +148,19 @@
             <thead>
               <tr>
                 <th>Игрок</th>
-                <th v-if="canModerate">ready</th>
-                <th v-if="canModerate">banned</th>
-                <th v-if="canModerate">reason</th>
-                <th v-if="canModerate">actions</th>
+                <th>Статус</th>
+                <th v-if="canModerate">Ограничение</th>
+                <th v-if="canModerate">Действия</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="entrant in competition.entrants" :key="entrant.team_id">
                 <td>{{ teamName(entrant.team_id) }}</td>
-                <td v-if="canModerate" class="mono small">{{ entrant.ready }}</td>
-                <td v-if="canModerate" class="mono small">{{ entrant.banned }}</td>
+                <td>
+                  <span class="agp-pill" :class="entrantStatusToneClass(entrant)">
+                    {{ entrantStatusLabel(entrant) }}
+                  </span>
+                </td>
                 <td v-if="canModerate" class="small text-muted">{{ entrant.blocker_reason || '—' }}</td>
                 <td v-if="canModerate">
                   <div class="d-flex gap-2 flex-wrap">
@@ -178,7 +177,7 @@
                       :disabled="!canModerate || moderationBusyTeamId === entrant.team_id"
                       @click="toggleEntrantBan(entrant.team_id, !entrant.banned)"
                     >
-                      {{ entrant.banned ? 'Разбанить' : 'Забанить' }}
+                      {{ entrant.banned ? 'Разрешить' : 'Заблокировать' }}
                     </button>
                     <button
                       class="btn btn-sm btn-outline-secondary"
@@ -191,7 +190,7 @@
                 </td>
               </tr>
               <tr v-if="competition.entrants.length === 0">
-                <td :colspan="canModerate ? 5 : 1" class="text-muted small">Пока нет зарегистрированных игроков.</td>
+                <td :colspan="canModerate ? 4 : 2" class="text-muted small">Пока нет зарегистрированных игроков.</td>
               </tr>
             </tbody>
           </table>
@@ -343,21 +342,30 @@
         <table class="table align-middle mb-0">
           <thead>
             <tr>
-              <th>ID запуска</th>
               <th>Игрок</th>
               <th>Статус</th>
               <th>Причина</th>
+              <th>Повтор</th>
+              <th>Детали</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="run in competitionRuns" :key="run.run_id">
-              <td class="mono small">
-                <RouterLink :to="`/runs/${run.run_id}/watch`">{{ run.run_id }}</RouterLink>
-              </td>
               <td>{{ teamName(run.team_id) }}</td>
               <td>{{ runStatusLabel(run.status) }}</td>
               <td><RunReasonBadge :reason="run.error_message" /></td>
+              <td>
+                <RouterLink class="btn btn-sm btn-outline-secondary" :to="`/runs/${run.run_id}/watch`">
+                  Смотреть
+                </RouterLink>
+              </td>
+              <td>
+                <details class="small">
+                  <summary class="text-muted">Технический ID</summary>
+                  <span class="mono small">{{ run.run_id }}</span>
+                </details>
+              </td>
               <td class="text-end">
                 <button class="btn btn-sm btn-outline-dark" @click="inspectRunReplay(run.run_id)">
                   Инспектор
@@ -365,7 +373,7 @@
               </td>
             </tr>
             <tr v-if="competitionRuns.length === 0">
-              <td colspan="5" class="text-muted small">Пока нет запусков соревнования.</td>
+              <td colspan="6" class="text-muted small">Пока нет запусков соревнования.</td>
             </tr>
           </tbody>
         </table>
@@ -374,7 +382,10 @@
       <article class="agp-card p-3" v-if="canModerate && inspectedRunId">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h2 class="h6 mb-0">Инспектор повтора</h2>
-          <span class="mono small">ID запуска {{ inspectedRunId }}</span>
+          <details class="small">
+            <summary class="text-muted">Технические детали</summary>
+            <span class="mono small">{{ inspectedRunId }}</span>
+          </details>
         </div>
         <div v-if="isInspectReplayLoading" class="text-muted small">Загрузка повтора...</div>
         <div v-else-if="inspectReplayError" class="text-danger small">{{ inspectReplayError }}</div>
@@ -384,7 +395,10 @@
             · события: <span class="mono">{{ inspectedReplay.events.length }}</span>
             · обновлено: <span class="mono">{{ inspectedReplay.updated_at }}</span>
           </div>
-          <pre class="mono small mb-0">{{ inspectedReplaySummary }}</pre>
+          <section class="competition-replay-summary">
+            <div class="fw-semibold mb-2">Сводка повтора</div>
+            <pre class="mono small mb-0">{{ inspectedReplaySummary }}</pre>
+          </section>
         </div>
         <div v-else class="text-muted small">Повтор для выбранного запуска пока недоступен.</div>
       </article>
@@ -418,9 +432,9 @@
             <tr>
               <th>Игрок A</th>
               <th>Игрок B</th>
-              <th>Слот</th>
+              <th>Роль</th>
               <th>схожесть</th>
-              <th>запуски</th>
+              <th>Повторы</th>
             </tr>
           </thead>
           <tbody>
@@ -429,7 +443,17 @@
               <td>{{ teamName(warning.team_b_id) }}</td>
               <td class="mono small">{{ warning.slot_key }}</td>
               <td class="mono small">{{ warning.similarity.toFixed(4) }}</td>
-              <td class="small mono">{{ warning.run_a_id }} / {{ warning.run_b_id }}</td>
+              <td>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                  <RouterLink class="btn btn-sm btn-outline-secondary" :to="`/runs/${warning.run_a_id}/watch`">A</RouterLink>
+                  <RouterLink class="btn btn-sm btn-outline-secondary" :to="`/runs/${warning.run_b_id}/watch`">B</RouterLink>
+                  <details class="small">
+                    <summary class="text-muted">Технические ID</summary>
+                    <div class="mono small">{{ warning.run_a_id }}</div>
+                    <div class="mono small">{{ warning.run_b_id }}</div>
+                  </details>
+                </div>
+              </td>
             </tr>
             <tr v-if="antiplagWarnings.length === 0">
               <td colspan="5" class="text-muted small">Предупреждений нет.</td>
@@ -467,6 +491,7 @@ import {
   type AntiplagiarismWarningDto,
   type CompetitionCodePolicy,
   type CompetitionDto,
+  type CompetitionEntrantDto,
   type CompetitionMatchStatus,
   type CompetitionRoundStatus,
   type CompetitionRunItemDto,
@@ -573,18 +598,25 @@ const competitionStatusToneClass = computed(() => {
   return 'agp-pill--neutral';
 });
 const competitionLiveLabel = computed(() => {
-  if (competitionLiveMode.value === 'sse') return 'stream';
-  if (competitionLiveMode.value === 'polling') return 'fallback polling';
-  return 'ожидание';
+  if (competitionLiveMode.value === 'sse') return 'обновляется в реальном времени';
+  if (competitionLiveMode.value === 'polling') return 'обновляется периодически';
+  return 'ожидает обновления';
 });
-const shortVersionId = computed(() => {
-  const versionId = competition.value?.game_version_id ?? '';
-  return versionId.length > 14 ? `${versionId.slice(0, 8)}…${versionId.slice(-4)}` : versionId;
-});
-
 function teamName(teamId: string): string {
   const found = teamsByGame.value.find((item) => item.team_id === teamId);
   return found?.name ?? teamId;
+}
+
+function entrantStatusLabel(entrant: CompetitionEntrantDto): string {
+  if (entrant.banned) return 'заблокирован';
+  if (entrant.ready) return 'готов';
+  return 'готовится';
+}
+
+function entrantStatusToneClass(entrant: CompetitionEntrantDto): string {
+  if (entrant.banned) return 'agp-pill--danger';
+  if (entrant.ready) return 'agp-pill--success';
+  return 'agp-pill--warning';
 }
 
 function roundStatusLabel(status: CompetitionRoundStatus): string {
@@ -643,7 +675,7 @@ function syncDraftSettingsFromCompetition(): void {
 async function ensureCompetitionLoaded(): Promise<void> {
   const competitionIdFromRoute = String(route.params.competitionId || '').trim();
   if (!competitionIdFromRoute) {
-    errorMessage.value = 'Не передан competitionId';
+    errorMessage.value = 'Не найдено соревнование для просмотра';
     return;
   }
 
@@ -867,7 +899,7 @@ async function setEntrantNotReady(teamId: string): Promise<void> {
     competition.value = await setCompetitionEntrantNotReady({
       competition_id: competition.value.competition_id,
       team_id: teamId,
-      reason: 'manual moderation',
+      reason: 'готовность снята преподавателем',
     });
     await refreshCompetitionRelatedData();
   } catch (error) {
@@ -886,7 +918,7 @@ async function toggleEntrantBan(teamId: string, banned: boolean): Promise<void> 
       competition_id: competition.value.competition_id,
       team_id: teamId,
       banned,
-      reason: banned ? 'manual moderation' : 'ban removed by moderator',
+      reason: banned ? 'заблокировано преподавателем' : 'ограничение снято преподавателем',
     });
     await refreshCompetitionRelatedData();
   } catch (error) {
@@ -942,7 +974,7 @@ async function resolveTieByFirstTeam(roundIndex: number, matchId: string, teamId
     });
     await refreshCompetitionRelatedData();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось применить tie-break решение';
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось применить решение по ничьей';
   }
 }
 
@@ -1096,6 +1128,19 @@ onUnmounted(() => {
   background: rgba(255, 251, 235, 0.88);
   color: #8a4b0c;
   padding: 0.65rem 0.8rem;
+}
+
+.competition-replay-summary {
+  border: 1px solid var(--agp-border);
+  border-radius: 8px;
+  background: var(--agp-surface-soft);
+  padding: 0.85rem;
+}
+
+.competition-replay-summary pre {
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 1080px) {

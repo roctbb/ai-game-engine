@@ -1,67 +1,71 @@
 def make_choice(x, y, map_state):
-    flag = map_state["flag"]
-    bases = map_state["bases"]
-    enemy = map_state["enemy"]
-    w = map_state["map"]["width"]
-    h = map_state["map"]["height"]
+    """A safer starter bot for the old large tanks arena."""
+    width = len(map_state)
+    height = len(map_state[0]) if width else 0
 
-    carrying = flag["carrier"] == "player"
-    target = bases["player"] if carrying else flag
-    tx, ty = target["x"], target["y"]
-    ex, ey = enemy["x"], enemy["y"]
+    def inside(cx, cy):
+        return 0 <= cx < width and 0 <= cy < height
 
-    moves = {
-        "up":    (x, y - 1),
-        "down":  (x, y + 1),
-        "left":  (x - 1, y),
-        "right": (x + 1, y),
-    }
+    def cell(cx, cy):
+        return map_state[cx][cy] if inside(cx, cy) else {"player": None, "items": [], "object": {"type": "Wall"}}
 
-    # Отфильтровываем ходы за пределы карты
-    valid = {}
-    for m, (nx, ny) in moves.items():
-        if 0 <= nx < w and 0 <= ny < h:
-            valid[m] = (nx, ny)
+    def blocked(cx, cy):
+        here = cell(cx, cy)
+        if here.get("player"):
+            return True
+        obj = here.get("object")
+        if obj and not obj.get("is_transparent", False):
+            return True
+        return False
 
-    if not valid:
-        return "stay"
+    my_team = cell(x, y)["player"]["properties"].get("team")
 
-    def mdist(ax, ay, bx, by):
-        return abs(ax - bx) + abs(ay - by)
+    # First priority: if an enemy player, tower, wall or ancient is in a clear line, shoot.
+    for action, dx, dy in [
+        ("fire_left", -1, 0),
+        ("fire_right", 1, 0),
+        ("fire_up", 0, -1),
+        ("fire_down", 0, 1),
+    ]:
+        cx = x + dx
+        cy = y + dy
+        while inside(cx, cy):
+            here = cell(cx, cy)
+            player = here.get("player")
+            obj = here.get("object")
+            if player:
+                return action if player["properties"].get("team") != my_team else "fire_right"
+            if obj and not obj.get("is_flat", False):
+                return action
+            cx += dx
+            cy += dy
 
-    cur_dist = mdist(x, y, tx, ty)
+    # Second priority: collect the nearest visible item.
+    target = None
+    best = 10**9
+    for cx in range(width):
+        for cy in range(height):
+            if blocked(cx, cy):
+                continue
+            if cell(cx, cy).get("items"):
+                dist = abs(cx - x) + abs(cy - y)
+                if dist < best:
+                    best = dist
+                    target = (cx, cy)
 
-    # Ходы, приближающие к цели
-    closer = {m: p for m, p in valid.items() if mdist(p[0], p[1], tx, ty) < cur_dist}
-    # Ходы, не ухудшающие расстояние
-    same_or_closer = {m: p for m, p in valid.items() if mdist(p[0], p[1], tx, ty) <= cur_dist}
+    moves = [
+        ("go_left", x - 1, y),
+        ("go_right", x + 1, y),
+        ("go_up", x, y - 1),
+        ("go_down", x, y + 1),
+    ]
 
-    def pick_safest(candidates):
-        """Из кандидатов выбираем ход, максимально далёкий от врага."""
-        best_m = None
-        best_edist = -1
-        for m, (nx, ny) in candidates.items():
-            ed = mdist(nx, ny, ex, ey)
-            if ed > best_edist:
-                best_edist = ed
-                best_m = m
-        return best_m
+    if target:
+        tx, ty = target
+        moves.sort(key=lambda move: abs(move[1] - tx) + abs(move[2] - ty))
 
-    if carrying:
-        # Приоритет: приближаемся к базе, избегая столкновения с врагом
-        safe_closer = {m: p for m, p in closer.items() if p != (ex, ey)}
-        if safe_closer:
-            return pick_safest(safe_closer)
-        # Если все приближающие ходы ведут на врага — обходим
-        safe_same = {m: p for m, p in same_or_closer.items() if p != (ex, ey)}
-        if safe_same:
-            return pick_safest(safe_same)
-        # Все ходы ведут на врага — всё равно идём к цели
-        if closer:
-            return pick_safest(closer)
-        return pick_safest(valid)
-    else:
-        # Без флага — просто идём к нему кратчайшим путём
-        if closer:
-            return pick_safest(closer)
-        return pick_safest(valid) or "stay"
+    for action, nx, ny in moves:
+        if inside(nx, ny) and not blocked(nx, ny):
+            return action
+
+    return "fire_right"

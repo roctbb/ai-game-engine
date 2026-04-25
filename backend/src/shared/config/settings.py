@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     core_repository_auto_create_tables: bool = True
     execution_repository_backend: str = "memory"
     execution_repository_auto_create_tables: bool = True
+    session_repository_backend: str = "memory"
+    session_repository_auto_create_tables: bool = True
     games_root: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

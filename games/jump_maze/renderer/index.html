@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f7f7fb; color: #172033; }
+    .wrap { padding: 16px; }
+    .grid { display: grid; gap: 3px; width: min(82vmin, 520px); }
+    .cell { aspect-ratio: 1; border-radius: 5px; display: grid; place-items: center; font-weight: 800; }
+    .wall { background: #263238; }
+    .empty { background: #ffffff; }
+    .exit { background: #22c55e; color: white; }
+    .jump { background: #facc15; }
+    .player { outline: 4px solid #2563eb; outline-offset: -4px; }
+    .stats { margin-top: 12px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="board" class="grid"></div>
+    <div id="stats" class="stats"></div>
+  </div>
+  <script>
+    function pickFrame(payload) {
+      const frames = Array.isArray(payload && payload.frames) ? payload.frames : [];
+      const last = frames.length ? frames[frames.length - 1] : null;
+      return (last && last.frame) || (payload && payload.frame) || payload || {};
+    }
+
+    function render(payload) {
+      const frame = pickFrame(payload);
+      const board = Array.isArray(frame.board) ? frame.board : [];
+      const width = frame.width || board.length || 1;
+      const height = frame.height || board[0]?.length || 1;
+      const rows = Array.from({ length: height }, (_, y) => Array.from({ length: width }, (_, x) => board[x]?.[y] ?? 0));
+      const root = document.getElementById("board");
+      root.style.gridTemplateColumns = `repeat(${width}, 1fr)`;
+      const px = frame.position?.x;
+      const py = frame.position?.y;
+      root.innerHTML = "";
+      rows.forEach((row, y) => row.forEach((cell, x) => {
+        const el = document.createElement("div");
+        el.className = "cell " + (cell === -1 ? "wall" : cell === 1 ? "exit" : cell >= 2 ? "jump" : "empty");
+        if (x === px && y === py) el.classList.add("player");
+        el.textContent = cell === 1 ? "✓" : cell >= 2 ? String(cell) : "";
+        root.appendChild(el);
+      }));
+      document.getElementById("stats").textContent = `Прыжки: ${frame.jump_moves || 0} · Ошибки: ${frame.invalid_moves || 0} · Выход: ${frame.escaped ? "да" : "нет"}`;
+    }
+    window.render = render;
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (!message || typeof message !== "object") return;
+      if (message.type === "agp.renderer.state") render(message.payload || {});
+      if (message.type === "agp.renderer.result") render(message.payload || {});
+    });
+    render({ frame: { board: Array.from({ length: 8 }, () => Array(8).fill(0)), position: { x: 0, y: 0 } } });
+    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.0.0" } }, "*");
+  </script>
+</body>
+</html>
