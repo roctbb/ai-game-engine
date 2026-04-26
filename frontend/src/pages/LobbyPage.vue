@@ -53,13 +53,13 @@
         </button>
         <button
           v-if="canLeaveAsPlayer"
-          class="lobby-action-icon"
+          class="lobby-action-icon lobby-action-icon--leave"
           :disabled="isBusy"
           title="Прекратить участие"
           aria-label="Прекратить участие"
           @click="leaveAsPlayer"
         >
-          ↩
+          −
         </button>
         <button
           v-if="canManage && !activeCompetition"
@@ -117,8 +117,14 @@
           <strong>{{ managerCycleStatusLabel }}</strong>
           <span>{{ managerCycleStatusHint }}</span>
         </div>
-        <button class="btn btn-outline-secondary" :disabled="!canJoinAsPlayer || isBusy" @click="joinAsPlayer">
-          {{ isBusy ? '...' : 'Участвовать как игрок' }}
+        <button
+          class="lobby-action-icon lobby-action-icon--join"
+          :disabled="!canJoinAsPlayer || isBusy"
+          title="Участвовать как игрок"
+          aria-label="Участвовать как игрок"
+          @click="joinAsPlayer"
+        >
+          {{ isBusy ? '…' : '+' }}
         </button>
         <button
           v-if="!activeCompetition"
@@ -1001,6 +1007,7 @@ const competitionCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
 const lastGameRunId = ref('');
 const selectedTrainingRunId = ref('');
 const displayedGameWatchUrl = ref('');
+const displayedGameWatchRunId = ref('');
 const matchPage = ref(1);
 const matchesPerPage = 5;
 const embeddedGameFrame = ref<EmbeddedGameFrame | null>(null);
@@ -1550,14 +1557,29 @@ const currentGameLeaderLabel = computed(() => {
 });
 const currentGameWinnerLabel = computed(() => {
   const groupWinners = displayedGameMatchGroup.value?.winner_team_ids ?? [];
-  if (groupWinners.length) return groupWinners.map(teamLabel).join(', ');
+  const groupWinner = primaryWinnerTeamId(groupWinners, currentGameScoreMap.value);
+  if (groupWinner) return teamLabel(groupWinner);
 
   const competitionMatch = currentCompetitionMatch.value;
   if (competitionMatch?.advanced_team_ids.length) {
-    return competitionMatch.advanced_team_ids.map(teamLabel).join(', ');
+    const competitionWinner = primaryWinnerTeamId(
+      competitionMatch.advanced_team_ids,
+      new Map([
+        ...Object.entries(competitionMatch.scores_by_team),
+        ...currentGameScoreMap.value.entries(),
+      ]),
+    );
+    if (competitionWinner) return teamLabel(competitionWinner);
   }
 
   return currentGameLeaderLabel.value;
+});
+const currentGameScoreMap = computed(() => {
+  const result = new Map<string, number>();
+  for (const row of currentGameStats.value) {
+    if (row.scoreValue !== null) result.set(row.team_id, row.scoreValue);
+  }
+  return result;
 });
 const statsByTeam = computed(() => {
   const result: Record<string, LobbyParticipantStatsDto> = {};
@@ -1786,8 +1808,8 @@ function formatDateTime(value: string): string {
 }
 
 function matchWinnerLabel(group: TrainingMatchGroup): string {
-  const winners = matchGroupWinnerIds(group);
-  return winners.length ? winners.map(teamLabel).join(', ') : 'не определен';
+  const winner = primaryWinnerTeamId(matchGroupWinnerIds(group), matchGroupScoreMap(group));
+  return winner ? teamLabel(winner) : 'не определен';
 }
 
 function shouldHideMatchWinner(group: TrainingMatchGroup): boolean {
@@ -1842,6 +1864,35 @@ function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
     return [...scores.entries()].filter(([, score]) => score === bestScore).map(([teamId]) => teamId);
   }
   return [];
+}
+
+function matchGroupScoreMap(group: TrainingMatchGroup): Map<string, number> {
+  const scores = new Map<string, number>();
+  for (const runLink of group.runs) {
+    const run = trainingRunsById.value[runLink.run_id];
+    const payload = isRecord(run?.result_payload) ? run.result_payload : {};
+    const payloadScores = isRecord(payload.scores) ? payload.scores : {};
+    for (const [teamId, rawScore] of Object.entries(payloadScores)) {
+      const score = numericFrameValue(rawScore);
+      if (score !== null) scores.set(teamId, Math.max(scores.get(teamId) ?? score, score));
+    }
+    const ownScore = extractRunScore(payload, runLink.team_id);
+    if (ownScore !== null && runLink.team_id) {
+      scores.set(runLink.team_id, Math.max(scores.get(runLink.team_id) ?? ownScore, ownScore));
+    }
+  }
+  return scores;
+}
+
+function primaryWinnerTeamId(teamIds: string[], scores: Map<string, number> = new Map()): string {
+  const uniqueTeamIds = [...new Set(teamIds.filter(Boolean))];
+  if (uniqueTeamIds.length <= 1) return uniqueTeamIds[0] ?? '';
+  return uniqueTeamIds.sort((left, right) => {
+    const leftScore = scores.get(left) ?? Number.NEGATIVE_INFINITY;
+    const rightScore = scores.get(right) ?? Number.NEGATIVE_INFINITY;
+    if (leftScore !== rightScore) return rightScore - leftScore;
+    return teamLabel(left).localeCompare(teamLabel(right), 'ru');
+  })[0] ?? '';
 }
 
 function matchPrimaryRunId(match: { team_ids: string[]; run_ids_by_team: Record<string, string> }): string {
@@ -1996,26 +2047,47 @@ function collectRoleMapGamePlayers(byId: Map<string, Record<string, unknown>>, m
   const frame = message.frame;
   const positions = isRecord(frame.positions) ? frame.positions : null;
   if (!positions) return;
+  const roleEntries = Object.entries(positions).filter(([, value]) => isRecord(value) || Array.isArray(value));
+  if (!roleEntries.length) return;
 
   const batteries = isRecord(frame.batteries) ? frame.batteries : {};
   const collected = isRecord(frame.collected) ? frame.collected : {};
+  const carrying = isRecord(frame.carrying) ? frame.carrying : {};
+  const delivered = isRecord(frame.delivered) ? frame.delivered : {};
+  const throws = isRecord(frame.throws) ? frame.throws : {};
+  const frozen = isRecord(frame.frozen) ? frame.frozen : {};
+  const labels = isRecord(frame.labels) ? frame.labels : {};
   const invalidMoves = isRecord(frame.invalid_moves) ? frame.invalid_moves : {};
   const slotScores = isRecord(frame.slot_scores) ? frame.slot_scores : {};
-  Object.keys(positions).forEach((role, index) => {
-    const participant = message.participants[index];
+  roleEntries.forEach(([role], index) => {
+    const label = typeof labels[role] === 'string' ? labels[role] : '';
+    const participant = message.participants[index]
+      ?? message.participants.find((item) => item.display_name === label);
     const teamId = participant?.team_id ?? role;
     const collectedValue = numericFrameValue(collected[role]) ?? 0;
+    const carryingValue = numericFrameValue(carrying[role]) ?? 0;
+    const deliveredValue = numericFrameValue(delivered[role]) ?? 0;
+    const throwsValue = numericFrameValue(throws[role]) ?? 0;
+    const frozenValue = numericFrameValue(frozen[role]) ?? 0;
     const batteryValue = numericFrameValue(batteries[role]);
     const invalidValue = numericFrameValue(invalidMoves[role]) ?? 0;
     const score = numericFrameValue(slotScores[role])
-      ?? Math.max(0, collectedValue * 100 + (batteryValue ?? 0) - invalidValue * 10);
+      ?? (
+        Object.keys(delivered).length || Object.keys(carrying).length || Object.keys(throws).length
+          ? Math.max(0, deliveredValue * 120 + carryingValue * 30 + throwsValue * 5 - invalidValue * 10)
+          : Math.max(0, collectedValue * 100 + (batteryValue ?? 0) - invalidValue * 10)
+      );
     byId.set(teamId, {
       team_id: teamId,
-      name: participant?.display_name || role,
+      name: participant?.display_name || label || role,
       role,
       score,
       battery: batteryValue,
       collected: collectedValue,
+      carrying: carryingValue,
+      delivered: deliveredValue,
+      throws: throwsValue,
+      frozen: frozenValue,
       invalid_moves: invalidValue,
       alive: batteryValue === null ? true : batteryValue > 0,
     });
@@ -2064,6 +2136,7 @@ function buildCurrentGameStatFromFrame(
 ): CurrentGameStatRow {
   const teamId = typeof player.team_id === 'string' ? player.team_id : '';
   const name = typeof player.name === 'string' ? player.name : '';
+  const knownTeamLabel = teamId ? teamLabel(teamId) : '';
   const scoreValue = numericFrameValue(player.score ?? player.points);
   const life = numericFrameValue(player.life ?? player.hp);
   const shield = numericFrameValue(player.shield);
@@ -2071,7 +2144,7 @@ function buildCurrentGameStatFromFrame(
   return {
     run_id: message.runId,
     team_id: teamId || `frame-player-${index}`,
-    display_name: teamId ? teamLabel(teamId) : name || `Игрок ${index + 1}`,
+    display_name: name && (!knownTeamLabel || knownTeamLabel === teamId) ? name : knownTeamLabel || name || `Игрок ${index + 1}`,
     status: message.phase === 'finished' ? (alive ? 'финиш' : 'выбыл') : alive ? 'в игре' : 'выбыл',
     score: framePlayerScoreLabel(player),
     scoreValue,
@@ -2126,7 +2199,12 @@ function dedupeCurrentGameStats(rows: CurrentGameStatRow[]): CurrentGameStatRow[
 }
 
 function numericFrameValue(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function percentFrameValue(value: number | null, max: number): number {
@@ -2145,9 +2223,13 @@ function framePlayerScoreLabel(player: Record<string, unknown>): string {
     ['очки', 'points'],
     ['монеты', 'coins'],
     ['энергия', 'collected'],
+    ['доставлено', 'delivered'],
+    ['несет', 'carrying'],
+    ['броски', 'throws'],
     ['еда', 'food_eaten'],
     ['длина', 'length'],
     ['заряд', 'battery'],
+    ['заморозка', 'frozen'],
     ['жизни', 'life'],
     ['хиты', 'hits'],
     ['урон', 'damage'],
@@ -2828,14 +2910,16 @@ watch(
 );
 
 watch(
-  () => [
-    displayedGameRunId.value,
-    lobby.value?.replay_started_at ?? '',
-    lobby.value?.cycle_frame_ms ?? 500,
-    canShowDisplayedRunPrint.value ? 'print' : 'no-print',
-  ].join('|'),
-  () => {
-    displayedGameWatchUrl.value = buildDisplayedGameWatchUrl(displayedGameRunId.value);
+  () => displayedGameRunId.value,
+  (runId) => {
+    if (!runId) {
+      displayedGameWatchRunId.value = '';
+      displayedGameWatchUrl.value = '';
+      return;
+    }
+    if (displayedGameWatchRunId.value === runId && displayedGameWatchUrl.value) return;
+    displayedGameWatchRunId.value = runId;
+    displayedGameWatchUrl.value = buildDisplayedGameWatchUrl(runId);
   },
   { immediate: true },
 );
@@ -3044,6 +3128,18 @@ onUnmounted(() => {
   border-color: transparent;
   background: #0f9f8e;
   color: #fff;
+}
+
+.lobby-action-icon--join {
+  border-color: rgba(20, 184, 166, 0.3);
+  background: rgba(220, 252, 231, 0.86);
+  color: #0f766e;
+}
+
+.lobby-action-icon--leave {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(255, 251, 235, 0.9);
+  color: #b45309;
 }
 
 .lobby-action-icon--danger {

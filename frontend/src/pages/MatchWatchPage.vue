@@ -514,12 +514,10 @@ const isReplayAtLastFrame = computed(
 );
 const showWinnerBanner = computed(() => replayFrames.value.length > 0 && isReplayAtLastFrame.value && !firstReplayLockActive.value);
 const finalWinnerLabel = computed(() => {
-  const explicitWinners = explicitReplayWinnerTeamIds();
-  if (explicitWinners.length) {
-    return explicitWinners.map((teamId) => playerDisplayName(teamId, compactTeamLabel(teamId))).join(', ');
-  }
   const placedWinner = matchPlayerStats.value.find((player) => player.place === 1);
   if (placedWinner) return placedWinner.name;
+  const explicitWinner = primaryReplayWinnerTeamId(explicitReplayWinnerTeamIds());
+  if (explicitWinner) return playerDisplayName(explicitWinner, compactTeamLabel(explicitWinner));
   return matchLeaderLabel.value;
 });
 
@@ -551,6 +549,50 @@ function explicitReplayWinnerTeamIds(): string[] {
     } else if (typeof candidate === 'string' && candidate && !result.includes(candidate)) {
       result.push(candidate);
     }
+  }
+  return result;
+}
+
+function primaryReplayWinnerTeamId(teamIds: string[]): string {
+  const uniqueTeamIds = [...new Set(teamIds.filter(Boolean))];
+  if (uniqueTeamIds.length <= 1) return uniqueTeamIds[0] ?? '';
+  const scores = replayScoresByTeam();
+  const placements = replayPlacementsByTeam();
+  return uniqueTeamIds.sort((left, right) => {
+    const leftPlace = placements[left] ?? Number.POSITIVE_INFINITY;
+    const rightPlace = placements[right] ?? Number.POSITIVE_INFINITY;
+    if (leftPlace !== rightPlace) return leftPlace - rightPlace;
+    const leftScore = scores[left] ?? Number.NEGATIVE_INFINITY;
+    const rightScore = scores[right] ?? Number.NEGATIVE_INFINITY;
+    if (leftScore !== rightScore) return rightScore - leftScore;
+    return compactTeamLabel(left).localeCompare(compactTeamLabel(right), 'ru');
+  })[0] ?? '';
+}
+
+function replayScoresByTeam(): Record<string, number> {
+  const summary = isRecord(replay.value?.summary) ? replay.value.summary : {};
+  const payload = isRecord(run.value?.result_payload) ? run.value.result_payload : {};
+  const rawScores = isRecord(summary.scores) ? summary.scores : isRecord(payload.scores) ? payload.scores : {};
+  const result: Record<string, number> = {};
+  for (const [teamId, score] of Object.entries(rawScores)) {
+    const value = numericOrNull(score);
+    if (value !== null) result[teamId] = value;
+  }
+  return result;
+}
+
+function replayPlacementsByTeam(): Record<string, number> {
+  const summary = isRecord(replay.value?.summary) ? replay.value.summary : {};
+  const payload = isRecord(run.value?.result_payload) ? run.value.result_payload : {};
+  const rawPlacements = isRecord(summary.placements)
+    ? summary.placements
+    : isRecord(payload.placements)
+      ? payload.placements
+      : {};
+  const result: Record<string, number> = {};
+  for (const [teamId, placement] of Object.entries(rawPlacements)) {
+    const value = numericOrNull(placement);
+    if (value !== null) result[teamId] = value;
   }
   return result;
 }
@@ -602,25 +644,42 @@ function collectFramePlayers(players: Map<string, MatchPlayerStat>, value: unkno
 function collectRoleMapFramePlayers(players: Map<string, MatchPlayerStat>, frame: Record<string, unknown>): void {
   const positions = isRecord(frame.positions) ? frame.positions : null;
   if (!positions) return;
+  const roleEntries = Object.entries(positions).filter(([, value]) => isRecord(value) || Array.isArray(value));
+  if (!roleEntries.length) return;
 
   const batteries = isRecord(frame.batteries) ? frame.batteries : {};
   const collected = isRecord(frame.collected) ? frame.collected : {};
+  const carrying = isRecord(frame.carrying) ? frame.carrying : {};
+  const delivered = isRecord(frame.delivered) ? frame.delivered : {};
+  const throws = isRecord(frame.throws) ? frame.throws : {};
+  const frozen = isRecord(frame.frozen) ? frame.frozen : {};
+  const labels = isRecord(frame.labels) ? frame.labels : {};
   const invalidMoves = isRecord(frame.invalid_moves) ? frame.invalid_moves : {};
   const slotScores = isRecord(frame.slot_scores) ? frame.slot_scores : {};
-  Object.keys(positions).forEach((role, index) => {
-    const participant = watchContext.value?.participants[index];
+  roleEntries.forEach(([role], index) => {
+    const label = typeof labels[role] === 'string' ? labels[role] : '';
+    const participant = watchContext.value?.participants[index]
+      ?? watchContext.value?.participants.find((item) => item.display_name === label);
     const teamId = participant?.team_id ?? role;
     const collectedValue = numericOrNull(collected[role]) ?? 0;
+    const carryingValue = numericOrNull(carrying[role]) ?? 0;
+    const deliveredValue = numericOrNull(delivered[role]) ?? 0;
+    const throwsValue = numericOrNull(throws[role]) ?? 0;
+    const frozenValue = numericOrNull(frozen[role]) ?? 0;
     const batteryValue = numericOrNull(batteries[role]);
     const invalidValue = numericOrNull(invalidMoves[role]) ?? 0;
     const score = numericOrNull(slotScores[role])
-      ?? Math.max(0, collectedValue * 100 + (batteryValue ?? 0) - invalidValue * 10);
+      ?? (
+        Object.keys(delivered).length || Object.keys(carrying).length || Object.keys(throws).length
+          ? Math.max(0, deliveredValue * 120 + carryingValue * 30 + throwsValue * 5 - invalidValue * 10)
+          : Math.max(0, collectedValue * 100 + (batteryValue ?? 0) - invalidValue * 10)
+      );
     upsertPlayerStat(players, buildPlayerStat({
       id: teamId,
-      name: participant?.display_name || role,
+      name: participant?.display_name || label || role,
       teamId,
       score,
-      life: batteryValue,
+      life: batteryValue ?? (frozenValue > 0 ? 0 : null),
       shield: null,
       alive: batteryValue === null ? true : batteryValue > 0,
       place: summaryPlaceFor(teamId),
@@ -806,7 +865,12 @@ function summaryPlaceFor(teamId: string): number | null {
 }
 
 function numericOrNull(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function booleanOrDefault(value: unknown, fallback: boolean): boolean {
