@@ -1172,34 +1172,32 @@ function sendRendererStateAndResult(): void {
 function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknown }): void {
   if (!isEmbedded.value || !run.value) return;
   const players = embeddedPlayerStatsForFrame(payload.frame);
-  window.parent.postMessage(
-    {
-      type: 'agp.watch.frame',
-      payload: {
-        runId: run.value.run_id,
-        status: run.value.status,
-        tick: payload.tick,
-        phase: payload.phase,
-        frame: sanitizeForPostMessage(payload.frame),
-        replayFrameIndex: replayFrameIndex.value,
-        replayFrameCount: replayFrames.value.length,
-        participants: watchContext.value?.participants ?? [],
-        players: players.map((player) => ({
-          id: player.id,
-          name: player.name,
-          team_id: player.teamId,
-          score: player.score,
-          score_label: player.scoreLabel,
-          life_percent: player.lifePercent,
-          shield_percent: player.shieldPercent,
-          alive: player.alive,
-          is_self: player.isSelf,
-          detail_label: player.detailLabel,
-        })),
-      },
+  const message = sanitizeForPostMessage({
+    type: 'agp.watch.frame',
+    payload: {
+      runId: run.value.run_id,
+      status: run.value.status,
+      tick: payload.tick,
+      phase: payload.phase,
+      frame: payload.frame,
+      replayFrameIndex: replayFrameIndex.value,
+      replayFrameCount: replayFrames.value.length,
+      participants: watchContext.value?.participants ?? [],
+      players: players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        team_id: player.teamId,
+        score: player.score,
+        score_label: player.scoreLabel,
+        life_percent: player.lifePercent,
+        shield_percent: player.shieldPercent,
+        alive: player.alive,
+        is_self: player.isSelf,
+        detail_label: player.detailLabel,
+      })),
     },
-    window.location.origin,
-  );
+  });
+  window.parent.postMessage(message, window.location.origin);
 }
 
 function embeddedPlayerStatsForFrame(frame: unknown): MatchPlayerStat[] {

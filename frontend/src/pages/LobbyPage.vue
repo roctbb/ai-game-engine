@@ -1487,9 +1487,14 @@ const displayedTrainingRunIds = computed(() => {
 const displayedGameMatchGroup = computed(() =>
   allTrainingMatchGroups.value.find((item) => item.runs.some((run) => run.run_id === displayedGameRunId.value)) ?? null,
 );
+function isDisplayedEmbeddedGameFrame(message: EmbeddedGameFrame | null): message is EmbeddedGameFrame {
+  if (!message) return false;
+  if (message.runId === displayedGameRunId.value) return true;
+  return displayedTrainingRunIds.value.includes(message.runId);
+}
 const frameGameStats = computed<CurrentGameStatRow[]>(() => {
   const message = embeddedGameFrame.value;
-  if (!message || message.runId !== displayedGameRunId.value) return [];
+  if (!isDisplayedEmbeddedGameFrame(message)) return [];
   if (message.players.length) {
     return dedupeCurrentGameStats(message.players.map((player, index) => buildCurrentGameStatFromEmbeddedPlayer(message, player, index)));
   }
@@ -1533,7 +1538,7 @@ const currentGameStats = computed<CurrentGameStatRow[]>(() =>
 );
 const currentGameFrameLabel = computed(() => {
   const message = embeddedGameFrame.value;
-  if (!message || message.runId !== displayedGameRunId.value) {
+  if (!isDisplayedEmbeddedGameFrame(message)) {
     if ((lobby.value?.cycle_replay_frame_count ?? 0) > 0) {
       return `кадр ${(lobby.value?.cycle_replay_frame_index ?? 0) + 1}/${lobby.value?.cycle_replay_frame_count}`;
     }
@@ -1546,7 +1551,7 @@ const currentGameFrameLabel = computed(() => {
 });
 const currentGamePhaseLabel = computed(() => {
   const message = embeddedGameFrame.value;
-  if (!message || message.runId !== displayedGameRunId.value) {
+  if (!isDisplayedEmbeddedGameFrame(message)) {
     return lobby.value?.cycle_phase_label || (displayedGameRunId.value ? 'ожидаем кадры' : 'нет активной игры');
   }
   return gamePhaseLabel(message.phase, message.status);
@@ -1571,7 +1576,7 @@ const isWaitingForReplay = computed(() => {
 const replayFinishedInViewer = computed(() => {
   if (lobby.value?.cycle_phase === 'result') return true;
   const message = embeddedGameFrame.value;
-  if (!message || message.runId !== displayedGameRunId.value) return false;
+  if (!isDisplayedEmbeddedGameFrame(message)) return false;
   if (message.replayFrameCount > 1) return message.replayFrameIndex >= message.replayFrameCount - 1;
   return message.phase === 'finished';
 });
@@ -2986,7 +2991,10 @@ watch(
 watch(
   () => currentGameRunId.value,
   (runId) => {
-    if (embeddedGameFrame.value?.runId !== runId) embeddedGameFrame.value = null;
+    const frameRunId = embeddedGameFrame.value?.runId ?? '';
+    if (frameRunId && frameRunId !== runId && !displayedTrainingRunIds.value.includes(frameRunId)) {
+      embeddedGameFrame.value = null;
+    }
     if (runId) lastGameRunId.value = runId;
   }
 );
