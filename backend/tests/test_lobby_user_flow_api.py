@@ -346,6 +346,54 @@ def test_lobby_stats_read_root_scores_and_placements(client, teacher_headers) ->
     assert stats_by_team[team_ids[1]]["average_score"] == 10
 
 
+def test_lobby_stats_count_one_winner_per_match(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    player_headers = [_student_headers(client, "conflict-stats-a"), _student_headers(client, "conflict-stats-b")]
+    team_ids: list[str] = []
+
+    for index, headers in enumerate(player_headers):
+        joined = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=headers)
+        assert joined.status_code == 200
+        team_id = joined.json()["my_team_id"]
+        team_ids.append(team_id)
+        update = client.put(
+            f"/api/v1/teams/{team_id}/slots/bot",
+            json={
+                "actor_user_id": f"conflict-stats-{'a' if index == 0 else 'b'}",
+                "code": "def make_choice(field, role):\n    return 0, 0\n",
+            },
+            headers=headers,
+        )
+        assert update.status_code == 200
+        play = client.post(f"/api/v1/lobbies/{lobby_id}/play", json={}, headers=headers)
+        assert play.status_code == 200
+
+    lobby = client.get(f"/api/v1/lobbies/{lobby_id}", headers=player_headers[0]).json()
+    assert len(lobby["current_run_ids"]) == 2
+    for run_id in lobby["current_run_ids"]:
+        run = client.get(f"/api/v1/runs/{run_id}", headers=teacher_headers)
+        assert run.status_code == 200
+        team_id = run.json()["team_id"]
+        finished = client.post(
+            f"/api/v1/internal/runs/{run_id}/finished",
+            json={
+                "payload": {
+                    "status": "ok",
+                    "scores": {team_id: 100},
+                    "placements": {team_id: 1},
+                }
+            },
+        )
+        assert finished.status_code == 200
+
+    refreshed = client.get(f"/api/v1/lobbies/{lobby_id}", headers=player_headers[0])
+    assert refreshed.status_code == 200
+    stats_by_team = {item["team_id"]: item for item in refreshed.json()["participant_stats"]}
+    assert sum(stats_by_team[team_id]["wins"] for team_id in team_ids) == 1
+    assert {stats_by_team[team_id]["matches_total"] for team_id in team_ids} == {1}
+
+
 def test_training_matchmaking_waits_for_replay_display_before_next_match(client, teacher_headers, container) -> None:
     game = _create_game(client, teacher_headers)
     lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)

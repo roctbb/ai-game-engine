@@ -146,10 +146,15 @@ def test_lobby_execution_context_contains_scheduled_participants(client, teacher
         teams.append(team)
 
     assert len(ready["last_scheduled_run_ids"]) == 2
-    context = client.get(f"/api/v1/internal/runs/{ready['last_scheduled_run_ids'][0]}/execution-context")
+    first_run_id, second_run_id = ready["last_scheduled_run_ids"]
+    context = client.get(f"/api/v1/internal/runs/{first_run_id}/execution-context")
+    peer_context = client.get(f"/api/v1/internal/runs/{second_run_id}/execution-context")
 
     assert context.status_code == 200
+    assert peer_context.status_code == 200
     participants = context.json()["participants"]
+    peer_participants = peer_context.json()["participants"]
     assert {item["team_id"] for item in participants} == {team["team_id"] for team in teams}
     assert {item["display_name"] for item in participants} == {"Alpha", "Bravo"}
     assert all(item["codes_by_slot"]["bot"].startswith("def make_choice") for item in participants)
+    assert [item["team_id"] for item in participants] == [item["team_id"] for item in peer_participants]

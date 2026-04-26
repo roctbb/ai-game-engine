@@ -293,6 +293,7 @@ interface MoveLogItem {
 interface MatchPlayerStat {
   id: string;
   name: string;
+  teamId: string;
   teamLabel: string;
   detailLabel: string;
   place: number | null;
@@ -790,7 +791,7 @@ function upsertPlayerStat(players: Map<string, MatchPlayerStat>, next: MatchPlay
   players.set(duplicateId, buildPlayerStat({
     id: previous.id,
     name: previous.name || next.name,
-    teamId: previous.isSelf || next.isSelf ? run.value?.team_id ?? previous.id : previous.id,
+    teamId: previous.isSelf || next.isSelf ? run.value?.team_id ?? previous.teamId : previous.teamId || next.teamId,
     score: next.score ?? previous.score,
     life: next.life ?? previous.life,
     shield: next.shield ?? previous.shield,
@@ -840,6 +841,7 @@ function buildPlayerStat(input: {
   return {
     id: input.id,
     name,
+    teamId: input.teamId,
     teamLabel,
     detailLabel,
     place: input.place,
@@ -1181,6 +1183,18 @@ function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknow
         replayFrameIndex: replayFrameIndex.value,
         replayFrameCount: replayFrames.value.length,
         participants: watchContext.value?.participants ?? [],
+        players: matchPlayerStats.value.map((player) => ({
+          id: player.id,
+          name: player.name,
+          team_id: player.teamId,
+          score: player.score,
+          score_label: player.scoreLabel,
+          life_percent: player.lifePercent,
+          shield_percent: player.shieldPercent,
+          alive: player.alive,
+          is_self: player.isSelf,
+          detail_label: player.detailLabel,
+        })),
       },
     },
     window.location.origin,

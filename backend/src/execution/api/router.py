@@ -635,34 +635,46 @@ def _execution_context_participants(container: ServiceContainer, current_run_id:
     run_ids = [current_run_id]
     if run.lobby_id is not None and run.run_kind is RunKind.TRAINING_MATCH:
         lobby = container.training_lobby.get_lobby(run.lobby_id)
-        peer_ids: list[str] = []
+        scheduled_group: list[str] = []
         for group in lobby.last_scheduled_match_groups:
             if current_run_id not in group:
                 continue
-            peer_ids.extend(rid for rid in group if rid != current_run_id)
+            scheduled_group = list(group)
             break
-        if not peer_ids and current_run_id in lobby.last_scheduled_run_ids:
+        if scheduled_group:
+            run_ids = scheduled_group
+        else:
+            peer_ids: list[str] = []
             # Backward-compatible fallback for lobbies created before match groups existed.
-            for rid in list(lobby.last_scheduled_run_ids):
-                if rid == current_run_id:
-                    continue
-                peer = container.execution.get_run(rid)
-                if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 2:
-                    peer_ids.append(rid)
-        if not peer_ids:
-            lobby_runs = container.execution.list_runs(
-                lobby_id=run.lobby_id,
-                run_kind=RunKind.TRAINING_MATCH,
-                include_result_payload=False,
-            )
-            for peer in lobby_runs:
-                if peer.run_id == current_run_id:
-                    continue
-                if peer.status not in {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}:
-                    continue
-                if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 5:
-                    peer_ids.append(peer.run_id)
-        run_ids = [current_run_id] + peer_ids
+            if current_run_id in lobby.last_scheduled_run_ids:
+                for rid in list(lobby.last_scheduled_run_ids):
+                    if rid == current_run_id:
+                        continue
+                    peer = container.execution.get_run(rid)
+                    if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 2:
+                        peer_ids.append(rid)
+            if not peer_ids:
+                lobby_runs = container.execution.list_runs(
+                    lobby_id=run.lobby_id,
+                    run_kind=RunKind.TRAINING_MATCH,
+                    include_result_payload=False,
+                )
+                for peer in lobby_runs:
+                    if peer.run_id == current_run_id:
+                        continue
+                    if peer.status not in {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}:
+                        continue
+                    if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 5:
+                        peer_ids.append(peer.run_id)
+            unsorted_run_ids = [current_run_id] + peer_ids
+            fallback_at = run.created_at or run.queued_at or run.started_at or run.finished_at
+
+            def run_order_key(run_id: str) -> tuple[str, str]:
+                peer = container.execution.get_run(run_id)
+                created_at = peer.created_at or fallback_at
+                return (created_at.isoformat() if created_at is not None else "", run_id)
+
+            run_ids = sorted(unsorted_run_ids, key=run_order_key)
 
     participants: list[dict[str, object]] = []
     seen: set[str] = set()

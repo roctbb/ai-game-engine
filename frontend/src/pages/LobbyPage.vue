@@ -564,6 +564,16 @@
                     <span v-if="shouldHideMatchWinner(group)" class="lobby-match-replay-badge">Идет реплей</span>
                     <span v-else>Победитель: <strong>{{ matchWinnerLabel(group) }}</strong></span>
                   </div>
+                  <div class="lobby-match-players" aria-label="Игроки матча">
+                    <span
+                      v-for="teamId in matchGroupTeamIds(group)"
+                      :key="`${group.group_id}-${teamId}`"
+                      class="lobby-match-player-chip"
+                      :class="{ winner: matchPlayerIsVisibleWinner(group, teamId) }"
+                    >
+                      {{ teamLabel(teamId) }}
+                    </span>
+                  </div>
                 </article>
               </section>
               <div v-if="!allTrainingMatchGroups.length" class="agp-empty-state agp-empty-state--compact">
@@ -943,6 +953,19 @@ interface CurrentGameStatRow {
   isSelf: boolean;
 }
 
+interface EmbeddedGamePlayerStat {
+  id: string;
+  name: string;
+  team_id: string;
+  score: number | null;
+  score_label: string;
+  life_percent: number;
+  shield_percent: number;
+  alive: boolean;
+  is_self: boolean;
+  detail_label: string;
+}
+
 interface EmbeddedGameFrame {
   runId: string;
   status: RunDto['status'];
@@ -958,6 +981,7 @@ interface EmbeddedGameFrame {
     captain_user_id: string;
     is_current: boolean;
   }>;
+  players: EmbeddedGamePlayerStat[];
 }
 
 interface CompetitionTeamStatRow {
@@ -1465,6 +1489,9 @@ const displayedGameMatchGroup = computed(() =>
 const frameGameStats = computed<CurrentGameStatRow[]>(() => {
   const message = embeddedGameFrame.value;
   if (!message || message.runId !== displayedGameRunId.value) return [];
+  if (message.players.length) {
+    return dedupeCurrentGameStats(message.players.map((player, index) => buildCurrentGameStatFromEmbeddedPlayer(message, player, index)));
+  }
   const players = collectFrameGamePlayers(message);
   return dedupeCurrentGameStats(players.map((player, index) => buildCurrentGameStatFromFrame(message, player, index)));
 });
@@ -1808,12 +1835,20 @@ function formatDateTime(value: string): string {
 }
 
 function matchWinnerLabel(group: TrainingMatchGroup): string {
-  const winner = primaryWinnerTeamId(matchGroupWinnerIds(group), matchGroupScoreMap(group));
+  const winner = matchGroupPrimaryWinnerId(group);
   return winner ? teamLabel(winner) : 'не определен';
 }
 
 function shouldHideMatchWinner(group: TrainingMatchGroup): boolean {
   return group.status === 'replay';
+}
+
+function matchGroupPrimaryWinnerId(group: TrainingMatchGroup): string {
+  return primaryWinnerTeamId(matchGroupWinnerIds(group), matchGroupScoreMap(group));
+}
+
+function matchPlayerIsVisibleWinner(group: TrainingMatchGroup, teamId: string): boolean {
+  return !shouldHideMatchWinner(group) && matchGroupPrimaryWinnerId(group) === teamId;
 }
 
 function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
@@ -2155,6 +2190,28 @@ function buildCurrentGameStatFromFrame(
   };
 }
 
+function buildCurrentGameStatFromEmbeddedPlayer(
+  message: EmbeddedGameFrame,
+  player: EmbeddedGamePlayerStat,
+  index: number,
+): CurrentGameStatRow {
+  const teamId = player.team_id || player.id || `frame-player-${index}`;
+  const scoreValue = numericFrameValue(player.score);
+  const score = player.score_label || (scoreValue === null ? '—' : scoreLabel(scoreValue));
+  return {
+    run_id: message.runId,
+    team_id: teamId,
+    display_name: player.name || teamLabel(teamId) || `Игрок ${index + 1}`,
+    status: message.phase === 'finished' ? (player.alive ? 'финиш' : 'выбыл') : player.alive ? 'в игре' : 'выбыл',
+    score,
+    scoreValue,
+    lifePercent: Math.max(0, Math.min(100, player.life_percent)),
+    shieldPercent: Math.max(0, Math.min(100, player.shield_percent)),
+    meta: player.detail_label,
+    isSelf: player.is_self || teamId === lobby.value?.my_team_id,
+  };
+}
+
 function normalizeGameStatName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '');
 }
@@ -2281,7 +2338,24 @@ function handleEmbeddedGameFrameMessage(event: MessageEvent): void {
     participants: Array.isArray(payload.participants)
       ? payload.participants.filter(isEmbeddedParticipant)
       : [],
+    players: Array.isArray(payload.players)
+      ? payload.players.filter(isEmbeddedPlayerStat)
+      : [],
   };
+}
+
+function isEmbeddedPlayerStat(value: unknown): value is EmbeddedGamePlayerStat {
+  return isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.team_id === 'string' &&
+    (typeof value.score === 'number' || value.score === null) &&
+    typeof value.score_label === 'string' &&
+    typeof value.life_percent === 'number' &&
+    typeof value.shield_percent === 'number' &&
+    typeof value.alive === 'boolean' &&
+    typeof value.is_self === 'boolean' &&
+    typeof value.detail_label === 'string';
 }
 
 function isEmbeddedParticipant(value: unknown): value is EmbeddedGameFrame['participants'][number] {
@@ -3863,6 +3937,32 @@ onUnmounted(() => {
 
 .lobby-match-meta strong {
   color: var(--agp-text);
+}
+
+.lobby-match-players {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.lobby-match-player-chip {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--agp-text-muted);
+  padding: 0.14rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.lobby-match-player-chip.winner {
+  border-color: rgba(20, 184, 166, 0.34);
+  background: rgba(204, 251, 241, 0.78);
+  color: #0f766e;
 }
 
 .lobby-match-replay-badge {

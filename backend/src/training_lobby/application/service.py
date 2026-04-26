@@ -885,15 +885,9 @@ class TrainingLobbyService:
             return [list(lobby.last_scheduled_run_ids)]
         return []
 
-    def _build_archived_match_group_views(
-        self,
-        *,
-        lobby: Lobby,
-        runs: list[Run],
-        limit: int,
-    ) -> tuple[LobbyMatchGroupView, ...]:
+    def _archived_match_run_id_groups(self, *, lobby: Lobby, runs: list[Run]) -> list[list[str]]:
         if not runs:
-            return ()
+            return []
         game = self._game_catalog.get_game(lobby.game_id)
         max_players = game.match_player_bounds[1] if game.is_multiplayer else 2
         min_datetime = datetime.min.replace(tzinfo=utc_now().tzinfo)
@@ -917,8 +911,19 @@ class TrainingLobbyService:
             current.append(run)
         if current:
             groups.append([item.run_id for item in current])
+        return groups
 
-        runs_by_id = {run.run_id: run for run in sorted_runs}
+    def _build_archived_match_group_views(
+        self,
+        *,
+        lobby: Lobby,
+        runs: list[Run],
+        limit: int,
+    ) -> tuple[LobbyMatchGroupView, ...]:
+        if not runs:
+            return ()
+        groups = self._archived_match_run_id_groups(lobby=lobby, runs=runs)
+        runs_by_id = {run.run_id: run for run in runs}
         return tuple(
             self._build_match_group_view(
                 group_id=f"archive-{index}",
@@ -1017,8 +1022,13 @@ class TrainingLobbyService:
             self._viewer_last_seen_by_lobby.pop(lobby_id, None)
 
     def _winner_team_ids(self, runs: list[Run]) -> tuple[str, ...]:
-        winners: list[str] = []
-        scored: list[tuple[str, float]] = []
+        winner = self._single_winner_team_id(runs)
+        return () if winner is None else (winner,)
+
+    def _single_winner_team_id(self, runs: list[Run]) -> str | None:
+        group_team_ids = {run.team_id for run in runs}
+        placements_by_team: dict[str, int] = {}
+        scored: dict[str, float] = {}
         for run in runs:
             payload = run.result_payload if isinstance(run.result_payload, dict) else {}
             metrics = payload.get("metrics")
@@ -1026,17 +1036,40 @@ class TrainingLobbyService:
             placements = payload.get("placements")
             if not isinstance(placements, dict):
                 placements = metrics_dict.get("placements")
-            if isinstance(placements, dict) and placements.get(run.team_id) == 1:
-                winners.append(run.team_id)
+            if isinstance(placements, dict):
+                for team_id, raw_place in placements.items():
+                    if team_id not in group_team_ids or not isinstance(raw_place, int):
+                        continue
+                    previous = placements_by_team.get(team_id)
+                    placements_by_team[team_id] = raw_place if previous is None else min(previous, raw_place)
             score = self._extract_score(payload=payload, metrics=metrics_dict, team_id=run.team_id)
             if score is not None:
-                scored.append((run.team_id, score))
-        if winners:
-            return tuple(dict.fromkeys(winners))
+                scored[run.team_id] = score
+
+        if placements_by_team:
+            best_place = min(placements_by_team.values())
+            placed_winners = [team_id for team_id, place in placements_by_team.items() if place == best_place]
+            if len(placed_winners) == 1:
+                return placed_winners[0]
+
         if scored:
-            best = max(score for _, score in scored)
-            return tuple(team_id for team_id, score in scored if score == best)
-        return ()
+            best = max(scored.values())
+            scored_winners = [team_id for team_id, score in scored.items() if score == best]
+            return sorted(scored_winners, key=self._team_sort_key)[0]
+
+        if placements_by_team:
+            best_place = min(placements_by_team.values())
+            placed_winners = [team_id for team_id, place in placements_by_team.items() if place == best_place]
+            return sorted(placed_winners, key=self._team_sort_key)[0]
+        return None
+
+    def _team_sort_key(self, team_id: str) -> tuple[str, str]:
+        try:
+            team = self._team_workspace.get_team(team_id)
+        except NotFoundError:
+            return (team_id.casefold(), team_id)
+        label = team.name or team.captain_user_id or team_id
+        return (label.casefold(), team_id)
 
     @staticmethod
     def _replay_frames_count(run: Run) -> int:
@@ -1070,25 +1103,24 @@ class TrainingLobbyService:
         score_sum_by_team: dict[str, float] = {}
         score_count_by_team: dict[str, int] = {}
 
-        for run in runs:
-            if run.team_id not in lobby.teams:
+        runs_by_id = {run.run_id: run for run in runs if run.team_id in lobby.teams}
+        for group in self._archived_match_run_id_groups(lobby=lobby, runs=list(runs_by_id.values())):
+            group_runs = [runs_by_id[run_id] for run_id in group if run_id in runs_by_id]
+            if not group_runs:
                 continue
-            matches_by_team[run.team_id] = matches_by_team.get(run.team_id, 0) + 1
+            winner_team_id = self._single_winner_team_id(group_runs)
+            if winner_team_id is not None:
+                wins_by_team[winner_team_id] = wins_by_team.get(winner_team_id, 0) + 1
 
-            payload = run.result_payload if isinstance(run.result_payload, dict) else {}
-            metrics = payload.get("metrics")
-            metrics_dict = metrics if isinstance(metrics, dict) else {}
-            placements = payload.get("placements")
-            if not isinstance(placements, dict):
-                placements = metrics_dict.get("placements")
-            if isinstance(placements, dict):
-                raw_place = placements.get(run.team_id)
-                if isinstance(raw_place, int) and raw_place == 1:
-                    wins_by_team[run.team_id] = wins_by_team.get(run.team_id, 0) + 1
-            score = self._extract_score(payload=payload, metrics=metrics_dict, team_id=run.team_id)
-            if score is not None:
-                score_sum_by_team[run.team_id] = score_sum_by_team.get(run.team_id, 0.0) + score
-                score_count_by_team[run.team_id] = score_count_by_team.get(run.team_id, 0) + 1
+            for run in group_runs:
+                matches_by_team[run.team_id] = matches_by_team.get(run.team_id, 0) + 1
+                payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+                metrics = payload.get("metrics")
+                metrics_dict = metrics if isinstance(metrics, dict) else {}
+                score = self._extract_score(payload=payload, metrics=metrics_dict, team_id=run.team_id)
+                if score is not None:
+                    score_sum_by_team[run.team_id] = score_sum_by_team.get(run.team_id, 0.0) + score
+                    score_count_by_team[run.team_id] = score_count_by_team.get(run.team_id, 0) + 1
 
         items: list[LobbyParticipantStats] = []
         for team_id in sorted(lobby.teams.keys()):
