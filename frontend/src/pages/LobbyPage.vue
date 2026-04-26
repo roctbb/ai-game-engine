@@ -52,73 +52,122 @@
           ■
         </button>
         <button
-          v-if="canManage && !activeCompetition"
-          class="btn btn-sm btn-outline-secondary"
+          v-if="canLeaveAsPlayer"
+          class="lobby-action-icon"
           :disabled="isBusy"
+          title="Прекратить участие"
+          aria-label="Прекратить участие"
+          @click="leaveAsPlayer"
+        >
+          ↩
+        </button>
+        <button
+          v-if="canManage && !activeCompetition"
+          class="lobby-action-icon"
+          :disabled="isBusy"
+          title="Начать соревнование"
+          aria-label="Начать соревнование"
           @click="showCompetitionDialog = true"
         >
-          Соревнование
+          ⚑
+        </button>
+        <button
+          v-if="canManage"
+          class="lobby-action-icon"
+          :disabled="isBusy"
+          title="Настройки лобби"
+          aria-label="Настройки лобби"
+          @click="showLobbySettingsDialog = true"
+        >
+          ⚙
         </button>
         <button
           v-if="canManage && canPauseLobby"
-          class="btn btn-sm btn-outline-secondary"
+          class="lobby-action-icon"
           :disabled="isBusy"
+          title="Пауза"
+          aria-label="Пауза"
           @click="pauseLobbyByTeacher"
         >
-          Пауза
+          ❚❚
         </button>
         <button
           v-if="canManage && canStartLobby"
-          class="btn btn-sm btn-outline-secondary"
+          class="lobby-action-icon lobby-action-icon--play"
           :disabled="isBusy"
+          title="Запустить"
+          aria-label="Запустить"
           @click="startLobbyByTeacher"
         >
-          Запустить
+          ▶
         </button>
         <button
           v-if="canManage && canStopLobbyByTeacher"
-          class="btn btn-sm btn-outline-danger"
+          class="lobby-action-icon lobby-action-icon--danger"
           :disabled="isBusy"
+          title="Остановить"
+          aria-label="Остановить"
           @click="stopLobbyByTeacher"
         >
-          Стоп
+          ■
         </button>
       </div>
       <div v-else-if="lobby && canManage" class="lobby-head-actions">
+        <div class="lobby-ready-summary">
+          <strong>{{ managerCycleStatusLabel }}</strong>
+          <span>{{ managerCycleStatusHint }}</span>
+        </div>
         <button class="btn btn-outline-secondary" :disabled="!canJoinAsPlayer || isBusy" @click="joinAsPlayer">
           {{ isBusy ? '...' : 'Участвовать как игрок' }}
         </button>
         <button
           v-if="!activeCompetition"
-          class="btn btn-sm btn-outline-secondary"
+          class="lobby-action-icon"
           :disabled="isBusy"
+          title="Начать соревнование"
+          aria-label="Начать соревнование"
           @click="showCompetitionDialog = true"
         >
-          Соревнование
+          ⚑
+        </button>
+        <button
+          class="lobby-action-icon"
+          :disabled="isBusy"
+          title="Настройки лобби"
+          aria-label="Настройки лобби"
+          @click="showLobbySettingsDialog = true"
+        >
+          ⚙
         </button>
         <button
           v-if="canPauseLobby"
-          class="btn btn-sm btn-outline-secondary"
+          class="lobby-action-icon"
           :disabled="isBusy"
+          title="Пауза"
+          aria-label="Пауза"
           @click="pauseLobbyByTeacher"
         >
-          Пауза
+          ❚❚
         </button>
         <button
           v-if="canStartLobby"
-          class="btn btn-sm btn-outline-secondary"
+          class="lobby-action-icon lobby-action-icon--play"
           :disabled="isBusy"
+          title="Запустить"
+          aria-label="Запустить"
           @click="startLobbyByTeacher"
         >
-          Запустить
+          ▶
         </button>
         <button
           v-if="canStopLobbyByTeacher"
-          class="btn btn-sm btn-outline-danger"
+          class="lobby-action-icon lobby-action-icon--danger"
           :disabled="isBusy"
+          title="Остановить"
+          aria-label="Остановить"
           @click="stopLobbyByTeacher"
         >
-          Стоп
+          ■
         </button>
       </div>
     </header>
@@ -234,7 +283,171 @@
         </div>
       </Teleport>
 
-      <section v-if="activeTab === 'code' && workspace" class="lobby-code-layout">
+      <Teleport to="body">
+        <div v-if="showLobbySettingsDialog" class="lobby-modal-backdrop" @click.self="showLobbySettingsDialog = false">
+          <article class="lobby-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="lobby-settings-dialog-title">
+            <header class="lobby-dialog-head">
+              <div>
+                <h2 id="lobby-settings-dialog-title" class="h5 mb-1">Настройки лобби</h2>
+                <p class="small text-muted mb-0">Доступ, лимит игроков и автоочистка тренировочных матчей.</p>
+              </div>
+              <button
+                class="lobby-dialog-close"
+                type="button"
+                aria-label="Закрыть"
+                :disabled="isSavingLobbySettings"
+                @click="showLobbySettingsDialog = false"
+              >
+                ×
+              </button>
+            </header>
+
+            <div class="lobby-settings-grid">
+              <label class="lobby-competition-setting lobby-competition-setting--wide">
+                <span>Название</span>
+                <input
+                  v-model.trim="lobbySettingsTitle"
+                  class="form-control form-control-sm"
+                  maxlength="120"
+                  @input="lobbySettingsTouched = true"
+                />
+              </label>
+              <label class="lobby-competition-setting">
+                <span>Доступ</span>
+                <select
+                  v-model="lobbySettingsAccess"
+                  class="form-select form-select-sm"
+                  @change="lobbySettingsTouched = true"
+                >
+                  <option value="public">Открытое</option>
+                  <option value="code">По коду</option>
+                </select>
+              </label>
+              <label class="lobby-competition-setting">
+                <span>Лимит игроков</span>
+                <input
+                  v-model.trim="lobbySettingsMaxTeams"
+                  class="form-control form-control-sm mono"
+                  type="number"
+                  min="1"
+                  max="512"
+                  @input="lobbySettingsTouched = true"
+                />
+              </label>
+              <label v-if="lobbySettingsAccess === 'code'" class="lobby-competition-setting lobby-competition-setting--wide">
+                <span>Код входа</span>
+                <input
+                  v-model.trim="lobbySettingsAccessCode"
+                  class="form-control form-control-sm mono"
+                  maxlength="120"
+                  :placeholder="lobby?.access === 'code' ? 'оставить текущий код' : 'код для входа'"
+                  @input="lobbySettingsTouched = true"
+                />
+              </label>
+              <label class="lobby-competition-setting lobby-competition-setting--wide">
+                <span>Автоудаление старых тренировочных матчей, дней</span>
+                <input
+                  v-model.trim="lobbySettingsRetentionDays"
+                  class="form-control form-control-sm mono"
+                  type="number"
+                  min="1"
+                  max="3650"
+                  placeholder="без автоочистки"
+                  @input="lobbySettingsTouched = true"
+                />
+              </label>
+            </div>
+
+            <footer class="lobby-dialog-actions">
+              <button class="btn btn-outline-secondary" type="button" :disabled="isSavingLobbySettings" @click="showLobbySettingsDialog = false">
+                Закрыть
+              </button>
+              <button class="btn btn-outline-secondary" type="button" :disabled="!canSaveLobbySettings" @click="saveLobbySettings">
+                {{ isSavingLobbySettings ? 'Сохраняем...' : 'Сохранить' }}
+              </button>
+              <button class="btn btn-outline-danger" type="button" :disabled="!canDeleteLobby || isBusy" @click="deleteLobbyByTeacher">
+                Удалить
+              </button>
+            </footer>
+            <p v-if="canManage && !canDeleteLobby" class="small text-muted mt-3 mb-0">
+              Удаление доступно только после остановки лобби.
+            </p>
+          </article>
+        </div>
+      </Teleport>
+
+      <Teleport to="body">
+        <div v-if="showPlayerCodeDialog" class="lobby-modal-backdrop" @click.self="closePlayerCodeDialog">
+          <article class="lobby-player-code-dialog" role="dialog" aria-modal="true" aria-labelledby="player-code-dialog-title">
+            <header class="lobby-dialog-head">
+              <div>
+                <h2 id="player-code-dialog-title" class="h5 mb-1">Код игрока</h2>
+                <p class="small text-muted mb-0">{{ selectedCodePlayerName }}</p>
+              </div>
+              <button
+                class="lobby-dialog-close"
+                type="button"
+                aria-label="Закрыть"
+                :disabled="isSavingCode"
+                @click="closePlayerCodeDialog"
+              >
+                ×
+              </button>
+            </header>
+
+            <div v-if="workspace" class="lobby-code-layout lobby-code-layout--modal">
+              <aside class="agp-card p-3 lobby-roles">
+                <div class="lobby-roles-head">
+                  <div>
+                    <strong>{{ selectedCodePlayerName }}</strong>
+                    <span>{{ filledRequiredSlots }}/{{ requiredSlotCount }} обязательных</span>
+                  </div>
+                  <div class="lobby-role-progress" aria-hidden="true">
+                    <i :style="{ width: `${roleProgressPercent}%` }"></i>
+                  </div>
+                </div>
+                <button
+                  v-for="slot in slotStates"
+                  :key="slot.slot_key"
+                  class="lobby-role-button"
+                  :class="{ active: activeSlotKey === slot.slot_key, filled: Boolean(slot.code?.trim()), required: slot.required }"
+                  @click="selectSlot(slot.slot_key)"
+                >
+                  <span>
+                    <i aria-hidden="true"></i>
+                    {{ slot.slot_key }}
+                  </span>
+                  <small>{{ slot.code?.trim() ? 'заполнено' : slot.required ? 'нужно заполнить' : 'необязательная' }}</small>
+                </button>
+              </aside>
+
+              <article class="agp-card p-3 lobby-editor">
+                <div class="lobby-editor-toolbar">
+                  <div>
+                    <h3 class="h6 mb-1">{{ activeSlotKey || 'Код' }}</h3>
+                    <p class="small mb-0">{{ codeStateLabel }}</p>
+                  </div>
+                  <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-secondary" :disabled="!activeTemplate || !canEditSelectedCode" @click="applyTemplate">
+                      Шаблон
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" :disabled="!activeDemoStrategy || !canEditSelectedCode" @click="applyDemoStrategy">
+                      Пример
+                    </button>
+                    <button class="btn btn-sm btn-dark" :disabled="!canSaveCode" @click="saveCode">
+                      {{ isSavingCode ? 'Сохранение...' : 'Сохранить' }}
+                    </button>
+                  </div>
+                </div>
+                <CodeEditor v-model="editorCode" :readonly="!activeSlotKey || !canEditSelectedCode" />
+              </article>
+            </div>
+            <div v-else class="agp-loading-state agp-loading-state--compact">Загрузка кода...</div>
+          </article>
+        </div>
+      </Teleport>
+
+      <section v-if="activeTab === 'code' && canSeeCodeTab && workspace" class="lobby-code-layout">
         <aside class="agp-card p-3 lobby-roles">
           <div class="lobby-roles-head">
             <div>
@@ -299,10 +512,10 @@
           <CodeEditor v-model="editorCode" :readonly="!activeSlotKey || !canEditSelectedCode" />
         </article>
       </section>
-      <section v-else-if="activeTab === 'code'" class="agp-card p-4 lobby-code-empty">
-        <h2 class="h5 mb-2">Выберите игрока</h2>
+      <section v-else-if="activeTab === 'code' && canSeeCodeTab" class="agp-card p-4 lobby-code-empty">
+        <h2 class="h5 mb-2">Код пока недоступен</h2>
         <p class="text-muted mb-0">
-          Откройте вкладку «Лобби» и нажмите «Код» рядом с игроком в лидерборде.
+          Рабочее место появится после присоединения к лобби как игрок.
         </p>
       </section>
 
@@ -364,79 +577,6 @@
         </div>
 
         <aside class="lobby-side-stack">
-          <article v-if="canManage" class="agp-card p-3 lobby-settings-card">
-            <header class="lobby-section-head">
-              <div>
-                <h2 class="h6 mb-1">Настройки лобби</h2>
-                <p class="small text-muted mb-0">Доступ, лимит игроков и автоочистка матчей.</p>
-              </div>
-              <span class="agp-pill" :class="lobbyStatusPillClass">{{ lobbyStatusLabel }}</span>
-            </header>
-            <div class="lobby-settings-grid">
-              <label class="lobby-competition-setting lobby-competition-setting--wide">
-                <span>Название</span>
-                <input
-                  v-model.trim="lobbySettingsTitle"
-                  class="form-control form-control-sm"
-                  maxlength="120"
-                  @input="lobbySettingsTouched = true"
-                />
-              </label>
-              <label class="lobby-competition-setting">
-                <span>Доступ</span>
-                <select
-                  v-model="lobbySettingsAccess"
-                  class="form-select form-select-sm"
-                  @change="lobbySettingsTouched = true"
-                >
-                  <option value="public">Открытое</option>
-                  <option value="code">По коду</option>
-                </select>
-              </label>
-              <label class="lobby-competition-setting">
-                <span>Лимит игроков</span>
-                <input
-                  v-model.trim="lobbySettingsMaxTeams"
-                  class="form-control form-control-sm mono"
-                  type="number"
-                  min="1"
-                  max="512"
-                  @input="lobbySettingsTouched = true"
-                />
-              </label>
-              <label v-if="lobbySettingsAccess === 'code'" class="lobby-competition-setting lobby-competition-setting--wide">
-                <span>Код входа</span>
-                <input
-                  v-model.trim="lobbySettingsAccessCode"
-                  class="form-control form-control-sm mono"
-                  maxlength="120"
-                  :placeholder="lobby?.access === 'code' ? 'оставить текущий код' : 'код для входа'"
-                  @input="lobbySettingsTouched = true"
-                />
-              </label>
-              <label class="lobby-competition-setting lobby-competition-setting--wide">
-                <span>Автоудаление старых тренировочных матчей, дней</span>
-                <input
-                  v-model.trim="lobbySettingsRetentionDays"
-                  class="form-control form-control-sm mono"
-                  type="number"
-                  min="1"
-                  max="3650"
-                  placeholder="без автоочистки"
-                  @input="lobbySettingsTouched = true"
-                />
-              </label>
-            </div>
-            <div class="lobby-settings-actions">
-              <button class="btn btn-sm btn-outline-secondary" :disabled="!canSaveLobbySettings" @click="saveLobbySettings">
-                {{ isSavingLobbySettings ? 'Сохраняем...' : 'Сохранить настройки' }}
-              </button>
-              <button class="btn btn-sm btn-outline-danger" :disabled="isBusy" @click="deleteLobbyByTeacher">
-                Удалить лобби
-              </button>
-            </div>
-          </article>
-
           <article class="agp-card p-3">
             <header class="lobby-section-head">
               <div>
@@ -503,7 +643,7 @@
           <div v-if="replayFinishedInViewer" class="lobby-game-finished-overlay">
             <div class="lobby-game-finished-card">
               <strong>Игра завершена</strong>
-              <span>Победитель: {{ currentGameLeaderLabel }}</span>
+              <span>Победитель: {{ currentGameWinnerLabel }}</span>
               <small>Ожидайте следующей игры</small>
             </div>
           </div>
@@ -860,10 +1000,13 @@ const competitionTieBreakPolicy = ref<TieBreakPolicy>('manual');
 const competitionCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
 const lastGameRunId = ref('');
 const selectedTrainingRunId = ref('');
+const displayedGameWatchUrl = ref('');
 const matchPage = ref(1);
 const matchesPerPage = 5;
 const embeddedGameFrame = ref<EmbeddedGameFrame | null>(null);
 const showCompetitionDialog = ref(false);
+const showPlayerCodeDialog = ref(false);
+const showLobbySettingsDialog = ref(false);
 const trainingRunsRefreshSignature = ref('');
 let isRefreshingTrainingRuns = false;
 let codeAutosaveHandle: ReturnType<typeof setTimeout> | null = null;
@@ -885,7 +1028,7 @@ const competitionMatchSizeHint = computed(() => {
 });
 const canUseDemoStrategy = computed(() => canManage.value);
 const hasPlayerInLobby = computed(() => Boolean(lobby.value?.my_team_id));
-const canSeeCodeTab = computed(() => hasPlayerInLobby.value || canManage.value);
+const canSeeCodeTab = computed(() => hasPlayerInLobby.value);
 const canSeeGameTab = computed(() => hasPlayerInLobby.value || canManage.value);
 const codeWorkspaceTeamId = computed(() => {
   if (canManage.value && selectedCodeTeamId.value) return selectedCodeTeamId.value;
@@ -983,9 +1126,13 @@ const canStop = computed(
 );
 const showPlayAction = computed(() => lobby.value?.my_status !== 'queued' && lobby.value?.my_status !== 'playing');
 const showStopAction = computed(() => lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing');
+const canLeaveAsPlayer = computed(() =>
+  Boolean(canManage.value && lobby.value?.my_team_id && !activeCompetition.value && lobby.value.status !== 'closed'),
+);
 const canStartLobby = computed(() => Boolean(canManage.value && lobby.value && ['paused', 'stopped'].includes(lobby.value.status)));
 const canPauseLobby = computed(() => Boolean(canManage.value && lobby.value && ['open', 'running'].includes(lobby.value.status)));
-const canStopLobbyByTeacher = computed(() => Boolean(canManage.value && lobby.value && ['open', 'running', 'paused'].includes(lobby.value.status)));
+const canStopLobbyByTeacher = computed(() => Boolean(canManage.value && lobby.value?.status === 'paused'));
+const canDeleteLobby = computed(() => Boolean(canManage.value && lobby.value?.status === 'stopped'));
 const canAddBot = computed(() =>
   Boolean(
     canUseAdminBots.value &&
@@ -1094,6 +1241,15 @@ const readyStatusHint = computed(() => {
   }
   return 'Нажмите “Готов”, чтобы встать в очередь.';
 });
+const managerCycleStatusLabel = computed(() => lobby.value?.cycle_phase_label || gameSignalLabel.value);
+const managerCycleStatusHint = computed(() => {
+  const phase = lobby.value?.cycle_phase;
+  if (phase === 'replay') return 'Игроки сейчас смотрят реплей своего матча.';
+  if (phase === 'result') return 'Показан победитель, затем лобби вернется к ожиданию.';
+  if (phase === 'simulation') return 'Матчи выполняются в фоне.';
+  if (phase === 'waiting_viewer') return 'Система ждет зрителя перед стартом матча.';
+  return 'Цикл лобби запустит матч, когда будет достаточно готовых игроков.';
+});
 const currentCompetitionMatch = computed(() => {
   const competition = activeCompetition.value;
   const myTeamId = lobby.value?.my_team_id ?? '';
@@ -1138,8 +1294,8 @@ const currentGameRunId = computed(() => {
   return lobby.value?.current_run_id || currentTrainingMatchGroups.value[0]?.runs[0]?.run_id || '';
 });
 const displayedGameRunId = computed(() => currentGameRunId.value || (activeCompetition.value ? '' : lastGameRunId.value));
-const displayedGameWatchUrl = computed(() => {
-  if (!displayedGameRunId.value) return '';
+function buildDisplayedGameWatchUrl(runId: string): string {
+  if (!runId) return '';
   const params = new URLSearchParams({
     embed: '1',
     autoplay: '1',
@@ -1154,8 +1310,8 @@ const displayedGameWatchUrl = computed(() => {
     params.set('sync_frame_index', String(lobby.value?.cycle_replay_frame_index ?? 0));
     params.set('sync_frame_ms', String(lobby.value?.cycle_frame_ms ?? 500));
   }
-  return `/runs/${displayedGameRunId.value}/watch?${params.toString()}`;
-});
+  return `/runs/${runId}/watch?${params.toString()}`;
+}
 const canShowDisplayedRunPrint = computed(() => {
   const myTeamId = lobby.value?.my_team_id;
   if (!myTeamId || !displayedGameRunId.value) return false;
@@ -1296,6 +1452,9 @@ const displayedTrainingRunIds = computed(() => {
   }
   return [displayedGameRunId.value];
 });
+const displayedGameMatchGroup = computed(() =>
+  allTrainingMatchGroups.value.find((item) => item.runs.some((run) => run.run_id === displayedGameRunId.value)) ?? null,
+);
 const frameGameStats = computed<CurrentGameStatRow[]>(() => {
   const message = embeddedGameFrame.value;
   if (!message || message.runId !== displayedGameRunId.value) return [];
@@ -1375,6 +1534,7 @@ const isWaitingForReplay = computed(() => {
   return lobby.value?.cycle_phase === 'replay' || lobby.value?.cycle_phase === 'result';
 });
 const replayFinishedInViewer = computed(() => {
+  if (lobby.value?.cycle_phase === 'result') return true;
   const message = embeddedGameFrame.value;
   if (!message || message.runId !== displayedGameRunId.value) return false;
   if (message.replayFrameCount > 1) return message.replayFrameIndex >= message.replayFrameCount - 1;
@@ -1387,6 +1547,17 @@ const currentGameLeaderLabel = computed(() => {
     return rightScore - leftScore;
   })[0];
   return leader?.display_name ?? '—';
+});
+const currentGameWinnerLabel = computed(() => {
+  const groupWinners = displayedGameMatchGroup.value?.winner_team_ids ?? [];
+  if (groupWinners.length) return groupWinners.map(teamLabel).join(', ');
+
+  const competitionMatch = currentCompetitionMatch.value;
+  if (competitionMatch?.advanced_team_ids.length) {
+    return competitionMatch.advanced_team_ids.map(teamLabel).join(', ');
+  }
+
+  return currentGameLeaderLabel.value;
 });
 const statsByTeam = computed(() => {
   const result: Record<string, LobbyParticipantStatsDto> = {};
@@ -1817,6 +1988,7 @@ function collectFrameGamePlayers(message: EmbeddedGameFrame): Record<string, unk
   };
 
   visit(frame);
+  collectSnakeGamePlayers(byId, message);
   return [...byId.values()];
 }
 
@@ -1846,6 +2018,41 @@ function collectRoleMapGamePlayers(byId: Map<string, Record<string, unknown>>, m
       collected: collectedValue,
       invalid_moves: invalidValue,
       alive: batteryValue === null ? true : batteryValue > 0,
+    });
+  });
+}
+
+function collectSnakeGamePlayers(byId: Map<string, Record<string, unknown>>, message: EmbeddedGameFrame): void {
+  const frame = message.frame;
+  const snakes = isRecord(frame.snakes) ? frame.snakes : null;
+  if (!snakes) return;
+
+  const slotScores = isRecord(frame.slot_scores) ? frame.slot_scores : {};
+  Object.entries(snakes).forEach(([role, raw], index) => {
+    if (!isRecord(raw)) return;
+    const participant = message.participants[index];
+    const teamId = typeof raw.team_id === 'string' && raw.team_id
+      ? raw.team_id
+      : participant?.team_id ?? role;
+    const food = numericFrameValue(raw.food_eaten) ?? 0;
+    const invalid = numericFrameValue(raw.invalid_moves) ?? 0;
+    const length = Array.isArray(raw.body) ? raw.body.length : null;
+    const alive = typeof raw.alive === 'boolean' ? raw.alive : true;
+    const score = numericFrameValue(raw.score)
+      ?? numericFrameValue(slotScores[role])
+      ?? Math.max(0, food * 100 + (length ?? 0) * 5 + (alive ? 30 : 0) - invalid * 10);
+
+    byId.set(teamId, {
+      team_id: teamId,
+      name: typeof raw.name === 'string' && raw.name ? raw.name : participant?.display_name || role,
+      role,
+      score,
+      food_eaten: food,
+      length,
+      invalid_moves: invalid,
+      direction: typeof raw.direction === 'string' ? raw.direction : '',
+      alive,
+      life: length,
     });
   });
 }
@@ -1938,6 +2145,8 @@ function framePlayerScoreLabel(player: Record<string, unknown>): string {
     ['очки', 'points'],
     ['монеты', 'coins'],
     ['энергия', 'collected'],
+    ['еда', 'food_eaten'],
+    ['длина', 'length'],
     ['заряд', 'battery'],
     ['жизни', 'life'],
     ['хиты', 'hits'],
@@ -2153,7 +2362,18 @@ async function openPlayerCode(stat: LobbyParticipantStatsDto): Promise<void> {
   activeSlotKey.value = '';
   editorCode.value = '';
   savedCode.value = '';
-  activeTab.value = 'code';
+  workspace.value = null;
+  showPlayerCodeDialog.value = true;
+  await refreshWorkspace();
+}
+
+async function closePlayerCodeDialog(): Promise<void> {
+  await flushCodeAutosave();
+  showPlayerCodeDialog.value = false;
+  selectedCodeTeamId.value = '';
+  activeSlotKey.value = '';
+  editorCode.value = '';
+  savedCode.value = '';
   await refreshWorkspace();
 }
 
@@ -2167,6 +2387,7 @@ async function removeTeamFromLobby(stat: LobbyParticipantStatsDto): Promise<void
     await refreshTrainingRuns();
     await refreshCompetitions();
     if (workspace.value?.team_id === stat.team_id) {
+      showPlayerCodeDialog.value = false;
       selectedCodeTeamId.value = '';
       await refreshWorkspace();
     }
@@ -2317,6 +2538,9 @@ async function submitLobbyAccessCode(): Promise<void> {
   errorMessage.value = '';
   try {
     await loadLobby();
+    if (!canSeeCodeTab.value && activeTab.value === 'code') {
+      activeTab.value = 'lobby';
+    }
     if (lobby.value) {
       startLiveUpdates();
       startCompetitionPolling();
@@ -2361,6 +2585,29 @@ async function joinAsPlayer(): Promise<void> {
   }
 }
 
+async function leaveAsPlayer(): Promise<void> {
+  if (!lobby.value || !lobby.value.my_team_id || !canLeaveAsPlayer.value) return;
+  if (!confirm('Прекратить участие в лобби как игрок? Код останется в системе, но игрок выйдет из этого лобби.')) return;
+  await flushCodeAutosave();
+  isBusy.value = true;
+  errorMessage.value = '';
+  try {
+    lobby.value = await leaveLobby({ lobby_id: lobby.value.lobby_id, team_id: lobby.value.my_team_id });
+    selectedCodeTeamId.value = '';
+    activeSlotKey.value = '';
+    workspace.value = null;
+    editorCode.value = '';
+    savedCode.value = '';
+    if (activeTab.value === 'code') activeTab.value = 'lobby';
+    await refreshTrainingRuns();
+    await refreshCompetitions();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось прекратить участие';
+  } finally {
+    isBusy.value = false;
+  }
+}
+
 async function startLobbyByTeacher(): Promise<void> {
   if (!lobby.value || !canManage.value) return;
   isBusy.value = true;
@@ -2388,7 +2635,7 @@ async function pauseLobbyByTeacher(): Promise<void> {
 }
 
 async function stopLobbyByTeacher(): Promise<void> {
-  if (!lobby.value || !canManage.value) return;
+  if (!lobby.value || !canStopLobbyByTeacher.value) return;
   if (!confirm('Остановить лобби? Очередь очистится, новые матчи не будут запускаться до повторного запуска.')) return;
   isBusy.value = true;
   errorMessage.value = '';
@@ -2425,7 +2672,7 @@ async function saveLobbySettings(): Promise<void> {
 }
 
 async function deleteLobbyByTeacher(): Promise<void> {
-  if (!lobby.value || !canManage.value) return;
+  if (!lobby.value || !canDeleteLobby.value) return;
   if (!confirm('Удалить лобби вместе с тренировочными матчами? Это действие нельзя отменить.')) return;
   isBusy.value = true;
   errorMessage.value = '';
@@ -2580,6 +2827,19 @@ watch(
   }
 );
 
+watch(
+  () => [
+    displayedGameRunId.value,
+    lobby.value?.replay_started_at ?? '',
+    lobby.value?.cycle_frame_ms ?? 500,
+    canShowDisplayedRunPrint.value ? 'print' : 'no-print',
+  ].join('|'),
+  () => {
+    displayedGameWatchUrl.value = buildDisplayedGameWatchUrl(displayedGameRunId.value);
+  },
+  { immediate: true },
+);
+
 watch(editorCode, () => {
   if (isHydratingEditor.value) return;
   scheduleCodeAutosave();
@@ -2595,7 +2855,7 @@ watch(
     if (!canSeeCode && activeTab.value === 'code') {
       activeTab.value = 'lobby';
     }
-  }
+  },
 );
 
 onBeforeRouteLeave(async () => {
@@ -2756,6 +3016,41 @@ onUnmounted(() => {
   color: #8b98a8;
 }
 
+.lobby-action-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.82);
+  color: #334155;
+  font-size: 0.95rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.lobby-action-icon:hover:not(:disabled) {
+  border-color: rgba(20, 184, 166, 0.7);
+  color: #0f766e;
+}
+
+.lobby-action-icon:disabled {
+  opacity: 0.45;
+}
+
+.lobby-action-icon--play {
+  border-color: transparent;
+  background: #0f9f8e;
+  color: #fff;
+}
+
+.lobby-action-icon--danger {
+  border-color: rgba(244, 63, 94, 0.36);
+  color: #be123c;
+}
+
 .lobby-access-card {
   justify-content: space-between;
   background: #f8fafc;
@@ -2789,7 +3084,9 @@ onUnmounted(() => {
   backdrop-filter: blur(3px);
 }
 
-.lobby-competition-dialog {
+.lobby-competition-dialog,
+.lobby-settings-dialog,
+.lobby-player-code-dialog {
   width: min(100%, 28rem);
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 0.7rem;
@@ -2798,6 +3095,18 @@ onUnmounted(() => {
     #ffffff;
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
   padding: 1rem;
+}
+
+.lobby-settings-dialog {
+  width: min(100%, 34rem);
+}
+
+.lobby-player-code-dialog {
+  width: min(100%, 78rem);
+  max-height: calc(100dvh - 6rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .lobby-dialog-head,
@@ -2878,6 +3187,25 @@ onUnmounted(() => {
 
 .lobby-code-layout {
   align-items: start;
+}
+
+.lobby-code-layout--modal {
+  min-height: 34rem;
+  overflow: hidden;
+}
+
+.lobby-code-layout--modal .lobby-roles,
+.lobby-code-layout--modal .lobby-editor {
+  min-height: 0;
+}
+
+.lobby-code-layout--modal .lobby-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.lobby-code-layout--modal :deep(.cm-editor) {
+  min-height: 28rem;
 }
 
 .lobby-state-grid {
@@ -3139,7 +3467,8 @@ onUnmounted(() => {
   margin-bottom: 0.65rem;
 }
 
-.lobby-editor-toolbar h2 {
+.lobby-editor-toolbar h2,
+.lobby-editor-toolbar h3 {
   color: #e5f3ff;
 }
 

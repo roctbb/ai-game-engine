@@ -514,6 +514,10 @@ const isReplayAtLastFrame = computed(
 );
 const showWinnerBanner = computed(() => replayFrames.value.length > 0 && isReplayAtLastFrame.value && !firstReplayLockActive.value);
 const finalWinnerLabel = computed(() => {
+  const explicitWinners = explicitReplayWinnerTeamIds();
+  if (explicitWinners.length) {
+    return explicitWinners.map((teamId) => playerDisplayName(teamId, compactTeamLabel(teamId))).join(', ');
+  }
   const placedWinner = matchPlayerStats.value.find((player) => player.place === 1);
   if (placedWinner) return placedWinner.name;
   return matchLeaderLabel.value;
@@ -525,6 +529,30 @@ function isTerminalStatus(status: RunDto['status']): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function explicitReplayWinnerTeamIds(): string[] {
+  const summary = isRecord(replay.value?.summary) ? replay.value.summary : {};
+  const payload = isRecord(run.value?.result_payload) ? run.value.result_payload : {};
+  const candidates = [
+    summary.winner_team_ids,
+    summary.winners,
+    summary.winner,
+    payload.winner_team_ids,
+    payload.winners,
+    payload.winner,
+  ];
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      for (const value of candidate) {
+        if (typeof value === 'string' && value && !result.includes(value)) result.push(value);
+      }
+    } else if (typeof candidate === 'string' && candidate && !result.includes(candidate)) {
+      result.push(candidate);
+    }
+  }
+  return result;
 }
 
 function normalizeTick(value: unknown, fallback: number): number {
@@ -539,11 +567,20 @@ function collectFramePlayers(players: Map<string, MatchPlayerStat>, value: unkno
   if (!isRecord(value)) return;
 
   collectRoleMapFramePlayers(players, value);
+  collectSnakeFramePlayers(players, value);
 
   const nameRaw = value.name ?? value.player ?? value.role ?? value.key;
   const hasPlayerShape =
     nameRaw !== undefined &&
-    (value.score !== undefined || value.life !== undefined || value.hp !== undefined || value.coins !== undefined);
+    (
+      value.score !== undefined ||
+      value.points !== undefined ||
+      value.life !== undefined ||
+      value.hp !== undefined ||
+      value.coins !== undefined ||
+      value.food_eaten !== undefined ||
+      value.alive !== undefined
+    );
   if (hasPlayerShape) {
     const id = String(value.team_id ?? value.key ?? value.role ?? value.name ?? `player-${players.size + 1}`);
     const teamId = typeof value.team_id === 'string' ? value.team_id : id;
@@ -552,7 +589,7 @@ function collectFramePlayers(players: Map<string, MatchPlayerStat>, value: unkno
       name: playerDisplayName(teamId, String(nameRaw)),
       teamId,
       score: numericOrNull(value.score ?? value.points),
-      life: numericOrNull(value.life ?? value.hp),
+      life: numericOrNull(value.life ?? value.hp ?? (Array.isArray(value.body) ? value.body.length : null)),
       shield: numericOrNull(value.shield),
       alive: booleanOrDefault(value.alive, numericOrNull(value.life ?? value.hp) !== 0),
       place: summaryPlaceFor(id),
@@ -586,6 +623,38 @@ function collectRoleMapFramePlayers(players: Map<string, MatchPlayerStat>, frame
       life: batteryValue,
       shield: null,
       alive: batteryValue === null ? true : batteryValue > 0,
+      place: summaryPlaceFor(teamId),
+    }));
+  });
+}
+
+function collectSnakeFramePlayers(players: Map<string, MatchPlayerStat>, frame: Record<string, unknown>): void {
+  const snakes = isRecord(frame.snakes) ? frame.snakes : null;
+  if (!snakes) return;
+
+  const slotScores = isRecord(frame.slot_scores) ? frame.slot_scores : {};
+  Object.entries(snakes).forEach(([role, raw], index) => {
+    if (!isRecord(raw)) return;
+    const participant = watchContext.value?.participants[index];
+    const teamId = typeof raw.team_id === 'string' && raw.team_id
+      ? raw.team_id
+      : participant?.team_id ?? role;
+    const food = numericOrNull(raw.food_eaten) ?? 0;
+    const invalid = numericOrNull(raw.invalid_moves) ?? 0;
+    const length = Array.isArray(raw.body) ? raw.body.length : null;
+    const alive = booleanOrDefault(raw.alive, true);
+    const score = numericOrNull(raw.score)
+      ?? numericOrNull(slotScores[role])
+      ?? Math.max(0, food * 100 + (length ?? 0) * 5 + (alive ? 30 : 0) - invalid * 10);
+
+    upsertPlayerStat(players, buildPlayerStat({
+      id: teamId,
+      name: typeof raw.name === 'string' && raw.name ? raw.name : participant?.display_name || role,
+      teamId,
+      score,
+      life: length,
+      shield: null,
+      alive,
       place: summaryPlaceFor(teamId),
     }));
   });

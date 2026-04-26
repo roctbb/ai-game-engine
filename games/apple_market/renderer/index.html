@@ -35,9 +35,18 @@ const NAMES={north_west:"NW",north_east:"NE",south_west:"SW",south_east:"SE"};
 
 function el(tag,attrs={}){const node=document.createElementNS(SVG,tag);for(const[k,v]of Object.entries(attrs))node.setAttribute(k,String(v));return node}
 function add(tag,attrs){const node=el(tag,attrs);boardEl.appendChild(node);return node}
+function child(parent,tag,attrs){const node=el(tag,attrs);parent.appendChild(node);return node}
 function txt(x,y,value,size,fill="#102016",weight=800,anchor="middle"){const t=add("text",{x,y,"text-anchor":anchor,"dominant-baseline":"middle","font-size":size,"font-weight":weight,fill});t.textContent=String(value);return t}
 function cellCenter(x,y,C){return [x*C+C/2,y*C+C/2]}
 function labelOf(frame,slot){return (frame.labels&&frame.labels[slot])||NAMES[slot]||slot}
+function callout(x,y,value,size,fill="#102016",weight=900){
+  const t=txt(x,y,value,size,fill,weight);
+  t.setAttribute("paint-order","stroke");
+  t.setAttribute("stroke","#fff7ed");
+  t.setAttribute("stroke-width",Math.max(2,size*.18));
+  t.setAttribute("stroke-linejoin","round");
+  return t;
+}
 
 function apple(x,y,C,scale=1,glow=false){
   const [cx,cy]=cellCenter(x,y,C);
@@ -45,6 +54,51 @@ function apple(x,y,C,scale=1,glow=false){
   add("circle",{cx:cx-C*.055*scale,cy:cy+C*.02*scale,r:C*.16*scale,fill:"#ef4444"});
   add("circle",{cx:cx+C*.08*scale,cy:cy+C*.02*scale,r:C*.17*scale,fill:"#dc2626"});
   add("path",{d:`M ${cx-C*.01*scale} ${cy-C*.14*scale} Q ${cx+C*.2*scale} ${cy-C*.33*scale} ${cx+C*.34*scale} ${cy-C*.14*scale}`,stroke:"#15803d","stroke-width":Math.max(2,C*.045*scale),fill:"none","stroke-linecap":"round"});
+}
+
+function appleGlyph(parent,C,scale=1){
+  child(parent,"circle",{cx:-C*.055*scale,cy:C*.02*scale,r:C*.16*scale,fill:"#ef4444"});
+  child(parent,"circle",{cx:C*.08*scale,cy:C*.02*scale,r:C*.17*scale,fill:"#dc2626"});
+  child(parent,"path",{d:`M ${-C*.01*scale} ${-C*.14*scale} Q ${C*.2*scale} ${-C*.33*scale} ${C*.34*scale} ${-C*.14*scale}`,stroke:"#15803d","stroke-width":Math.max(2,C*.045*scale),fill:"none","stroke-linecap":"round"});
+}
+
+function cellPath(points,C){
+  return points.map((p,i)=>{
+    const [cx,cy]=cellCenter(p.x,p.y,C);
+    return `${i===0?"M":"L"} ${cx} ${cy}`;
+  }).join(" ");
+}
+
+function drawThrow(frame,pr,C){
+  const path=Array.isArray(pr.path)?pr.path:[];
+  const start=pr.start||frame.positions?.[pr.slot];
+  if(!start||!path.length)return;
+  const points=[start,...path];
+  const color=pr.hit?"#38bdf8":"#f97316";
+  const linePoints=points.map(p=>`${p.x*C+C/2},${p.y*C+C/2}`).join(" ");
+  add("polyline",{points:linePoints,fill:"none",stroke:color,"stroke-width":C*.09,"stroke-linecap":"round","stroke-linejoin":"round",opacity:.78,"stroke-dasharray":`${C*.16} ${C*.12}`});
+  const [sx,sy]=cellCenter(start.x,start.y,C);
+  add("circle",{cx:sx,cy:sy,r:C*.38,fill:"none",stroke:"#f59e0b","stroke-width":C*.055,opacity:.85});
+  callout(sx,Math.max(C*.22,sy-C*.82),`${labelOf(frame,pr.slot)} бросил -1`,C*.13,COLORS[pr.slot]||"#111827");
+
+  const flyer=add("g",{});
+  child(flyer,"circle",{cx:0,cy:0,r:C*.26,fill:"#fff7ed",opacity:.88});
+  appleGlyph(flyer,C,.62);
+  child(flyer,"animateMotion",{path:cellPath(points,C),dur:".75s",fill:"freeze",repeatCount:"1",rotate:"auto"});
+
+  const last=path[path.length-1];
+  const [lx,ly]=cellCenter(last.x,last.y,C);
+  add("circle",{cx:lx,cy:ly,r:C*.34,fill:"none",stroke:color,"stroke-width":C*.045,opacity:.75});
+}
+
+function drawHitOverlay(frame,pr,C){
+  if(!pr.hit)return;
+  const target=frame.positions?.[pr.hit];
+  if(!target)return;
+  const [cx,cy]=cellCenter(target.x,target.y,C);
+  add("circle",{cx,cy,r:C*.56,fill:"#e0f2fe",opacity:.34,stroke:"#0284c7","stroke-width":C*.07});
+  add("path",{d:`M ${cx-C*.32} ${cy} H ${cx+C*.32} M ${cx} ${cy-C*.32} V ${cy+C*.32} M ${cx-C*.23} ${cy-C*.23} L ${cx+C*.23} ${cy+C*.23} M ${cx+C*.23} ${cy-C*.23} L ${cx-C*.23} ${cy+C*.23}`,stroke:"#0284c7","stroke-width":C*.045,"stroke-linecap":"round"});
+  callout(cx,cy-C*.78,"ПОПАДАНИЕ: freeze",C*.13,"#075985");
 }
 
 function drawTree(tree,C,spawned){
@@ -89,7 +143,7 @@ function player(slot,p,C,carrying,delivered,frozen,label){
   }
   if(frozen>0){
     add("circle",{cx,cy,r:C*.43,fill:"#7dd3fc",opacity:.2,stroke:"#38bdf8","stroke-width":C*.045});
-    txt(cx,cy-C*.56,frozen,C*.22,"#075985",900);
+    callout(cx,cy-C*.36,`freeze ${frozen}`,C*.14,"#075985");
   }
   txt(cx,cy+C*.66,`+${delivered||0}`,C*.16,color,900);
 }
@@ -121,20 +175,14 @@ function drawBoard(frame){
     if(v===1)apple(x,y,C,1,spawned.has(`${x},${y}`));
   }
 
-  (frame.projectiles||[]).forEach(pr=>{
-    const path=pr.path||[];
-    if(path.length){
-      const points=path.map(p=>`${p.x*C+C/2},${p.y*C+C/2}`).join(" ");
-      add("polyline",{points,fill:"none",stroke:pr.hit?"#38bdf8":"#f97316","stroke-width":C*.09,"stroke-linecap":"round","stroke-linejoin":"round",opacity:.72});
-      const last=path[path.length-1];
-      apple(last.x,last.y,C,.55,true);
-    }
-  });
+  const projectiles=frame.projectiles||[];
+  projectiles.forEach(pr=>drawThrow(frame,pr,C));
 
   const c=frame.carrying||{},d=frame.delivered||{},f=frame.frozen||{};
   Object.entries(frame.positions||{}).forEach(([slot,p])=>{
     if(Number.isFinite(p.x)&&Number.isFinite(p.y))player(slot,p,C,c[slot]||0,d[slot]||0,f[slot]||0,labelOf(frame,slot));
   });
+  projectiles.forEach(pr=>drawHitOverlay(frame,pr,C));
 
   hudEl.innerHTML="";
   const limit=Number(frame.turn_limit||150),turn=Number(frame.turn||0),left=Number(frame.turns_left??Math.max(0,limit-turn));
@@ -157,7 +205,7 @@ window.addEventListener("message",event=>{
   const message=event.data;
   if(!message||typeof message!=="object")return;
   if(message.type==="agp.renderer.init"){
-    window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-tree-spawn"}}, "*");
+    window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-throw-animation"}}, "*");
     return;
   }
   if(message.type==="agp.renderer.state")drawBoard(message.payload?.frame||message.frame||{});
@@ -170,9 +218,9 @@ drawBoard({
   tree:{x:7,y:7},
   bases:{north_west:{x:1,y:1},north_east:{x:13,y:1},south_west:{x:1,y:13},south_east:{x:13,y:13}},
   positions:{north_west:{x:1,y:1},north_east:{x:13,y:1},south_west:{x:1,y:13},south_east:{x:13,y:13}},
-  carrying:{},delivered:{},frozen:{},throws:{},turn:0,turn_limit:150,turns_left:150,next_spawn_in:6,apples_left:0
+  carrying:{},delivered:{},frozen:{},throws:{},turn:0,turn_limit:150,turns_left:150,next_spawn_in:10,apples_left:0
 });
-window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-tree-spawn"}},"*");
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-throw-animation"}},"*");
 </script>
 </body>
 </html>

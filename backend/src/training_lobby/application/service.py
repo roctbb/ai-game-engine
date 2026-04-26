@@ -444,6 +444,16 @@ class TrainingLobbyService:
         self._repository.save(lobby)
         return lobby
 
+    def stop_current_training_games_for_competition(self, lobby_id: str) -> Lobby:
+        lobby = self.get_lobby(lobby_id)
+        if lobby.kind is not LobbyKind.TRAINING:
+            raise InvariantViolationError("Соревнование можно запускать только в training-лобби")
+        self._cancel_active_training_runs(lobby_id=lobby_id, message="competition_started")
+        lobby.set_last_scheduled_runs([])
+        self._participant_stats_cache.pop(lobby_id, None)
+        self._repository.save(lobby)
+        return lobby
+
     def update_lobby_settings(
         self,
         lobby_id: str,

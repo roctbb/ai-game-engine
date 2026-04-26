@@ -1044,11 +1044,13 @@ def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     assert "placements" in payload
     assert set(payload["scores"]) == {"team-alpha", "team-beta", "team-gamma", "team-delta"}
     assert metrics["active_slots"] == ["north_west", "north_east", "south_west", "south_east"]
-    assert metrics["initial_apples"] == 14
+    assert metrics["initial_apples"] == 8
     assert metrics["apples_total"] >= metrics["initial_apples"]
     assert metrics["apples_spawned_total"] == metrics["apples_total"]
     assert metrics["turn_limit"] == 150
-    assert metrics["spawn_interval"] == 6
+    assert metrics["spawn_interval"] == 10
+    assert metrics["spawn_batch"] == 2
+    assert metrics["max_apples_on_board"] == 12
     assert metrics["capacity"] == 2
     assert metrics["walls_total"] > 0
     assert sum(metrics["delivered"].values()) > 0
@@ -1060,8 +1062,93 @@ def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     assert frame["tree"] == {"x": 7, "y": 7}
     assert frame["board"][7][7] == 3
     assert frame["turn_limit"] == 150
+    assert all(value == 0 for value in frame["carrying"].values())
+    assert all(value == 0 for value in frame["delivered"].values())
     assert any(cell == 1 for row in frame["board"] for cell in row)
     assert any(cell == 2 for row in frame["board"] for cell in row)
+    delivered_events = [event for event in payload["events"] if event.get("type") == "delivered"]
+    assert delivered_events
+    first_delivery = delivered_events[0]
+    delivery_frame = payload["frames"][int(first_delivery["tick"])]["frame"]
+    slot = str(first_delivery["slot"])
+    assert delivery_frame["carrying"][slot] == 0
+    assert delivery_frame["delivered"][slot] > 0
+
+
+def test_apple_market_throw_requires_carried_apple(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "apple_market" / "engine.py", "apple_market_empty_throw_test")
+
+    monkeypatch.setattr(engine, "_MAX_TURNS", 1)
+    monkeypatch.setattr(
+        engine,
+        "_build_map",
+        lambda _ctx, _slots: {"walls": set(engine._BORDER_WALLS), "apples": set(), "spawn_cells": []},
+    )
+
+    code = "def make_move(x, y, board, carrying):\n    return 'throw_right'\n"
+    payload = engine.run(
+        {
+            "run_id": "apple-market-empty-throw",
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": "def make_move(x, y, board, carrying):\n    return 'stay'\n"}},
+            ],
+        }
+    )
+
+    frame = payload["frames"][1]["frame"]
+
+    assert payload["metrics"]["throws"]["north_west"] == 0
+    assert payload["metrics"]["invalid_moves"]["north_west"] == 1
+    assert frame["carrying"]["north_west"] == 0
+    assert frame["projectiles"] == []
+    assert any(event.get("type") == "invalid_throw" and event.get("reason") == "empty_hands" for event in payload["events"])
+    assert not any(event.get("type") == "throw" for event in payload["events"])
+
+
+def test_apple_market_throw_spends_apple_and_freezes_hit_player(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "apple_market" / "engine.py", "apple_market_throw_hit_test")
+
+    starts = dict(engine._STARTS)
+    starts["south_east"] = (4, 1)
+    monkeypatch.setattr(engine, "_STARTS", starts)
+    monkeypatch.setattr(engine, "_MAX_TURNS", 2)
+    monkeypatch.setattr(
+        engine,
+        "_build_map",
+        lambda _ctx, _slots: {"walls": set(engine._BORDER_WALLS), "apples": {(2, 1)}, "spawn_cells": []},
+    )
+
+    thrower_code = (
+        "def make_move(x, y, board, carrying):\n"
+        "    if carrying == 0:\n"
+        "        return 'right'\n"
+        "    return 'throw_right'\n"
+    )
+    payload = engine.run(
+        {
+            "run_id": "apple-market-spend-and-freeze",
+            "participants": [
+                {"team_id": "team-alpha", "display_name": "Бросающий", "codes_by_slot": {"player": thrower_code}},
+                {"team_id": "team-beta", "display_name": "Цель", "codes_by_slot": {"player": "def make_move(x, y, board, carrying):\n    return 'stay'\n"}},
+            ],
+        }
+    )
+
+    after_collect = payload["frames"][1]["frame"]
+    after_throw = payload["frames"][2]["frame"]
+    projectile = after_throw["projectiles"][0]
+
+    assert after_collect["carrying"]["north_west"] == 1
+    assert after_throw["carrying"]["north_west"] == 0
+    assert after_throw["throws"]["north_west"] == 1
+    assert after_throw["frozen"]["south_east"] == 3
+    assert projectile["slot"] == "north_west"
+    assert projectile["start"] == {"x": 2, "y": 1}
+    assert projectile["hit"] == "south_east"
+    assert projectile["spent_apple"] is True
+    assert projectile["carrying_after"] == 0
+    assert any(event.get("type") == "freeze" and event.get("slot") == "south_east" for event in payload["events"])
 
 
 def test_box_buttons_demo_solves_random_sokoban_map() -> None:

@@ -20,10 +20,10 @@ _BASES = {
 _STARTS = dict(_BASES)
 _TREE = (7, 7)
 _RANDOM_WALLS = 28
-_INITIAL_APPLES = 14
-_SPAWN_INTERVAL = 6
-_SPAWN_BATCH = 4
-_MAX_APPLES_ON_BOARD = 22
+_INITIAL_APPLES = 8
+_SPAWN_INTERVAL = 10
+_SPAWN_BATCH = 2
+_MAX_APPLES_ON_BOARD = 12
 _FREEZE_TURNS = 3
 _DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0), "stay": (0, 0)}
 _THROWS = {"throw_up": "up", "throw_down": "down", "throw_left": "left", "throw_right": "right"}
@@ -60,6 +60,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         print_context["tick"] = turn
         intents: dict[str, tuple[int, int]] = {}
         throw_events: list[dict[str, object]] = []
+        pending_freezes: dict[str, int] = {}
         for slot in active_slots:
             if frozen[slot] > 0:
                 intents[slot] = positions[slot]
@@ -72,16 +73,27 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             if action in _THROWS:
                 if carrying[slot] <= 0:
                     invalid[slot] += 1
+                    events.append({"type": "invalid_throw", "tick": turn + 1, "slot": slot, "reason": "empty_hands"})
                     intents[slot] = (x, y)
                     continue
                 carrying[slot] -= 1
                 throws[slot] += 1
                 hit, path = _throw_apple(slot, positions, active_slots, walls, _THROWS[str(action)])
-                throw_event = {"type": "throw", "tick": turn + 1, "slot": slot, "direction": _THROWS[str(action)], "path": path, "hit": hit}
+                throw_event = {
+                    "type": "throw",
+                    "tick": turn + 1,
+                    "slot": slot,
+                    "direction": _THROWS[str(action)],
+                    "start": {"x": x, "y": y},
+                    "path": path,
+                    "hit": hit,
+                    "spent_apple": True,
+                    "carrying_after": carrying[slot],
+                }
                 throw_events.append(throw_event)
                 events.append(throw_event)
                 if hit is not None:
-                    frozen[hit] = max(frozen[hit], _FREEZE_TURNS)
+                    pending_freezes[hit] = max(pending_freezes.get(hit, 0), frozen.get(hit, 0), _FREEZE_TURNS)
                     events.append({"type": "freeze", "tick": turn + 1, "slot": hit, "by": slot, "turns": _FREEZE_TURNS})
                 intents[slot] = (x, y)
                 continue
@@ -122,6 +134,8 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 delivered[slot] += carrying[slot]
                 carrying[slot] = 0
                 events.append({"type": "delivered", "tick": turn + 1, "slot": slot})
+        for slot, turns_to_freeze in pending_freezes.items():
+            frozen[slot] = max(frozen.get(slot, 0), turns_to_freeze)
         spawned_apples: list[tuple[int, int]] = []
         if (turn + 1) % _SPAWN_INTERVAL == 0:
             spawned_apples = _spawn_apples(apples, walls, positions, active_slots, spawn_cells, spawn_rng)
@@ -425,9 +439,10 @@ def _placements(active_slots: list[str], role_team: dict[str, str], slot_scores:
 
 
 def _frame(tick: int, phase: str, active_slots: list[str], positions: dict[str, tuple[int, int]], walls: set[tuple[int, int]], apples: set[tuple[int, int]], carrying: dict[str, int], delivered: dict[str, int], invalid: dict[str, int], frozen: dict[str, int], throws: dict[str, int], apples_spawned_total: int, slot_scores: dict[str, int] | None = None, labels: dict[str, str] | None = None, projectiles: list[dict[str, object]] | None = None, spawned_apples: list[tuple[int, int]] | None = None) -> dict[str, object]:
+    slots_snapshot = list(active_slots)
     frame: dict[str, object] = {
-        "board": _board(walls, apples, positions, active_slots, active_slots[0]),
-        "boards": {slot: _board(walls, apples, positions, active_slots, slot) for slot in active_slots},
+        "board": _board(walls, apples, positions, slots_snapshot, slots_snapshot[0]),
+        "boards": {slot: _board(walls, apples, positions, slots_snapshot, slot) for slot in slots_snapshot},
         "width": _WIDTH,
         "height": _HEIGHT,
         "turn": tick,
@@ -435,23 +450,23 @@ def _frame(tick: int, phase: str, active_slots: list[str], positions: dict[str, 
         "turns_left": max(0, _MAX_TURNS - tick),
         "spawn_interval": _SPAWN_INTERVAL,
         "next_spawn_in": 0 if tick >= _MAX_TURNS else (_SPAWN_INTERVAL - tick % _SPAWN_INTERVAL),
-        "active_slots": active_slots,
-        "labels": {slot: (labels or {}).get(slot, slot) for slot in active_slots},
-        "bases": {slot: {"x": _BASES[slot][0], "y": _BASES[slot][1]} for slot in active_slots},
+        "active_slots": slots_snapshot,
+        "labels": {slot: (labels or {}).get(slot, slot) for slot in slots_snapshot},
+        "bases": {slot: {"x": _BASES[slot][0], "y": _BASES[slot][1]} for slot in slots_snapshot},
         "tree": {"x": _TREE[0], "y": _TREE[1]},
         "positions": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in positions.items()},
-        "carrying": carrying,
-        "delivered": delivered,
+        "carrying": {slot: int(carrying.get(slot, 0)) for slot in slots_snapshot},
+        "delivered": {slot: int(delivered.get(slot, 0)) for slot in slots_snapshot},
         "apples_left": len(apples),
         "apples_spawned_total": apples_spawned_total,
         "spawned_apples": [{"x": x, "y": y} for x, y in spawned_apples or []],
-        "invalid_moves": invalid,
-        "frozen": frozen,
-        "throws": throws,
+        "invalid_moves": {slot: int(invalid.get(slot, 0)) for slot in slots_snapshot},
+        "frozen": {slot: int(frozen.get(slot, 0)) for slot in slots_snapshot},
+        "throws": {slot: int(throws.get(slot, 0)) for slot in slots_snapshot},
         "projectiles": projectiles or [],
     }
     if slot_scores is not None:
-        frame["slot_scores"] = slot_scores
+        frame["slot_scores"] = {slot: int(slot_scores.get(slot, 0)) for slot in slots_snapshot}
     return {"tick": tick, "phase": phase, "frame": frame}
 
 

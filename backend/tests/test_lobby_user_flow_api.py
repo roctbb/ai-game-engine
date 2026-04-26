@@ -283,13 +283,6 @@ def test_student_join_play_stop_without_team_id(client, teacher_headers) -> None
     assert charlie_stop.status_code == 200
     assert charlie_stop.json()["my_status"] == "preparing"
 
-    competition_start = client.post(
-        f"/api/v1/lobbies/{lobby_id}/competitions/start",
-        json={"title": "Blocked Cup"},
-        headers=teacher_headers,
-    )
-    assert competition_start.status_code == 422
-
     current_run = client.get(f"/api/v1/lobbies/{lobby_id}/current-run", headers=alice_headers)
     assert current_run.status_code == 200
     assert current_run.json()["status"] in {"preparing", "queued", "playing"}
@@ -687,6 +680,51 @@ def test_lobby_competition_start_preflight_does_not_create_orphan_competition(cl
     competitions = client.get("/api/v1/competitions", headers=teacher_headers)
     assert competitions.status_code == 200
     assert all(item["lobby_id"] != lobby_id for item in competitions.json())
+
+
+def test_lobby_competition_start_cancels_current_training_games(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    player_headers = [_student_headers(client, "cup-cancel-a"), _student_headers(client, "cup-cancel-b")]
+
+    for index, headers in enumerate(player_headers):
+        joined = client.post(f"/api/v1/lobbies/{lobby_id}/join", json={}, headers=headers)
+        assert joined.status_code == 200
+        team_id = joined.json()["my_team_id"]
+        update = client.put(
+            f"/api/v1/teams/{team_id}/slots/bot",
+            json={
+                "actor_user_id": f"cup-cancel-{index}",
+                "code": "def make_choice(field, role):\n    return 0, 0\n",
+            },
+            headers=headers,
+        )
+        assert update.status_code == 200
+        play = client.post(f"/api/v1/lobbies/{lobby_id}/play", json={}, headers=headers)
+        assert play.status_code == 200
+
+    lobby_before = client.get(f"/api/v1/lobbies/{lobby_id}", headers=teacher_headers).json()
+    active_run_ids = lobby_before["current_run_ids"]
+    assert active_run_ids
+
+    started = client.post(
+        f"/api/v1/lobbies/{lobby_id}/competitions/start",
+        json={"title": "Cup Cancels Training"},
+        headers=teacher_headers,
+    )
+    assert started.status_code == 200, started.json()
+    assert started.json()["status"] == "running"
+
+    lobby_after = client.get(f"/api/v1/lobbies/{lobby_id}", headers=teacher_headers)
+    assert lobby_after.status_code == 200
+    assert lobby_after.json()["current_run_ids"] == []
+    assert lobby_after.json()["cycle_phase"] == "waiting_players"
+
+    for run_id in active_run_ids:
+        run = client.get(f"/api/v1/runs/{run_id}", headers=teacher_headers)
+        assert run.status_code == 200
+        assert run.json()["status"] == "canceled"
+        assert run.json()["error_message"] == "competition_started"
 
 
 def test_lobby_competition_can_start_after_training_replay_when_paused(client, teacher_headers) -> None:

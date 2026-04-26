@@ -3,7 +3,7 @@ title: Яблочный рынок
 game_mode: multiplayer
 min_players_per_match: 2
 max_players_per_match: 4
-semver: 1.3.0
+semver: 1.3.2
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html

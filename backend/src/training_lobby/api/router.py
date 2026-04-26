@@ -12,7 +12,6 @@ from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
 from competition.application.service import CreateCompetitionInput
 from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionStatus, TieBreakPolicy
-from execution.domain.model import RunKind, RunStatus
 from game_catalog.infrastructure.manifest_loader import find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event
@@ -643,18 +642,6 @@ def start_lobby_competition(
     lobby = container.training_lobby.get_lobby(lobby_id=lobby_id)
     if lobby.kind.value != "training":
         raise InvariantViolationError("Соревнование можно запускать только в training-лобби")
-    active_training_runs = [
-        run
-        for status in (RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING)
-        for run in container.execution.list_runs(
-            lobby_id=lobby_id,
-            run_kind=RunKind.TRAINING_MATCH,
-            status=status,
-            include_result_payload=False,
-        )
-    ]
-    if active_training_runs:
-        raise InvariantViolationError("Нельзя начать соревнование, пока в лобби идут тренировочные игры")
     active_competition = next(
         (
             item
@@ -678,6 +665,7 @@ def start_lobby_competition(
     if len(ready_team_ids) < 2:
         raise InvariantViolationError("Для старта соревнования нужны минимум 2 игрока с заполненным кодом")
 
+    lobby = container.training_lobby.stop_current_training_games_for_competition(lobby_id=lobby_id)
     competition = container.competition.create_competition(
         CreateCompetitionInput(
             game_id=lobby.game_id,
