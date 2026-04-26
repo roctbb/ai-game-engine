@@ -809,15 +809,19 @@ class TrainingLobbyService:
                     result_until=result_until,
                     replay_frame_index=frame_index,
                     replay_frame_count=replay_frame_count,
-                    winner_team_ids=self._winner_team_ids(terminal_runs),
+                    winner_team_ids=self._winner_team_ids_for_groups(
+                        groups=groups,
+                        runs_by_id={run.run_id: run for run in terminal_runs},
+                    ),
                     current_match_groups=current_match_groups,
                 )
             if result_until and now < result_until:
-                winner_team_ids = self._winner_team_ids(terminal_runs)
+                terminal_runs_by_id = {run.run_id: run for run in terminal_runs}
+                winner_team_ids = self._winner_team_ids_for_groups(groups=groups, runs_by_id=terminal_runs_by_id)
                 return _LobbyCycleState(
                     phase="result",
                     phase_label="Результат",
-                    message="Победитель: " + (", ".join(winner_team_ids) if winner_team_ids else "не определен"),
+                    message="Победитель: " + (", ".join(self._team_label(team_id) for team_id in winner_team_ids) if winner_team_ids else "не определен"),
                     started_at=self._batch_started_at(groups=groups, runs_by_id=runs_by_id),
                     replay_started_at=replay_started_at,
                     replay_until=replay_until,
@@ -895,23 +899,49 @@ class TrainingLobbyService:
         groups: list[list[str]] = []
         current: list[Run] = []
         close_seconds = 2.0
+        current_signature: tuple[str, ...] | None = None
         for run in sorted_runs:
             previous = current[-1] if current else None
+            run_signature = self._payload_team_signature(run)
             if previous is not None:
                 previous_created_at = _datetime_or_none(previous.created_at)
                 created_at = _datetime_or_none(run.created_at)
+                signature_changed = (
+                    current_signature is not None
+                    and run_signature is not None
+                    and run_signature != current_signature
+                )
                 if (
                     len(current) >= max_players
                     or previous_created_at is None
                     or created_at is None
                     or abs((previous_created_at - created_at).total_seconds()) > close_seconds
+                    or signature_changed
                 ):
                     groups.append([item.run_id for item in current])
                     current = []
+                    current_signature = None
             current.append(run)
+            if current_signature is None and run_signature is not None:
+                current_signature = run_signature
         if current:
             groups.append([item.run_id for item in current])
         return groups
+
+    @staticmethod
+    def _payload_team_signature(run: Run) -> tuple[str, ...] | None:
+        payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+        metrics = payload.get("metrics")
+        metrics_dict = metrics if isinstance(metrics, dict) else {}
+        team_ids: set[str] = set()
+        for source in (payload, metrics_dict):
+            for key in ("scores", "placements"):
+                value = source.get(key)
+                if isinstance(value, dict):
+                    team_ids.update(str(team_id) for team_id in value.keys() if team_id)
+        if len(team_ids) <= 1:
+            return None
+        return tuple(sorted(team_ids))
 
     def _build_archived_match_group_views(
         self,
@@ -922,8 +952,9 @@ class TrainingLobbyService:
     ) -> tuple[LobbyMatchGroupView, ...]:
         if not runs:
             return ()
-        groups = self._archived_match_run_id_groups(lobby=lobby, runs=runs)
-        runs_by_id = {run.run_id: run for run in runs}
+        runs_with_payload = [self._ensure_payload(run) for run in runs]
+        groups = self._archived_match_run_id_groups(lobby=lobby, runs=runs_with_payload)
+        runs_by_id = {run.run_id: run for run in runs_with_payload}
         return tuple(
             self._build_match_group_view(
                 group_id=f"archive-{index}",
@@ -1025,6 +1056,14 @@ class TrainingLobbyService:
         winner = self._single_winner_team_id(runs)
         return () if winner is None else (winner,)
 
+    def _winner_team_ids_for_groups(self, *, groups: list[list[str]], runs_by_id: dict[str, Run]) -> tuple[str, ...]:
+        winners: list[str] = []
+        for group in groups:
+            winner = self._single_winner_team_id([runs_by_id[run_id] for run_id in group if run_id in runs_by_id])
+            if winner is not None:
+                winners.append(winner)
+        return tuple(dict.fromkeys(winners))
+
     def _single_winner_team_id(self, runs: list[Run]) -> str | None:
         group_team_ids = {run.team_id for run in runs}
         placements_by_team: dict[str, int] = {}
@@ -1070,6 +1109,13 @@ class TrainingLobbyService:
             return (team_id.casefold(), team_id)
         label = team.name or team.captain_user_id or team_id
         return (label.casefold(), team_id)
+
+    def _team_label(self, team_id: str) -> str:
+        try:
+            team = self._team_workspace.get_team(team_id)
+        except NotFoundError:
+            return team_id
+        return team.name or team.captain_user_id or team_id
 
     @staticmethod
     def _replay_frames_count(run: Run) -> int:

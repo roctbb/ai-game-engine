@@ -250,6 +250,67 @@ def test_multiplayer_matchmaking_uses_match_bounds(client, teacher_headers) -> N
     }
 
 
+def test_archived_match_groups_use_payload_participants_for_parallel_batches(client, teacher_headers) -> None:
+    game = _create_game(
+        client,
+        slug="bounded_multiplayer_archive_groups",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=4,
+        headers=teacher_headers,
+    )
+    teams = [
+        _create_ready_team(client, game_id=game["game_id"], captain=f"archive-group-{index}", name=f"Team {index}")
+        for index in range(6)
+    ]
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Archive Groups", headers=teacher_headers)
+    for team in teams:
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    expected_groups = [
+        [team["team_id"] for team in teams[:3]],
+        [team["team_id"] for team in teams[3:]],
+    ]
+    for group in expected_groups:
+        for index, team_id in enumerate(group):
+            run = client.post(
+                "/api/v1/runs",
+                json={
+                    "team_id": team_id,
+                    "game_id": game["game_id"],
+                    "requested_by": "teacher-mm",
+                    "run_kind": "training_match",
+                    "lobby_id": lobby["lobby_id"],
+                },
+                headers=teacher_headers,
+            )
+            assert run.status_code == 200
+            queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+            assert queued.status_code == 200
+            finished = client.post(
+                f"/api/v1/internal/runs/{run.json()['run_id']}/finished",
+                json={
+                    "payload": {
+                        "status": "ok",
+                        "scores": {group_team_id: 100 - score_index for score_index, group_team_id in enumerate(group)},
+                        "placements": {group_team_id: score_index + 1 for score_index, group_team_id in enumerate(group)},
+                    }
+                },
+            )
+            assert finished.status_code == 200
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    archived_groups = lobby_view.json()["archived_match_groups"]
+    assert len(archived_groups) == 2
+    assert {frozenset(group["team_ids"]) for group in archived_groups} == {frozenset(group) for group in expected_groups}
+
+
 def test_matchmaking_queue_failure_clears_batch_and_does_not_leave_created_runs(
     client,
     teacher_headers,

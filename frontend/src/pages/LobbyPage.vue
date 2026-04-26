@@ -571,7 +571,8 @@
                       class="lobby-match-player-chip"
                       :class="{ winner: matchPlayerIsVisibleWinner(group, teamId) }"
                     >
-                      {{ teamLabel(teamId) }}
+                      <span>{{ teamLabel(teamId) }}</span>
+                      <small v-if="matchPlayerScoreLabel(group, teamId)">{{ matchPlayerScoreLabel(group, teamId) }}</small>
                     </span>
                   </div>
                 </article>
@@ -971,7 +972,7 @@ interface EmbeddedGameFrame {
   status: RunDto['status'];
   tick: number;
   phase: string;
-  frame: Record<string, unknown>;
+  frame: unknown;
   replayFrameIndex: number;
   replayFrameCount: number;
   participants: Array<{
@@ -1851,6 +1852,12 @@ function matchPlayerIsVisibleWinner(group: TrainingMatchGroup, teamId: string): 
   return !shouldHideMatchWinner(group) && matchGroupPrimaryWinnerId(group) === teamId;
 }
 
+function matchPlayerScoreLabel(group: TrainingMatchGroup, teamId: string): string {
+  if (shouldHideMatchWinner(group)) return '';
+  const score = matchGroupScoreMap(group).get(teamId);
+  return score === undefined ? '' : scoreLabel(score);
+}
+
 function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
   if (group.winner_team_ids.length) return group.winner_team_ids;
   const explicitWinners = new Set<string>();
@@ -2058,13 +2065,14 @@ function collectFrameGamePlayers(message: EmbeddedGameFrame): Record<string, unk
     const hasPlayerShape =
       name !== undefined &&
       (
-        value.team_id !== undefined ||
         value.score !== undefined ||
         value.points !== undefined ||
         value.life !== undefined ||
         value.hp !== undefined ||
         value.shield !== undefined ||
-        value.coins !== undefined
+        value.coins !== undefined ||
+        value.food_eaten !== undefined ||
+        value.alive !== undefined
       );
     if (hasPlayerShape) {
       const id = String(value.team_id ?? value.key ?? value.role ?? value.name ?? `player-${byId.size + 1}`);
@@ -2079,7 +2087,7 @@ function collectFrameGamePlayers(message: EmbeddedGameFrame): Record<string, unk
 }
 
 function collectRoleMapGamePlayers(byId: Map<string, Record<string, unknown>>, message: EmbeddedGameFrame): void {
-  const frame = message.frame;
+  const frame = isRecord(message.frame) ? message.frame : {};
   const positions = isRecord(frame.positions) ? frame.positions : null;
   if (!positions) return;
   const roleEntries = Object.entries(positions).filter(([, value]) => isRecord(value) || Array.isArray(value));
@@ -2130,7 +2138,7 @@ function collectRoleMapGamePlayers(byId: Map<string, Record<string, unknown>>, m
 }
 
 function collectSnakeGamePlayers(byId: Map<string, Record<string, unknown>>, message: EmbeddedGameFrame): void {
-  const frame = message.frame;
+  const frame = isRecord(message.frame) ? message.frame : {};
   const snakes = isRecord(frame.snakes) ? frame.snakes : null;
   if (!snakes) return;
 
@@ -2271,8 +2279,8 @@ function percentFrameValue(value: number | null, max: number): number {
 
 function framePlayerScoreLabel(player: Record<string, unknown>): string {
   const parts: string[] = [];
-  const score = player.score;
-  if (typeof score === 'number' && Number.isFinite(score)) {
+  const score = numericFrameValue(player.score ?? player.points);
+  if (score !== null) {
     parts.push(scoreLabel(score));
   }
 
@@ -2293,8 +2301,8 @@ function framePlayerScoreLabel(player: Record<string, unknown>): string {
     ['ошибки', 'invalid_moves'],
   ];
   for (const [label, key] of details) {
-    const value = player[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
+    const value = numericFrameValue(player[key]);
+    if (value !== null) {
       parts.push(`${label} ${scoreLabel(value)}`);
     }
   }
@@ -2325,14 +2333,14 @@ function handleEmbeddedGameFrameMessage(event: MessageEvent): void {
   const data = event.data;
   if (!isRecord(data) || data.type !== 'agp.watch.frame' || !isRecord(data.payload)) return;
   const payload = data.payload;
-  if (typeof payload.runId !== 'string' || !isRecord(payload.frame)) return;
+  if (typeof payload.runId !== 'string') return;
 
   embeddedGameFrame.value = {
     runId: payload.runId,
     status: isRunStatus(payload.status) ? payload.status : 'running',
     tick: typeof payload.tick === 'number' && Number.isFinite(payload.tick) ? payload.tick : 0,
     phase: typeof payload.phase === 'string' ? payload.phase : '',
-    frame: payload.frame,
+    frame: payload.frame ?? {},
     replayFrameIndex: typeof payload.replayFrameIndex === 'number' ? payload.replayFrameIndex : 0,
     replayFrameCount: typeof payload.replayFrameCount === 'number' ? payload.replayFrameCount : 0,
     participants: Array.isArray(payload.participants)
@@ -3946,10 +3954,10 @@ onUnmounted(() => {
 }
 
 .lobby-match-player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   max-width: 16rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.84);
@@ -3957,6 +3965,19 @@ onUnmounted(() => {
   padding: 0.14rem 0.55rem;
   font-size: 0.78rem;
   font-weight: 750;
+}
+
+.lobby-match-player-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-match-player-chip small {
+  color: var(--agp-text);
+  font-size: 0.72rem;
+  font-weight: 900;
 }
 
 .lobby-match-player-chip.winner {
