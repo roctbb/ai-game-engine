@@ -1,0 +1,93 @@
+{
+  "frame": {
+    "actual": [
+      "water",
+      "skip",
+      "skip",
+      "water",
+      "skip",
+      "water",
+      "skip",
+      "skip",
+      "skip",
+      "water"
+    ],
+    "difficulty": "easy",
+    "expected": [
+      "water",
+      "skip",
+      "skip",
+      "water",
+      "skip",
+      "water",
+      "skip",
+      "skip",
+      "skip",
+      "water"
+    ],
+    "kind": "farm_row",
+    "learning_section": "Циклы и повторения",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "expected": [
+        "water",
+        "skip",
+        "skip",
+        "water",
+        "skip",
+        "water",
+        "skip",
+        "skip",
+        "skip",
+        "water"
+      ],
+      "row": [
+        {
+          "moisture": 1,
+          "plant": true
+        },
+        {
+          "moisture": 0,
+          "plant": false
+        },
+        {
+          "moisture": 4,
+          "plant": true
+        },
+        {
+          "moisture": 2,
+          "plant": true
+        },
+        {
+          "moisture": 0,
+          "plant": false
+        },
+        {
+          "moisture": 0,
+          "plant": true
+        },
+        {
+          "moisture": 5,
+          "plant": true
+        },
+        {
+          "moisture": 3,
+          "plant": true
+        },
+        {
+          "moisture": 0,
+          "plant": false
+        },
+        {
+          "moisture": 1,
+          "plant": true
+        }
+      ],
+      "threshold": 3
+    },
+    "title": "Грядка фермера"
+  }
+}

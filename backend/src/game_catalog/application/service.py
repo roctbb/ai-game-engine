@@ -26,6 +26,8 @@ class RegisterGameInput:
     difficulty: str | None = None
     learning_section: str | None = None
     topics: tuple[str, ...] = ()
+    min_players_per_match: int | None = None
+    max_players_per_match: int | None = None
     catalog_metadata_status: CatalogMetadataStatus | None = None
 
 
@@ -45,6 +47,8 @@ class GameCatalogService:
             difficulty=data.difficulty,
             learning_section=data.learning_section,
             topics=data.topics,
+            min_players_per_match=data.min_players_per_match,
+            max_players_per_match=data.max_players_per_match,
             catalog_metadata_status=data.catalog_metadata_status,
         )
         game.add_version(
@@ -92,6 +96,8 @@ class GameCatalogService:
         difficulty: str | None = None,
         learning_section: str | None = None,
         topics: tuple[str, ...] | None = None,
+        min_players_per_match: int | None = None,
+        max_players_per_match: int | None = None,
         catalog_metadata_status: CatalogMetadataStatus | None = None,
     ) -> Game:
         game = self._get_game(game_id)
@@ -109,6 +115,19 @@ class GameCatalogService:
             game.learning_section = learning_section.strip() if learning_section.strip() else None
         if topics is not None:
             game.topics = tuple(topic.strip() for topic in topics if topic.strip())
+        if min_players_per_match is not None or max_players_per_match is not None:
+            game.set_match_player_bounds(
+                min_players_per_match=(
+                    min_players_per_match
+                    if min_players_per_match is not None
+                    else game.min_players_per_match
+                ),
+                max_players_per_match=(
+                    max_players_per_match
+                    if max_players_per_match is not None
+                    else game.max_players_per_match
+                ),
+            )
         if catalog_metadata_status is not None:
             game.catalog_metadata_status = catalog_metadata_status
 
@@ -159,6 +178,13 @@ class GameCatalogService:
         game.difficulty = data.difficulty
         game.learning_section = data.learning_section
         game.topics = data.topics
+        game.mode = data.mode
+        if data.catalog_metadata_status is not None:
+            game.catalog_metadata_status = data.catalog_metadata_status
+        game.set_match_player_bounds(
+            min_players_per_match=data.min_players_per_match,
+            max_players_per_match=data.max_players_per_match,
+        )
         self._repository.save(game)
         return game
 

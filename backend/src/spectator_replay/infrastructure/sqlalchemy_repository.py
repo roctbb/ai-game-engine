@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from execution.domain.model import RunKind, RunStatus
@@ -31,6 +31,12 @@ class SqlAlchemyReplayRepository:
             query = query.order_by(desc(ReplayOrm.updated_at)).limit(limit)
             rows = session.scalars(query).all()
             return [_map_replay_from_orm(row) for row in rows]
+
+    def delete_by_run_ids(self, run_ids: list[str]) -> None:
+        if not run_ids:
+            return
+        with self._session_factory.begin() as session:
+            session.execute(delete(ReplayOrm).where(ReplayOrm.run_id.in_(run_ids)))
 
 
 def _map_replay_to_orm(replay: ReplayRecord) -> ReplayOrm:
@@ -63,4 +69,3 @@ def _map_replay_from_orm(row: ReplayOrm) -> ReplayRecord:
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
-

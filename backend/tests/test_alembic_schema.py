@@ -41,15 +41,21 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     assert expected_tables.issubset(table_names)
 
     catalog_columns = {item["name"] for item in inspector.get_columns("catalog_games")}
-    assert {"learning_section"}.issubset(catalog_columns)
+    assert {"learning_section", "min_players_per_match", "max_players_per_match"}.issubset(catalog_columns)
 
     lobby_columns = {item["name"] for item in inspector.get_columns("training_lobbies")}
     assert "last_scheduled_run_ids_json" in lobby_columns
 
     competition_columns = {item["name"] for item in inspector.get_columns("competitions")}
-    assert {"lobby_id", "tie_break_policy", "code_policy", "advancement_top_k", "match_size", "last_scheduled_run_ids_json"}.issubset(
-        competition_columns
-    )
+    assert {
+        "lobby_id",
+        "tie_break_policy",
+        "code_policy",
+        "advancement_top_k",
+        "min_match_size",
+        "match_size",
+        "last_scheduled_run_ids_json",
+    }.issubset(competition_columns)
 
     replay_columns = {item["name"] for item in inspector.get_columns("spectator_replays")}
     assert {"run_id", "frames_json", "events_json", "summary_json"}.issubset(replay_columns)

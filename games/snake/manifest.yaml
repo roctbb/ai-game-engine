@@ -8,9 +8,11 @@ renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right.
 description: Управляйте змейкой на сетке, собирайте еду вне тупиков и набирайте больше очков, выживая до конца партии.
 difficulty: medium
-learning_section: Матрицы и координаты
+learning_section: Симуляции мира
 topics:
   - логика
+  - симуляция
+  - матрицы
 slots:
   - key: agent
     title: Код змейки

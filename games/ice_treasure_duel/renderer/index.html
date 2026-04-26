@@ -13,6 +13,7 @@
     .ruby { outline: 4px solid #c2185b; outline-offset: -4px; }
     .sapphire { outline: 4px solid #1565c0; outline-offset: -4px; }
     .stats { margin-top: 12px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; }
+    .name-label { position: absolute; left: 50%; top: -16px; transform: translateX(-50%); padding: 1px 4px; border-radius: 999px; background: rgba(255,255,255,.9); color: #111827; font-size: 10px; line-height: 1.1; white-space: nowrap; z-index: 4; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
       .cell[data-badge]::after { content: attr(data-badge); position: absolute; right: -7px; top: -7px; min-width: 18px; height: 18px; padding: 0 3px; display: grid; place-items: center; border-radius: 999px; background: #111827; color: #fff; border: 2px solid #fff; font-size: 11px; line-height: 1; z-index: 3; }
   </style>
 </head>
@@ -22,6 +23,7 @@
     <div id="stats" class="stats"></div>
   </div>
   <script>
+    function labelOf(frame, slot) { return (frame.labels && frame.labels[slot]) || slot; }
     function render(payload) {
       const frame = (payload.frames || []).at(-1)?.frame || payload.frame || {};
       const board = frame.board || [];
@@ -35,13 +37,13 @@
       rows.forEach((row, y) => row.forEach((cell, x) => {
         const el = document.createElement("div");
         el.className = "cell " + (cell === -1 ? "wall" : cell === 1 ? "crystal" : "ice");
-        if (positions.ruby?.x === x && positions.ruby?.y === y) { el.classList.add("ruby"); el.dataset.badge = String((frame.collected || {}).ruby || 0); }
-        if (positions.sapphire?.x === x && positions.sapphire?.y === y) { el.classList.add("sapphire"); el.dataset.badge = String((frame.collected || {}).sapphire || 0); }
+        if (positions.ruby?.x === x && positions.ruby?.y === y) { el.classList.add("ruby"); el.dataset.badge = String((frame.collected || {}).ruby || 0); const label=document.createElement("span"); label.className="name-label"; label.textContent=labelOf(frame,"ruby"); el.appendChild(label); }
+        if (positions.sapphire?.x === x && positions.sapphire?.y === y) { el.classList.add("sapphire"); el.dataset.badge = String((frame.collected || {}).sapphire || 0); const label=document.createElement("span"); label.className="name-label"; label.textContent=labelOf(frame,"sapphire"); el.appendChild(label); }
         el.textContent = cell === 1 ? "◆" : "";
         root.appendChild(el);
       }));
       const collected = frame.collected || {};
-      document.getElementById("stats").textContent = `Ruby: ${collected.ruby || 0} · Sapphire: ${collected.sapphire || 0} · Осталось: ${frame.crystals_left || 0}`;
+      document.getElementById("stats").textContent = `${labelOf(frame,"ruby")}: ${collected.ruby || 0} · ${labelOf(frame,"sapphire")}: ${collected.sapphire || 0} · Осталось: ${frame.crystals_left || 0}`;
     }
     window.render = render;
     window.addEventListener("message", (event) => {

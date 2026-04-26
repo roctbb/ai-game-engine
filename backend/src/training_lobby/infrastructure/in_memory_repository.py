@@ -15,3 +15,6 @@ class InMemoryLobbyRepository:
 
     def list(self) -> list[Lobby]:
         return sorted(self._items.values(), key=lambda lobby: lobby.created_at, reverse=True)
+
+    def delete(self, lobby_id: str) -> None:
+        self._items.pop(lobby_id, None)

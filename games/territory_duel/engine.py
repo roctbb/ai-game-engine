@@ -8,9 +8,14 @@ from typing import Any, Callable
 
 _WIDTH = 12
 _HEIGHT = 12
-_MAX_TURNS = 90
-_SLOTS = ("green", "purple")
-_STARTS = {"green": (1, 1), "purple": (10, 10)}
+_MAX_TURNS = 100
+_SLOTS = ("green", "purple", "orange", "blue")
+_STARTS = {
+    "green": (1, 1),
+    "purple": (10, 10),
+    "orange": (10, 1),
+    "blue": (1, 10),
+}
 _RANDOM_WALLS = 18
 _DELTAS = {
     "up": (0, -1),
@@ -31,23 +36,23 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
-    role_code, role_team, role_name = _resolve_participants(ctx)
-    bots = {role: _build_fn(role_code.get(role, ''), role, events, print_context) for role in _SLOTS}
+    active_slots, role_code, role_team, role_name = _resolve_participants(ctx)
+    bots = {role: _build_fn(role_code.get(role, ''), role, events, print_context) for role in active_slots}
     walls = _build_walls(ctx)
 
-    positions = dict(_STARTS)
+    positions = {slot: _STARTS[slot] for slot in active_slots}
     ownership = {position: slot for slot, position in positions.items()}
-    invalid = {slot: 0 for slot in _SLOTS}
+    invalid = {slot: 0 for slot in active_slots}
     turns = 0
-    frames = [_frame(0, "running", walls, ownership, positions, invalid)]
+    frames = [_frame(0, "running", active_slots, walls, ownership, positions, invalid, labels=role_name)]
 
     for turn in range(_MAX_TURNS):
         print_context["tick"] = turn
         intents: dict[str, tuple[int, int]] = {}
-        for slot in _SLOTS:
+        for slot in active_slots:
             fn, _compile_error = bots[slot]
             x, y = positions[slot]
-            board = _board(walls, ownership, positions, slot)
+            board = _board(walls, ownership, positions, active_slots, slot)
             action = _safe_call(fn, x, y, board, slot)
             if action not in _DELTAS:
                 invalid[slot] += 1
@@ -60,43 +65,53 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 events.append({"type": "blocked_move", "message": "Ход заблокирован: там стена, закрытая клетка или другой непроходимый объект.", "tick": turn, "slot": slot})
             intents[slot] = target
 
-        if intents["green"] == intents["purple"]:
-            intents = {slot: positions[slot] for slot in _SLOTS}
-            events.append({"type": "collision_bounce", "tick": turn + 1})
-        elif intents["green"] == positions["purple"] and intents["purple"] == positions["green"]:
-            intents = {slot: positions[slot] for slot in _SLOTS}
-            events.append({"type": "swap_blocked", "tick": turn + 1})
+        blocked_slots: set[str] = set()
+        by_target: dict[tuple[int, int], list[str]] = {}
+        for slot, target in intents.items():
+            by_target.setdefault(target, []).append(slot)
+        for target, slots in by_target.items():
+            if len(slots) > 1:
+                blocked_slots.update(slots)
+                events.append({"type": "collision_bounce", "tick": turn + 1, "slots": slots, "x": target[0], "y": target[1]})
+        for index, a in enumerate(active_slots):
+            for b in active_slots[index + 1:]:
+                if intents[a] == positions[b] and intents[b] == positions[a]:
+                    blocked_slots.update([a, b])
+                    events.append({"type": "swap_blocked", "tick": turn + 1, "slots": [a, b]})
+        for slot in blocked_slots:
+            intents[slot] = positions[slot]
 
         positions = intents
-        for slot in _SLOTS:
+        for slot in active_slots:
             ownership[positions[slot]] = slot
         turns = turn + 1
-        frames.append(_frame(turns, "running", walls, ownership, positions, invalid))
+        frames.append(_frame(turns, "running", active_slots, walls, ownership, positions, invalid, labels=role_name))
 
-    area = {slot: sum(1 for owner in ownership.values() if owner == slot) for slot in _SLOTS}
+    area = {slot: sum(1 for owner in ownership.values() if owner == slot) for slot in active_slots}
     compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
-    slot_scores = {slot: area[slot] * 10 - invalid[slot] * 3 for slot in _SLOTS}
-    scores = {role_team[slot]: max(0, slot_scores[slot]) for slot in _SLOTS}
-    placements = _placements(role_team, slot_scores)
-    winner_slot = max(_SLOTS, key=lambda slot: (slot_scores[slot], area[slot]))
+    slot_scores = {slot: area[slot] * 10 - invalid[slot] * 3 for slot in active_slots}
+    scores = {role_team[slot]: max(0, slot_scores[slot]) for slot in active_slots}
+    placements = _placements(active_slots, role_team, slot_scores)
+    winner_slot = max(active_slots, key=lambda slot: (slot_scores[slot], area[slot]))
 
     metrics: dict[str, object] = {
         "turns": turns,
         "winner_slot": winner_slot,
-        "winner_slots": _winner_slots(slot_scores),
-        "is_tie": _is_tie(slot_scores),
+        "winner_slots": _winner_slots(active_slots, slot_scores),
+        "is_tie": _is_tie(active_slots, slot_scores),
         "area": area,
         "painted_total": len(ownership),
         "walls_total": len(walls) - len(_BORDER_WALLS),
         "invalid_moves": invalid,
         "slot_scores": slot_scores,
+        "active_slots": active_slots,
     }
     if compile_errors:
         metrics["compile_errors"] = compile_errors
         for slot, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": slot, "message": message})
 
-    frames.append(_frame(len(frames), "finished", walls, ownership, positions, invalid, slot_scores))
+    frames.append(_frame(len(frames), "finished", active_slots, walls, ownership, positions, invalid, slot_scores, labels=role_name))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
     payload["placements"] = placements
     return payload
@@ -117,10 +132,11 @@ def _load_context() -> dict[str, Any]:
 def _resolve_participants(ctx):
     participants = ctx.get('participants')
     if isinstance(participants, list) and len(participants) >= 2:
+        active_slots = _slots_for_count(min(4, len(participants)))
         role_code = {}
         role_team = {}
         role_name = {}
-        for i, role in enumerate(_SLOTS):
+        for i, role in enumerate(active_slots):
             p = participants[i]
             codes = p.get('codes_by_slot') if isinstance(p, dict) else {}
             code = codes.get('player', '') if isinstance(codes, dict) else ''
@@ -129,12 +145,26 @@ def _resolve_participants(ctx):
             role_team[role] = tid
             name = p.get('display_name') or p.get('captain_user_id') if isinstance(p, dict) else None
             role_name[role] = str(name) if name else tid
-        return role_code, role_team, role_name
+        return active_slots, role_code, role_team, role_name
     codes = ctx.get('codes_by_slot')
     if isinstance(codes, dict):
-        code = str(codes.get('player', ''))
-        return {r: code for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
-    return {r: '' for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
+        active_slots = [slot for slot in _SLOTS if codes.get(slot) or codes.get('player')]
+        if len(active_slots) < 2:
+            active_slots = _slots_for_count(2)
+        role_code = {r: str(codes.get(r) or codes.get('player') or '') for r in active_slots}
+        role_team = {r: f'team-{r}' for r in active_slots}
+        return active_slots, role_code, role_team, dict(role_team)
+    active_slots = _slots_for_count(2)
+    role_team = {r: f'team-{r}' for r in active_slots}
+    return active_slots, {r: '' for r in active_slots}, role_team, dict(role_team)
+
+
+def _slots_for_count(count: int) -> list[str]:
+    if count <= 2:
+        return ["green", "purple"]
+    if count == 3:
+        return ["green", "purple", "orange"]
+    return list(_SLOTS)
 
 
 
@@ -172,9 +202,8 @@ def _build_walls(context: dict[str, Any]) -> set[tuple[int, int]]:
     for _attempt in range(400):
         rng.shuffle(candidates)
         walls = set(_BORDER_WALLS) | set(candidates[:_RANDOM_WALLS])
-        green_reachable = _reachable_cells(_STARTS["green"], walls)
-        purple_reachable = _reachable_cells(_STARTS["purple"], walls)
-        if len(green_reachable & purple_reachable) >= 60:
+        reachable = [_reachable_cells(_STARTS[slot], walls) for slot in _SLOTS]
+        if len(set.intersection(*reachable)) >= 60:
             return walls
     return set(_BORDER_WALLS)
 
@@ -237,6 +266,7 @@ def _board(
     walls: set[tuple[int, int]],
     ownership: dict[tuple[int, int], str],
     positions: dict[str, tuple[int, int]],
+    active_slots: list[str],
     viewer: str,
 ) -> list[list[int]]:
     board = [[0 for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
@@ -244,9 +274,11 @@ def _board(
         board[x][y] = -1
     for (x, y), owner in ownership.items():
         board[x][y] = 1 if owner == viewer else 2
-    opponent = "purple" if viewer == "green" else "green"
-    ox, oy = positions[opponent]
-    board[ox][oy] = -2
+    for slot in active_slots:
+        if slot == viewer:
+            continue
+        ox, oy = positions[slot]
+        board[ox][oy] = -2
     return board
 
 
@@ -273,15 +305,15 @@ def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set
 
 
 
-def _winner_slots(slot_scores: dict[str, int]) -> list[str]:
+def _winner_slots(active_slots: list[str], slot_scores: dict[str, int]) -> list[str]:
     best = max(slot_scores.values()) if slot_scores else 0
-    return [slot for slot in _SLOTS if slot_scores.get(slot, 0) == best]
+    return [slot for slot in active_slots if slot_scores.get(slot, 0) == best]
 
-def _is_tie(slot_scores: dict[str, int]) -> bool:
-    return len(_winner_slots(slot_scores)) > 1
+def _is_tie(active_slots: list[str], slot_scores: dict[str, int]) -> bool:
+    return len(_winner_slots(active_slots, slot_scores)) > 1
 
-def _placements(role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
-    ordered = sorted(_SLOTS, key=lambda slot: slot_scores[slot], reverse=True)
+def _placements(active_slots: list[str], role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
+    ordered = sorted(active_slots, key=lambda slot: slot_scores[slot], reverse=True)
     result: dict[str, int] = {}
     last_score: int | None = None
     last_place = 0
@@ -297,18 +329,22 @@ def _placements(role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[
 def _frame(
     tick: int,
     phase: str,
+    active_slots: list[str],
     walls: set[tuple[int, int]],
     ownership: dict[tuple[int, int], str],
     positions: dict[str, tuple[int, int]],
     invalid: dict[str, int],
     slot_scores: dict[str, int] | None = None,
+    labels: dict[str, str] | None = None,
 ) -> dict[str, object]:
-    area = {slot: sum(1 for owner in ownership.values() if owner == slot) for slot in _SLOTS}
+    area = {slot: sum(1 for owner in ownership.values() if owner == slot) for slot in active_slots}
     frame: dict[str, object] = {
-        "board": _board(walls, ownership, positions, "green"),
-        "boards": {slot: _board(walls, ownership, positions, slot) for slot in _SLOTS},
+        "board": _board(walls, ownership, positions, active_slots, active_slots[0]),
+        "boards": {slot: _board(walls, ownership, positions, active_slots, slot) for slot in active_slots},
         "width": _WIDTH,
         "height": _HEIGHT,
+        "active_slots": active_slots,
+        "labels": {slot: (labels or {}).get(slot, slot) for slot in active_slots},
         "positions": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in positions.items()},
         "area": area,
         "painted_total": len(ownership),

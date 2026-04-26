@@ -408,6 +408,7 @@ import {
   getGame,
   getGameDocs,
   getGameTemplates,
+  getRendererPreview,
   getRun,
   getRunReplay,
   getSingleTaskLeaderboard,
@@ -421,6 +422,7 @@ import {
   type GameDocumentationDto,
   type GameTemplatesDto,
   type ReplayDto,
+  type RendererPreviewDto,
   type RunDto,
   type SingleTaskLeaderboardEntryDto,
   type SingleTaskLeaderboardDto,
@@ -461,6 +463,7 @@ const editorCode = ref('');
 const savedCode = ref('');
 const currentRun = ref<RunDto | null>(null);
 const replay = ref<ReplayDto | null>(null);
+const rendererPreview = ref<RendererPreviewDto | null>(null);
 const leaderboard = ref<SingleTaskLeaderboardDto | null>(null);
 const attempts = ref<RunDto[]>([]);
 const competitionPanelOpen = ref(false);
@@ -890,15 +893,21 @@ async function loadPage(): Promise<void> {
   isBootstrapping.value = true;
   errorMessage.value = '';
   replay.value = null;
+  rendererPreview.value = null;
   replayError.value = '';
   try {
     game.value = await getGame(gameId);
     if (game.value.mode !== 'single_task') {
       throw new Error('Этот экран предназначен для задач');
     }
-    const [freshTemplates, freshDocs] = await Promise.all([getGameTemplates(gameId), getGameDocs(gameId)]);
+    const [freshTemplates, freshDocs, freshPreview] = await Promise.all([
+      getGameTemplates(gameId),
+      getGameDocs(gameId),
+      loadRendererPreview(game.value.slug),
+    ]);
     templates.value = freshTemplates;
     docs.value = freshDocs;
+    rendererPreview.value = freshPreview;
     teamId.value = await ensurePersonalTeam(gameId);
     workspace.value = await getWorkspace(teamId.value);
     syncEditorFromWorkspace(workspace.value);
@@ -908,6 +917,14 @@ async function loadPage(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось подготовить задачу';
   } finally {
     isBootstrapping.value = false;
+  }
+}
+
+async function loadRendererPreview(gameSlug: string): Promise<RendererPreviewDto | null> {
+  try {
+    return await getRendererPreview(gameSlug);
+  } catch {
+    return null;
   }
 }
 
@@ -1124,12 +1141,13 @@ function sendRendererInit(): void {
 
 function sendRendererState(): void {
   const activeFrame = currentReplayFrame.value;
+  const preview = rendererPreview.value;
   sendToRenderer({
     type: 'agp.renderer.state',
     payload: {
-      tick: activeFrame?.tick ?? 0,
-      phase: activeFrame?.phase ?? currentRun.value?.status ?? 'idle',
-      frame: activeFrame?.frame ?? currentRun.value?.result_payload ?? {},
+      tick: activeFrame?.tick ?? preview?.tick ?? 0,
+      phase: activeFrame?.phase ?? currentRun.value?.status ?? preview?.phase ?? 'preview',
+      frame: activeFrame?.frame ?? currentRun.value?.result_payload ?? preview?.frame ?? {},
     },
   });
   const canSendTerminalResult = replayFrames.value.length === 0 || replayFrameIndex.value >= replayFrames.value.length - 1;

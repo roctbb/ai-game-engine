@@ -3,16 +3,26 @@ from __future__ import annotations
 import json
 import os
 import random
+from collections import Counter
 from typing import Any, Callable
 
 
-_WIDTH = 13
-_HEIGHT = 13
-_MAX_TURNS = 130
-_SLOTS = ("red", "blue")
-_BASES = {"red": (1, 1), "blue": (11, 11)}
-_STARTS = {"red": (1, 2), "blue": (11, 10)}
-_RANDOM_WALLS = 24
+_WIDTH = 17
+_HEIGHT = 17
+_MAX_TURNS = 180
+_SLOTS = ("red", "blue", "green", "yellow")
+_BASES = {
+    "red": (1, 1),
+    "blue": (15, 15),
+    "green": (15, 1),
+    "yellow": (1, 15),
+}
+_STARTS = dict(_BASES)
+_FLAG_HOME = (8, 8)
+_RANDOM_WALLS = 34
+_BUILD_LIMIT = 3
+_SHOT_RANGE = 7
+_FREEZE_TURNS = 3
 _DELTAS = {
     "up": (0, -1),
     "down": (0, 1),
@@ -20,6 +30,9 @@ _DELTAS = {
     "right": (1, 0),
     "stay": (0, 0),
 }
+_SHOOT_ACTIONS = {f"shoot_{name}": delta for name, delta in _DELTAS.items() if name != "stay"}
+_BUILD_ACTIONS = {f"build_{name}": delta for name, delta in _DELTAS.items() if name != "stay"}
+_ALL_ACTIONS = set(_DELTAS) | set(_SHOOT_ACTIONS) | set(_BUILD_ACTIONS)
 _BORDER_WALLS = {
     *{(x, 0) for x in range(_WIDTH)},
     *{(x, _HEIGHT - 1) for x in range(_WIDTH)},
@@ -32,69 +45,182 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
-    role_code, role_team, role_name = _resolve_participants(ctx)
-    bots = {role: _build_fn(role_code.get(role, ''), role, events, print_context) for role in _SLOTS}
-    walls = _build_walls(ctx)
+    active_slots, role_code, role_team, role_name = _resolve_participants(ctx)
+    bots = {slot: _build_fn(role_code.get(slot, ""), slot, events, print_context) for slot in active_slots}
+    fixed_walls = _build_walls(ctx, active_slots)
 
-    positions = dict(_STARTS)
-    has_flag = {slot: False for slot in _SLOTS}
-    captures = {slot: 0 for slot in _SLOTS}
-    invalid = {slot: 0 for slot in _SLOTS}
+    positions = {slot: _STARTS[slot] for slot in active_slots}
+    flag: dict[str, object] = {"carrier": None, "x": _FLAG_HOME[0], "y": _FLAG_HOME[1]}
+    built_walls: set[tuple[int, int]] = set()
+    builds_left = {slot: _BUILD_LIMIT for slot in active_slots}
+    frozen = {slot: 0 for slot in active_slots}
+    captures = {slot: 0 for slot in active_slots}
+    invalid = {slot: 0 for slot in active_slots}
+    shots = {slot: 0 for slot in active_slots}
     turns = 0
-    frames = [_frame(0, "running", walls, positions, has_flag, captures, invalid)]
+    frames = [
+        _frame(
+            0,
+            "running",
+            active_slots,
+            fixed_walls,
+            built_walls,
+            positions,
+            flag,
+            captures,
+            invalid,
+            builds_left,
+            frozen,
+            [],
+            shots,
+            role_name,
+        )
+    ]
 
     for turn in range(_MAX_TURNS):
         print_context["tick"] = turn
-        intents: dict[str, tuple[int, int]] = {}
-        for slot in _SLOTS:
+        actions: dict[str, str] = {}
+        intents: dict[str, tuple[int, int]] = {slot: positions[slot] for slot in active_slots}
+        shots_this_turn: list[dict[str, object]] = []
+
+        for slot in active_slots:
+            if frozen[slot] > 0:
+                frozen[slot] -= 1
+                actions[slot] = "stay"
+                events.append({"type": "frozen_skip", "tick": turn, "slot": slot, "left": frozen[slot]})
+                continue
+
             fn, _compile_error = bots[slot]
             x, y = positions[slot]
-            board = _board(walls, positions, slot, has_flag[slot])
-            action = _safe_call(fn, x, y, board, has_flag[slot], slot)
-            if action not in _DELTAS:
+            board = _board(fixed_walls, built_walls, positions, active_slots, slot, flag)
+            action = _safe_call(fn, x, y, board, flag.get("carrier") == slot, slot)
+            action = str(action).strip().lower() if isinstance(action, str) else ""
+            if action not in _ALL_ACTIONS:
                 invalid[slot] += 1
                 action = "stay"
-                events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": turn, "slot": slot})
-            target = _move((x, y), str(action))
-            if target in walls:
+                events.append(
+                    {
+                        "type": "invalid_action",
+                        "message": "Недопустимое действие: верните ход, shoot_* или build_*.",
+                        "tick": turn,
+                        "slot": slot,
+                    }
+                )
+            actions[slot] = action
+
+        for slot, action in actions.items():
+            if action in _BUILD_ACTIONS:
+                _apply_build(
+                    slot,
+                    _BUILD_ACTIONS[action],
+                    active_slots,
+                    fixed_walls,
+                    built_walls,
+                    positions,
+                    flag,
+                    builds_left,
+                    invalid,
+                    events,
+                    turn,
+                )
+
+        for slot, action in actions.items():
+            if action not in _DELTAS or frozen[slot] > 0:
+                continue
+            target = _move(positions[slot], action)
+            if target in fixed_walls or target in built_walls:
                 invalid[slot] += 1
-                target = (x, y)
-                events.append({"type": "blocked_move", "message": "Ход заблокирован: там стена, закрытая клетка или другой непроходимый объект.", "tick": turn, "slot": slot})
+                events.append(
+                    {
+                        "type": "blocked_move",
+                        "message": "Ход заблокирован стеной.",
+                        "tick": turn,
+                        "slot": slot,
+                    }
+                )
+                target = positions[slot]
             intents[slot] = target
 
-        if intents["red"] == intents["blue"]:
-            intents = {slot: positions[slot] for slot in _SLOTS}
-            events.append({"type": "collision_bounce", "tick": turn + 1})
-        elif intents["red"] == positions["blue"] and intents["blue"] == positions["red"]:
-            intents = {slot: positions[slot] for slot in _SLOTS}
-            events.append({"type": "swap_blocked", "tick": turn + 1})
-
+        intents = _resolve_collisions(active_slots, positions, intents, flag, events, turn)
         positions = intents
         turns = turn + 1
-        for slot in _SLOTS:
-            opponent = _opponent(slot)
-            if not has_flag[slot] and positions[slot] == _BASES[opponent]:
-                has_flag[slot] = True
-                events.append({"type": "flag_taken", "tick": turns, "slot": slot})
-            if has_flag[slot] and positions[slot] == _BASES[slot]:
-                has_flag[slot] = False
-                captures[slot] += 1
-                events.append({"type": "capture", "tick": turns, "slot": slot, "count": captures[slot]})
-        frames.append(_frame(turns, "running", walls, positions, has_flag, captures, invalid))
+
+        carrier = flag.get("carrier")
+        if isinstance(carrier, str) and positions.get(carrier) == _BASES[carrier]:
+            captures[carrier] += 1
+            flag = {"carrier": None, "x": _FLAG_HOME[0], "y": _FLAG_HOME[1]}
+            events.append({"type": "capture", "tick": turns, "slot": carrier, "count": captures[carrier]})
+
+        if flag.get("carrier") is None:
+            flag_pos = _flag_position(flag)
+            for slot in active_slots:
+                if frozen[slot] == 0 and positions[slot] == flag_pos:
+                    flag = {"carrier": slot, "x": None, "y": None}
+                    events.append({"type": "flag_taken", "tick": turns, "slot": slot})
+                    break
+
+        for slot, action in actions.items():
+            if action in _SHOOT_ACTIONS and frozen[slot] == 0:
+                shots[slot] += 1
+                shot_event = _apply_shot(
+                    slot,
+                    _SHOOT_ACTIONS[action],
+                    active_slots,
+                    fixed_walls,
+                    built_walls,
+                    positions,
+                    flag,
+                    frozen,
+                )
+                shot_event["tick"] = turn + 1
+                shots_this_turn.append(shot_event)
+                events.append(shot_event)
+
+        frames.append(
+            _frame(
+                turns,
+                "running",
+                active_slots,
+                fixed_walls,
+                built_walls,
+                positions,
+                flag,
+                captures,
+                invalid,
+                builds_left,
+                frozen,
+                shots_this_turn,
+                shots,
+                role_name,
+            )
+        )
 
     compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
-    slot_scores = {slot: captures[slot] * 300 + (80 if has_flag[slot] else 0) - invalid[slot] * 10 for slot in _SLOTS}
-    scores = {role_team[slot]: max(0, slot_scores[slot]) for slot in _SLOTS}
-    placements = _placements(role_team, slot_scores)
-    winner_slot = max(_SLOTS, key=lambda slot: (slot_scores[slot], captures[slot]))
+    slot_scores = {
+        slot: captures[slot] * 500
+        + (120 if flag.get("carrier") == slot else 0)
+        + shots[slot] * 3
+        + builds_left[slot] * 4
+        - invalid[slot] * 12
+        for slot in active_slots
+    }
+    scores = {role_team[slot]: max(0, slot_scores[slot]) for slot in active_slots}
+    placements = _placements(active_slots, role_team, slot_scores)
+    winner_slot = max(active_slots, key=lambda slot: (captures[slot], slot_scores[slot]))
     metrics: dict[str, object] = {
         "turns": turns,
+        "active_slots": active_slots,
         "winner_slot": winner_slot,
-        "winner_slots": _winner_slots(slot_scores),
-        "is_tie": _is_tie(slot_scores),
+        "winner_slots": _winner_slots(active_slots, slot_scores),
+        "is_tie": _is_tie(active_slots, slot_scores),
         "captures": captures,
-        "has_flag": has_flag,
-        "walls_total": len(walls) - len(_BORDER_WALLS),
+        "flag_carrier": flag.get("carrier"),
+        "flag": flag,
+        "walls_total": len(fixed_walls) - len(_BORDER_WALLS),
+        "built_walls": len(built_walls),
+        "builds_left": builds_left,
+        "frozen": frozen,
+        "shots": shots,
         "invalid_moves": invalid,
         "slot_scores": slot_scores,
     }
@@ -103,9 +229,33 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         for slot, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": slot, "message": message})
 
-    frames.append(_frame(len(frames), "finished", walls, positions, has_flag, captures, invalid, slot_scores))
-    payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
-    payload["placements"] = placements
+    frames.append(
+        _frame(
+            len(frames),
+            "finished",
+            active_slots,
+            fixed_walls,
+            built_walls,
+            positions,
+            flag,
+            captures,
+            invalid,
+            builds_left,
+            frozen,
+            [],
+            shots,
+            role_name,
+            slot_scores,
+        )
+    )
+    payload: dict[str, object] = {
+        "status": "finished",
+        "metrics": metrics,
+        "frames": frames,
+        "events": events,
+        "scores": scores,
+        "placements": placements,
+    }
     return payload
 
 
@@ -120,44 +270,55 @@ def _load_context() -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-
-def _resolve_participants(ctx):
-    participants = ctx.get('participants')
+def _resolve_participants(ctx: dict[str, Any]) -> tuple[list[str], dict[str, str], dict[str, str], dict[str, str]]:
+    participants = ctx.get("participants")
     if isinstance(participants, list) and len(participants) >= 2:
-        role_code = {}
-        role_team = {}
-        role_name = {}
-        for i, role in enumerate(_SLOTS):
-            p = participants[i]
-            codes = p.get('codes_by_slot') if isinstance(p, dict) else {}
-            code = codes.get('player', '') if isinstance(codes, dict) else ''
-            role_code[role] = str(code) if code else ''
-            tid = str(p.get('team_id', role)) if isinstance(p, dict) else role
-            role_team[role] = tid
-            name = p.get('display_name') or p.get('captain_user_id') if isinstance(p, dict) else None
-            role_name[role] = str(name) if name else tid
-        return role_code, role_team, role_name
-    codes = ctx.get('codes_by_slot')
+        active_slots = _slots_for_count(len(participants))
+        role_code: dict[str, str] = {}
+        role_team: dict[str, str] = {}
+        role_name: dict[str, str] = {}
+        for index, slot in enumerate(active_slots):
+            participant = participants[index]
+            codes = participant.get("codes_by_slot") if isinstance(participant, dict) else {}
+            code = codes.get("player", "") if isinstance(codes, dict) else ""
+            role_code[slot] = str(code) if code else ""
+            team_id = str(participant.get("team_id", slot)) if isinstance(participant, dict) else slot
+            role_team[slot] = team_id
+            name = participant.get("display_name") or participant.get("captain_user_id") if isinstance(participant, dict) else None
+            role_name[slot] = str(name) if name else team_id
+        return active_slots, role_code, role_team, role_name
+
+    codes = ctx.get("codes_by_slot")
     if isinstance(codes, dict):
-        code = str(codes.get('player', ''))
-        return {r: code for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
-    return {r: '' for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
+        explicit_slots = [slot for slot in _SLOTS if isinstance(codes.get(slot), str)]
+        active_slots = _slots_for_count(len(explicit_slots)) if len(explicit_slots) >= 2 else ["red", "blue"]
+        role_code = {slot: str(codes.get(slot) or codes.get("player") or "") for slot in active_slots}
+        role_team = {slot: f"team-{slot}" for slot in active_slots}
+        return active_slots, role_code, role_team, dict(role_team)
+
+    active_slots = ["red", "blue"]
+    role_team = {slot: f"team-{slot}" for slot in active_slots}
+    return active_slots, {slot: "" for slot in active_slots}, role_team, dict(role_team)
 
 
+def _slots_for_count(count: int) -> list[str]:
+    return list(_SLOTS[: max(2, min(4, count))])
 
-def _map_seed(context, fallback):
-    participants = context.get('participants')
+
+def _map_seed(context: dict[str, Any], fallback: str) -> str:
+    participants = context.get("participants")
     if isinstance(participants, list) and len(participants) >= 2:
-        run_ids = [str(p.get('run_id', '')) for p in participants if isinstance(p, dict) and p.get('run_id')]
-        seed = min(run_ids) if run_ids else context.get('run_id', fallback)
+        run_ids = [str(p.get("run_id", "")) for p in participants if isinstance(p, dict) and p.get("run_id")]
+        seed = min(run_ids) if run_ids else context.get("run_id", fallback)
     else:
-        seed = context.get('run_id')
+        seed = context.get("run_id")
     if not isinstance(seed, str) or not seed:
         seed = fallback
     return seed
 
-def _build_fn(code, role, events, print_context):
-    namespace = {'__builtins__': _builtins(role, events, print_context)}
+
+def _build_fn(code: str, role: str, events: list[dict[str, object]], print_context: dict[str, int]):
+    namespace = {"__builtins__": _builtins(role, events, print_context)}
     compile_error = None
     if code.strip():
         try:
@@ -167,45 +328,28 @@ def _build_fn(code, role, events, print_context):
     fn = namespace.get("make_move") or namespace.get("choose_move")
     return (fn if callable(fn) else _fallback_move), compile_error
 
-def _build_walls(context: dict[str, Any]) -> set[tuple[int, int]]:
+
+def _build_walls(context: dict[str, Any], active_slots: list[str]) -> set[tuple[int, int]]:
     seed = _map_seed(context, "capture_flag_offline")
     rng = random.Random(seed)
-    blocked = set(_STARTS.values()) | set(_BASES.values())
+    protected = set(_BASES.values()) | {_FLAG_HOME}
+    for bx, by in list(protected):
+        for dx, dy in _DELTAS.values():
+            protected.add((bx + dx, by + dy))
     candidates = [
         (x, y)
         for y in range(1, _HEIGHT - 1)
         for x in range(1, _WIDTH - 1)
-        if (x, y) not in blocked
+        if (x, y) not in protected
     ]
-    for _attempt in range(500):
+    required = [_BASES[slot] for slot in active_slots] + [_FLAG_HOME]
+    for _attempt in range(700):
         rng.shuffle(candidates)
         walls = set(_BORDER_WALLS) | set(candidates[:_RANDOM_WALLS])
-        red_reachable = _reachable_cells(_STARTS["red"], walls)
-        blue_reachable = _reachable_cells(_STARTS["blue"], walls)
-        if _BASES["blue"] in red_reachable and _BASES["red"] in blue_reachable:
+        reachable = _reachable_cells(required[0], walls, set())
+        if all(cell in reachable for cell in required):
             return walls
     return set(_BORDER_WALLS)
-
-
-def _build_player_fn(
-    context: dict[str, Any],
-    slot: str,
-    events: list[dict[str, object]],
-    print_context: dict[str, int],
-) -> tuple[Callable[..., object], str | None]:
-    code = ""
-    codes = context.get("codes_by_slot")
-    if isinstance(codes, dict) and isinstance(codes.get(slot), str):
-        code = str(codes[slot])
-    namespace = {"__builtins__": _builtins(slot, events, print_context)}
-    compile_error: str | None = None
-    if code.strip():
-        try:
-            exec(code, namespace, namespace)
-        except Exception as exc:
-            compile_error = str(exc)
-    fn = namespace.get("make_move") or namespace.get("choose_move")
-    return (fn if callable(fn) else _fallback_move), compile_error
 
 
 def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[str, int]) -> dict[str, object]:
@@ -219,27 +363,37 @@ def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[st
             events.append({"type": "bot_print", "tick": int(print_context.get("tick", 0)), "role": slot, "message": line})
 
     return {
-        "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict, "enumerate": enumerate,
-        "float": float, "int": int, "len": len, "list": list, "max": max, "min": min,
-        "print": bot_print, "range": range, "set": set, "str": str, "sum": sum, "tuple": tuple, "zip": zip,
+        "abs": abs,
+        "all": all,
+        "any": any,
+        "bool": bool,
+        "dict": dict,
+        "enumerate": enumerate,
+        "float": float,
+        "int": int,
+        "len": len,
+        "list": list,
+        "max": max,
+        "min": min,
+        "print": bot_print,
+        "range": range,
+        "set": set,
+        "str": str,
+        "sum": sum,
+        "tuple": tuple,
+        "zip": zip,
     }
 
 
 def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]], has_flag: bool, slot: str) -> object:
-    try:
-        return fn(x, y, board, has_flag, slot)
-    except TypeError:
+    for args in ((x, y, board, has_flag, slot), (x, y, board, has_flag), (x, y, board)):
         try:
-            return fn(x, y, board, has_flag)
+            return fn(*args)
         except TypeError:
-            try:
-                return fn(x, y, board)
-            except Exception:
-                return None
+            continue
         except Exception:
             return None
-    except Exception:
-        return None
+    return None
 
 
 def _fallback_move(_x: int, _y: int, _board_value: list[list[int]], _has_flag: bool = False, _slot: str = "") -> str:
@@ -247,22 +401,140 @@ def _fallback_move(_x: int, _y: int, _board_value: list[list[int]], _has_flag: b
 
 
 def _board(
-    walls: set[tuple[int, int]],
+    fixed_walls: set[tuple[int, int]],
+    built_walls: set[tuple[int, int]],
     positions: dict[str, tuple[int, int]],
+    active_slots: list[str],
     viewer: str,
-    carrying_flag: bool,
+    flag: dict[str, object],
 ) -> list[list[int]]:
     board = [[0 for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
-    for x, y in walls:
+    for x, y in fixed_walls:
         board[x][y] = -1
-    own_base = _BASES[viewer]
-    enemy_base = _BASES[_opponent(viewer)]
-    board[own_base[0]][own_base[1]] = 2
-    board[enemy_base[0]][enemy_base[1]] = 1 if not carrying_flag else 0
-    opponent = _opponent(viewer)
-    ox, oy = positions[opponent]
-    board[ox][oy] = -2
+    for x, y in built_walls:
+        board[x][y] = -3
+    for slot in active_slots:
+        bx, by = _BASES[slot]
+        board[bx][by] = 2 if slot == viewer else 3
+    if flag.get("carrier") is None:
+        fx, fy = _flag_position(flag)
+        board[fx][fy] = 1
+    for slot in active_slots:
+        if slot == viewer:
+            continue
+        px, py = positions[slot]
+        board[px][py] = -4 if flag.get("carrier") == slot else -2
     return board
+
+
+def _apply_shot(
+    slot: str,
+    delta: tuple[int, int],
+    active_slots: list[str],
+    fixed_walls: set[tuple[int, int]],
+    built_walls: set[tuple[int, int]],
+    positions: dict[str, tuple[int, int]],
+    flag: dict[str, object],
+    frozen: dict[str, int],
+) -> dict[str, object]:
+    sx, sy = positions[slot]
+    dx, dy = delta
+    path: list[dict[str, int]] = []
+    players_by_pos = {pos: other for other, pos in positions.items() if other != slot}
+    for distance in range(1, _SHOT_RANGE + 1):
+        cell = (sx + dx * distance, sy + dy * distance)
+        path.append({"x": cell[0], "y": cell[1]})
+        if cell in fixed_walls:
+            return {"type": "shot_blocked", "slot": slot, "path": path, "x": cell[0], "y": cell[1]}
+        if cell in built_walls:
+            built_walls.remove(cell)
+            return {"type": "wall_destroyed", "slot": slot, "path": path, "x": cell[0], "y": cell[1]}
+        target = players_by_pos.get(cell)
+        if target in active_slots:
+            frozen[target] = max(frozen[target], _FREEZE_TURNS)
+            result: dict[str, object] = {
+                "type": "shot_hit",
+                "slot": slot,
+                "target": target,
+                "path": path,
+                "x": cell[0],
+                "y": cell[1],
+                "freeze": _FREEZE_TURNS,
+            }
+            if flag.get("carrier") == target:
+                flag["carrier"] = None
+                flag["x"] = cell[0]
+                flag["y"] = cell[1]
+                result["flag_dropped"] = True
+            return result
+    end = path[-1] if path else {"x": sx, "y": sy}
+    return {"type": "shot_missed", "slot": slot, "path": path, "x": end["x"], "y": end["y"]}
+
+
+def _apply_build(
+    slot: str,
+    delta: tuple[int, int],
+    active_slots: list[str],
+    fixed_walls: set[tuple[int, int]],
+    built_walls: set[tuple[int, int]],
+    positions: dict[str, tuple[int, int]],
+    flag: dict[str, object],
+    builds_left: dict[str, int],
+    invalid: dict[str, int],
+    events: list[dict[str, object]],
+    turn: int,
+) -> None:
+    if builds_left[slot] <= 0:
+        invalid[slot] += 1
+        events.append({"type": "build_failed", "reason": "no_walls_left", "tick": turn, "slot": slot})
+        return
+    x, y = positions[slot]
+    dx, dy = delta
+    target = (x + dx, y + dy)
+    blocked = set(_BASES[s] for s in active_slots) | set(positions.values())
+    if flag.get("carrier") is None:
+        blocked.add(_flag_position(flag))
+    if target in fixed_walls or target in built_walls or target in blocked:
+        invalid[slot] += 1
+        events.append({"type": "build_failed", "reason": "blocked_cell", "tick": turn, "slot": slot, "x": target[0], "y": target[1]})
+        return
+    built_walls.add(target)
+    builds_left[slot] -= 1
+    events.append({"type": "wall_built", "tick": turn + 1, "slot": slot, "x": target[0], "y": target[1], "left": builds_left[slot]})
+
+
+def _resolve_collisions(
+    active_slots: list[str],
+    positions: dict[str, tuple[int, int]],
+    intents: dict[str, tuple[int, int]],
+    flag: dict[str, object],
+    events: list[dict[str, object]],
+    turn: int,
+) -> dict[str, tuple[int, int]]:
+    blocked: set[str] = set()
+    counts = Counter(intents.values())
+    flag_pos = _flag_position(flag) if flag.get("carrier") is None else None
+    processed_targets: set[tuple[int, int]] = set()
+    for slot in active_slots:
+        if counts[intents[slot]] > 1:
+            if intents[slot] in processed_targets:
+                continue
+            processed_targets.add(intents[slot])
+            contenders = [candidate for candidate in active_slots if intents[candidate] == intents[slot]]
+            if flag_pos is not None and intents[slot] == flag_pos:
+                winner = contenders[0]
+                blocked.update(candidate for candidate in contenders if candidate != winner)
+                events.append({"type": "flag_race", "tick": turn + 1, "winner": winner, "blocked": [candidate for candidate in contenders if candidate != winner]})
+            else:
+                blocked.add(slot)
+    for i, first in enumerate(active_slots):
+        for second in active_slots[i + 1 :]:
+            if intents[first] == positions[second] and intents[second] == positions[first]:
+                blocked.add(first)
+                blocked.add(second)
+    if blocked:
+        events.append({"type": "collision_bounce", "tick": turn + 1, "slots": sorted(blocked)})
+    return {slot: positions[slot] if slot in blocked else intents[slot] for slot in active_slots}
 
 
 def _move(position: tuple[int, int], action: str) -> tuple[int, int]:
@@ -270,7 +542,14 @@ def _move(position: tuple[int, int], action: str) -> tuple[int, int]:
     return position[0] + dx, position[1] + dy
 
 
-def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
+def _flag_position(flag: dict[str, object]) -> tuple[int, int]:
+    x = flag.get("x")
+    y = flag.get("y")
+    return (int(x), int(y)) if isinstance(x, int) and isinstance(y, int) else _FLAG_HOME
+
+
+def _reachable_cells(start: tuple[int, int], fixed_walls: set[tuple[int, int]], built_walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    walls = fixed_walls | built_walls
     queue = [start]
     seen = {start}
     head = 0
@@ -286,21 +565,17 @@ def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set
     return seen
 
 
-def _opponent(slot: str) -> str:
-    return "blue" if slot == "red" else "red"
-
-
-
-
-def _winner_slots(slot_scores: dict[str, int]) -> list[str]:
+def _winner_slots(active_slots: list[str], slot_scores: dict[str, int]) -> list[str]:
     best = max(slot_scores.values()) if slot_scores else 0
-    return [slot for slot in _SLOTS if slot_scores.get(slot, 0) == best]
+    return [slot for slot in active_slots if slot_scores.get(slot, 0) == best]
 
-def _is_tie(slot_scores: dict[str, int]) -> bool:
-    return len(_winner_slots(slot_scores)) > 1
 
-def _placements(role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
-    ordered = sorted(_SLOTS, key=lambda slot: slot_scores[slot], reverse=True)
+def _is_tie(active_slots: list[str], slot_scores: dict[str, int]) -> bool:
+    return len(_winner_slots(active_slots, slot_scores)) > 1
+
+
+def _placements(active_slots: list[str], role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[str, int]:
+    ordered = sorted(active_slots, key=lambda slot: slot_scores[slot], reverse=True)
     result: dict[str, int] = {}
     last_score: int | None = None
     last_place = 0
@@ -316,23 +591,40 @@ def _placements(role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[
 def _frame(
     tick: int,
     phase: str,
-    walls: set[tuple[int, int]],
+    active_slots: list[str],
+    fixed_walls: set[tuple[int, int]],
+    built_walls: set[tuple[int, int]],
     positions: dict[str, tuple[int, int]],
-    has_flag: dict[str, bool],
+    flag: dict[str, object],
     captures: dict[str, int],
     invalid: dict[str, int],
+    builds_left: dict[str, int],
+    frozen: dict[str, int],
+    shots_this_turn: list[dict[str, object]],
+    shots: dict[str, int],
+    labels: dict[str, str] | None = None,
     slot_scores: dict[str, int] | None = None,
 ) -> dict[str, object]:
+    viewer = active_slots[0]
     frame: dict[str, object] = {
-        "board": _board(walls, positions, "red", has_flag["red"]),
-        "boards": {slot: _board(walls, positions, slot, has_flag[slot]) for slot in _SLOTS},
+        "board": _board(fixed_walls, built_walls, positions, active_slots, viewer, flag),
+        "boards": {slot: _board(fixed_walls, built_walls, positions, active_slots, slot, flag) for slot in active_slots},
         "width": _WIDTH,
         "height": _HEIGHT,
+        "active_slots": active_slots,
+        "labels": {slot: (labels or {}).get(slot, slot) for slot in active_slots},
         "positions": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in positions.items()},
-        "bases": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in _BASES.items()},
-        "has_flag": has_flag,
-        "captures": captures,
-        "invalid_moves": invalid,
+        "bases": {slot: {"x": _BASES[slot][0], "y": _BASES[slot][1]} for slot in active_slots},
+        "flag": dict(flag),
+        "flag_home": {"x": _FLAG_HOME[0], "y": _FLAG_HOME[1]},
+        "flag_carrier": flag.get("carrier"),
+        "captures": dict(captures),
+        "invalid_moves": dict(invalid),
+        "builds_left": dict(builds_left),
+        "built_walls": [{"x": x, "y": y} for x, y in sorted(built_walls)],
+        "frozen": dict(frozen),
+        "shots": dict(shots),
+        "shots_this_turn": shots_this_turn,
     }
     if slot_scores is not None:
         frame["slot_scores"] = slot_scores

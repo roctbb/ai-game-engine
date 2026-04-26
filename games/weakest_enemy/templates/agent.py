@@ -1,10 +1,14 @@
 def choose_target(enemies):
-    # enemies - список словарей: {"id": "...", "hp": число, "distance": число}
-    # Нужно вернуть id врага с минимальным hp.
+    # enemies - список словарей:
+    # {"id": "...", "hp": число, "distance": число, "reward": число}
+    # Правило выбора:
+    # 1) меньше hp,
+    # 2) если hp равны - меньше distance,
+    # 3) если снова равны - больше reward.
     target = enemies[0]
 
     for enemy in enemies:
-        # TODO: если нашли врага слабее текущей цели, запомните его.
+        # TODO: добавьте проверки distance и reward при равном hp.
         if enemy["hp"] < target["hp"]:
             target = enemy
 

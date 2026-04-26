@@ -1,12 +1,10 @@
 <template>
   <section class="agp-grid competition-page">
-    <header class="agp-card p-4 competition-hero">
+    <header class="agp-card p-3 competition-hero">
       <div>
-        <div class="small text-muted text-uppercase fw-semibold">Соревнование</div>
-        <h1 class="h3 mb-1">{{ competition?.title || 'Соревнование' }}</h1>
-        <p class="text-muted mb-0">
-          Раунды, матчи и результаты участников.
-        </p>
+        <p class="competition-kicker mb-1">Соревнование</p>
+        <h1 class="h4 mb-1">{{ competition?.title || 'Турнир' }}</h1>
+        <p class="text-muted mb-0">Сетка, результаты и победители.</p>
       </div>
       <div class="btn-group competition-view-toggle">
         <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'rounds' }" @click="view = 'rounds'">
@@ -18,7 +16,9 @@
       </div>
     </header>
 
-    <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка соревнования...</article>
+    <article v-if="isLoading" class="agp-card p-4">
+      <div class="agp-loading-state agp-loading-state--compact">Загрузка соревнования...</div>
+    </article>
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="competition">
@@ -28,7 +28,6 @@
             <span class="agp-pill" :class="competitionStatusToneClass">{{ competitionStatusLabel }}</span>
             <span v-if="canModerate" class="agp-pill agp-pill--neutral">{{ competition.format }}</span>
             <span v-if="canModerate" class="agp-pill agp-pill--neutral">код: {{ competitionCodePolicyLabel(competition.code_policy) }}</span>
-            <span v-if="canModerate" class="agp-pill agp-pill--neutral">{{ competitionLiveLabel }}</span>
           </div>
           <div v-if="competition.pending_reason" class="competition-warning mt-2">
             <span class="fw-semibold">Ожидает решения:</span> {{ competition.pending_reason }}
@@ -48,7 +47,7 @@
             </div>
             <div class="competition-stat">
               <span>матч</span>
-              <strong>{{ competition.match_size }} игроков · проходят {{ competition.advancement_top_k }}</strong>
+              <strong>{{ competitionMatchBoundsLabel }} · проходят {{ competition.advancement_top_k }}</strong>
             </div>
           </div>
           <div class="small mt-2" v-if="competition.winner_team_ids.length">
@@ -56,7 +55,8 @@
             <span class="mono">{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</span>
           </div>
         </div>
-        <div v-if="canModerate" class="competition-actions">
+        <details v-if="canModerate" class="competition-actions">
+          <summary>Управление</summary>
           <div class="d-flex gap-2">
             <RouterLink
               v-if="competition"
@@ -84,39 +84,10 @@
               Завершить
             </button>
           </div>
-        </div>
+        </details>
       </article>
 
-      <article v-if="competitionLeaderboard.length" class="agp-card p-3 competition-leaderboard">
-        <div class="competition-leaderboard-head">
-          <div>
-            <h2 class="h6 mb-1">Лидерборд</h2>
-            <div class="small text-muted">Итоги по матчам этого соревнования.</div>
-          </div>
-          <div v-if="competition.winner_team_ids.length" class="competition-winner-callout">
-            <span>Победитель</span>
-            <strong>{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</strong>
-          </div>
-        </div>
-        <div class="competition-leaderboard-list">
-          <div
-            v-for="(stat, index) in competitionLeaderboard"
-            :key="stat.team_id"
-            class="competition-leaderboard-row"
-            :class="{ winner: competition.winner_team_ids.includes(stat.team_id) }"
-          >
-            <span class="competition-leaderboard-place">{{ index + 1 }}</span>
-            <div>
-              <strong>{{ stat.name }}</strong>
-              <span>
-                побед {{ stat.wins }} · поражений {{ stat.losses }} · очков {{ scoreLabel(stat.points) }}
-              </span>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="agp-card p-3" v-if="competition.status === 'draft' && canModerate">
+      <article class="agp-card p-3 competition-settings-card" v-if="competition.status === 'draft' && canModerate">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h2 class="h6 mb-0">Настройки соревнования</h2>
           <div class="d-flex gap-2">
@@ -150,7 +121,13 @@
           </div>
           <div class="col-md-1">
             <label class="form-label small">Игроков</label>
-            <input v-model.number="draftMatchSize" class="form-control mono" type="number" min="2" max="64" />
+            <input
+              v-model.number="draftMatchSize"
+              class="form-control mono"
+              type="number"
+              :min="competition?.min_match_size ?? 2"
+              max="64"
+            />
           </div>
           <div class="col-md-2">
             <label class="form-label small">Проходят</label>
@@ -162,8 +139,8 @@
         </div>
       </article>
 
-      <div class="agp-grid agp-grid--2">
-        <article class="agp-card p-3">
+      <div class="competition-focus-layout">
+        <article class="agp-card p-3 competition-section-card competition-participants-card">
           <h2 class="h6">Участники</h2>
           <label v-if="canModerate" class="form-label small">Игрок для регистрации</label>
           <select v-if="canModerate" v-model="selectedTeamId" class="form-select mb-3">
@@ -173,26 +150,16 @@
             </option>
           </select>
 
-          <table class="table align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Игрок</th>
-                <th>Статус</th>
-                <th v-if="canModerate">Ограничение</th>
-                <th v-if="canModerate">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="entrant in competition.entrants" :key="entrant.team_id">
-                <td>{{ teamName(entrant.team_id) }}</td>
-                <td>
-                  <span class="agp-pill" :class="entrantStatusToneClass(entrant)">
-                    {{ entrantStatusLabel(entrant) }}
-                  </span>
-                </td>
-                <td v-if="canModerate" class="small text-muted">{{ entrant.blocker_reason || '—' }}</td>
-                <td v-if="canModerate">
-                  <div class="d-flex gap-2 flex-wrap">
+          <div class="competition-entrant-list">
+            <div v-for="entrant in competition.entrants" :key="entrant.team_id" class="competition-entrant-row">
+              <div>
+                <strong>{{ teamName(entrant.team_id) }}</strong>
+                <span v-if="canModerate && entrant.blocker_reason" class="small text-muted">{{ entrant.blocker_reason }}</span>
+              </div>
+              <span class="agp-pill" :class="entrantStatusToneClass(entrant)">
+                {{ entrantStatusLabel(entrant) }}
+              </span>
+              <div v-if="canModerate" class="competition-entrant-actions">
                     <button
                       class="btn btn-sm btn-outline-warning"
                       :disabled="!canModerate || !entrant.ready || entrant.banned || moderationBusyTeamId === entrant.team_id"
@@ -215,18 +182,46 @@
                     >
                       Убрать
                     </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="competition.entrants.length === 0">
-                <td :colspan="canModerate ? 4 : 2" class="text-muted small">Пока нет зарегистрированных игроков.</td>
-              </tr>
-            </tbody>
-          </table>
+              </div>
+            </div>
+            <div v-if="competition.entrants.length === 0" class="text-muted small">Пока нет зарегистрированных игроков.</div>
+          </div>
         </article>
 
-        <article class="agp-card p-3" v-if="view === 'rounds'">
-          <h2 class="h6">Раунды и матчи</h2>
+        <article v-if="competitionLeaderboard.length" class="agp-card p-3 competition-leaderboard competition-side-card">
+          <div class="competition-leaderboard-head">
+            <div>
+              <h2 class="h6 mb-1">Лидерборд</h2>
+              <div class="small text-muted">Победы, поражения и очки.</div>
+            </div>
+            <div v-if="competition.winner_team_ids.length" class="competition-winner-callout">
+              <span>Победитель</span>
+              <strong>{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</strong>
+            </div>
+          </div>
+          <div class="competition-leaderboard-list">
+            <div
+              v-for="(stat, index) in competitionLeaderboard"
+              :key="stat.team_id"
+              class="competition-leaderboard-row"
+              :class="{ winner: competition.winner_team_ids.includes(stat.team_id) }"
+            >
+              <span class="competition-leaderboard-place">{{ index + 1 }}</span>
+              <div>
+                <strong>{{ stat.name }}</strong>
+                <span>
+                  побед {{ stat.wins }} · поражений {{ stat.losses }} · очков {{ scoreLabel(stat.points) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="agp-card p-3 competition-section-card competition-rounds-card" v-if="view === 'rounds'">
+          <div class="competition-section-title">
+            <h2 class="h6 mb-0">Раунды и матчи</h2>
+            <span class="small text-muted">{{ competition.rounds.length }} раундов</span>
+          </div>
           <div class="d-flex flex-column gap-3">
             <article
               v-for="round in competition.rounds"
@@ -240,7 +235,7 @@
                 <span class="badge text-bg-light">{{ roundStatusLabel(round.status) }}</span>
               </div>
               <div class="d-flex flex-column gap-3">
-                <article v-for="(match, matchIndex) in round.matches" :key="match.match_id" class="bg-white border rounded-3 p-3">
+                <article v-for="(match, matchIndex) in round.matches" :key="match.match_id" class="competition-match-card">
                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                     <div>
                       <div class="fw-semibold">Матч {{ matchIndex + 1 }}</div>
@@ -267,45 +262,24 @@
                       </button>
                     </div>
                   </div>
-                  <table class="table table-sm align-middle mb-0">
-                    <thead>
-                      <tr>
-                        <th>Игрок</th>
-                        <th>Счет</th>
-                        <th>Место</th>
-                        <th>Матч</th>
-                        <th>Прошел дальше</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="teamId in match.team_ids" :key="`${match.match_id}-${teamId}`">
-                        <td>{{ teamName(teamId) }}</td>
-                        <td class="mono small">{{ match.scores_by_team[teamId] ?? '—' }}</td>
-                        <td class="mono small">{{ match.placements_by_team[teamId] ?? '—' }}</td>
-                        <td class="mono small">
-                          <template v-if="match.run_ids_by_team[teamId]">
-                            <div class="d-flex align-items-center gap-2">
-                              <RouterLink :to="`/runs/${match.run_ids_by_team[teamId]}/watch`">
-                                Смотреть
-                              </RouterLink>
-                              <button
-                                v-if="canModerate"
-                                class="btn btn-sm btn-outline-dark"
-                                @click="inspectRunReplay(match.run_ids_by_team[teamId])"
-                              >
-                                Инспектор
-                              </button>
-                            </div>
-                          </template>
-                          <span v-else>—</span>
-                        </td>
-                        <td class="mono small">{{ match.advanced_team_ids.includes(teamId) ? 'да' : '—' }}</td>
-                      </tr>
-                      <tr v-if="match.team_ids.length === 0">
-                        <td colspan="5" class="text-muted small">В матче пока нет участников.</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <div class="competition-match-players">
+                    <div
+                      v-for="teamId in match.team_ids"
+                      :key="`${match.match_id}-${teamId}`"
+                      class="competition-match-player"
+                      :class="{ advanced: match.advanced_team_ids.includes(teamId) }"
+                    >
+                      <div>
+                        <strong>{{ teamName(teamId) }}</strong>
+                        <span>
+                          счет {{ match.scores_by_team[teamId] ?? '—' }}
+                          · место {{ match.placements_by_team[teamId] ?? '—' }}
+                        </span>
+                      </div>
+                      <span v-if="match.advanced_team_ids.includes(teamId)" class="competition-advanced-badge">прошел</span>
+                    </div>
+                    <div v-if="match.team_ids.length === 0" class="text-muted small">В матче пока нет участников.</div>
+                  </div>
                   <div class="small text-muted mt-2" v-if="match.tie_break_reason">
                     Требуется решение: <span>{{ match.tie_break_reason }}</span>
                   </div>
@@ -318,21 +292,23 @@
           </div>
         </article>
 
-        <article class="agp-card p-3" v-else>
-          <h2 class="h6">Сетка</h2>
+        <article class="agp-card p-3 competition-section-card competition-rounds-card" v-else>
+          <div class="competition-section-title">
+            <h2 class="h6 mb-0">Сетка</h2>
+            <span class="small text-muted">{{ competition.rounds.length }} раундов</span>
+          </div>
           <div v-if="isBracketPrimaryCompatible" class="d-flex gap-3 flex-wrap">
             <article
               v-for="round in competition.rounds"
               :key="`bracket-${round.round_index}`"
-              class="agp-card-soft p-3"
-              style="min-width: 18rem"
+              class="competition-bracket-round p-3"
             >
               <div class="fw-semibold mb-2">Раунд {{ round.round_index }}</div>
               <div class="d-flex flex-column gap-2">
                 <div
                   v-for="(match, matchIndex) in round.matches"
                   :key="`bnode-${match.match_id}`"
-                  class="bg-white border rounded-3 p-2"
+                  class="competition-bracket-node"
                 >
                   <div class="small fw-semibold mb-1">Матч {{ matchIndex + 1 }}</div>
                   <div class="small" v-for="teamId in match.team_ids" :key="`bnode-team-${match.match_id}-${teamId}`">
@@ -352,7 +328,7 @@
               </div>
             </article>
           </div>
-          <div v-else class="agp-card-soft p-3">
+          <div v-else class="competition-bracket-round p-3">
             <div class="fw-semibold mb-2">Матчи с несколькими участниками</div>
             <div class="small text-muted mb-2">
               Для текущих настроек удобнее смотреть раунды списком.
@@ -361,10 +337,10 @@
               <div
                 v-for="round in competition.rounds"
                 :key="`multi-round-${round.round_index}`"
-                class="bg-white border rounded-3 p-2"
+                class="competition-bracket-node"
               >
                 <div class="fw-semibold small mb-1">Раунд {{ round.round_index }}</div>
-                <div v-for="(match, matchIndex) in round.matches" :key="`multi-node-${match.match_id}`" class="border rounded-2 p-2 mb-2">
+                <div v-for="(match, matchIndex) in round.matches" :key="`multi-node-${match.match_id}`" class="competition-bracket-node-inner">
                   <div class="small fw-semibold">Матч {{ matchIndex + 1 }}</div>
                   <div class="small text-muted">Проходят дальше: {{ competition.advancement_top_k }}</div>
                   <div class="small" v-for="teamId in match.team_ids" :key="`multi-node-team-${match.match_id}-${teamId}`">
@@ -387,9 +363,15 @@
         </article>
       </div>
 
-      <article v-if="canModerate" class="agp-card p-3">
+      <details v-if="canModerate" class="agp-card p-3 competition-section-card competition-admin-details">
+        <summary>
+          <span>Администрирование и проверки</span>
+          <small>{{ competitionRuns.length }} запусков · {{ antiplagWarnings.length }} предупреждений</small>
+        </summary>
+
+        <section class="competition-admin-subsection">
         <h2 class="h6">Запуски соревнования</h2>
-        <table class="table align-middle mb-0">
+        <table class="table align-middle mb-0 competition-table">
           <thead>
             <tr>
               <th>Игрок</th>
@@ -427,9 +409,9 @@
             </tr>
           </tbody>
         </table>
-      </article>
+        </section>
 
-      <article class="agp-card p-3" v-if="canModerate && inspectedRunId">
+        <section class="competition-admin-subsection" v-if="inspectedRunId">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h2 class="h6 mb-0">Инспектор повтора</h2>
           <details class="small">
@@ -437,7 +419,7 @@
             <span class="mono small">{{ inspectedRunId }}</span>
           </details>
         </div>
-        <div v-if="isInspectReplayLoading" class="text-muted small">Загрузка повтора...</div>
+        <div v-if="isInspectReplayLoading" class="agp-loading-state agp-loading-state--compact">Загрузка повтора...</div>
         <div v-else-if="inspectReplayError" class="text-danger small">{{ inspectReplayError }}</div>
         <div v-else-if="inspectedReplay">
           <div class="small text-muted mb-2">
@@ -451,9 +433,9 @@
           </section>
         </div>
         <div v-else class="text-muted small">Повтор для выбранного запуска пока недоступен.</div>
-      </article>
+        </section>
 
-      <article v-if="canModerate" class="agp-card p-3">
+        <section class="competition-admin-subsection">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
           <div>
             <h2 class="h6 mb-0">Проверка схожести решений</h2>
@@ -477,7 +459,7 @@
           </div>
         </div>
 
-        <table class="table align-middle mb-0">
+        <table class="table align-middle mb-0 competition-table">
           <thead>
             <tr>
               <th>Игрок A</th>
@@ -510,7 +492,8 @@
             </tr>
           </tbody>
         </table>
-      </article>
+        </section>
+      </details>
     </template>
   </section>
 </template>
@@ -602,6 +585,12 @@ const isBracketPrimaryCompatible = computed(() => {
     competition.value.advancement_top_k === 1
   );
 });
+const competitionMatchBoundsLabel = computed(() => {
+  if (!competition.value) return 'матч';
+  const min = competition.value.min_match_size;
+  const max = competition.value.match_size;
+  return min === max ? `${max} игроков` : `${min}-${max} игроков`;
+});
 
 const canRegister = computed(() => {
   if (!competition.value || !selectedTeamId.value) return false;
@@ -628,7 +617,10 @@ const canSaveDraftSettings = computed(() => {
   if (!competition.value || !canModerate.value) return false;
   if (competition.value.status !== 'draft') return false;
   const titleOk = draftTitle.value.trim().length >= 2;
-  const matchSizeOk = Number.isFinite(draftMatchSize.value) && draftMatchSize.value >= 2 && draftMatchSize.value <= 64;
+  const matchSizeOk =
+    Number.isFinite(draftMatchSize.value) &&
+    draftMatchSize.value >= (competition.value.min_match_size ?? 2) &&
+    draftMatchSize.value <= 64;
   const topKOk =
     Number.isFinite(draftAdvancementTopK.value) &&
     draftAdvancementTopK.value >= 1 &&
@@ -1171,7 +1163,7 @@ onUnmounted(() => {
 
 <style scoped>
 .competition-page {
-  gap: 0.9rem;
+  gap: 0.75rem;
 }
 
 .competition-hero,
@@ -1183,11 +1175,85 @@ onUnmounted(() => {
 }
 
 .competition-hero {
-  background: #f8fafc;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
+    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.16), transparent 14rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.9)),
+    url("data:image/svg+xml,%3Csvg width='184' height='112' viewBox='0 0 184 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M20 20h32v24H20zM76 20h32v24H76zM132 20h32v24h-32zM48 70h32v24H48zM104 70h32v24h-32z'/%3E%3Cpath d='M52 32h24M108 32h24M92 44v26M80 82h24'/%3E%3C/g%3E%3C/svg%3E");
+  background-position: center, center, center, right 1rem center;
+  background-repeat: no-repeat;
+}
+
+.competition-hero h1 {
+  line-height: 1.15;
+}
+
+.competition-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
+}
+
+.competition-hero > * {
+  position: relative;
+}
+
+.competition-kicker {
+  color: #0f766e;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .competition-view-toggle {
   flex-shrink: 0;
+}
+
+.competition-view-toggle .btn {
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.competition-view-toggle .btn.active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+.competition-command-center,
+.competition-section-card,
+.competition-settings-card,
+.competition-leaderboard {
+  position: relative;
+  overflow: hidden;
+}
+
+.competition-command-center {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 14rem),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  align-items: center;
+}
+
+.competition-section-card::before,
+.competition-settings-card::before,
+.competition-leaderboard::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.18rem;
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.72), rgba(37, 99, 235, 0.5), transparent);
+}
+
+.competition-section-card > *,
+.competition-settings-card > *,
+.competition-leaderboard > * {
+  position: relative;
 }
 
 .competition-command-main {
@@ -1203,7 +1269,122 @@ onUnmounted(() => {
 }
 
 .competition-actions {
-  flex: 0 1 28rem;
+  flex: 0 0 auto;
+}
+
+.competition-actions summary,
+.competition-admin-details > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.competition-actions summary::-webkit-details-marker,
+.competition-admin-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.competition-actions summary {
+  border: 1px solid var(--agp-border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 0.45rem 0.8rem;
+  color: var(--agp-text);
+  font-weight: 800;
+}
+
+.competition-actions[open] summary {
+  margin-bottom: 0.65rem;
+}
+
+.competition-focus-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.competition-rounds-card {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+}
+
+.competition-participants-card,
+.competition-side-card {
+  grid-column: 2;
+}
+
+.competition-section-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.competition-entrant-list,
+.competition-match-players {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.competition-entrant-row,
+.competition-match-player {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 0.65rem;
+}
+
+.competition-entrant-row {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.competition-entrant-row > div:first-child,
+.competition-match-player > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.competition-entrant-row strong,
+.competition-match-player strong {
+  overflow-wrap: anywhere;
+}
+
+.competition-entrant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.competition-match-player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.competition-match-player span:not(.competition-advanced-badge) {
+  color: var(--agp-text-muted);
+  font-size: 0.82rem;
+}
+
+.competition-match-player.advanced {
+  border-color: rgba(20, 184, 166, 0.45);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.14), transparent 7rem),
+    rgba(240, 253, 250, 0.9);
+}
+
+.competition-advanced-badge {
+  border-radius: 999px;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
+  font-size: 0.74rem;
+  font-weight: 850;
+  padding: 0.2rem 0.55rem;
 }
 
 .competition-stat-grid {
@@ -1213,9 +1394,13 @@ onUnmounted(() => {
 }
 
 .competition-stat {
+  position: relative;
+  overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 1rem;
-  background: rgba(248, 250, 252, 0.78);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 6rem),
+    rgba(248, 250, 252, 0.88);
   padding: 0.75rem;
 }
 
@@ -1273,14 +1458,20 @@ onUnmounted(() => {
 
 .competition-leaderboard-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   gap: 0.5rem;
+}
+
+.competition-side-card .competition-leaderboard-list {
+  grid-template-columns: 1fr;
 }
 
 .competition-leaderboard-row {
   border: 1px solid var(--agp-border);
-  border-radius: 0.55rem;
-  background: #fff;
+  border-radius: 0.75rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(37, 99, 235, 0.06), transparent 6rem),
+    #fff;
   padding: 0.55rem 0.65rem;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1290,7 +1481,9 @@ onUnmounted(() => {
 
 .competition-leaderboard-row.winner {
   border-color: rgba(20, 184, 166, 0.42);
-  background: rgba(240, 253, 250, 0.82);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(245, 158, 11, 0.14), transparent 6rem),
+    rgba(240, 253, 250, 0.9);
 }
 
 .competition-leaderboard-row > div {
@@ -1319,7 +1512,9 @@ onUnmounted(() => {
 .competition-replay-summary {
   border: 1px solid var(--agp-border);
   border-radius: 8px;
-  background: var(--agp-surface-soft);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 10rem),
+    var(--agp-surface-soft);
   padding: 0.85rem;
 }
 
@@ -1327,6 +1522,92 @@ onUnmounted(() => {
   max-height: 18rem;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+.competition-table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: rgba(248, 250, 252, 0.82);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.competition-table thead th {
+  color: var(--agp-text-muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.competition-table--compact {
+  font-size: 0.86rem;
+}
+
+.competition-match-card,
+.competition-bracket-node,
+.competition-bracket-node-inner {
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 0.85rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(37, 99, 235, 0.07), transparent 7rem),
+    #ffffff;
+}
+
+.competition-match-card {
+  padding: 0.85rem;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.competition-admin-details {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(15, 23, 42, 0.05), transparent 13rem),
+    #fff;
+}
+
+.competition-admin-details > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  font-weight: 850;
+}
+
+.competition-admin-details > summary small {
+  color: var(--agp-text-muted);
+  font-weight: 700;
+}
+
+.competition-admin-details[open] > summary {
+  margin-bottom: 0.9rem;
+}
+
+.competition-admin-subsection {
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  padding-top: 0.85rem;
+  margin-top: 0.85rem;
+}
+
+.competition-admin-subsection:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.competition-bracket-round {
+  min-width: 18rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 8rem),
+    #f8fafc;
+}
+
+.competition-bracket-node {
+  padding: 0.65rem;
+}
+
+.competition-bracket-node-inner {
+  padding: 0.65rem;
+  margin-bottom: 0.5rem;
 }
 
 @media (max-width: 1080px) {
@@ -1339,11 +1620,49 @@ onUnmounted(() => {
     flex-basis: auto;
     width: 100%;
   }
+
+  .competition-focus-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .competition-rounds-card,
+  .competition-participants-card,
+  .competition-side-card {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .competition-rounds-card {
+    order: 1;
+  }
+
+  .competition-side-card {
+    order: 2;
+  }
+
+  .competition-participants-card {
+    order: 3;
+  }
 }
 
 @media (max-width: 720px) {
   .competition-stat-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .competition-view-toggle {
+    width: 100%;
+  }
+
+  .competition-view-toggle .btn {
+    flex: 1 1 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .competition-stat-grid,
+  .competition-leaderboard-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

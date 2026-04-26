@@ -8,12 +8,12 @@ from typing import Any, Callable
 
 _WIDTH = 12
 _HEIGHT = 12
-_MAX_TURNS = 90
+_MAX_TURNS = 100
 _SLOTS = ("gold", "silver")
 _STARTS = {"gold": (1, 1), "silver": (10, 10)}
 _RANDOM_WALLS = 18
 _COINS_TOTAL = 16
-_TRAPS_TOTAL = 10
+_TRAPS_TOTAL = 8
 _DELTAS = {
     "up": (0, -1),
     "down": (0, 1),
@@ -39,14 +39,14 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     walls = game_map["walls"]
     coins = game_map["coins"]
     traps = game_map["traps"]
-    assert isinstance(walls, set) and isinstance(coins, set) and isinstance(traps, set)
+    assert isinstance(walls, set) and isinstance(coins, set) and isinstance(traps, list)
 
     positions = dict(_STARTS)
     collected = {slot: 0 for slot in _SLOTS}
     trap_hits = {slot: 0 for slot in _SLOTS}
     invalid = {slot: 0 for slot in _SLOTS}
     turns = 0
-    frames = [_frame(0, "running", positions, walls, coins, traps, collected, trap_hits, invalid)]
+    frames = [_frame(0, "running", positions, walls, coins, traps, collected, trap_hits, invalid, [], labels=role_name)]
 
     for turn in range(_MAX_TURNS):
         if not coins:
@@ -82,11 +82,17 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 coins.remove(positions[slot])
                 collected[slot] += 1
                 events.append({"type": "coin", "tick": turn + 1, "slot": slot})
-            if positions[slot] in traps:
+            if positions[slot] in _trap_cells(traps):
                 trap_hits[slot] += 1
-                events.append({"type": "trap", "tick": turn + 1, "slot": slot})
+                events.append({"type": "trap", "tick": turn + 1, "slot": slot, "phase": "before_traps_move"})
+        trap_moves = _move_traps(traps, walls)
+        trap_cells = _trap_cells(traps)
+        for slot in _SLOTS:
+            if positions[slot] in trap_cells:
+                trap_hits[slot] += 1
+                events.append({"type": "trap", "tick": turn + 1, "slot": slot, "phase": "after_traps_move"})
         turns = turn + 1
-        frames.append(_frame(turns, "running", positions, walls, coins, traps, collected, trap_hits, invalid))
+        frames.append(_frame(turns, "running", positions, walls, coins, traps, collected, trap_hits, invalid, trap_moves, labels=role_name))
 
     compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
     slot_scores = {slot: collected[slot] * 100 - trap_hits[slot] * 35 - invalid[slot] * 10 for slot in _SLOTS}
@@ -112,7 +118,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         for slot, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": slot, "message": message})
 
-    frames.append(_frame(len(frames), "finished", positions, walls, coins, traps, collected, trap_hits, invalid, slot_scores))
+    frames.append(_frame(len(frames), "finished", positions, walls, coins, traps, collected, trap_hits, invalid, [], slot_scores, labels=role_name))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
     payload["placements"] = placements
     return payload
@@ -148,9 +154,11 @@ def _resolve_participants(ctx):
         return role_code, role_team, role_name
     codes = ctx.get('codes_by_slot')
     if isinstance(codes, dict):
-        code = str(codes.get('player', ''))
-        return {r: code for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
-    return {r: '' for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
+        role_code = {r: str(codes.get(r) or codes.get('player') or '') for r in _SLOTS}
+        role_team = {r: f'team-{r}' for r in _SLOTS}
+        return role_code, role_team, dict(role_team)
+    role_team = {r: f'team-{r}' for r in _SLOTS}
+    return {r: '' for r in _SLOTS}, role_team, dict(role_team)
 
 
 
@@ -194,12 +202,30 @@ def _build_map(context: dict[str, Any]) -> dict[str, object]:
             continue
         rng.shuffle(shared)
         coins = set(shared[:_COINS_TOTAL])
-        traps = set(shared[_COINS_TOTAL:_COINS_TOTAL + _TRAPS_TOTAL])
+        traps = _make_traps(shared[_COINS_TOTAL:_COINS_TOTAL + _TRAPS_TOTAL], walls, rng)
         return {"walls": walls, "coins": coins, "traps": traps}
     walls = set(_BORDER_WALLS)
     shared = sorted((_reachable_cells(_STARTS["gold"], walls) & _reachable_cells(_STARTS["silver"], walls)) - starts)
     rng.shuffle(shared)
-    return {"walls": walls, "coins": set(shared[:_COINS_TOTAL]), "traps": set(shared[_COINS_TOTAL:_COINS_TOTAL + _TRAPS_TOTAL])}
+    return {"walls": walls, "coins": set(shared[:_COINS_TOTAL]), "traps": _make_traps(shared[_COINS_TOTAL:_COINS_TOTAL + _TRAPS_TOTAL], walls, rng)}
+
+
+def _make_traps(cells: list[tuple[int, int]], walls: set[tuple[int, int]], rng: random.Random) -> list[dict[str, int]]:
+    directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    traps: list[dict[str, int]] = []
+    occupied: set[tuple[int, int]] = set()
+    for x, y in cells:
+        rng.shuffle(directions)
+        dx, dy = directions[0]
+        for cand_dx, cand_dy in directions:
+            if (x + cand_dx, y + cand_dy) not in walls:
+                dx, dy = cand_dx, cand_dy
+                break
+        if (x, y) in occupied:
+            continue
+        occupied.add((x, y))
+        traps.append({"x": x, "y": y, "dx": dx, "dy": dy})
+    return traps
 
 
 def _build_player_fn(
@@ -259,17 +285,21 @@ def _fallback_move(_x: int, _y: int, _board_value: list[list[int]], _slot: str =
 def _board(
     walls: set[tuple[int, int]],
     coins: set[tuple[int, int]],
-    traps: set[tuple[int, int]],
+    traps: list[dict[str, int]],
     positions: dict[str, tuple[int, int]],
     viewer: str,
 ) -> list[list[int]]:
     board = [[0 for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
     for x, y in walls:
         board[x][y] = -1
-    for x, y in traps:
+    for x, y in _next_trap_cells(traps, walls):
+        if board[x][y] == 0:
+            board[x][y] = -4
+    for x, y in _trap_cells(traps):
         board[x][y] = -3
     for x, y in coins:
-        board[x][y] = 1
+        if board[x][y] == 0:
+            board[x][y] = 1
     opponent = "silver" if viewer == "gold" else "gold"
     ox, oy = positions[opponent]
     board[ox][oy] = -2
@@ -279,6 +309,56 @@ def _board(
 def _move(position: tuple[int, int], action: str) -> tuple[int, int]:
     dx, dy = _DELTAS[action]
     return position[0] + dx, position[1] + dy
+
+
+def _trap_cells(traps: list[dict[str, int]]) -> set[tuple[int, int]]:
+    return {(int(trap["x"]), int(trap["y"])) for trap in traps}
+
+
+def _next_trap_cell(trap: dict[str, int], walls: set[tuple[int, int]]) -> tuple[int, int]:
+    x, y = int(trap["x"]), int(trap["y"])
+    dx, dy = int(trap["dx"]), int(trap["dy"])
+    target = (x + dx, y + dy)
+    if target in walls:
+        target = (x - dx, y - dy)
+        if target in walls:
+            target = (x, y)
+    return target
+
+
+def _next_trap_cells(traps: list[dict[str, int]], walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    return {_next_trap_cell(trap, walls) for trap in traps}
+
+
+def _move_traps(traps: list[dict[str, int]], walls: set[tuple[int, int]]) -> list[dict[str, object]]:
+    occupied = _trap_cells(traps)
+    moves: list[dict[str, object]] = []
+    for trap in traps:
+        x, y = int(trap["x"]), int(trap["y"])
+        old_dx, old_dy = int(trap["dx"]), int(trap["dy"])
+        dx, dy = old_dx, old_dy
+        target = (x + dx, y + dy)
+        bounced = False
+        if target in walls or target in occupied:
+            dx, dy = -dx, -dy
+            target = (x + dx, y + dy)
+            bounced = True
+        if target in walls or target in occupied:
+            target = (x, y)
+            dx, dy = old_dx, old_dy
+        occupied.discard((x, y))
+        occupied.add(target)
+        trap["x"], trap["y"], trap["dx"], trap["dy"] = target[0], target[1], dx, dy
+        moves.append(
+            {
+                "from": {"x": x, "y": y},
+                "to": {"x": target[0], "y": target[1]},
+                "dx": dx,
+                "dy": dy,
+                "bounced": bounced,
+            }
+        )
+    return moves
 
 
 def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
@@ -326,18 +406,24 @@ def _frame(
     positions: dict[str, tuple[int, int]],
     walls: set[tuple[int, int]],
     coins: set[tuple[int, int]],
-    traps: set[tuple[int, int]],
+    traps: list[dict[str, int]],
     collected: dict[str, int],
     trap_hits: dict[str, int],
     invalid: dict[str, int],
+    trap_moves: list[dict[str, object]],
     slot_scores: dict[str, int] | None = None,
+    labels: dict[str, str] | None = None,
 ) -> dict[str, object]:
     frame: dict[str, object] = {
         "board": _board(walls, coins, traps, positions, "gold"),
         "boards": {slot: _board(walls, coins, traps, positions, slot) for slot in _SLOTS},
         "width": _WIDTH,
         "height": _HEIGHT,
+        "labels": {slot: (labels or {}).get(slot, slot) for slot in _SLOTS},
         "positions": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in positions.items()},
+        "traps": [{"x": int(trap["x"]), "y": int(trap["y"]), "dx": int(trap["dx"]), "dy": int(trap["dy"])} for trap in traps],
+        "next_traps": [{"x": x, "y": y} for x, y in sorted(_next_trap_cells(traps, walls))],
+        "trap_moves": trap_moves,
         "coins_left": len(coins),
         "collected": collected,
         "trap_hits": trap_hits,

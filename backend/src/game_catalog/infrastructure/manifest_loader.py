@@ -42,6 +42,8 @@ class GameManifest(BaseModel):
     difficulty: str | None = Field(default=None, max_length=32)
     learning_section: str | None = Field(default=None, max_length=80)
     topics: tuple[str, ...] = ()
+    min_players_per_match: int | None = Field(default=None, ge=2, le=64)
+    max_players_per_match: int | None = Field(default=None, ge=2, le=64)
     required_worker_labels: dict[str, str] = Field(default_factory=dict)
     catalog_metadata_status: CatalogMetadataStatus | None = None
     demo_strategies: tuple[ManifestDemoStrategy, ...] = ()
@@ -75,7 +77,8 @@ class GameManifest(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def validate_demo_strategies(self) -> GameManifest:
+    def validate_manifest(self) -> GameManifest:
+        self._validate_match_player_bounds()
         slot_keys = {slot.key for slot in self.slots}
         strategy_ids: set[str] = set()
         strategy_paths: set[str] = set()
@@ -90,16 +93,46 @@ class GameManifest(BaseModel):
             strategy_paths.add(strategy.path)
         return self
 
+    def _validate_match_player_bounds(self) -> None:
+        if self.game_mode is GameMode.SINGLE_TASK:
+            if self.min_players_per_match is not None or self.max_players_per_match is not None:
+                raise ValueError("single_task manifest must not define min/max players per match")
+            return
+        min_players, max_players = self.match_player_bounds
+        if min_players is None or max_players is None:
+            raise ValueError("multiplayer manifest must define min_players_per_match and max_players_per_match")
+        if max_players < min_players:
+            raise ValueError("max_players_per_match must be >= min_players_per_match")
+
+    @property
+    def normalized_game_mode(self) -> GameMode:
+        if self.game_mode is GameMode.SINGLE_TASK:
+            return GameMode.SINGLE_TASK
+        return GameMode.MULTIPLAYER
+
+    @property
+    def match_player_bounds(self) -> tuple[int | None, int | None]:
+        if self.game_mode is GameMode.SINGLE_TASK:
+            return None, None
+        if self.game_mode is GameMode.SMALL_MATCH:
+            return self.min_players_per_match or 2, self.max_players_per_match or 2
+        if self.game_mode is GameMode.MASSIVE_LOBBY:
+            return self.min_players_per_match or 2, self.max_players_per_match or 64
+        return self.min_players_per_match, self.max_players_per_match
+
     def to_register_input(self) -> RegisterGameInput:
+        min_players, max_players = self.match_player_bounds
         return RegisterGameInput(
             slug=self.id,
             title=self.title,
-            mode=self.game_mode,
+            mode=self.normalized_game_mode,
             semver=self.semver,
             description=self.description,
             difficulty=self.difficulty,
             learning_section=self.learning_section,
             topics=self.topics,
+            min_players_per_match=min_players,
+            max_players_per_match=max_players,
             required_worker_labels=self.required_worker_labels,
             catalog_metadata_status=self.catalog_metadata_status,
             required_slots=tuple(

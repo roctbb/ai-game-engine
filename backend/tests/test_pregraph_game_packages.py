@@ -10,7 +10,6 @@ from game_catalog.infrastructure.manifest_loader import load_game_manifest
 
 
 PREGRAPH_PACKAGES = {
-    "beginner_cave": "Команды героя",
     "gate_guard": "Условия и выбор",
     "wall_archer": "Условия и выбор",
     "farm_row": "Циклы и повторения",
@@ -32,12 +31,10 @@ PREGRAPH_PACKAGES = {
     "gravity_apples": "Симуляции мира",
     "patrol_guard": "Режимы поведения",
     "boss_pattern": "Режимы поведения",
-    "archer_duel_lite": "Соревновательные стратегии",
     "crystal_auction": "Соревновательные стратегии",
 }
 
 PREGRAPH_SECTION_ORDER = [
-    "Команды героя",
     "Условия и выбор",
     "Циклы и повторения",
     "Строки и коды",
@@ -58,7 +55,7 @@ PREGRAPH_MATRIX_PACKAGES = {
     "gravity_apples",
 }
 
-PREGRAPH_MATCH_PACKAGES = {"archer_duel_lite", "crystal_auction"}
+PREGRAPH_MATCH_PACKAGES = {"crystal_auction"}
 
 
 def _repo_root() -> Path:
@@ -76,11 +73,10 @@ def test_pregraph_packages_have_expected_learning_sections() -> None:
         assert manifest.player_instruction, package
         assert (games_root / package / "renderer" / "index.html").is_file()
         renderer_html = (games_root / package / "renderer" / "index.html").read_text(encoding="utf-8")
-        assert "adventure-pregraph-14" in renderer_html
+        assert "adventure-pregraph-15" in renderer_html
         assert "m.payload" in renderer_html
         assert "renderDuel" in renderer_html
         assert "statMeters" in renderer_html
-        assert "renderBeginnerCave" in renderer_html
         assert "renderGateGuard" in renderer_html
         assert "renderPotionMaker" in renderer_html
         assert "renderEnemyChoice" in renderer_html
@@ -97,7 +93,6 @@ def test_pregraph_learning_sections_are_ordered_from_intro_to_advanced() -> None
     used_sections = [section for section in PREGRAPH_SECTION_ORDER if section in set(PREGRAPH_PACKAGES.values())]
 
     assert used_sections == [
-        "Команды героя",
         "Условия и выбор",
         "Циклы и повторения",
         "Строки и коды",
@@ -132,10 +127,10 @@ def test_pregraph_guides_are_specific_and_include_examples() -> None:
 
 def test_pregraph_engines_share_the_same_runtime_body() -> None:
     games_root = _repo_root() / "games"
-    canonical = (games_root / "beginner_cave" / "engine.py").read_text(encoding="utf-8")
+    canonical = (games_root / "gate_guard" / "engine.py").read_text(encoding="utf-8")
     canonical_body = canonical[canonical.index("\ndef run(") :]
 
-    for package in PREGRAPH_PACKAGES:
+    for package in set(PREGRAPH_PACKAGES) - PREGRAPH_MATCH_PACKAGES:
         engine = (games_root / package / "engine.py").read_text(encoding="utf-8")
         body = engine[engine.index("\ndef run(") :]
 
@@ -155,7 +150,7 @@ def test_pregraph_demo_strategies_run_successfully() -> None:
 
         context = {
             "run_id": f"test-{package}",
-            "run_kind": "competition_match" if manifest.game_mode.value == "small_match" else "single_task",
+            "run_kind": "competition_match" if manifest.game_mode.value != "single_task" else "single_task",
             "codes_by_slot": codes_by_slot,
         }
         env = os.environ.copy()
@@ -207,7 +202,7 @@ def test_pregraph_starter_templates_are_runnable_and_not_empty() -> None:
 
         context = {
             "run_id": f"starter-template-{package}",
-            "run_kind": "competition_match" if manifest.game_mode.value == "small_match" else "single_task",
+            "run_kind": "competition_match" if manifest.game_mode.value != "single_task" else "single_task",
             "codes_by_slot": codes_by_slot,
         }
         env = os.environ.copy()
@@ -229,22 +224,61 @@ def test_pregraph_starter_templates_are_runnable_and_not_empty() -> None:
         assert not [event for event in payload["events"] if event.get("type") == "compile_error"], package
 
 
+def test_pregraph_quality_templates_do_not_solve_without_student_work() -> None:
+    games_root = _repo_root() / "games"
+
+    for package in {
+        "weakest_enemy",
+        "priority_tower",
+        "treasure_scanner",
+        "space_queue",
+        "boss_pattern",
+        "farm_grid",
+        "potion_maker",
+        "minesweeper_numbers",
+        "gravity_apples",
+        "laser_mirrors",
+    }:
+        package_root = games_root / package
+        code = (package_root / "templates" / "agent.py").read_text(encoding="utf-8")
+        context = {
+            "run_id": f"template-{package}",
+            "codes_by_slot": {"agent": code},
+        }
+        env = os.environ.copy()
+        env["AGP_RUN_CONTEXT"] = json.dumps(context, ensure_ascii=False)
+        completed = subprocess.run(
+            [sys.executable, "engine.py"],
+            cwd=package_root,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        payload = json.loads(completed.stdout)
+        assert payload["metrics"]["solved"] is False, package
+        assert payload["metrics"]["score"] < 100, package
+
+
 def test_pregraph_list_scoring_penalizes_extra_actions() -> None:
-    package_root = _repo_root() / "games" / "beginner_cave"
+    package_root = _repo_root() / "games" / "farm_row"
     context = {
         "run_id": "test-extra-actions",
         "codes_by_slot": {
             "agent": "\n".join(
                 [
-                    "def play(hero):",
-                    "    hero.forward()",
-                    "    hero.collect()",
-                    "    hero.forward()",
-                    "    hero.attack()",
-                    "    hero.forward()",
-                    "    hero.collect()",
-                    "    hero.forward()",
-                    "    hero.wait()",
+                    "def solve(row):",
+                    "    result = []",
+                    "    for cell in row:",
+                    "        if cell == 1:",
+                    "            result.append('water')",
+                    "        else:",
+                    "            result.append('skip')",
+                    "    result.append('skip')",
+                    "    return result",
                 ]
             )
         },
@@ -280,7 +314,7 @@ def test_pregraph_nested_matrix_scoring_counts_cells() -> None:
                     "    for x in range(len(pixels)):",
                     "        column = []",
                     "        for y in range(len(pixels[x])):",
-                    "            column.append(palette[pixels[x][y]])",
+                    "            column.append(palette.get(pixels[x][y], 'transparent'))",
                     "        result.append(column)",
                     "    result[0][0] = 'wrong'",
                     "    return result",
@@ -313,17 +347,17 @@ def test_pregraph_api_returns_package_specific_starter_templates(client) -> None
     assert games.status_code == 200
     by_slug = {item["slug"]: item for item in games.json()}
 
-    beginner = client.get(f"/api/v1/games/{by_slug['beginner_cave_v1']['game_id']}/templates")
-    assert beginner.status_code == 200
-    beginner_template = beginner.json()["templates"][0]["code"]
-    assert "def play(hero):" in beginner_template
-    assert "hero.forward()" in beginner_template
+    gate_guard = client.get(f"/api/v1/games/{by_slug['gate_guard_v1']['game_id']}/templates")
+    assert gate_guard.status_code == 200
+    gate_guard_template = gate_guard.json()["templates"][0]["code"]
+    assert "def choose_action(gate):" in gate_guard_template
+    assert "return \"attack\"" in gate_guard_template
 
     pixel = client.get(f"/api/v1/games/{by_slug['pixel_painter_v1']['game_id']}/templates")
     assert pixel.status_code == 200
     pixel_template = pixel.json()["templates"][0]["code"]
     assert "def paint(pixels, palette):" in pixel_template
-    assert "palette[color_number]" in pixel_template
+    assert 'palette.get(code, "transparent")' in pixel_template
 
     laser = client.get(f"/api/v1/games/{by_slug['laser_mirrors_v1']['game_id']}/templates")
     assert laser.status_code == 200

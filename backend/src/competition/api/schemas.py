@@ -97,6 +97,7 @@ class CompetitionResponse(BaseModel):
     tie_break_policy: TieBreakPolicy
     code_policy: CompetitionCodePolicy
     advancement_top_k: int
+    min_match_size: int
     match_size: int
     status: CompetitionStatus
     entrants: list[CompetitionEntrantResponse]

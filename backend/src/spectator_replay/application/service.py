@@ -62,6 +62,9 @@ class SpectatorReplayService:
             limit=bounded_limit,
         )
 
+    def delete_runs(self, run_ids: list[str]) -> None:
+        self._repository.delete_by_run_ids(run_ids)
+
 
 def _build_replay_payload(run: Run) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, object]]:
     payload = run.result_payload if isinstance(run.result_payload, dict) else {}
@@ -103,4 +106,3 @@ def _normalize_dict_items(value: object) -> list[dict[str, object]]:
         if isinstance(item, dict):
             result.append(dict(item))
     return result
-

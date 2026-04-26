@@ -1,9 +1,12 @@
 def solve(ores, capacity):
-    total = 0
-    count = 0
+    total_weight = 0
+    commands = []
     for ore in ores:
-        if total + ore > capacity:
-            break
-        total += ore
-        count += 1
-    return count
+        weight = ore["weight"]
+        value = ore["value"]
+        if total_weight + weight <= capacity and value >= weight:
+            commands.append("take")
+            total_weight += weight
+        else:
+            commands.append("skip")
+    return commands

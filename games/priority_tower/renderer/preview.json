@@ -1,0 +1,62 @@
+{
+  "frame": {
+    "actual": "mob_5",
+    "difficulty": "medium",
+    "expected": "mob_5",
+    "kind": "priority_tower",
+    "learning_section": "Списки и цели",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "enemies": [
+        {
+          "danger": 4,
+          "distance": 3,
+          "hp": 20,
+          "id": "mob_0",
+          "speed": 2
+        },
+        {
+          "danger": 5,
+          "distance": 4,
+          "hp": 40,
+          "id": "mob_1",
+          "speed": 1
+        },
+        {
+          "danger": 3,
+          "distance": 6,
+          "hp": 30,
+          "id": "mob_2",
+          "speed": 5
+        },
+        {
+          "danger": 5,
+          "distance": 8,
+          "hp": 70,
+          "id": "mob_3",
+          "speed": 3
+        },
+        {
+          "danger": 6,
+          "distance": 7,
+          "hp": 10,
+          "id": "mob_4",
+          "speed": 2
+        },
+        {
+          "danger": 4,
+          "distance": 5,
+          "hp": 90,
+          "id": "mob_5",
+          "speed": 4
+        }
+      ],
+      "expected": "mob_5",
+      "formula": "danger*3 + speed*2 - distance + hp//10; tie: closer, then higher hp"
+    },
+    "title": "Башня приоритета"
+  }
+}

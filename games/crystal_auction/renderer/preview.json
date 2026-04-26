@@ -1,0 +1,34 @@
+{
+  "tick": 1,
+  "phase": "running",
+  "frame": {
+    "title": "Аукцион кристаллов",
+    "kind": "crystal_auction",
+    "learning_section": "Соревновательные стратегии",
+    "difficulty": "hard",
+    "crystal": 15,
+    "bids": {
+      "left": 0,
+      "right": 0
+    },
+    "winner": "left",
+    "budget": {
+      "left": 70,
+      "right": 70
+    },
+    "value": {
+      "left": 15,
+      "right": 0
+    },
+    "spent": {
+      "left": 0,
+      "right": 0
+    },
+    "deal": {
+      "left": 15,
+      "right": 0
+    },
+    "fair_bid": 7,
+    "rounds_left": 7
+  }
+}

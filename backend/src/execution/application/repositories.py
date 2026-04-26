@@ -32,6 +32,9 @@ class RunRepository(Protocol):
     ) -> list[Run]:
         ...
 
+    def delete_many(self, run_ids: list[str]) -> None:
+        ...
+
 
 class WorkerRepository(Protocol):
     def save(self, worker: WorkerNode) -> None:

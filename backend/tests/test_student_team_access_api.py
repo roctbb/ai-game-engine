@@ -15,6 +15,11 @@ def _maze_game(client, headers: dict[str, str]) -> dict:
     return next(item for item in games if item["slug"] == "maze_escape_v1")
 
 
+def _multiplayer_game(client, headers: dict[str, str]) -> dict:
+    games = client.get("/api/v1/games", headers=headers).json()
+    return next(item for item in games if item["slug"] == "ttt_connect5_v1")
+
+
 def test_student_can_only_operate_own_team(client, teacher_headers) -> None:
     alice_headers = _student_headers(client, "alice")
     bob_headers = _student_headers(client, "bob")
@@ -84,11 +89,22 @@ def test_student_can_only_operate_own_team(client, teacher_headers) -> None:
     assert bob_start_run.status_code == 403
     assert bob_start_run.json()["error"]["code"] == "forbidden"
 
+    lobby_game = _multiplayer_game(client, teacher_headers)
+    alice_lobby_team = client.post(
+        "/api/v1/teams",
+        headers=alice_headers,
+        json={
+            "game_id": lobby_game["game_id"],
+            "name": "Alice Lobby Team",
+            "captain_user_id": "alice",
+        },
+    ).json()
+
     lobby = client.post(
         "/api/v1/lobbies",
         headers=teacher_headers,
         json={
-            "game_id": game["game_id"],
+            "game_id": lobby_game["game_id"],
             "title": "Access Guard Lobby",
             "kind": "training",
             "access": "public",
@@ -105,7 +121,7 @@ def test_student_can_only_operate_own_team(client, teacher_headers) -> None:
     ):
         method_payload = {"json": payload} if payload is not None else {}
         response = client.post(
-            f"/api/v1/lobbies/{lobby_id}/teams/{alice_team_payload['team_id']}/{action_path}",
+            f"/api/v1/lobbies/{lobby_id}/teams/{alice_lobby_team['team_id']}/{action_path}",
             headers=bob_headers,
             **method_payload,
         )

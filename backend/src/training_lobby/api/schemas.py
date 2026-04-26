@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -14,6 +15,15 @@ class CreateLobbyRequest(BaseModel):
     access: LobbyAccess
     access_code: str | None = None
     max_teams: int = Field(default=32, ge=1, le=512)
+    auto_delete_training_runs_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class PatchLobbyRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=2, max_length=120)
+    access: LobbyAccess | None = None
+    access_code: str | None = Field(default=None, max_length=120)
+    max_teams: int | None = Field(default=None, ge=1, le=512)
+    auto_delete_training_runs_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class JoinLobbyRequest(BaseModel):
@@ -64,6 +74,19 @@ class LobbyParticipantStatsResponse(BaseModel):
     average_score: float | None
 
 
+class LobbyMatchGroupResponse(BaseModel):
+    group_id: str
+    batch_id: str
+    run_ids: list[str]
+    team_ids: list[str]
+    status: str
+    started_at: datetime | None
+    finished_at: datetime | None
+    replay_frame_count: int
+    replay_frame_index: int
+    winner_team_ids: list[str] = Field(default_factory=list)
+
+
 class LobbyResponse(BaseModel):
     lobby_id: str
     game_id: str
@@ -73,6 +96,7 @@ class LobbyResponse(BaseModel):
     access: LobbyAccess
     status: LobbyStatus
     max_teams: int
+    auto_delete_training_runs_days: int | None = None
     teams: list[LobbyTeamStateResponse]
     last_scheduled_run_ids: list[str]
     my_team_id: str | None = None
@@ -84,6 +108,19 @@ class LobbyResponse(BaseModel):
     current_run_ids: list[str] = Field(default_factory=list)
     archived_run_ids: list[str] = Field(default_factory=list)
     participant_stats: list[LobbyParticipantStatsResponse] = Field(default_factory=list)
+    cycle_phase: str = "waiting_players"
+    cycle_phase_label: str = "Ожидание игроков"
+    cycle_message: str = ""
+    cycle_started_at: datetime | None = None
+    replay_started_at: datetime | None = None
+    replay_until: datetime | None = None
+    result_until: datetime | None = None
+    cycle_frame_ms: int = 500
+    cycle_replay_frame_index: int = 0
+    cycle_replay_frame_count: int = 0
+    cycle_winner_team_ids: list[str] = Field(default_factory=list)
+    current_match_groups: list[LobbyMatchGroupResponse] = Field(default_factory=list)
+    archived_match_groups: list[LobbyMatchGroupResponse] = Field(default_factory=list)
 
 
 class LobbyCurrentRunResponse(BaseModel):

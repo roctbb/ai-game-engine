@@ -6,15 +6,29 @@
           <div class="mb-2">
             <RouterLink class="btn btn-sm btn-outline-secondary" to="/tasks">Все разделы</RouterLink>
           </div>
+          <p class="tasks-kicker mb-1">Раздел задач</p>
           <h1 class="h3 mb-2">{{ routeSection }}</h1>
           <p class="text-muted mb-0">
             {{ sectionDescription(routeSection) }}
           </p>
         </div>
-        <div class="d-flex gap-2 flex-wrap align-items-start">
-          <span class="agp-pill agp-pill--primary">показано: {{ filteredTasks.length }}/{{ sectionTasks.length }}</span>
-          <span class="agp-pill agp-pill--neutral">решено в разделе: {{ sectionSolvedCount }}</span>
-          <span class="agp-pill agp-pill--neutral">тегов: {{ topicOptions.length }}</span>
+        <div class="tasks-head-stats" aria-label="Сводка раздела">
+          <div>
+            <span>Показано</span>
+            <strong class="mono">{{ filteredTasks.length }}/{{ sectionTasks.length }}</strong>
+          </div>
+          <div>
+            <span>Решено</span>
+            <strong class="mono">{{ sectionSolvedCount }}</strong>
+          </div>
+          <div>
+            <span>Тегов</span>
+            <strong class="mono">{{ topicOptions.length }}</strong>
+          </div>
+          <div>
+            <span>Прогресс</span>
+            <strong class="mono">{{ sectionProgressPercent }}%</strong>
+          </div>
         </div>
       </div>
     </header>
@@ -71,12 +85,18 @@
 
     <div class="tasks-layout">
       <section class="agp-grid">
-        <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка задач...</article>
+        <article v-if="isLoading" class="agp-card p-4">
+          <div class="agp-loading-state agp-loading-state--compact">Загрузка задач...</div>
+        </article>
         <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
-        <article v-else-if="tasks.length === 0" class="agp-card p-4 text-muted">Задачи пока не опубликованы.</article>
-        <article v-else-if="sectionTasks.length === 0" class="agp-card p-4 text-muted">В этом разделе задач нет.</article>
-        <article v-else-if="filteredTasks.length === 0" class="agp-card p-4 text-muted">
-          По выбранным фильтрам задач нет. Сбросьте фильтры или выберите другой тег.
+        <article v-else-if="tasks.length === 0" class="agp-card p-4">
+          <div class="agp-empty-state">Задачи пока не опубликованы.</div>
+        </article>
+        <article v-else-if="sectionTasks.length === 0" class="agp-card p-4">
+          <div class="agp-empty-state">В этом разделе задач нет.</div>
+        </article>
+        <article v-else-if="filteredTasks.length === 0" class="agp-card p-4">
+          <div class="agp-empty-state">По выбранным фильтрам задач нет. Сбросьте фильтры или выберите другой тег.</div>
         </article>
 
         <div v-else class="tasks-list">
@@ -329,7 +349,63 @@ onMounted(async () => {
 }
 
 .tasks-head {
-  background: #f8fafc;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 10% 16%, rgba(20, 184, 166, 0.16), transparent 15rem),
+    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.14), transparent 14rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 250, 0.88)),
+    url("data:image/svg+xml,%3Csvg width='176' height='112' viewBox='0 0 176 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.13' stroke-width='2'%3E%3Cpath d='M20 28h30v30H20zM78 18h30v30H78zM134 34h26v26h-26zM50 74h28v18H50zM108 68h28v28h-28z'/%3E%3Cpath d='M50 43h28M108 33h26M78 83h30M92 48v20'/%3E%3C/g%3E%3C/svg%3E");
+  background-position: center, center, center, right 1rem center;
+  background-repeat: no-repeat;
+}
+
+.tasks-head::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
+}
+
+.tasks-head > * {
+  position: relative;
+}
+
+.tasks-kicker {
+  color: #0f766e;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tasks-head-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(5.5rem, 1fr));
+  gap: 0.55rem;
+  min-width: min(100%, 28rem);
+}
+
+.tasks-head-stats div {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.tasks-head-stats span {
+  color: var(--agp-text-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.tasks-head-stats strong {
+  color: var(--agp-text);
+  font-size: 1.18rem;
 }
 
 .section-progress-panel {
@@ -514,6 +590,11 @@ onMounted(async () => {
 }
 
 @media (max-width: 1100px) {
+  .tasks-head-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
+  }
+
   .section-progress-panel,
   .tasks-filter-panel {
     grid-template-columns: 1fr 1fr;
@@ -529,6 +610,10 @@ onMounted(async () => {
 }
 
 @media (max-width: 800px) {
+  .tasks-head-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .section-progress-panel,
   .tasks-filter-panel {
     grid-template-columns: 1fr;
@@ -540,6 +625,12 @@ onMounted(async () => {
 
   .tasks-filter-reset {
     width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .tasks-head-stats {
+    grid-template-columns: 1fr;
   }
 }
 </style>

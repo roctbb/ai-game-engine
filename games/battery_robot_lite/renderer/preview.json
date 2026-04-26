@@ -1,0 +1,117 @@
+{
+  "frame": {
+    "actual": [
+      "charge",
+      "return_to_charger",
+      "clean",
+      "move",
+      "return_to_charger",
+      "wait",
+      "move",
+      "return_to_charger"
+    ],
+    "difficulty": "medium",
+    "expected": [
+      "charge",
+      "return_to_charger",
+      "clean",
+      "move",
+      "return_to_charger",
+      "wait",
+      "move",
+      "return_to_charger"
+    ],
+    "kind": "battery_robot_lite",
+    "learning_section": "Счетчики и ресурсы",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "cases": [
+        {
+          "expected": "charge",
+          "input": {
+            "battery": 2,
+            "dirty": true,
+            "distance_to_charger": 0,
+            "front_clear": true,
+            "on_charger": true
+          }
+        },
+        {
+          "expected": "return_to_charger",
+          "input": {
+            "battery": 3,
+            "dirty": true,
+            "distance_to_charger": 4,
+            "front_clear": true,
+            "on_charger": false
+          }
+        },
+        {
+          "expected": "clean",
+          "input": {
+            "battery": 6,
+            "dirty": true,
+            "distance_to_charger": 2,
+            "front_clear": true,
+            "on_charger": false
+          }
+        },
+        {
+          "expected": "move",
+          "input": {
+            "battery": 5,
+            "dirty": false,
+            "distance_to_charger": 3,
+            "front_clear": true,
+            "on_charger": false
+          }
+        },
+        {
+          "expected": "return_to_charger",
+          "input": {
+            "battery": 1,
+            "dirty": false,
+            "distance_to_charger": 1,
+            "front_clear": true,
+            "on_charger": false
+          }
+        },
+        {
+          "expected": "wait",
+          "input": {
+            "battery": 4,
+            "dirty": false,
+            "distance_to_charger": 2,
+            "front_clear": false,
+            "on_charger": false
+          }
+        },
+        {
+          "expected": "move",
+          "input": {
+            "battery": 8,
+            "dirty": false,
+            "distance_to_charger": 0,
+            "front_clear": true,
+            "on_charger": true
+          }
+        },
+        {
+          "expected": "return_to_charger",
+          "input": {
+            "battery": 4,
+            "dirty": true,
+            "distance_to_charger": 3,
+            "front_clear": true,
+            "on_charger": false
+          }
+        }
+      ],
+      "rule": "charge -> return -> clean -> move -> wait"
+    },
+    "title": "Батарейный робот Lite"
+  }
+}

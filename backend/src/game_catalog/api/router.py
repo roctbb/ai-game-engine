@@ -50,6 +50,8 @@ def _map_game(game: object) -> GameResponse:
         difficulty=typed.difficulty,
         learning_section=typed.learning_section,
         topics=list(typed.topics),
+        min_players_per_match=typed.min_players_per_match,
+        max_players_per_match=typed.max_players_per_match,
         catalog_metadata_status=typed.catalog_metadata_status,
         active_version_id=typed.active_version.version_id,
         versions=[
@@ -89,6 +91,8 @@ def register_game(
             difficulty=request.difficulty,
             learning_section=request.learning_section,
             topics=tuple(request.topics),
+            min_players_per_match=request.min_players_per_match,
+            max_players_per_match=request.max_players_per_match,
             required_worker_labels=dict(request.required_worker_labels),
             catalog_metadata_status=request.catalog_metadata_status,
             required_slots=tuple(
@@ -119,6 +123,8 @@ def patch_game(
         difficulty=request.difficulty,
         learning_section=request.learning_section,
         topics=tuple(request.topics) if request.topics is not None else None,
+        min_players_per_match=request.min_players_per_match,
+        max_players_per_match=request.max_players_per_match,
         catalog_metadata_status=request.catalog_metadata_status,
     )
     return _map_game(game)

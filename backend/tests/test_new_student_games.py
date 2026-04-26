@@ -331,26 +331,29 @@ def test_fire_rescue_demo_extinguishes_random_map() -> None:
 
 def test_territory_duel_demo_returns_competitive_scores_on_random_map() -> None:
     engine = _load_module(_repo_root() / "games" / "territory_duel" / "engine.py", "territory_duel_engine_test")
+    demo_code = _read_game_example("territory_duel", "demo.py")
     payload = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "territory-duel-test",
-            "team_id": "team-green",
-            "codes_by_slot": {
-                "green": _read_game_example("territory_duel", "greedy_green.py"),
-                "purple": _read_game_example("territory_duel", "greedy_purple.py"),
-            },
+            "participants": [
+                {"team_id": "team-green", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-purple", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-orange", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-blue", "codes_by_slot": {"player": demo_code}},
+            ],
         }
     )
     other = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "territory-duel-other-seed",
-            "team_id": "team-green",
-            "codes_by_slot": {
-                "green": _read_game_example("territory_duel", "greedy_green.py"),
-                "purple": _read_game_example("territory_duel", "greedy_purple.py"),
-            },
+            "participants": [
+                {"team_id": "team-green", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-purple", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-orange", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-blue", "codes_by_slot": {"player": demo_code}},
+            ],
         }
     )
 
@@ -360,50 +363,11 @@ def test_territory_duel_demo_returns_competitive_scores_on_random_map() -> None:
     assert payload["status"] == "finished"
     assert "scores" in payload
     assert "placements" in payload
-    assert set(payload["scores"]) == {"team-green", "team-purple"}
+    assert set(payload["scores"]) == {"team-green", "team-purple", "team-orange", "team-blue"}
+    assert metrics["active_slots"] == ["green", "purple", "orange", "blue"]
     assert metrics["painted_total"] > 2
     assert metrics["walls_total"] > 0
     assert sum(metrics["area"].values()) == metrics["painted_total"]
-    assert "compile_errors" not in metrics
-    assert isinstance(frame["board"], list)
-    assert frame["board"] != other["frames"][0]["frame"]["board"]
-
-
-def test_checkpoint_race_demo_returns_competitive_scores_on_random_map() -> None:
-    engine = _load_module(_repo_root() / "games" / "checkpoint_race" / "engine.py", "checkpoint_race_engine_test")
-    payload = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "checkpoint-race-test",
-            "team_id": "team-orange",
-            "codes_by_slot": {
-                "orange": _read_game_example("checkpoint_race", "orange_bfs.py"),
-                "cyan": _read_game_example("checkpoint_race", "cyan_bfs.py"),
-            },
-        }
-    )
-    other = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "checkpoint-race-other-seed",
-            "team_id": "team-orange",
-            "codes_by_slot": {
-                "orange": _read_game_example("checkpoint_race", "orange_bfs.py"),
-                "cyan": _read_game_example("checkpoint_race", "cyan_bfs.py"),
-            },
-        }
-    )
-
-    metrics = payload["metrics"]
-    frame = payload["frames"][0]["frame"]
-
-    assert payload["status"] == "finished"
-    assert "scores" in payload
-    assert "placements" in payload
-    assert set(payload["scores"]) == {"team-orange", "team-cyan"}
-    assert metrics["checkpoints_total"] == 5
-    assert max(metrics["progress"].values()) > 0
-    assert metrics["walls_total"] > 0
     assert "compile_errors" not in metrics
     assert isinstance(frame["board"], list)
     assert frame["board"] != other["frames"][0]["frame"]["board"]
@@ -472,13 +436,15 @@ def test_trap_coin_duel_demo_returns_competitive_scores_on_random_map() -> None:
     assert "placements" in payload
     assert set(payload["scores"]) == {"team-gold", "team-silver"}
     assert metrics["coins_total"] == 16
-    assert metrics["traps_total"] == 10
+    assert metrics["traps_total"] == 8
     assert metrics["walls_total"] > 0
     assert sum(metrics["collected"].values()) > 0
     assert "compile_errors" not in metrics
     assert isinstance(frame["board"], list)
     assert frame["board"] != other["frames"][0]["frame"]["board"]
     assert any(cell == -3 for row in frame["board"] for cell in row)
+    assert any(cell == -4 for row in frame["board"] for cell in row)
+    assert len(frame["traps"]) == metrics["traps_total"]
 
 
 def test_space_miner_demo_mines_ore_and_returns_to_base() -> None:
@@ -513,26 +479,29 @@ def test_space_miner_demo_mines_ore_and_returns_to_base() -> None:
 
 def test_capture_flag_demo_returns_competitive_scores_on_random_map() -> None:
     engine = _load_module(_repo_root() / "games" / "capture_flag" / "engine.py", "capture_flag_engine_test")
+    demo_code = _read_game_example("capture_flag", "demo.py")
     payload = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "capture-flag-test",
-            "team_id": "team-red",
-            "codes_by_slot": {
-                "red": _read_game_example("capture_flag", "red_bfs.py"),
-                "blue": _read_game_example("capture_flag", "blue_bfs.py"),
-            },
+            "participants": [
+                {"team_id": "team-red", "display_name": "Red", "codes_by_slot": {"player": demo_code}, "run_id": "capture-flag-red"},
+                {"team_id": "team-blue", "display_name": "Blue", "codes_by_slot": {"player": demo_code}, "run_id": "capture-flag-blue"},
+                {"team_id": "team-green", "display_name": "Green", "codes_by_slot": {"player": demo_code}, "run_id": "capture-flag-green"},
+                {"team_id": "team-yellow", "display_name": "Yellow", "codes_by_slot": {"player": demo_code}, "run_id": "capture-flag-yellow"},
+            ],
         }
     )
     other = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "capture-flag-other-seed",
-            "team_id": "team-red",
-            "codes_by_slot": {
-                "red": _read_game_example("capture_flag", "red_bfs.py"),
-                "blue": _read_game_example("capture_flag", "blue_bfs.py"),
-            },
+            "participants": [
+                {"team_id": "team-red", "display_name": "Red", "codes_by_slot": {"player": demo_code}, "run_id": "capture-other-red"},
+                {"team_id": "team-blue", "display_name": "Blue", "codes_by_slot": {"player": demo_code}, "run_id": "capture-other-blue"},
+                {"team_id": "team-green", "display_name": "Green", "codes_by_slot": {"player": demo_code}, "run_id": "capture-other-green"},
+                {"team_id": "team-yellow", "display_name": "Yellow", "codes_by_slot": {"player": demo_code}, "run_id": "capture-other-yellow"},
+            ],
         }
     )
 
@@ -542,14 +511,17 @@ def test_capture_flag_demo_returns_competitive_scores_on_random_map() -> None:
     assert payload["status"] == "finished"
     assert "scores" in payload
     assert "placements" in payload
-    assert set(payload["scores"]) == {"team-red", "team-blue"}
+    assert set(payload["scores"]) == {"team-red", "team-blue", "team-green", "team-yellow"}
+    assert metrics["active_slots"] == ["red", "blue", "green", "yellow"]
     assert metrics["walls_total"] > 0
-    assert sum(metrics["captures"].values()) > 0 or any(metrics["has_flag"].values())
+    assert sum(metrics["captures"].values()) > 0 or metrics["flag_carrier"] in metrics["active_slots"]
+    assert metrics["built_walls"] >= 0
     assert "compile_errors" not in metrics
     assert isinstance(frame["board"], list)
     assert frame["board"] != other["frames"][0]["frame"]["board"]
     assert any(cell == 1 for row in frame["board"] for cell in row)
     assert any(cell == 2 for row in frame["board"] for cell in row)
+    assert set(frame["bases"]) == {"red", "blue", "green", "yellow"}
 
 
 def test_portal_escape_demo_reaches_exit_on_random_map() -> None:
@@ -604,48 +576,6 @@ def _portal_escape_reachable_without_portals(board: list[list[int]]) -> bool:
             seen.add((nx, ny))
             queue.append((nx, ny))
     return False
-
-
-def test_relic_delivery_duel_demo_returns_competitive_scores_on_random_map() -> None:
-    engine = _load_module(_repo_root() / "games" / "relic_delivery_duel" / "engine.py", "relic_delivery_duel_engine_test")
-    payload = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "relic-delivery-test",
-            "team_id": "team-amber",
-            "codes_by_slot": {
-                "amber": _read_game_example("relic_delivery_duel", "amber_bfs.py"),
-                "violet": _read_game_example("relic_delivery_duel", "violet_bfs.py"),
-            },
-        }
-    )
-    other = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "relic-delivery-other-seed",
-            "team_id": "team-amber",
-            "codes_by_slot": {
-                "amber": _read_game_example("relic_delivery_duel", "amber_bfs.py"),
-                "violet": _read_game_example("relic_delivery_duel", "violet_bfs.py"),
-            },
-        }
-    )
-
-    metrics = payload["metrics"]
-    frame = payload["frames"][0]["frame"]
-
-    assert payload["status"] == "finished"
-    assert "scores" in payload
-    assert "placements" in payload
-    assert set(payload["scores"]) == {"team-amber", "team-violet"}
-    assert metrics["relics_total"] == 10
-    assert metrics["walls_total"] > 0
-    assert sum(metrics["delivered"].values()) > 0 or any(metrics["carrying"].values())
-    assert "compile_errors" not in metrics
-    assert isinstance(frame["board"], list)
-    assert frame["board"] != other["frames"][0]["frame"]["board"]
-    assert any(cell == 1 for row in frame["board"] for cell in row)
-    assert any(cell == 2 for row in frame["board"] for cell in row)
 
 
 def test_switch_maze_demo_flips_switch_and_escapes_random_map() -> None:
@@ -712,26 +642,26 @@ def _switch_maze_reachable_without_switch(board: list[list[int]]) -> bool:
 
 def test_tag_arena_demo_returns_competitive_scores_on_random_map() -> None:
     engine = _load_module(_repo_root() / "games" / "tag_arena" / "engine.py", "tag_arena_engine_test")
+    runner_code = _read_game_example("tag_arena", "runner_bfs.py")
+    hunter_code = _read_game_example("tag_arena", "hunter_bfs.py")
     payload = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "tag-arena-test",
-            "team_id": "team-runner",
-            "codes_by_slot": {
-                "runner": _read_game_example("tag_arena", "runner_bfs.py"),
-                "hunter": _read_game_example("tag_arena", "hunter_bfs.py"),
-            },
+            "participants": [
+                {"team_id": "team-amber", "display_name": "Amber", "codes_by_slot": {"runner": runner_code, "hunter": hunter_code}, "run_id": "tag-amber"},
+                {"team_id": "team-teal", "display_name": "Teal", "codes_by_slot": {"runner": runner_code, "hunter": hunter_code}, "run_id": "tag-teal"},
+            ],
         }
     )
     other = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "tag-arena-other-seed",
-            "team_id": "team-runner",
-            "codes_by_slot": {
-                "runner": _read_game_example("tag_arena", "runner_bfs.py"),
-                "hunter": _read_game_example("tag_arena", "hunter_bfs.py"),
-            },
+            "participants": [
+                {"team_id": "team-amber", "display_name": "Amber", "codes_by_slot": {"runner": runner_code, "hunter": hunter_code}, "run_id": "tag-other-amber"},
+                {"team_id": "team-teal", "display_name": "Teal", "codes_by_slot": {"runner": runner_code, "hunter": hunter_code}, "run_id": "tag-other-teal"},
+            ],
         }
     )
 
@@ -741,14 +671,19 @@ def test_tag_arena_demo_returns_competitive_scores_on_random_map() -> None:
     assert payload["status"] == "finished"
     assert "scores" in payload
     assert "placements" in payload
-    assert set(payload["scores"]) == {"team-runner", "team-hunter"}
-    assert metrics["stars_total"] == 8
+    assert set(payload["scores"]) == {"team-amber", "team-teal"}
+    assert metrics["active_teams"] == ["amber", "teal"]
+    assert metrics["stars_total"] == 10
     assert metrics["walls_total"] > 0
-    assert metrics["caught"] is True or metrics["stars_collected"] > 0
+    assert sum(metrics["catches"].values()) > 0 or sum(metrics["stars_collected"].values()) > 0
     assert "compile_errors" not in metrics
     assert isinstance(frame["board"], list)
     assert frame["board"] != other["frames"][0]["frame"]["board"]
     assert any(cell == 1 for row in frame["board"] for cell in row)
+    assert set(frame["positions"]) == {"amber_runner", "amber_hunter", "teal_runner", "teal_hunter"}
+    assert frame["positions"]["amber_runner"]["role"] == "runner"
+    assert frame["positions"]["amber_hunter"]["role"] == "hunter"
+    assert frame["labels"]["amber"] == "Amber"
 
 
 def test_crystal_lamps_demo_lights_all_lamps_and_escapes_random_map() -> None:
@@ -811,47 +746,6 @@ def test_invalid_actions_have_readable_messages() -> None:
     assert all(isinstance(event.get("message"), str) and event["message"] for event in invalid_events)
 
 
-def test_hill_control_demo_returns_competitive_scores_on_random_map() -> None:
-    engine = _load_module(_repo_root() / "games" / "hill_control" / "engine.py", "hill_control_engine_test")
-    payload = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "hill-control-test",
-            "team_id": "team-lime",
-            "codes_by_slot": {
-                "lime": _read_game_example("hill_control", "lime_bfs.py"),
-                "navy": _read_game_example("hill_control", "navy_bfs.py"),
-            },
-        }
-    )
-    other = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "hill-control-other-seed",
-            "team_id": "team-lime",
-            "codes_by_slot": {
-                "lime": _read_game_example("hill_control", "lime_bfs.py"),
-                "navy": _read_game_example("hill_control", "navy_bfs.py"),
-            },
-        }
-    )
-
-    metrics = payload["metrics"]
-    frame = payload["frames"][0]["frame"]
-
-    assert payload["status"] == "finished"
-    assert "scores" in payload
-    assert "placements" in payload
-    assert set(payload["scores"]) == {"team-lime", "team-navy"}
-    assert metrics["hills_total"] == 5
-    assert metrics["walls_total"] > 0
-    assert sum(metrics["control_ticks"].values()) > 0
-    assert "compile_errors" not in metrics
-    assert isinstance(frame["board"], list)
-    assert frame["board"] != other["frames"][0]["frame"]["board"]
-    assert any(cell == 1 for row in frame["board"] for cell in row)
-
-
 def test_river_planks_demo_escapes_with_resource_state_on_random_map() -> None:
     engine = _load_module(_repo_root() / "games" / "river_planks" / "engine.py", "river_planks_engine_test")
     payload = engine.run(
@@ -911,47 +805,6 @@ def _river_planks_reachable_without_planks(board: list[list[int]]) -> bool:
             seen.add((nx, ny))
             queue.append((nx, ny))
     return False
-
-
-def test_beacon_duel_demo_returns_competitive_scores_on_random_map() -> None:
-    engine = _load_module(_repo_root() / "games" / "beacon_duel" / "engine.py", "beacon_duel_engine_test")
-    payload = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "beacon-duel-test",
-            "team_id": "team-white",
-            "codes_by_slot": {
-                "white": _read_game_example("beacon_duel", "white_bfs.py"),
-                "black": _read_game_example("beacon_duel", "black_bfs.py"),
-            },
-        }
-    )
-    other = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "beacon-duel-other-seed",
-            "team_id": "team-white",
-            "codes_by_slot": {
-                "white": _read_game_example("beacon_duel", "white_bfs.py"),
-                "black": _read_game_example("beacon_duel", "black_bfs.py"),
-            },
-        }
-    )
-
-    metrics = payload["metrics"]
-    frame = payload["frames"][0]["frame"]
-
-    assert payload["status"] == "finished"
-    assert "scores" in payload
-    assert "placements" in payload
-    assert set(payload["scores"]) == {"team-white", "team-black"}
-    assert metrics["beacons_total"] == 12
-    assert metrics["walls_total"] > 0
-    assert sum(metrics["activated"].values()) > 0
-    assert "compile_errors" not in metrics
-    assert isinstance(frame["board"], list)
-    assert frame["board"] != other["frames"][0]["frame"]["board"]
-    assert any(cell == 1 for row in frame["board"] for cell in row)
 
 
 def test_oxygen_maze_demo_reaches_exit_with_oxygen_on_random_map() -> None:
@@ -1157,26 +1010,29 @@ def test_garden_harvest_demo_delivers_all_crops_on_random_map() -> None:
 
 def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     engine = _load_module(_repo_root() / "games" / "apple_market" / "engine.py", "apple_market_engine_test")
+    demo_code = _read_game_example("apple_market", "demo.py")
     payload = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "apple-market-test",
-            "team_id": "team-north",
-            "codes_by_slot": {
-                "north": _read_game_example("apple_market", "north_bfs.py"),
-                "south": _read_game_example("apple_market", "south_bfs.py"),
-            },
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-gamma", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-delta", "codes_by_slot": {"player": demo_code}},
+            ],
         }
     )
     other = engine.run(
         {
             "run_kind": "competition_match",
             "run_id": "apple-market-other-seed",
-            "team_id": "team-north",
-            "codes_by_slot": {
-                "north": _read_game_example("apple_market", "north_bfs.py"),
-                "south": _read_game_example("apple_market", "south_bfs.py"),
-            },
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-gamma", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-delta", "codes_by_slot": {"player": demo_code}},
+            ],
         }
     )
 
@@ -1186,14 +1042,24 @@ def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     assert payload["status"] == "finished"
     assert "scores" in payload
     assert "placements" in payload
-    assert set(payload["scores"]) == {"team-north", "team-south"}
-    assert metrics["apples_total"] == 14
+    assert set(payload["scores"]) == {"team-alpha", "team-beta", "team-gamma", "team-delta"}
+    assert metrics["active_slots"] == ["north_west", "north_east", "south_west", "south_east"]
+    assert metrics["initial_apples"] == 14
+    assert metrics["apples_total"] >= metrics["initial_apples"]
+    assert metrics["apples_spawned_total"] == metrics["apples_total"]
+    assert metrics["turn_limit"] == 150
+    assert metrics["spawn_interval"] == 6
     assert metrics["capacity"] == 2
     assert metrics["walls_total"] > 0
     assert sum(metrics["delivered"].values()) > 0
+    assert set(metrics["throws"]) == set(metrics["active_slots"])
+    assert set(metrics["frozen"]) == set(metrics["active_slots"])
     assert "compile_errors" not in metrics
     assert isinstance(frame["board"], list)
     assert frame["board"] != other["frames"][0]["frame"]["board"]
+    assert frame["tree"] == {"x": 7, "y": 7}
+    assert frame["board"][7][7] == 3
+    assert frame["turn_limit"] == 150
     assert any(cell == 1 for row in frame["board"] for cell in row)
     assert any(cell == 2 for row in frame["board"] for cell in row)
 
@@ -1534,53 +1400,6 @@ def test_jump_maze_demo_reaches_exit_on_random_map() -> None:
     assert any(cell in (2, 3) for row in frame["board"] for cell in row)
 
 
-def test_jump_gem_duel_demo_returns_competitive_scores_on_random_map() -> None:
-    engine = _load_module(
-        _repo_root() / "games" / "jump_gem_duel" / "engine.py",
-        "jump_gem_duel_engine_test",
-    )
-    payload = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "jump-gem-duel-test",
-            "team_id": "team-amber",
-            "codes_by_slot": {
-                "amber": _read_game_example("jump_gem_duel", "amber_bfs.py"),
-                "teal": _read_game_example("jump_gem_duel", "teal_bfs.py"),
-            },
-        }
-    )
-    other = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "jump-gem-duel-other-seed",
-            "team_id": "team-amber",
-            "codes_by_slot": {
-                "amber": _read_game_example("jump_gem_duel", "amber_bfs.py"),
-                "teal": _read_game_example("jump_gem_duel", "teal_bfs.py"),
-            },
-        }
-    )
-
-    metrics = payload["metrics"]
-    frame = payload["frames"][0]["frame"]
-
-    assert payload["status"] == "finished"
-    assert "scores" in payload
-    assert "placements" in payload
-    assert set(payload["scores"]) == {"team-amber", "team-teal"}
-    assert metrics["gems_total"] == 14
-    assert metrics["walls_total"] > 0
-    assert metrics["jumps_total"] > 0
-    assert sum(metrics["collected"].values()) > 0
-    assert "compile_errors" not in metrics
-    assert isinstance(frame["board"], list)
-    assert frame["board"] != other["frames"][0]["frame"]["board"]
-    assert any(cell == 1 for row in frame["board"] for cell in row)
-    assert any(cell in (2, 3) for row in frame["board"] for cell in row)
-    assert any(cell == -2 for row in frame["board"] for cell in row)
-
-
 def test_blinking_bridge_demo_reaches_exit_on_dynamic_random_map() -> None:
     engine = _load_module(
         _repo_root() / "games" / "blinking_bridge" / "engine.py",
@@ -1643,53 +1462,6 @@ def _blinking_bridge_reachable_with_few_bridges(board: list[list[int]], max_brid
             seen.add(state)
             queue.append(state)
     return False
-
-
-def test_blinking_gem_duel_demo_returns_competitive_scores_on_dynamic_random_map() -> None:
-    engine = _load_module(
-        _repo_root() / "games" / "blinking_gem_duel" / "engine.py",
-        "blinking_gem_duel_engine_test",
-    )
-    payload = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "blinking-gem-duel-test",
-            "team_id": "team-sun",
-            "codes_by_slot": {
-                "sun": _read_game_example("blinking_gem_duel", "sun_bfs.py"),
-                "moon": _read_game_example("blinking_gem_duel", "moon_bfs.py"),
-            },
-        }
-    )
-    other = engine.run(
-        {
-            "run_kind": "competition_match",
-            "run_id": "blinking-gem-duel-other-seed",
-            "team_id": "team-sun",
-            "codes_by_slot": {
-                "sun": _read_game_example("blinking_gem_duel", "sun_bfs.py"),
-                "moon": _read_game_example("blinking_gem_duel", "moon_bfs.py"),
-            },
-        }
-    )
-
-    metrics = payload["metrics"]
-    frame = payload["frames"][0]["frame"]
-
-    assert payload["status"] == "finished"
-    assert "scores" in payload
-    assert "placements" in payload
-    assert set(payload["scores"]) == {"team-sun", "team-moon"}
-    assert metrics["gems_total"] == 14
-    assert metrics["walls_total"] > 0
-    assert metrics["bridges_total"] > 0
-    assert sum(metrics["collected"].values()) > 0
-    assert "compile_errors" not in metrics
-    assert isinstance(frame["board"], list)
-    assert frame["board"] != other["frames"][0]["frame"]["board"]
-    assert any(cell == 1 for row in frame["board"] for cell in row)
-    assert any(cell in (-2, 2) for row in frame["board"] for cell in row)
-    assert any(cell == -3 for row in frame["board"] for cell in row)
 
 
 def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:

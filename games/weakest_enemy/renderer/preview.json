@@ -1,0 +1,58 @@
+{
+  "tick": 0,
+  "phase": "running",
+  "frame": {
+    "title": "Арена слабейшего",
+    "kind": "weakest_enemy",
+    "learning_section": "Списки и цели",
+    "difficulty": "medium",
+    "task": {
+      "enemies": [
+        {
+          "id": "enemy_2",
+          "hp": 33,
+          "distance": 3,
+          "reward": 2
+        },
+        {
+          "id": "enemy_0",
+          "hp": 51,
+          "distance": 4,
+          "reward": 6
+        },
+        {
+          "id": "enemy_4",
+          "hp": 40,
+          "distance": 7,
+          "reward": 3
+        },
+        {
+          "id": "enemy_3",
+          "hp": 33,
+          "distance": 3,
+          "reward": 8
+        },
+        {
+          "id": "enemy_1",
+          "hp": 33,
+          "distance": 6,
+          "reward": 4
+        },
+        {
+          "id": "enemy_5",
+          "hp": 59,
+          "distance": 4,
+          "reward": 8
+        }
+      ],
+      "expected": "enemy_3",
+      "rule": "hp -> distance -> reward"
+    },
+    "score": 0,
+    "solved": false,
+    "actual": "enemy_3",
+    "expected": "enemy_3",
+    "stage": "briefing",
+    "step_title": "Разведка задания"
+  }
+}

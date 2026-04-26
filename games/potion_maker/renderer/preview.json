@@ -1,0 +1,58 @@
+{
+  "tick": 0,
+  "phase": "running",
+  "frame": {
+    "title": "Зельевар",
+    "kind": "potion_maker",
+    "learning_section": "Счетчики и ресурсы",
+    "difficulty": "medium",
+    "task": {
+      "resources": {
+        "water": 3,
+        "herb": 4,
+        "crystal": 2,
+        "mushroom": 1
+      },
+      "recipes": {
+        "heal": {
+          "water": 1,
+          "herb": 2,
+          "value": 22
+        },
+        "mana": {
+          "water": 1,
+          "crystal": 1,
+          "value": 20
+        },
+        "strength": {
+          "herb": 1,
+          "crystal": 2,
+          "value": 33
+        },
+        "sleep": {
+          "mushroom": 2,
+          "water": 1,
+          "value": 36
+        },
+        "stone_skin": {
+          "herb": 3,
+          "crystal": 1,
+          "value": 28
+        }
+      },
+      "ingredient_costs": {
+        "water": 1,
+        "herb": 2,
+        "crystal": 5,
+        "mushroom": 3
+      },
+      "expected": "strength"
+    },
+    "score": 0,
+    "solved": false,
+    "actual": "strength",
+    "expected": "strength",
+    "stage": "briefing",
+    "step_title": "Разведка задания"
+  }
+}

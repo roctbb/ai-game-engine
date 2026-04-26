@@ -50,6 +50,7 @@
       boardEl.replaceChildren();
       const board = Array.isArray(frame?.board) ? frame.board : [];
       const winnerRole = Number.isFinite(frame?.winner_role) ? frame.winner_role : 0;
+      const labels = frame?.labels || {};
 
       const bg = svg("rect");
       bg.setAttribute("x", "0");
@@ -92,6 +93,26 @@
       info.setAttribute("fill", "#152033");
       info.textContent = `winner_role=${winnerRole}`;
       boardEl.appendChild(info);
+
+      const xName = svg("text");
+      xName.setAttribute("x", "250");
+      xName.setAttribute("y", "24");
+      xName.setAttribute("text-anchor", "middle");
+      xName.setAttribute("font-size", "15");
+      xName.setAttribute("font-weight", "700");
+      xName.setAttribute("fill", "#1d4ed8");
+      xName.textContent = `X: ${labels["1"] || "Игрок"}`;
+      boardEl.appendChild(xName);
+
+      const oName = svg("text");
+      oName.setAttribute("x", "250");
+      oName.setAttribute("y", "482");
+      oName.setAttribute("text-anchor", "middle");
+      oName.setAttribute("font-size", "15");
+      oName.setAttribute("font-weight", "700");
+      oName.setAttribute("fill", "#ef4444");
+      oName.textContent = `O: ${labels["-1"] || "Соперник"}`;
+      boardEl.appendChild(oName);
     }
 
     function onState(payload) {

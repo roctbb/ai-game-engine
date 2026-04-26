@@ -3,7 +3,7 @@
     <header v-if="!isEmbedded" class="agp-task-header">
       <div class="agp-task-header-main">
         <RouterLink :to="backTarget" class="agp-back-link" :title="backLabel" :aria-label="backLabel">←</RouterLink>
-        <h1>{{ watchContext?.game_slug || 'Просмотр запуска' }}</h1>
+        <h1>{{ watchContext?.game_title || watchContext?.game_slug || 'Просмотр запуска' }}</h1>
       </div>
 
       <div v-if="!isLoading" class="agp-task-header-player">
@@ -44,7 +44,7 @@
           type="range"
           min="0"
           :max="Math.max(0, replayFrames.length - 1)"
-          :disabled="replayFrames.length <= 1"
+          :disabled="replayFrames.length <= 1 || firstReplayLockActive"
         />
         <label class="agp-speed-control small text-muted">
           <span class="agp-speed-label">скорость</span>
@@ -89,6 +89,14 @@
           <div class="agp-viewer-overlay agp-viewer-overlay--message agp-watch-renderer-state">
             {{ rendererStatusLabel }}
           </div>
+          <div v-if="showWinnerBanner" class="agp-watch-winner-banner">
+            <span>Победитель</span>
+            <strong>{{ finalWinnerLabel }}</strong>
+          </div>
+          <div v-else-if="firstReplayLockActive" class="agp-watch-replay-lock">
+            <strong>Идет первый показ</strong>
+            <span>Перемотка откроется после реплея.</span>
+          </div>
           <div v-if="watchContext.renderer_url" class="agp-viewer-frame">
             <iframe
               ref="rendererFrameRef"
@@ -102,7 +110,7 @@
           <div v-else class="agp-card-soft p-3 text-muted small">
             Для этой игры визуализация не настроена.
           </div>
-          <section class="agp-bot-console" aria-label="Вывод бота">
+          <section v-if="showBotConsole" class="agp-bot-console" aria-label="Вывод бота">
             <div class="agp-bot-console-head">
               <strong>Вывод print</strong>
               <span v-if="replayFrames.length > 0" class="text-muted">
@@ -129,6 +137,14 @@
             </div>
             <span class="agp-run-pill" :class="`agp-run-pill--${runStatusTone}`">{{ runStatusLabel }}</span>
           </header>
+
+          <div v-if="showWinnerBanner" class="agp-watch-side-winner">
+            <span>Победитель</span>
+            <strong>{{ finalWinnerLabel }}</strong>
+          </div>
+          <div v-else-if="firstReplayLockActive" class="agp-watch-side-lock">
+            Первый показ идет синхронно. Перемотка временно закрыта.
+          </div>
 
           <div v-if="matchPlayerStats.length" class="agp-match-scoreboard">
             <article
@@ -294,6 +310,7 @@ interface MatchPlayerStat {
 const route = useRoute();
 const sessionStore = useSessionStore();
 const isEmbedded = computed(() => route.query.embed === '1');
+const showBotConsole = computed(() => route.query.show_print !== '0');
 const canSeeTechnicalDetails = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 
 const watchContext = ref<RunWatchContextDto | null>(null);
@@ -313,10 +330,12 @@ const liveMode = ref<'idle' | 'sse' | 'polling'>('idle');
 const replayFrameIndex = ref(0);
 const replayIsPlaying = ref(false);
 const replaySpeedMs = ref(replaySpeedFromQuery());
+const nowMs = ref(Date.now());
 let rendererLogCounter = 0;
 let runPollingHandle: ReturnType<typeof setInterval> | null = null;
 let runEventSource: EventSource | null = null;
 let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
+let replayClockHandle: ReturnType<typeof setInterval> | null = null;
 
 const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(watchContext.value?.renderer_url));
 const runStatusLabel = computed(() => {
@@ -377,6 +396,17 @@ const replayFrames = computed<ReplayFrameView[]>(() => {
     });
   }
   return normalized;
+});
+
+const participantNamesByTeam = computed<Record<string, string>>(() => {
+  const names: Record<string, string> = {};
+  for (const participant of watchContext.value?.participants ?? []) {
+    const displayName = participant.display_name.trim();
+    if (displayName) {
+      names[participant.team_id] = displayName;
+    }
+  }
+  return names;
 });
 
 const currentReplayFrame = computed<ReplayFrameView | null>(() => {
@@ -452,15 +482,42 @@ const visibleMoveLogItems = computed(() => {
     : moveLogItems.value.filter((item) => item.tick <= replayFrameTick.value);
   return items.slice(-14);
 });
+const firstReplayFrameMs = computed(() => replayFrameMsFromQuery());
+const firstReplayStartedAtMs = computed(() => {
+  const rawSyncedStart = route.query.sync_started_at;
+  if (typeof rawSyncedStart === 'string' && rawSyncedStart) {
+    const value = Date.parse(rawSyncedStart);
+    if (Number.isFinite(value)) return value;
+  }
+  const finishedAt = run.value?.finished_at;
+  if (!finishedAt || route.query.unlock_replay === '1') return null;
+  const value = Date.parse(finishedAt);
+  return Number.isFinite(value) ? value : null;
+});
+const firstReplayAllowedFrameIndex = computed(() => {
+  if (firstReplayStartedAtMs.value === null || replayFrames.value.length === 0) return replayFrames.value.length - 1;
+  const elapsedMs = Math.max(0, nowMs.value - firstReplayStartedAtMs.value);
+  return Math.min(replayFrames.value.length - 1, Math.floor(elapsedMs / firstReplayFrameMs.value));
+});
+const firstReplayLockActive = computed(() => {
+  if (firstReplayStartedAtMs.value === null || replayFrames.value.length <= 1) return false;
+  return firstReplayAllowedFrameIndex.value < replayFrames.value.length - 1;
+});
 const canPlayReplay = computed(() => replayFrames.value.length > 1);
-const canStepBackward = computed(() => replayFrames.value.length > 0 && replayFrameIndex.value > 0);
+const canStepBackward = computed(() => !firstReplayLockActive.value && replayFrames.value.length > 0 && replayFrameIndex.value > 0);
 const canStepForward = computed(
-  () => replayFrames.value.length > 0 && replayFrameIndex.value < replayFrames.value.length - 1,
+  () => !firstReplayLockActive.value && replayFrames.value.length > 0 && replayFrameIndex.value < replayFrames.value.length - 1,
 );
 const shouldAutoplayReplay = computed(() => isEmbedded.value || route.query.autoplay === '1');
 const isReplayAtLastFrame = computed(
   () => replayFrames.value.length === 0 || replayFrameIndex.value >= replayFrames.value.length - 1,
 );
+const showWinnerBanner = computed(() => replayFrames.value.length > 0 && isReplayAtLastFrame.value && !firstReplayLockActive.value);
+const finalWinnerLabel = computed(() => {
+  const placedWinner = matchPlayerStats.value.find((player) => player.place === 1);
+  if (placedWinner) return placedWinner.name;
+  return matchLeaderLabel.value;
+});
 
 function isTerminalStatus(status: RunDto['status']): boolean {
   return ['finished', 'failed', 'timeout', 'canceled'].includes(status);
@@ -481,16 +538,19 @@ function collectFramePlayers(players: Map<string, MatchPlayerStat>, value: unkno
   }
   if (!isRecord(value)) return;
 
+  collectRoleMapFramePlayers(players, value);
+
   const nameRaw = value.name ?? value.player ?? value.role ?? value.key;
   const hasPlayerShape =
     nameRaw !== undefined &&
     (value.score !== undefined || value.life !== undefined || value.hp !== undefined || value.coins !== undefined);
   if (hasPlayerShape) {
     const id = String(value.team_id ?? value.key ?? value.role ?? value.name ?? `player-${players.size + 1}`);
+    const teamId = typeof value.team_id === 'string' ? value.team_id : id;
     upsertPlayerStat(players, buildPlayerStat({
       id,
-      name: String(nameRaw),
-      teamId: typeof value.team_id === 'string' ? value.team_id : id,
+      name: playerDisplayName(teamId, String(nameRaw)),
+      teamId,
       score: numericOrNull(value.score ?? value.points),
       life: numericOrNull(value.life ?? value.hp),
       shield: numericOrNull(value.shield),
@@ -502,16 +562,46 @@ function collectFramePlayers(players: Map<string, MatchPlayerStat>, value: unkno
   Object.values(value).forEach((item) => collectFramePlayers(players, item));
 }
 
+function collectRoleMapFramePlayers(players: Map<string, MatchPlayerStat>, frame: Record<string, unknown>): void {
+  const positions = isRecord(frame.positions) ? frame.positions : null;
+  if (!positions) return;
+
+  const batteries = isRecord(frame.batteries) ? frame.batteries : {};
+  const collected = isRecord(frame.collected) ? frame.collected : {};
+  const invalidMoves = isRecord(frame.invalid_moves) ? frame.invalid_moves : {};
+  const slotScores = isRecord(frame.slot_scores) ? frame.slot_scores : {};
+  Object.keys(positions).forEach((role, index) => {
+    const participant = watchContext.value?.participants[index];
+    const teamId = participant?.team_id ?? role;
+    const collectedValue = numericOrNull(collected[role]) ?? 0;
+    const batteryValue = numericOrNull(batteries[role]);
+    const invalidValue = numericOrNull(invalidMoves[role]) ?? 0;
+    const score = numericOrNull(slotScores[role])
+      ?? Math.max(0, collectedValue * 100 + (batteryValue ?? 0) - invalidValue * 10);
+    upsertPlayerStat(players, buildPlayerStat({
+      id: teamId,
+      name: participant?.display_name || role,
+      teamId,
+      score,
+      life: batteryValue,
+      shield: null,
+      alive: batteryValue === null ? true : batteryValue > 0,
+      place: summaryPlaceFor(teamId),
+    }));
+  });
+}
+
 function collectSummaryPlayers(players: Map<string, MatchPlayerStat>): void {
   const metrics = isRecord(replay.value?.summary?.metrics) ? replay.value.summary.metrics : {};
   const rawPlayers = Array.isArray(metrics.players) ? metrics.players : [];
   rawPlayers.forEach((raw, index) => {
     if (!isRecord(raw)) return;
     const id = String(raw.team_id ?? raw.key ?? raw.name ?? `summary-${index}`);
+    const teamId = typeof raw.team_id === 'string' ? raw.team_id : id;
     players.set(id, buildPlayerStat({
       id,
-      name: String(raw.name ?? raw.key ?? id),
-      teamId: typeof raw.team_id === 'string' ? raw.team_id : id,
+      name: playerDisplayName(teamId, String(raw.name ?? raw.key ?? id)),
+      teamId,
       score: numericOrNull(raw.score ?? raw.points),
       life: numericOrNull(raw.life ?? raw.hp),
       shield: numericOrNull(raw.shield),
@@ -661,10 +751,18 @@ function percentFromValue(value: number | null, max: number): number {
 
 function compactTeamLabel(teamId: string): string {
   if (!teamId) return 'игрок';
+  const participantName = participantNamesByTeam.value[teamId];
+  if (participantName) return participantName;
   if (teamId.startsWith('builtin-')) return teamId.replace('builtin-', '');
   if (teamId === run.value?.team_id) return 'ваш бот';
   if (teamId.startsWith('team_')) return `team ${teamId.slice(-4)}`;
   return teamId;
+}
+
+function playerDisplayName(teamId: string, fallback: string): string {
+  const participantName = participantNamesByTeam.value[teamId];
+  if (participantName) return participantName;
+  return fallback || compactTeamLabel(teamId);
 }
 
 function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fallbackTick = 0): void {
@@ -689,7 +787,9 @@ function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fa
   if (!message) return;
   const tick = normalizeTick(raw.tick ?? raw.turn ?? raw.step ?? raw.frame, fallbackTick);
   const roleRaw = raw.role ?? raw.slot ?? raw.slot_key ?? raw.team_id ?? raw.bot;
-  const role = typeof roleRaw === 'string' || typeof roleRaw === 'number' ? String(roleRaw) : '';
+  const role = typeof roleRaw === 'string' || typeof roleRaw === 'number'
+    ? playerDisplayName(String(raw.team_id ?? roleRaw), String(roleRaw))
+    : '';
   appendConsoleMessage(lines, message, tick, role, id);
 }
 
@@ -746,7 +846,9 @@ function createMoveLogItem(raw: Record<string, unknown>, index: number): MoveLog
 
   const tick = normalizeTick(raw.tick ?? raw.turn ?? raw.step ?? raw.frame, index);
   const actorRaw = raw.role ?? raw.slot ?? raw.slot_key ?? raw.team_id ?? raw.bot ?? raw.player ?? raw.agent;
-  const actor = typeof actorRaw === 'string' || typeof actorRaw === 'number' ? String(actorRaw) : '';
+  const actor = typeof actorRaw === 'string' || typeof actorRaw === 'number'
+    ? playerDisplayName(String(raw.team_id ?? actorRaw), String(actorRaw))
+    : '';
   const action = hasAction ? formatMoveValue(actionRaw) : formatEventType(type || 'move');
   const detail = formatMoveDetail(raw, hasAction);
   const tone = eventTone(type);
@@ -945,6 +1047,7 @@ function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknow
         frame: sanitizeForPostMessage(payload.frame),
         replayFrameIndex: replayFrameIndex.value,
         replayFrameCount: replayFrames.value.length,
+        participants: watchContext.value?.participants ?? [],
       },
     },
     window.location.origin,
@@ -956,6 +1059,37 @@ function replaySpeedFromQuery(): number {
   const value = typeof raw === 'string' ? Number(raw) : NaN;
   if (!Number.isFinite(value)) return 1000;
   return Math.max(150, Math.min(3000, value));
+}
+
+function replayFrameMsFromQuery(): number {
+  const raw = route.query.sync_frame_ms;
+  const value = typeof raw === 'string' ? Number(raw) : NaN;
+  if (!Number.isFinite(value)) return replaySpeedMs.value;
+  return Math.max(150, Math.min(3000, value));
+}
+
+function replayFrameIndexFromQuery(): number | null {
+  const raw = route.query.sync_frame_index;
+  const value = typeof raw === 'string' ? Number(raw) : NaN;
+  if (!Number.isInteger(value)) return null;
+  return Math.max(0, value);
+}
+
+function applyReplaySyncFromQuery(): boolean {
+  const raw = route.query.sync_started_at;
+  if (replayFrames.value.length === 0) return false;
+  let frameIndex: number | null = null;
+  if (typeof raw === 'string' && raw) {
+    const startedAtMs = Date.parse(raw);
+    if (Number.isFinite(startedAtMs)) {
+      const elapsedMs = Math.max(0, Date.now() - startedAtMs);
+      frameIndex = Math.floor(elapsedMs / replayFrameMsFromQuery());
+    }
+  }
+  frameIndex ??= replayFrameIndexFromQuery();
+  if (frameIndex === null) return false;
+  replayFrameIndex.value = Math.min(replayFrames.value.length - 1, Math.max(0, frameIndex));
+  return true;
 }
 
 function onRendererLoad(): void {
@@ -996,6 +1130,9 @@ function startReplayPlayback(): void {
       stopReplayPlayback();
       return;
     }
+    if (firstReplayLockActive.value && replayFrameIndex.value >= firstReplayAllowedFrameIndex.value) {
+      return;
+    }
     replayFrameIndex.value += 1;
   }, replaySpeedMs.value);
 }
@@ -1009,6 +1146,7 @@ function toggleReplayPlay(): void {
 }
 
 function stepReplay(delta: -1 | 1): void {
+  if (firstReplayLockActive.value) return;
   stopReplayPlayback();
   if (delta < 0 && canStepBackward.value) {
     replayFrameIndex.value -= 1;
@@ -1025,6 +1163,15 @@ function clampReplayFrameIndex(): void {
     return;
   }
   replayFrameIndex.value = Math.max(0, Math.min(replayFrameIndex.value, replayFrames.value.length - 1));
+  if (firstReplayLockActive.value) {
+    replayFrameIndex.value = Math.min(replayFrameIndex.value, firstReplayAllowedFrameIndex.value);
+  }
+}
+
+function syncFirstReplayFrame(): void {
+  nowMs.value = Date.now();
+  if (!firstReplayLockActive.value) return;
+  replayFrameIndex.value = firstReplayAllowedFrameIndex.value;
 }
 
 function onRendererMessage(event: MessageEvent): void {
@@ -1079,9 +1226,11 @@ async function ensureReplayLoaded(runId: string): Promise<void> {
     replay.value = await getRunReplay(runId);
     clampReplayFrameIndex();
     if (replayFrames.value.length > 0) {
-      replayFrameIndex.value = 0;
+      const synced = applyReplaySyncFromQuery();
+      if (!synced) replayFrameIndex.value = 0;
+      syncFirstReplayFrame();
       sendRendererStateAndResult();
-      if (shouldAutoplayReplay.value && replayFrames.value.length > 1) {
+      if (shouldAutoplayReplay.value && replayFrames.value.length > 1 && replayFrameIndex.value < replayFrames.value.length - 1) {
         startReplayPlayback();
       }
     }
@@ -1234,6 +1383,7 @@ function stopRunLiveUpdates(): void {
 
 watch(replayFrames, () => {
   clampReplayFrameIndex();
+  syncFirstReplayFrame();
   if (replayFrames.value.length <= 1) {
     stopReplayPlayback();
   }
@@ -1244,6 +1394,10 @@ watch(replayFrameIndex, () => {
   sendRendererStateAndResult();
 });
 
+watch(firstReplayAllowedFrameIndex, () => {
+  syncFirstReplayFrame();
+});
+
 watch(replaySpeedMs, () => {
   if (replayIsPlaying.value) {
     startReplayPlayback();
@@ -1252,11 +1406,13 @@ watch(replaySpeedMs, () => {
 
 onMounted(async () => {
   window.addEventListener('message', onRendererMessage);
+  replayClockHandle = setInterval(syncFirstReplayFrame, 500);
   await bootstrapPage();
 });
 
 onUnmounted(() => {
   window.removeEventListener('message', onRendererMessage);
+  if (replayClockHandle) clearInterval(replayClockHandle);
   stopReplayPlayback();
   stopRunLiveUpdates();
 });
@@ -1353,6 +1509,51 @@ onUnmounted(() => {
   max-width: min(26rem, calc(100% - 1.5rem));
 }
 
+.agp-watch-winner-banner,
+.agp-watch-replay-lock {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 1rem;
+  width: min(34rem, calc(100% - 2rem));
+  transform: translateX(-50%);
+  border: 1px solid rgba(250, 204, 21, 0.36);
+  border-radius: 0.75rem;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(8, 47, 73, 0.9)),
+    rgba(15, 23, 42, 0.94);
+  color: #f8fafc;
+  padding: 0.8rem 1rem;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(10px);
+}
+
+.agp-watch-winner-banner span,
+.agp-watch-replay-lock span {
+  display: block;
+  color: #a7f3d0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agp-watch-winner-banner strong,
+.agp-watch-replay-lock strong {
+  display: block;
+  color: #fef3c7;
+  font-size: clamp(1.3rem, 2vw, 2rem);
+  line-height: 1.1;
+}
+
+.agp-watch-replay-lock {
+  border-color: rgba(34, 211, 238, 0.34);
+}
+
+.agp-watch-replay-lock strong {
+  color: #dff8ff;
+}
+
 .agp-watch-side-card {
   position: sticky;
   top: 0;
@@ -1386,6 +1587,35 @@ onUnmounted(() => {
 .agp-watch-side-card hr {
   border-color: rgba(148, 163, 184, 0.22);
   opacity: 1;
+}
+
+.agp-watch-side-winner,
+.agp-watch-side-lock {
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(250, 204, 21, 0.08));
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+}
+
+.agp-watch-side-winner span {
+  display: block;
+  color: #99f6e4;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.agp-watch-side-winner strong {
+  display: block;
+  color: #fef3c7;
+  font-size: 1.25rem;
+}
+
+.agp-watch-side-lock {
+  border-color: rgba(34, 211, 238, 0.24);
+  color: #c6d7ea;
+  font-size: 0.86rem;
 }
 
 .agp-watch-side-card .btn-outline-secondary {

@@ -2,7 +2,7 @@
   <section class="agp-grid workspace-page">
     <header class="agp-card p-4 workspace-hero">
       <div>
-        <div class="small text-muted text-uppercase fw-semibold">Просмотр кода игрока</div>
+        <p class="workspace-kicker mb-1">{{ canEditWorkspace ? 'Рабочее место игрока' : 'Просмотр кода игрока' }}</p>
         <h1 class="h3 mb-1">Код игрока</h1>
         <p class="text-muted mb-0">
           <template v-if="canEditWorkspace">
@@ -14,14 +14,24 @@
         </p>
       </div>
       <div class="workspace-hero-stats">
-        <span class="agp-pill agp-pill--primary">ролей: {{ slotCount }}</span>
-        <span class="agp-pill" :class="emptySlotCount > 0 ? 'agp-pill--warning' : 'agp-pill--primary'">
-          не заполнено: {{ emptySlotCount }}
-        </span>
+        <div>
+          <span>Ролей</span>
+          <strong class="mono">{{ slotCount }}</strong>
+        </div>
+        <div>
+          <span>Заполнено</span>
+          <strong class="mono">{{ filledSlotCount }}</strong>
+        </div>
+        <div>
+          <span>Готовность</span>
+          <strong class="mono">{{ workspaceReadyPercent }}%</strong>
+        </div>
       </div>
     </header>
 
-    <div v-if="isLoading" class="agp-card p-4 text-muted">Загрузка кода игрока...</div>
+    <div v-if="isLoading" class="agp-card p-4">
+      <div class="agp-loading-state agp-loading-state--compact">Загрузка кода игрока...</div>
+    </div>
     <div v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</div>
 
     <div v-else class="workspace-layout">
@@ -37,7 +47,7 @@
             v-for="slot in workspace?.slot_states ?? []"
             :key="slot.slot_key"
             type="button"
-            class="agp-card-soft p-2 d-flex justify-content-between align-items-center text-start border-0"
+            class="workspace-slot-button"
             :class="{ 'slot-selected': selectedSlotKey === slot.slot_key }"
             @click="selectSlot(slot.slot_key)"
           >
@@ -54,9 +64,12 @@
       </aside>
 
       <article class="agp-card p-3 workspace-editor">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="h6 mb-0">Редактор роли `{{ selectedSlotKey || '—' }}`</h2>
-          <div v-if="canEditWorkspace" class="d-flex gap-2">
+        <div class="workspace-editor-head mb-2">
+          <div>
+            <p class="workspace-kicker mb-1">Python</p>
+            <h2 class="h6 mb-0">Роль: <span class="mono">{{ selectedSlotKey || '—' }}</span></h2>
+          </div>
+          <div v-if="canEditWorkspace" class="workspace-editor-actions">
             <button class="btn btn-sm btn-outline-secondary" :disabled="!selectedSlotKey || !isEditorDirty" @click="resetSelectedSlotCode">
               Сбросить
             </button>
@@ -137,7 +150,13 @@
       </article>
 
       <aside class="agp-card p-3 workspace-inspector">
-        <h2 class="h6 mb-2">Сводка</h2>
+        <div class="workspace-inspector-head mb-2">
+          <p class="workspace-kicker mb-1">Сводка</p>
+          <h2 class="h6 mb-0">Состояние игрока</h2>
+        </div>
+        <div class="workspace-progress" role="progressbar" :aria-valuenow="workspaceReadyPercent" aria-valuemin="0" aria-valuemax="100">
+          <i :style="{ width: `${workspaceReadyPercent}%` }"></i>
+        </div>
         <div class="workspace-inspector-row">
           <span>Режим</span>
           <strong>{{ canEditWorkspace ? 'редактирование' : 'просмотр' }}</strong>
@@ -222,6 +241,12 @@ const canInspectTechnicalDetails = computed(() => sessionStore.role === 'teacher
 const canUseDemoStrategy = computed(() => canInspectTechnicalDetails.value);
 const slotCount = computed(() => workspace.value?.slot_states.length ?? 0);
 const emptySlotCount = computed(() => workspace.value?.slot_states.filter((slot) => slot.state === 'empty').length ?? 0);
+const filledSlotCount = computed(() =>
+  workspace.value?.slot_states.filter((slot) => slot.state !== 'empty' && slot.state !== 'incompatible').length ?? 0
+);
+const workspaceReadyPercent = computed(() =>
+  slotCount.value > 0 ? Math.round((filledSlotCount.value / slotCount.value) * 100) : 0
+);
 const incompatibleSlotCount = computed(
   () => workspace.value?.slot_states.filter((slot) => slot.state === 'incompatible').length ?? 0
 );
@@ -405,18 +430,67 @@ onMounted(async () => {
 }
 
 .workspace-hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
-  background: #f8fafc;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
+    radial-gradient(circle at 88% 12%, rgba(37, 99, 235, 0.14), transparent 14rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 250, 0.9)),
+    url("data:image/svg+xml,%3Csvg width='176' height='112' viewBox='0 0 176 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M24 24h34v34H24zM78 18h28v28H78zM130 34h26v26h-26zM50 72h28v20H50zM108 68h30v28h-30z'/%3E%3Cpath d='M58 41h20M106 32h24M78 82h30M92 46v22'/%3E%3C/g%3E%3C/svg%3E");
+  background-position: center, center, center, right 1rem center;
+  background-repeat: no-repeat;
+}
+
+.workspace-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+}
+
+.workspace-hero > * {
+  position: relative;
+}
+
+.workspace-kicker {
+  color: #0f766e;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .workspace-hero-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5.5rem, 1fr));
+  gap: 0.55rem;
+  min-width: min(100%, 24rem);
+}
+
+.workspace-hero-stats div {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.workspace-hero-stats span {
+  color: var(--agp-text-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.workspace-hero-stats strong {
+  color: var(--agp-text);
+  font-size: 1.16rem;
 }
 
 .workspace-layout {
@@ -433,7 +507,55 @@ onMounted(async () => {
 }
 
 .workspace-editor {
+  overflow: hidden;
   min-width: 0;
+}
+
+.workspace-slots,
+.workspace-inspector,
+.workspace-editor {
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
+}
+
+.workspace-slot-button {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.75rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 6rem),
+    #ffffff;
+  color: inherit;
+  padding: 0.7rem;
+  text-align: left;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.workspace-slot-button:hover {
+  border-color: rgba(20, 184, 166, 0.45);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.workspace-editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.15rem 0 0.65rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.workspace-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .workspace-editor-notice {
@@ -457,7 +579,11 @@ onMounted(async () => {
 }
 
 .slot-selected {
-  outline: 2px solid var(--agp-accent);
+  border-color: rgba(15, 118, 110, 0.6);
+  outline: 2px solid rgba(20, 184, 166, 0.18);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.17), transparent 6rem),
+    #f0fdfa;
 }
 
 .demo-select {
@@ -481,6 +607,22 @@ onMounted(async () => {
   min-width: 0;
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+.workspace-progress {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+  margin-bottom: 0.75rem;
+}
+
+.workspace-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #14b8a6, #f59e0b);
+  transition: width 0.2s ease;
 }
 
 .workspace-callout {
@@ -513,7 +655,9 @@ onMounted(async () => {
   }
 
   .workspace-hero-stats {
-    justify-content: flex-start;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+    width: 100%;
   }
 
   .workspace-layout {
@@ -522,6 +666,20 @@ onMounted(async () => {
 
   .workspace-slots {
     position: static;
+  }
+
+  .workspace-editor-head {
+    flex-direction: column;
+  }
+
+  .workspace-editor-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .workspace-hero-stats {
+    grid-template-columns: 1fr;
   }
 }
 </style>

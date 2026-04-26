@@ -5,13 +5,14 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию build_numbers(mines), которая возвращает поле чисел вокруг мин."
-description: По матрице мин нужно посчитать числа соседних мин для каждой клетки.
+player_instruction: "Определите функцию build_numbers(mines), которая возвращает поле чисел вокруг мин, аккуратно обрабатывая края и углы."
+description: По матрице мин нужно посчитать числа соседних мин для каждой клетки, включая крайние случаи на границах поля.
 difficulty: medium
 learning_section: Матрицы и координаты
 topics:
   - матрицы
   - соседи клетки
+  - края поля
 slots:
   - key: agent
     title: Код решения

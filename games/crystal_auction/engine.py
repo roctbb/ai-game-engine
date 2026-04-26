@@ -337,6 +337,10 @@ def _run_match(ctx: dict[str, Any], rng: random.Random) -> dict[str, object]:
         result = _archer_duel(slots, bots, events, print_context, rng)
     else:
         result = _crystal_auction(slots, bots, events, print_context, rng)
+    for frame in result.get("frames", []):
+        inner = frame.get("frame") if isinstance(frame, dict) else None
+        if isinstance(inner, dict):
+            inner["labels"] = {slot: role_name.get(slot, slot) for slot in slots}
     slot_scores = result["slot_scores"]
     scores = {role_team[slot]: int(slot_scores[slot]) for slot in slots}
     placements = _placements(role_team, slot_scores, slots)
@@ -387,17 +391,6 @@ def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[st
         "min": min, "print": bot_print, "range": range, "round": round, "set": set, "sorted": sorted,
         "str": str, "sum": sum, "tuple": tuple, "zip": zip,
     }
-
-
-class _Hero:
-    def __init__(self) -> None:
-        self.commands: list[str] = []
-    def forward(self) -> None: self.commands.append("forward")
-    def collect(self) -> None: self.commands.append("collect")
-    def attack(self) -> None: self.commands.append("attack")
-    def turn_left(self) -> None: self.commands.append("turn_left")
-    def turn_right(self) -> None: self.commands.append("turn_right")
-    def wait(self) -> None: self.commands.append("wait")
 
 
 def _call(fn: Callable[..., object] | None, *args: object) -> object:
@@ -484,9 +477,6 @@ def _compare_value(expected: object, actual: object) -> tuple[int, int, int, int
 
 
 def _build_task(kind: str, rng: random.Random) -> dict[str, object]:
-    if kind == "beginner_cave":
-        expected = ["forward", "collect", "forward", "attack", "forward", "collect", "forward"]
-        return {"goal": "repeat_commands", "expected": expected, "timeline": ["монета", "путь", "монстр", "монета", "пещера"]}
     if kind == "gate_guard":
         colors = ["red", "blue", "black", "green", "blue", "black", "red", "gold"]
         cases = []
@@ -615,15 +605,6 @@ def _build_task(kind: str, rng: random.Random) -> dict[str, object]:
 
 
 def _evaluate_task(kind: str, task: dict[str, object], fn: Callable[..., object] | None, events: list[dict[str, object]]) -> dict[str, object]:
-    if kind == "beginner_cave":
-        hero = _Hero()
-        actual = None
-        if fn is not None and getattr(fn, "__name__", "") == "play":
-            _call(fn, hero)
-            actual = hero.commands
-        else:
-            actual = _call(fn, task)
-        return _score(task["expected"], actual)
     if kind in {"gate_guard", "battery_robot_lite"}:
         actual = []
         for case in task["cases"]: actual.append(_call(fn, case["input"]))
@@ -703,43 +684,86 @@ def _settle_apples(board: list[list[str]]) -> list[list[str]]:
 
 
 def _archer_duel(slots: list[str], bots: dict[str, tuple[Callable[..., object] | None, str | None]], events: list[dict[str, object]], print_context: dict[str, int], rng: random.Random) -> dict[str, object]:
-    hp = {slot: 100 for slot in slots}; arrows = {slot: 1 for slot in slots}; aimed = {slot: False for slot in slots}; frames = []
-    for turn in range(12):
+    hp = {slot: 100 for slot in slots}
+    arrows = {slot: 1 for slot in slots}
+    aimed = {slot: False for slot in slots}
+    total_damage = {slot: 0 for slot in slots}
+    frames = []
+    for turn in range(14):
         print_context["tick"] = turn
         actions = {}
         for slot in slots:
             enemy = slots[1] if slot == slots[0] else slots[0]
-            state = {"turn": turn + 1, "hp": hp[slot], "enemy_hp": hp[enemy], "arrows": arrows[slot], "enemy_aimed": aimed[enemy]}
+            state = {
+                "turn": turn + 1,
+                "hp": hp[slot],
+                "enemy_hp": hp[enemy],
+                "arrows": arrows[slot],
+                "enemy_arrows": arrows[enemy],
+                "my_aimed": aimed[slot],
+                "enemy_aimed": aimed[enemy],
+                "can_shoot": arrows[slot] > 0,
+                "danger": 35 if aimed[enemy] and arrows[enemy] > 0 else 20 if arrows[enemy] > 0 else 0,
+            }
             action = _call(bots[slot][0], state)
             actions[slot] = action if action in {"aim", "shoot", "shield", "reload"} else "aim"
         shields = {slot for slot, action in actions.items() if action == "shield"}
+        damage_done = {slot: 0 for slot in slots}
+        blocked = {slot: False for slot in slots}
+        spent_arrows = {slot: 0 for slot in slots}
         for slot, action in actions.items():
             enemy = slots[1] if slot == slots[0] else slots[0]
             if action == "reload": arrows[slot] += 1; aimed[slot] = False
             elif action == "aim": aimed[slot] = True
             elif action == "shoot" and arrows[slot] > 0:
                 arrows[slot] -= 1
+                spent_arrows[slot] = 1
                 damage = 35 if aimed[slot] else 20
-                if enemy in shields: damage //= 2
+                if enemy in shields:
+                    damage //= 2
+                    blocked[enemy] = True
                 hp[enemy] = max(0, hp[enemy] - damage)
+                damage_done[slot] = damage
+                total_damage[slot] += damage
                 aimed[slot] = False
             elif action == "shoot":
                 aimed[slot] = False
-        frames.append({"tick": turn + 1, "phase": "running", "frame": _match_frame({"actions": actions, "hp": hp.copy(), "arrows": arrows.copy(), "aimed": aimed.copy()})})
+        frames.append({"tick": turn + 1, "phase": "running", "frame": _match_frame({
+            "actions": actions,
+            "hp": hp.copy(),
+            "arrows": arrows.copy(),
+            "aimed": aimed.copy(),
+            "damage": damage_done,
+            "blocked": blocked,
+            "spent_arrows": spent_arrows,
+            "total_damage": total_damage.copy(),
+        })})
         if any(value <= 0 for value in hp.values()): break
-    slot_scores = {slot: hp[slot] * 2 + arrows[slot] * 5 for slot in slots}
-    frames.append({"tick": len(frames) + 1, "phase": "finished", "frame": _match_frame({"hp": hp, "arrows": arrows, "score": slot_scores})})
-    return {"slot_scores": slot_scores, "metrics": {"hp": hp, "arrows": arrows}, "frames": frames}
+    slot_scores = {slot: hp[slot] * 2 + arrows[slot] * 5 + total_damage[slot] for slot in slots}
+    frames.append({"tick": len(frames) + 1, "phase": "finished", "frame": _match_frame({"hp": hp, "arrows": arrows, "damage": total_damage, "score": slot_scores})})
+    return {"slot_scores": slot_scores, "metrics": {"hp": hp, "arrows": arrows, "damage": total_damage}, "frames": frames}
 
 
 def _crystal_auction(slots: list[str], bots: dict[str, tuple[Callable[..., object] | None, str | None]], events: list[dict[str, object]], print_context: dict[str, int], rng: random.Random) -> dict[str, object]:
-    budget = {slot: 60 for slot in slots}; value = {slot: 0 for slot in slots}; frames = []
-    crystals = [rng.randint(8, 28) for _ in range(8)]
+    budget = {slot: 70 for slot in slots}
+    value = {slot: 0 for slot in slots}
+    spent = {slot: 0 for slot in slots}
+    frames = []
+    crystals = [rng.randint(8, 22) for _ in range(4)] + [rng.randint(18, 34) for _ in range(4)]
     for turn, crystal in enumerate(crystals, start=1):
         print_context["tick"] = turn
         bids = {}
+        fair_bid = max(1, crystal // 2 + (3 if turn > len(crystals) // 2 else 0))
         for slot in slots:
-            state = {"turn": turn, "crystal_value": crystal, "budget": budget[slot], "my_value": value[slot], "rounds_left": len(crystals) - turn}
+            state = {
+                "turn": turn,
+                "crystal_value": crystal,
+                "budget": budget[slot],
+                "my_value": value[slot],
+                "rounds_left": len(crystals) - turn,
+                "fair_bid": fair_bid,
+                "average_value": sum(crystals) // len(crystals),
+            }
             raw = _call(bots[slot][0], state)
             try: bid = int(raw)
             except Exception: bid = 0
@@ -748,11 +772,23 @@ def _crystal_auction(slots: list[str], bots: dict[str, tuple[Callable[..., objec
         if bids[slots[0]] == bids[slots[1]]:
             winner = slots[(turn + crystal) % 2]
         budget[winner] -= bids[winner]
+        spent[winner] += bids[winner]
         value[winner] += crystal
-        frames.append({"tick": turn, "phase": "running", "frame": _match_frame({"crystal": crystal, "bids": bids, "winner": winner, "budget": budget.copy(), "value": value.copy()})})
+        deal = {slot: (crystal - bids[slot] if slot == winner else 0) for slot in slots}
+        frames.append({"tick": turn, "phase": "running", "frame": _match_frame({
+            "crystal": crystal,
+            "bids": bids,
+            "winner": winner,
+            "budget": budget.copy(),
+            "value": value.copy(),
+            "spent": spent.copy(),
+            "deal": deal,
+            "fair_bid": fair_bid,
+            "rounds_left": len(crystals) - turn,
+        })})
     slot_scores = {slot: value[slot] + budget[slot] for slot in slots}
-    frames.append({"tick": len(frames) + 1, "phase": "finished", "frame": _match_frame({"budget": budget, "value": value, "score": slot_scores})})
-    return {"slot_scores": slot_scores, "metrics": {"budget": budget, "value": value, "crystals": crystals}, "frames": frames}
+    frames.append({"tick": len(frames) + 1, "phase": "finished", "frame": _match_frame({"budget": budget, "value": value, "spent": spent, "score": slot_scores})})
+    return {"slot_scores": slot_scores, "metrics": {"budget": budget, "value": value, "spent": spent, "crystals": crystals}, "frames": frames}
 
 
 def _match_frame(payload: dict[str, object]) -> dict[str, object]:

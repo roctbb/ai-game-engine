@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session, load_only, sessionmaker
 
 from execution.domain.model import (
@@ -103,6 +103,12 @@ class SqlAlchemyRunRepository:
                 .order_by(desc(RunOrm.created_at))
             ).all()
             return [_map_run_from_orm(row) for row in rows]
+
+    def delete_many(self, run_ids: list[str]) -> None:
+        if not run_ids:
+            return
+        with self._session_factory.begin() as session:
+            session.execute(delete(RunOrm).where(RunOrm.run_id.in_(run_ids)))
 
 
 class SqlAlchemyWorkerRepository:

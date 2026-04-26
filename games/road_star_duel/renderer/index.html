@@ -13,6 +13,7 @@
     .red { outline: 4px solid #dc2626; outline-offset: -4px; }
     .blue { outline: 4px solid #2563eb; outline-offset: -4px; }
     .stats { margin-top: 12px; font-size: 14px; }
+    .name-label { position: absolute; left: 50%; top: -16px; transform: translateX(-50%); padding: 1px 4px; border-radius: 999px; background: rgba(255,255,255,.9); color: #111827; font-size: 10px; line-height: 1.1; white-space: nowrap; z-index: 4; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
       .cell[data-badge]::after { content: attr(data-badge); position: absolute; right: -7px; top: -7px; min-width: 18px; height: 18px; padding: 0 3px; display: grid; place-items: center; border-radius: 999px; background: #111827; color: #fff; border: 2px solid #fff; font-size: 11px; line-height: 1; z-index: 3; }
   </style>
 </head>
@@ -22,6 +23,7 @@
     <div id="stats" class="stats"></div>
   </div>
   <script>
+    function labelOf(frame, slot) { return (frame.labels && frame.labels[slot]) || slot; }
     function render(payload) {
       const frame = (payload.frames || []).at(-1)?.frame || payload.frame || {};
       const board = frame.board || [];
@@ -35,13 +37,13 @@
       rows.forEach((row, y) => row.forEach((cell, x) => {
         const el = document.createElement("div");
         el.className = "cell " + (cell === -1 ? "car" : cell === 1 ? "star" : "road");
-        if (positions.red?.x === x && positions.red?.y === y) { el.classList.add("red"); el.dataset.badge = String((frame.collected || {}).red || 0); }
-        if (positions.blue?.x === x && positions.blue?.y === y) { el.classList.add("blue"); el.dataset.badge = String((frame.collected || {}).blue || 0); }
+        if (positions.red?.x === x && positions.red?.y === y) { el.classList.add("red"); el.dataset.badge = String((frame.collected || {}).red || 0); const label=document.createElement("span"); label.className="name-label"; label.textContent=labelOf(frame,"red"); el.appendChild(label); }
+        if (positions.blue?.x === x && positions.blue?.y === y) { el.classList.add("blue"); el.dataset.badge = String((frame.collected || {}).blue || 0); const label=document.createElement("span"); label.className="name-label"; label.textContent=labelOf(frame,"blue"); el.appendChild(label); }
         el.textContent = cell === -1 ? "■" : cell === 1 ? "★" : "";
         root.appendChild(el);
       }));
       const collected = frame.collected || {};
-      document.getElementById("stats").textContent = `Красный: ${collected.red || 0} · Синий: ${collected.blue || 0} · Осталось: ${frame.stars_left || 0}`;
+      document.getElementById("stats").textContent = `${labelOf(frame,"red")}: ${collected.red || 0} · ${labelOf(frame,"blue")}: ${collected.blue || 0} · Осталось: ${frame.stars_left || 0}`;
     }
     window.render = render;
     window.addEventListener("message", (event) => {

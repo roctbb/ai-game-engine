@@ -1,0 +1,59 @@
+{
+  "frame": {
+    "actual": [
+      "forward",
+      "collect",
+      "wait",
+      "turn_right",
+      "forward",
+      "attack",
+      "turn_left",
+      "forward",
+      "collect",
+      "wait"
+    ],
+    "difficulty": "easy",
+    "expected": [
+      "forward",
+      "collect",
+      "wait",
+      "turn_right",
+      "forward",
+      "attack",
+      "turn_left",
+      "forward",
+      "collect",
+      "wait"
+    ],
+    "kind": "rune_decoder",
+    "learning_section": "Строки и коды",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "expected": [
+        "forward",
+        "collect",
+        "wait",
+        "turn_right",
+        "forward",
+        "attack",
+        "turn_left",
+        "forward",
+        "collect",
+        "wait"
+      ],
+      "mapping": {
+        "ᚠ": "forward",
+        "ᚨ": "attack",
+        "ᚱ": "turn_right",
+        "ᚲ": "collect",
+        "ᛚ": "turn_left",
+        "᛫": "wait"
+      },
+      "runes": "ᚠᚲ᛫ᚱᚠᚨᛚᚠᚲ᛫"
+    },
+    "title": "Расшифровщик рун"
+  }
+}

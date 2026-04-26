@@ -63,6 +63,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 
     seed = str(ctx.get("run_id") or "tanks_legacy_offline")
     random.seed(seed)
+    display_name = _display_name(ctx)
 
     game = Game()
     TankMap.init(game, players=[])
@@ -71,7 +72,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         strategy=driver_fn,
         events=events,
         print_context=print_context,
-        properties={"team": "Radient", "name": "you"},
+        properties={"team": "Radient", "name": display_name},
     )
     spawn = _pick_spawn(game)
     game.players[(spawn.x, spawn.y)] = player
@@ -274,6 +275,18 @@ def _load_context() -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _display_name(ctx: dict[str, Any]) -> str:
+    participants = ctx.get("participants")
+    if isinstance(participants, list) and participants:
+        first = participants[0]
+        if isinstance(first, dict):
+            raw = first.get("display_name") or first.get("captain_user_id") or first.get("team_id")
+            if raw:
+                return str(raw)
+    raw = ctx.get("display_name") or ctx.get("team_name") or ctx.get("requested_by")
+    return str(raw) if raw else "Игрок"
 
 
 def _build_slot_callable(

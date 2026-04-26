@@ -55,6 +55,10 @@ class InMemoryRunRepository:
             and run.status in active_statuses
         ]
 
+    def delete_many(self, run_ids: list[str]) -> None:
+        for run_id in run_ids:
+            self._items.pop(run_id, None)
+
 
 class InMemoryWorkerRepository:
     def __init__(self) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from competition.application.repositories import CompetitionRepository
 from competition.domain.model import (
@@ -15,7 +16,7 @@ from competition.domain.model import (
 from execution.application.service import CreateRunInput, ExecutionService
 from execution.domain.model import Run, RunKind, RunStatus
 from game_catalog.application.service import GameCatalogService
-from shared.kernel import InvariantViolationError, NotFoundError
+from shared.kernel import InvariantViolationError, NotFoundError, utc_now
 from team_workspace.application.service import TeamWorkspaceService
 
 
@@ -63,6 +64,28 @@ _ACTIVE_COMPETITION_STATUSES = {
     CompetitionStatus.PAUSED,
     CompetitionStatus.COMPLETED,
 }
+_COMPETITION_REPLAY_FRAME_MS = 500
+_COMPETITION_RESULT_SECONDS = 5
+
+
+def _datetime_or_none(value: object | None) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=utc_now().tzinfo)
+    return value
+
+
+def _ensure_competition_match_size_is_allowed(
+    *,
+    min_players: int,
+    max_players: int,
+    match_size: int,
+) -> None:
+    if match_size < min_players or match_size > max_players:
+        raise InvariantViolationError(
+            f"match_size должен быть в диапазоне {min_players}-{max_players} для выбранной игры"
+        )
 
 
 class CompetitionService:
@@ -82,6 +105,14 @@ class CompetitionService:
         if data.format is not CompetitionFormat.SINGLE_ELIMINATION:
             raise InvariantViolationError("В текущей версии поддерживается только single_elimination")
         game = self._game_catalog.get_game(data.game_id)
+        if not game.is_multiplayer:
+            raise InvariantViolationError("Соревнование можно создать только для multiplayer игры")
+        min_players, max_players = game.match_player_bounds
+        _ensure_competition_match_size_is_allowed(
+            min_players=min_players,
+            max_players=max_players,
+            match_size=data.match_size,
+        )
         competition = Competition.create(
             game_id=game.game_id,
             game_version_id=game.active_version.version_id,
@@ -90,6 +121,7 @@ class CompetitionService:
             tie_break_policy=data.tie_break_policy,
             code_policy=data.code_policy,
             advancement_top_k=data.advancement_top_k,
+            min_match_size=min_players,
             match_size=data.match_size,
             lobby_id=data.lobby_id,
         )
@@ -133,8 +165,14 @@ class CompetitionService:
                 raise InvariantViolationError("advancement_top_k должен быть >= 1")
             competition.advancement_top_k = advancement_top_k
         if match_size is not None:
-            if match_size < 2:
-                raise InvariantViolationError("match_size должен быть >= 2")
+            game = self._game_catalog.get_game(competition.game_id)
+            min_players, max_players = game.match_player_bounds
+            _ensure_competition_match_size_is_allowed(
+                min_players=min_players,
+                max_players=max_players,
+                match_size=match_size,
+            )
+            competition.min_match_size = min_players
             competition.match_size = match_size
         if competition.advancement_top_k > competition.match_size:
             raise InvariantViolationError("advancement_top_k не может быть больше match_size")
@@ -230,6 +268,13 @@ class CompetitionService:
 
     def advance_competition(self, competition_id: str, requested_by: str) -> Competition:
         competition = self.get_competition(competition_id)
+        if competition.status is CompetitionStatus.PAUSED:
+            current_round = competition.get_current_round()
+            if current_round is not None and any(
+                match.status is CompetitionMatchStatus.AWAITING_TIEBREAK
+                for match in current_round.matches
+            ):
+                return competition
         if competition.status is not CompetitionStatus.RUNNING:
             raise InvariantViolationError("Продвижение раунда доступно только в running")
 
@@ -242,6 +287,8 @@ class CompetitionService:
             run_kind=RunKind.COMPETITION_MATCH,
         )
         runs_by_id = {run.run_id: run for run in runs}
+        if self._is_waiting_for_round_replay(current_round.matches, runs_by_id):
+            return competition
 
         next_seed: list[str] = []
         found_tiebreak = False
@@ -287,7 +334,7 @@ class CompetitionService:
         competition.set_pending_reason(None)
         next_seed = [team_id for team_id in next_seed if team_id]
 
-        if len(next_seed) <= 1:
+        if len(next_seed) < competition.min_match_size:
             competition.complete_with_winners(next_seed)
             self._repository.save(competition)
             return competition
@@ -394,6 +441,42 @@ class CompetitionService:
                 )
             terminal_runs[team_id] = run
         return terminal_runs
+
+    def _is_waiting_for_round_replay(
+        self,
+        matches: list[CompetitionMatch],
+        runs_by_id: dict[str, Run],
+    ) -> bool:
+        runs: list[Run] = []
+        for match in matches:
+            if match.status in {CompetitionMatchStatus.FINISHED, CompetitionMatchStatus.AUTO_ADVANCED}:
+                continue
+            if not match.run_ids_by_team:
+                return False
+            for run_id in match.run_ids_by_team.values():
+                run = runs_by_id.get(run_id)
+                if run is None or run.status not in _TERMINAL_STATUSES:
+                    return False
+                runs.append(run if run.result_payload is not None else self._execution.get_run(run.run_id))
+        if not runs:
+            return False
+        if not any(self._replay_frames_count(run) > 1 for run in runs):
+            return False
+        latest_finished_at = max((_datetime_or_none(run.finished_at) for run in runs), default=None)
+        if latest_finished_at is None:
+            return False
+        frame_count = max((self._replay_frames_count(run) for run in runs), default=1)
+        replay_seconds = max(1.0, frame_count * _COMPETITION_REPLAY_FRAME_MS / 1000)
+        advance_after = latest_finished_at + timedelta(seconds=replay_seconds + _COMPETITION_RESULT_SECONDS)
+        return utc_now() < advance_after
+
+    @staticmethod
+    def _replay_frames_count(run: Run) -> int:
+        payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+        frames = payload.get("frames")
+        if isinstance(frames, list) and frames:
+            return len(frames)
+        return 1
 
     def _build_match_outcome(
         self,

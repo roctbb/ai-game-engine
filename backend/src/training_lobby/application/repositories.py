@@ -14,3 +14,6 @@ class LobbyRepository(Protocol):
 
     def list(self) -> list[Lobby]:
         ...
+
+    def delete(self, lobby_id: str) -> None:
+        ...

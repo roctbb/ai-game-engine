@@ -5,14 +5,16 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию schedule(ships), которая возвращает id кораблей в порядке обслуживания."
-description: Диспетчер сортирует корабли по приоритету и запасу топлива.
+player_instruction: "Определите функцию schedule(ships), которая возвращает id кораблей по срочности: priority*10 + passengers*2 + broken*20 + (10-fuel) - service_time."
+description: Диспетчер считает срочность кораблей по приоритету, пассажирам, поломке, топливу и времени обслуживания.
 difficulty: medium
 learning_section: Списки и цели
 topics:
   - списки
   - очередь
   - сортировка
+  - жадная оценка
+  - формула срочности
 slots:
   - key: agent
     title: Код решения

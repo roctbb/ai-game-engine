@@ -261,7 +261,7 @@
         const value = String(p.shielding ? p.shield : p.life);
         const labelWidth = ctx.measureText(label).width;
         const valueWidth = ctx.measureText(value).width;
-        ctx.fillText(label, (baseX + 0.5) * tileSize - labelWidth / 2, (baseY + 0.32) * tileSize);
+        ctx.fillText(label, (baseX + 0.5) * tileSize - labelWidth / 2, Math.max(tileSize * 0.18, (baseY - 0.12) * tileSize));
         ctx.fillText(value, (baseX + 0.5) * tileSize - valueWidth / 2, (baseY + 0.63) * tileSize);
       }
 

@@ -1,13 +1,15 @@
 id: territory_duel_v1
 title: Дуэль за территорию
-game_mode: small_match
-semver: 1.1.0
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 4
+semver: 1.2.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right/stay.
   Закрашивайте как можно больше клеток своим цветом.
-description: Два участника двигаются по случайной карте со стенами и захватывают клетки.
+description: От 2 до 4 участников двигаются по случайной карте со стенами и захватывают клетки.
   Побеждает тот, у кого больше территории.
 difficulty: medium
 learning_section: Жадные стратегии

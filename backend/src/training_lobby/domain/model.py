@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from shared.kernel import InvariantViolationError, NotFoundError, new_id, utc_now
 
+_UNSET = object()
+
 
 class LobbyKind(StrEnum):
     TRAINING = "training"
@@ -21,6 +23,7 @@ class LobbyStatus(StrEnum):
     OPEN = "open"
     RUNNING = "running"
     PAUSED = "paused"
+    STOPPED = "stopped"
     UPDATING = "updating"
     CLOSED = "closed"
 
@@ -45,6 +48,8 @@ class Lobby:
     status: LobbyStatus
     teams: dict[str, LobbyTeamState] = field(default_factory=dict)
     last_scheduled_run_ids: tuple[str, ...] = ()
+    last_scheduled_match_groups: tuple[tuple[str, ...], ...] = ()
+    auto_delete_training_runs_days: int | None = None
     created_at: object = field(default_factory=utc_now)
 
     @staticmethod
@@ -134,9 +139,23 @@ class Lobby:
             raise InvariantViolationError("Возобновление поддерживается только для training лобби")
         if self.status == LobbyStatus.OPEN:
             return
-        if self.status != LobbyStatus.PAUSED:
-            raise InvariantViolationError("Возобновление доступно только из paused")
+        if self.status not in {LobbyStatus.PAUSED, LobbyStatus.STOPPED}:
+            raise InvariantViolationError("Возобновление доступно только из paused/stopped")
         self.status = LobbyStatus.OPEN
+
+    def stop(self) -> None:
+        if self.kind != LobbyKind.TRAINING:
+            raise InvariantViolationError("Остановка поддерживается только для training лобби")
+        if self.status == LobbyStatus.STOPPED:
+            return
+        if self.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING, LobbyStatus.PAUSED}:
+            raise InvariantViolationError("Остановка доступна только из open/running/paused")
+        self.status = LobbyStatus.STOPPED
+        self.last_scheduled_run_ids = ()
+        self.last_scheduled_match_groups = ()
+        for team_state in self.teams.values():
+            team_state.ready = False
+            team_state.blocker_reason = "Лобби остановлено преподавателем"
 
     def close(self) -> None:
         if self.status == LobbyStatus.CLOSED:
@@ -145,15 +164,56 @@ class Lobby:
             raise InvariantViolationError("Нельзя закрыть лобби во время обновления")
         self.status = LobbyStatus.CLOSED
         self.last_scheduled_run_ids = ()
+        self.last_scheduled_match_groups = ()
         for team_state in self.teams.values():
             team_state.ready = False
             team_state.blocker_reason = "Лобби закрыто администратором"
 
     def set_last_scheduled_runs(self, run_ids: list[str]) -> None:
         self.last_scheduled_run_ids = tuple(run_ids)
+        if not run_ids:
+            self.last_scheduled_match_groups = ()
+
+    def set_last_scheduled_match_groups(self, match_groups: list[list[str]]) -> None:
+        normalized = tuple(tuple(run_id for run_id in group if run_id) for group in match_groups if group)
+        self.last_scheduled_match_groups = normalized
+        self.last_scheduled_run_ids = tuple(run_id for group in normalized for run_id in group)
 
     def set_game_version(self, version_id: str) -> None:
         self.game_version_id = version_id
+
+    def update_settings(
+        self,
+        *,
+        title: str | None = None,
+        access: LobbyAccess | None = None,
+        access_code: str | None = None,
+        max_teams: int | None = None,
+        auto_delete_training_runs_days: int | None | object = _UNSET,
+    ) -> None:
+        if title is not None:
+            normalized_title = title.strip()
+            if len(normalized_title) < 2:
+                raise InvariantViolationError("Название лобби должно быть не короче 2 символов")
+            self.title = normalized_title
+        if max_teams is not None:
+            if max_teams < len(self.teams):
+                raise InvariantViolationError("Лимит игроков не может быть меньше текущего числа участников")
+            self.max_teams = max_teams
+        if access is not None:
+            self.access = access
+        if access_code is not None:
+            self.access_code = access_code.strip() or None
+        if self.access == LobbyAccess.CODE and not self.access_code:
+            raise InvariantViolationError("Для закрытого лобби нужен код доступа")
+        if self.access == LobbyAccess.PUBLIC:
+            self.access_code = None
+        if auto_delete_training_runs_days is not _UNSET:
+            if not isinstance(auto_delete_training_runs_days, int) and auto_delete_training_runs_days is not None:
+                raise InvariantViolationError("Срок хранения матчей должен быть числом дней")
+            if isinstance(auto_delete_training_runs_days, int) and not 1 <= auto_delete_training_runs_days <= 3650:
+                raise InvariantViolationError("Срок хранения матчей должен быть от 1 до 3650 дней")
+            self.auto_delete_training_runs_days = auto_delete_training_runs_days
 
     def revalidate_ready_states(self, compatibility_by_team: dict[str, tuple[bool, str | None]]) -> None:
         for team_id, state in self.teams.items():

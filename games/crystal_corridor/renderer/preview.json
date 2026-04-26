@@ -1,0 +1,78 @@
+{
+  "frame": {
+    "actual": [
+      "move",
+      "collect",
+      "move",
+      "collect",
+      "move",
+      "move",
+      "move",
+      "collect",
+      "move",
+      "move",
+      "collect",
+      "move",
+      "move"
+    ],
+    "difficulty": "easy",
+    "expected": [
+      "move",
+      "collect",
+      "move",
+      "collect",
+      "move",
+      "move",
+      "move",
+      "collect",
+      "move",
+      "move",
+      "collect",
+      "move",
+      "move"
+    ],
+    "kind": "crystal_corridor",
+    "learning_section": "Циклы и повторения",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "corridor": [
+        ".",
+        "C",
+        "B",
+        "X",
+        ".",
+        "C",
+        "X",
+        "B",
+        ".",
+        "#",
+        "C",
+        "."
+      ],
+      "expected": [
+        "move",
+        "collect",
+        "move",
+        "collect",
+        "move",
+        "move",
+        "move",
+        "collect",
+        "move",
+        "move",
+        "collect",
+        "move",
+        "move"
+      ],
+      "scores": {
+        "B": 3,
+        "C": 1,
+        "X": -2
+      }
+    },
+    "title": "Кристаллы в коридоре"
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "tick": 0,
+  "phase": "running",
+  "frame": {
+    "title": "Сканер сокровищ",
+    "kind": "treasure_scanner",
+    "learning_section": "Матрицы и координаты",
+    "difficulty": "medium",
+    "task": {
+      "board": [
+        [
+          0,
+          2,
+          2,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          3,
+          1,
+          3
+        ],
+        [
+          1,
+          1,
+          2,
+          2,
+          0
+        ],
+        [
+          3,
+          1,
+          2,
+          3,
+          3
+        ],
+        [
+          1,
+          1,
+          4,
+          3,
+          0
+        ],
+        [
+          3,
+          1,
+          3,
+          4,
+          3
+        ]
+      ],
+      "expected": {
+        "axis": "column",
+        "index": 5,
+        "score": 11
+      },
+      "column_cost": 3,
+      "row_cost": 5
+    },
+    "score": 0,
+    "solved": false,
+    "actual": {
+      "axis": "column",
+      "index": 5,
+      "score": 11
+    },
+    "expected": {
+      "axis": "column",
+      "index": 5,
+      "score": 11
+    },
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "board": [
+      [
+        0,
+        2,
+        2,
+        0,
+        0
+      ],
+      [
+        4,
+        0,
+        3,
+        1,
+        3
+      ],
+      [
+        1,
+        1,
+        2,
+        2,
+        0
+      ],
+      [
+        3,
+        1,
+        2,
+        3,
+        3
+      ],
+      [
+        1,
+        1,
+        4,
+        3,
+        0
+      ],
+      [
+        3,
+        1,
+        3,
+        4,
+        3
+      ]
+    ]
+  }
+}

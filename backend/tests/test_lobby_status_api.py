@@ -147,6 +147,128 @@ def test_lobby_admin_mutations_require_teacher_or_admin(client, teacher_headers)
     )
     assert student_status_change.status_code == 403
 
+    student_patch = client.patch(
+        f"/api/v1/lobbies/{created_by_teacher['lobby_id']}",
+        json={"title": "Student Rename"},
+        headers=student_headers,
+    )
+    assert student_patch.status_code == 403
+
+    student_delete = client.delete(
+        f"/api/v1/lobbies/{created_by_teacher['lobby_id']}",
+        headers=student_headers,
+    )
+    assert student_delete.status_code == 403
+
+
+def test_teacher_can_patch_lobby_settings(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    lobby = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+
+    patched = client.patch(
+        f"/api/v1/lobbies/{lobby['lobby_id']}",
+        json={
+            "title": "Updated Lobby",
+            "access": "code",
+            "access_code": "CLASS-42",
+            "max_teams": 12,
+            "auto_delete_training_runs_days": 7,
+        },
+        headers=teacher_headers,
+    )
+    assert patched.status_code == 200, patched.json()
+    payload = patched.json()
+    assert payload["title"] == "Updated Lobby"
+    assert payload["access"] == "code"
+    assert payload["max_teams"] == 12
+    assert payload["auto_delete_training_runs_days"] == 7
+
+    cleared_retention = client.patch(
+        f"/api/v1/lobbies/{lobby['lobby_id']}",
+        json={"auto_delete_training_runs_days": None},
+        headers=teacher_headers,
+    )
+    assert cleared_retention.status_code == 200, cleared_retention.json()
+    assert cleared_retention.json()["auto_delete_training_runs_days"] is None
+
+
+def test_teacher_stop_lobby_cancels_active_runs_and_clears_queue(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    team = _create_ready_team(client, game_id=game["game_id"], captain="captain-stop", name="Stop Team")
+    lobby = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    client.post(
+        f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+        json={},
+        headers=teacher_headers,
+    )
+    client.post(
+        f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
+        json={"ready": True},
+        headers=teacher_headers,
+    )
+    run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "captain-stop",
+            "run_kind": "training_match",
+            "lobby_id": lobby["lobby_id"],
+        },
+        headers=teacher_headers,
+    ).json()
+    client.post(f"/api/v1/runs/{run['run_id']}/queue", headers=teacher_headers)
+
+    stopped = client.post(
+        f"/api/v1/lobbies/{lobby['lobby_id']}/status",
+        json={"status": "stopped"},
+        headers=teacher_headers,
+    )
+    assert stopped.status_code == 200, stopped.json()
+    payload = stopped.json()
+    assert payload["status"] == "stopped"
+    assert payload["last_scheduled_run_ids"] == []
+    team_state = next(item for item in payload["teams"] if item["team_id"] == team["team_id"])
+    assert team_state["ready"] is False
+    assert "остановлено" in (team_state["blocker_reason"] or "").lower()
+
+    canceled = client.get(f"/api/v1/runs/{run['run_id']}", headers=teacher_headers)
+    assert canceled.status_code == 200
+    assert canceled.json()["status"] == "canceled"
+
+    restarted = client.post(
+        f"/api/v1/lobbies/{lobby['lobby_id']}/status",
+        json={"status": "open"},
+        headers=teacher_headers,
+    )
+    assert restarted.status_code == 200, restarted.json()
+    assert restarted.json()["status"] == "open"
+
+
+def test_teacher_delete_lobby_removes_training_runs(client, teacher_headers) -> None:
+    game = _create_game(client, teacher_headers)
+    team = _create_ready_team(client, game_id=game["game_id"], captain="captain-delete", name="Delete Team")
+    lobby = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+    run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": team["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "captain-delete",
+            "run_kind": "training_match",
+            "lobby_id": lobby["lobby_id"],
+        },
+        headers=teacher_headers,
+    ).json()
+
+    deleted = client.delete(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert deleted.status_code == 204
+
+    missing_lobby = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert missing_lobby.status_code == 404
+    missing_run = client.get(f"/api/v1/runs/{run['run_id']}", headers=teacher_headers)
+    assert missing_run.status_code == 404
+
 
 def test_lobby_participant_actions_require_session(client, teacher_headers) -> None:
     game = _create_game(client, teacher_headers)

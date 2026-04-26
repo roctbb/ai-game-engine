@@ -1,4 +1,4 @@
-export type GameMode = 'single_task' | 'small_match' | 'massive_lobby';
+export type GameMode = 'single_task' | 'multiplayer' | 'small_match' | 'massive_lobby';
 export type CatalogMetadataStatus = 'draft' | 'ready' | 'archived';
 export type UserRole = 'student' | 'teacher' | 'admin';
 export type AuthProvider = 'dev' | 'geekclass';
@@ -19,6 +19,8 @@ export interface GameDto {
   difficulty: string | null;
   learning_section: string | null;
   topics: string[];
+  min_players_per_match: number | null;
+  max_players_per_match: number | null;
   catalog_metadata_status: CatalogMetadataStatus;
   active_version_id: string;
   versions: GameVersionDto[];
@@ -190,7 +192,7 @@ export interface WorkerDto {
 
 export type LobbyKind = 'training' | 'competition';
 export type LobbyAccess = 'public' | 'code';
-export type LobbyStatus = 'draft' | 'open' | 'running' | 'paused' | 'updating' | 'closed';
+export type LobbyStatus = 'draft' | 'open' | 'running' | 'paused' | 'stopped' | 'updating' | 'closed';
 
 export interface LobbyTeamStateDto {
   team_id: string;
@@ -207,6 +209,19 @@ export interface LobbyParticipantStatsDto {
   average_score: number | null;
 }
 
+export interface LobbyMatchGroupDto {
+  group_id: string;
+  batch_id: string;
+  run_ids: string[];
+  team_ids: string[];
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  replay_frame_count: number;
+  replay_frame_index: number;
+  winner_team_ids: string[];
+}
+
 export interface LobbyDto {
   lobby_id: string;
   game_id: string;
@@ -216,6 +231,7 @@ export interface LobbyDto {
   access: LobbyAccess;
   status: LobbyStatus;
   max_teams: number;
+  auto_delete_training_runs_days: number | null;
   teams: LobbyTeamStateDto[];
   last_scheduled_run_ids: string[];
   my_team_id: string | null;
@@ -227,6 +243,19 @@ export interface LobbyDto {
   current_run_ids: string[];
   archived_run_ids: string[];
   participant_stats: LobbyParticipantStatsDto[];
+  cycle_phase: string;
+  cycle_phase_label: string;
+  cycle_message: string;
+  cycle_started_at: string | null;
+  replay_started_at: string | null;
+  replay_until: string | null;
+  result_until: string | null;
+  cycle_frame_ms: number;
+  cycle_replay_frame_index: number;
+  cycle_replay_frame_count: number;
+  cycle_winner_team_ids: string[];
+  current_match_groups: LobbyMatchGroupDto[];
+  archived_match_groups: LobbyMatchGroupDto[];
 }
 
 export interface LobbyCurrentRunDto {
@@ -298,6 +327,7 @@ export interface CompetitionDto {
   tie_break_policy: TieBreakPolicy;
   code_policy: CompetitionCodePolicy;
   advancement_top_k: number;
+  min_match_size: number;
   match_size: number;
   status: CompetitionStatus;
   entrants: CompetitionEntrantDto[];
@@ -353,11 +383,19 @@ export interface RunWatchContextDto {
   run_id: string;
   game_id: string;
   game_slug: string;
+  game_title: string;
   run_kind: 'single_task' | 'training_match' | 'competition_match';
   status: 'created' | 'queued' | 'running' | 'finished' | 'failed' | 'timeout' | 'canceled';
   renderer_entrypoint: string | null;
   renderer_url: string | null;
   renderer_protocol: string;
+  participants: Array<{
+    run_id: string;
+    team_id: string;
+    display_name: string;
+    captain_user_id: string;
+    is_current: boolean;
+  }>;
 }
 
 export type StreamChannel = 'run' | 'lobby' | 'lobbies' | 'competition';
@@ -386,6 +424,12 @@ export interface ReplayDto {
   updated_at: string;
 }
 
+export interface RendererPreviewDto {
+  tick: number;
+  phase: string;
+  frame: Record<string, unknown>;
+}
+
 export interface AuthOptionsDto {
   dev_login_enabled: boolean;
   geekclass_enabled: boolean;
@@ -401,6 +445,7 @@ export interface SessionDto {
 
 const API_BASE = '/api/v1';
 const SESSION_STORAGE_KEY = 'agp_session_id';
+let inMemorySessionId = '';
 
 class ApiError extends Error {
   constructor(message: string) {
@@ -410,14 +455,18 @@ class ApiError extends Error {
 }
 
 export function getStoredSessionId(): string {
-  return localStorage.getItem(SESSION_STORAGE_KEY) ?? '';
+  if (inMemorySessionId) return inMemorySessionId;
+  inMemorySessionId = localStorage.getItem(SESSION_STORAGE_KEY) ?? '';
+  return inMemorySessionId;
 }
 
 export function storeSessionId(sessionId: string): void {
+  inMemorySessionId = sessionId;
   localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
 }
 
 export function clearStoredSessionId(): void {
+  inMemorySessionId = '';
   localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
@@ -446,6 +495,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // ignore parse errors and keep default status text
     }
     throw new ApiError(`API ${response.status}: ${details}`);
+  }
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return undefined as T;
+  }
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    const text = await response.text();
+    return (text || undefined) as T;
   }
   return (await response.json()) as T;
 }
@@ -592,6 +649,10 @@ export function getGameTemplates(gameId: string): Promise<GameTemplatesDto> {
 
 export function getGameDocs(gameId: string): Promise<GameDocumentationDto> {
   return request<GameDocumentationDto>(`/games/${encodeURIComponent(gameId)}/docs`);
+}
+
+export function getRendererPreview(gameSlug: string): Promise<RendererPreviewDto> {
+  return request<RendererPreviewDto>(`/renderers/${encodeURIComponent(gameSlug)}/renderer/preview.json`);
 }
 
 export function updateGameCatalogMetadata(payload: {
@@ -808,10 +869,32 @@ export function createLobby(payload: {
   access: LobbyAccess;
   access_code?: string | null;
   max_teams: number;
+  auto_delete_training_runs_days?: number | null;
 }): Promise<LobbyDto> {
   return request<LobbyDto>('/lobbies', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export function updateLobby(payload: {
+  lobby_id: string;
+  title?: string | null;
+  access?: LobbyAccess | null;
+  access_code?: string | null;
+  max_teams?: number | null;
+  auto_delete_training_runs_days?: number | null;
+}): Promise<LobbyDto> {
+  const { lobby_id, ...body } = payload;
+  return request<LobbyDto>(`/lobbies/${encodeURIComponent(lobby_id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteLobby(lobbyId: string): Promise<void> {
+  return request<void>(`/lobbies/${encodeURIComponent(lobbyId)}`, {
+    method: 'DELETE',
   });
 }
 
@@ -837,6 +920,12 @@ export function leaveLobby(payload: {
   });
 }
 
+export function addLobbyDemoBot(lobbyId: string): Promise<LobbyDto> {
+  return request<LobbyDto>(`/lobbies/${encodeURIComponent(lobbyId)}/admin-bots`, {
+    method: 'POST',
+  });
+}
+
 export function setLobbyReady(payload: {
   lobby_id: string;
   team_id: string;
@@ -850,7 +939,7 @@ export function setLobbyReady(payload: {
 
 export function setLobbyStatus(payload: {
   lobby_id: string;
-  status: Extract<LobbyStatus, 'open' | 'paused' | 'closed'>;
+  status: Extract<LobbyStatus, 'open' | 'paused' | 'stopped' | 'closed'>;
 }): Promise<LobbyDto> {
   return request<LobbyDto>(`/lobbies/${encodeURIComponent(payload.lobby_id)}/status`, {
     method: 'POST',

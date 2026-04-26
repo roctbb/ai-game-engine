@@ -5,14 +5,15 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию solve(row), которая возвращает список команд water/skip для клеток грядки."
-description: Фермер проходит одномерную грядку и решает, где поливать растения.
+player_instruction: "Определите функцию solve(row), которая возвращает water для растений с влажностью меньше 3, иначе skip."
+description: Фермер проходит одномерную грядку, проверяет растение и влажность каждой клетки и экономит воду.
 difficulty: easy
 learning_section: Циклы и повторения
 topics:
   - for
   - range
   - циклы
+  - условия
 slots:
   - key: agent
     title: Код решения

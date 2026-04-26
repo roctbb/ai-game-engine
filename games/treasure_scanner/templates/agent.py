@@ -1,11 +1,14 @@
 def scan(board):
     # board[x][y]: сначала столбец x, потом строка y.
-    # Ответ: {"axis": "column" или "row", "index": номер, "score": сумма}
-    best = {"axis": "column", "index": 0, "score": sum(board[0])}
+    # Столбец стоит 3 энергии, строка стоит 5 энергии.
+    # Ответ: {"axis": "column" или "row", "index": номер, "score": прибыль}
+    column_cost = 3
+    row_cost = 5
+    best = {"axis": "column", "index": 0, "score": sum(board[0]) - column_cost}
 
     # Сначала проверяем все столбцы.
     for x in range(len(board)):
-        score = sum(board[x])
+        score = sum(board[x]) - column_cost
         if score > best["score"]:
             best = {"axis": "column", "index": x, "score": score}
 
@@ -16,6 +19,7 @@ def scan(board):
         score = 0
         for x in range(len(board)):
             score += board[x][y]
+        score -= row_cost
         # TODO: если сумма строки лучше best["score"], обновите best.
 
     return best

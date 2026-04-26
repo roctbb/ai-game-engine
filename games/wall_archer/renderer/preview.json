@@ -1,0 +1,141 @@
+{
+  "frame": {
+    "actual": [
+      "reload",
+      "wait",
+      "shoot",
+      "shield",
+      "wait",
+      "shoot",
+      "shoot",
+      "wait"
+    ],
+    "difficulty": "easy",
+    "expected": [
+      "reload",
+      "wait",
+      "shoot",
+      "shield",
+      "wait",
+      "shoot",
+      "shoot",
+      "wait"
+    ],
+    "kind": "wall_archer",
+    "learning_section": "Условия и выбор",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "cases": [
+        {
+          "arrows": 0,
+          "enemy": {
+            "armor": 1,
+            "damage": 18,
+            "distance": 5,
+            "hp": 36,
+            "is_aiming": false
+          },
+          "expected": "reload",
+          "hp": 80,
+          "threat": 8
+        },
+        {
+          "arrows": 2,
+          "enemy": {
+            "armor": 2,
+            "damage": 12,
+            "distance": 2,
+            "hp": 44,
+            "is_aiming": false
+          },
+          "expected": "wait",
+          "hp": 78,
+          "threat": 8
+        },
+        {
+          "arrows": 1,
+          "enemy": {
+            "armor": 0,
+            "damage": 9,
+            "distance": 4,
+            "hp": 20,
+            "is_aiming": false
+          },
+          "expected": "shoot",
+          "hp": 70,
+          "threat": 1
+        },
+        {
+          "arrows": 2,
+          "enemy": {
+            "armor": 1,
+            "damage": 35,
+            "distance": 6,
+            "hp": 45,
+            "is_aiming": true
+          },
+          "expected": "shield",
+          "hp": 28,
+          "threat": 23
+        },
+        {
+          "arrows": 3,
+          "enemy": {
+            "armor": 3,
+            "damage": 18,
+            "distance": 7,
+            "hp": 70,
+            "is_aiming": true
+          },
+          "expected": "wait",
+          "hp": 75,
+          "threat": 4
+        },
+        {
+          "arrows": 1,
+          "enemy": {
+            "armor": 0,
+            "damage": 25,
+            "distance": 3,
+            "hp": 75,
+            "is_aiming": true
+          },
+          "expected": "shoot",
+          "hp": 30,
+          "threat": 19
+        },
+        {
+          "arrows": 1,
+          "enemy": {
+            "armor": 0,
+            "damage": 8,
+            "distance": 8,
+            "hp": 18,
+            "is_aiming": false
+          },
+          "expected": "shoot",
+          "hp": 90,
+          "threat": -8
+        },
+        {
+          "arrows": 2,
+          "enemy": {
+            "armor": 3,
+            "damage": 12,
+            "distance": 4,
+            "hp": 80,
+            "is_aiming": false
+          },
+          "expected": "wait",
+          "hp": 85,
+          "threat": 4
+        }
+      ],
+      "formula": "threat = damage - distance*2"
+    },
+    "title": "Лучник на стене"
+  }
+}

@@ -169,8 +169,9 @@ const sortedLobbies = computed(() => {
     draft: 1,
     running: 2,
     paused: 3,
-    updating: 4,
-    closed: 5,
+    stopped: 4,
+    updating: 5,
+    closed: 6,
   };
   return [...lobbies.value].sort((a, b) => weight[a.status] - weight[b.status] || a.title.localeCompare(b.title));
 });
@@ -189,6 +190,7 @@ function statusLabel(status: LobbyStatus): string {
     open: 'открыто',
     running: 'игра идет',
     paused: 'пауза',
+    stopped: 'остановлено',
     updating: 'обновляется',
     closed: 'закрыто',
   };
@@ -198,7 +200,7 @@ function statusLabel(status: LobbyStatus): string {
 function statusClass(status: LobbyStatus): string {
   if (status === 'open' || status === 'draft') return 'agp-pill--primary';
   if (status === 'running') return 'agp-pill--warning';
-  if (status === 'closed') return 'agp-pill--danger';
+  if (status === 'closed' || status === 'stopped') return 'agp-pill--danger';
   return 'agp-pill--neutral';
 }
 
@@ -211,7 +213,7 @@ function isLobbyCatalogGame(game: GameDto): boolean {
 }
 
 function canEnterLobby(lobby: LobbyDto): boolean {
-  if (lobby.status === 'closed' || lobby.status === 'updating') return false;
+  if (lobby.status === 'closed' || lobby.status === 'updating' || lobby.status === 'stopped') return canManage.value;
   if (canManage.value) return true;
   if (lobby.status === 'paused') return Boolean(lobby.my_team_id);
   if (needsAccessCode(lobby)) return Boolean((accessCodeByLobbyId[lobby.lobby_id] ?? '').trim());

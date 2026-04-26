@@ -1,14 +1,15 @@
 <template>
-  <section class="agp-grid">
-    <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+  <section class="agp-grid admin-sources-page">
+    <header class="agp-card p-4 admin-sources-hero">
       <div>
+        <p class="admin-sources-kicker mb-1">{{ canManageWorkers ? 'Системный контур' : 'Библиотека игр' }}</p>
         <h1 class="h3 mb-1">{{ pageTitle }}</h1>
         <p class="text-muted mb-0">
           {{ pageSubtitle }}
         </p>
       </div>
       <div class="d-flex gap-2 align-items-center">
-        <span v-if="syncingSourcesCount > 0" class="badge text-bg-info">
+        <span v-if="syncingSourcesCount > 0" class="admin-source-status admin-source-status--syncing">
           Синхронизация: {{ syncingSourcesCount }}
         </span>
         <button
@@ -32,27 +33,26 @@
     </article>
 
     <article class="agp-card p-3" v-if="!canManageSources">
-      <div class="text-warning-emphasis fw-semibold">Требуется роль преподавателя или администратора</div>
-      <div class="small text-muted">
-        Для текущего пользователя действия создания и синхронизации источников недоступны.
+      <div class="agp-empty-state agp-empty-state--compact">
+        Требуется роль преподавателя или администратора. Для текущего пользователя действия создания и синхронизации источников недоступны.
       </div>
     </article>
 
-    <article v-if="canManageSources" class="agp-card p-3">
+    <article v-if="canManageSources" class="agp-card p-3 admin-source-create-card">
       <h2 class="h6">Добавить игру из Git</h2>
       <p class="small text-muted mb-3">
         После добавления источник можно синхронизировать вручную. Новые игры появятся в разделе «Игры» после успешной сборки.
       </p>
-      <div class="row g-2 align-items-end">
-        <div class="col-12 col-lg-7">
+      <div class="admin-source-create-grid">
+        <div>
           <label class="form-label small">Репозиторий</label>
           <input v-model.trim="repoUrl" class="form-control mono" placeholder="https://github.com/org/repo" />
         </div>
-        <div class="col-6 col-lg-2">
+        <div>
           <label class="form-label small">Ветка</label>
           <input v-model.trim="defaultBranch" class="form-control mono" />
         </div>
-        <div class="col-6 col-lg-3">
+        <div>
           <button
             class="btn btn-dark w-100"
             :disabled="!canManageSources || isCreating || !repoUrl || !defaultBranch"
@@ -71,9 +71,9 @@
     <div class="agp-grid agp-grid--2">
       <article class="agp-card p-3">
         <h2 class="h6">Источники игр</h2>
-        <div v-if="isLoading" class="text-muted small">Загрузка...</div>
+        <div v-if="isLoading" class="agp-loading-state agp-loading-state--compact">Загрузка источников...</div>
         <div v-else class="table-responsive">
-          <table class="table align-middle mb-0">
+          <table class="table align-middle mb-0 admin-source-table">
             <thead>
               <tr>
                 <th>Репозиторий</th>
@@ -92,13 +92,13 @@
                 <td class="small mono">{{ source.repo_url }}</td>
                 <td class="small mono">{{ source.default_branch }}</td>
                 <td>
-                  <span class="badge mono" :class="sourceStatusBadgeClass(source.status)">
+                  <span class="admin-source-status mono" :class="sourceStatusBadgeClass(source.status)">
                     {{ sourceStatusLabel(source.status) }}
                   </span>
                 </td>
                 <td>
                   <div class="d-flex flex-column gap-1">
-                    <span class="badge mono" :class="syncStatusBadgeClass(source.last_sync_status)">
+                    <span class="admin-source-status mono" :class="syncStatusBadgeClass(source.last_sync_status)">
                       {{ syncStatusLabel(source.last_sync_status) }}
                     </span>
                     <span class="small text-muted" v-if="source.last_synced_commit_sha">
@@ -135,7 +135,9 @@
                 </td>
               </tr>
               <tr v-if="sources.length === 0">
-                <td colspan="5" class="text-muted small">Источники пока не добавлены.</td>
+                <td colspan="5">
+                  <div class="agp-empty-state agp-empty-state--compact">Источники пока не добавлены.</div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -152,7 +154,7 @@
                 <div class="fw-semibold">{{ selectedSource.repo_url }}</div>
                 <div class="small text-muted">{{ selectedSource.default_branch }}</div>
               </div>
-              <span class="badge mono" :class="sourceStatusBadgeClass(selectedSource.status)">
+              <span class="admin-source-status mono" :class="sourceStatusBadgeClass(selectedSource.status)">
                 {{ sourceStatusLabel(selectedSource.status) }}
               </span>
             </div>
@@ -161,7 +163,7 @@
 
             <div class="small mb-1">
               Последняя синхронизация:
-              <span class="badge mono" :class="syncStatusBadgeClass(selectedSource.last_sync_status)">
+              <span class="admin-source-status mono" :class="syncStatusBadgeClass(selectedSource.last_sync_status)">
                 {{ syncStatusLabel(selectedSource.last_sync_status) }}
               </span>
             </div>
@@ -212,7 +214,7 @@
           </div>
 
           <div class="table-responsive">
-            <table class="table align-middle mb-0">
+            <table class="table align-middle mb-0 admin-source-table">
               <thead>
                 <tr>
                   <th>Начало</th>
@@ -225,7 +227,7 @@
                 <tr v-for="item in history" :key="item.sync_id">
                   <td class="small mono">{{ formatDate(item.started_at) }}</td>
                   <td>
-                    <span class="badge mono" :class="syncStatusBadgeClass(item.status)">
+                    <span class="admin-source-status mono" :class="syncStatusBadgeClass(item.status)">
                       {{ syncStatusLabel(item.status) }}
                     </span>
                   </td>
@@ -268,9 +270,9 @@
       </div>
 
       <div v-if="workerErrorMessage" class="text-danger small mb-2">{{ workerErrorMessage }}</div>
-      <div v-if="workersLoading" class="text-muted small">Загрузка исполнителей...</div>
+      <div v-if="workersLoading" class="agp-loading-state agp-loading-state--compact">Загрузка исполнителей...</div>
       <div v-else class="table-responsive">
-        <table class="table align-middle mb-0">
+        <table class="table align-middle mb-0 admin-source-table">
           <thead>
             <tr>
               <th>Исполнитель</th>
@@ -290,7 +292,7 @@
                 </details>
               </td>
               <td>
-                <span class="badge mono" :class="workerStatusBadgeClass(worker.status)">
+                <span class="admin-source-status mono" :class="workerStatusBadgeClass(worker.status)">
                   {{ workerStatusLabel(worker.status) }}
                 </span>
               </td>
@@ -408,10 +410,10 @@ function shortSha(value: string): string {
 }
 
 function syncStatusBadgeClass(status: GameSourceSyncStatus): string {
-  if (status === 'finished') return 'text-bg-success';
-  if (status === 'failed') return 'text-bg-danger';
-  if (status === 'syncing') return 'text-bg-info';
-  return 'text-bg-secondary';
+  if (status === 'finished') return 'admin-source-status--ok';
+  if (status === 'failed') return 'admin-source-status--danger';
+  if (status === 'syncing') return 'admin-source-status--syncing';
+  return 'admin-source-status--muted';
 }
 
 function syncStatusLabel(status: GameSourceSyncStatus): string {
@@ -422,7 +424,7 @@ function syncStatusLabel(status: GameSourceSyncStatus): string {
 }
 
 function sourceStatusBadgeClass(status: GameSourceStatus): string {
-  return status === 'active' ? 'text-bg-success' : 'text-bg-secondary';
+  return status === 'active' ? 'admin-source-status--ok' : 'admin-source-status--muted';
 }
 
 function sourceStatusLabel(status: GameSourceStatus): string {
@@ -432,10 +434,10 @@ function sourceStatusLabel(status: GameSourceStatus): string {
 }
 
 function workerStatusBadgeClass(status: WorkerStatus): string {
-  if (status === 'online') return 'text-bg-success';
-  if (status === 'draining') return 'text-bg-warning';
-  if (status === 'offline') return 'text-bg-secondary';
-  return 'text-bg-danger';
+  if (status === 'online') return 'admin-source-status--ok';
+  if (status === 'draining') return 'admin-source-status--warning';
+  if (status === 'offline') return 'admin-source-status--muted';
+  return 'admin-source-status--danger';
 }
 
 function workerStatusLabel(status: WorkerStatus): string {
@@ -672,9 +674,134 @@ watch(
 </script>
 
 <style scoped>
+.admin-sources-page {
+  gap: 0.9rem;
+}
+
+.admin-sources-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
+    radial-gradient(circle at 88% 12%, rgba(37, 99, 235, 0.14), transparent 14rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 250, 0.9)),
+    url("data:image/svg+xml,%3Csvg width='184' height='112' viewBox='0 0 184 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M22 24h42v28H22zM80 18h34v34H80zM132 32h30v24h-30zM44 72h36v20H44zM104 70h42v22h-42z'/%3E%3Cpath d='M64 38h16M114 35h18M80 82h24M96 52v18'/%3E%3C/g%3E%3C/svg%3E");
+  background-position: center, center, center, right 1rem center;
+  background-repeat: no-repeat;
+}
+
+.admin-sources-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+}
+
+.admin-sources-hero > * {
+  position: relative;
+}
+
+.admin-sources-kicker {
+  color: #0f766e;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .agp-status-card {
   border-color: rgba(14, 116, 144, 0.22);
-  background: #f0f9ff;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(14, 165, 233, 0.16), transparent 12rem),
+    #f0f9ff;
+}
+
+.admin-source-create-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 12rem),
+    #fff;
+}
+
+.admin-source-create-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.18rem;
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.72), rgba(37, 99, 235, 0.5), transparent);
+}
+
+.admin-source-create-card > * {
+  position: relative;
+}
+
+.admin-source-create-grid {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) minmax(8rem, 0.28fr) minmax(9rem, 0.28fr);
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.admin-source-table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: rgba(248, 250, 252, 0.82);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.admin-source-table thead th {
+  color: var(--agp-text-muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-source-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.16rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.admin-source-status--ok {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.admin-source-status--syncing {
+  border-color: #99f6e4;
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.admin-source-status--warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.admin-source-status--danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.admin-source-status--muted {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
 }
 
 .source-sync-summary {
@@ -721,12 +848,32 @@ watch(
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #2563eb;
+  background: linear-gradient(90deg, #2563eb, #14b8a6);
 }
 
 .worker-label-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+@media (max-width: 1000px) {
+  .admin-sources-hero {
+    flex-direction: column;
+  }
+
+  .admin-source-create-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-source-create-grid > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-source-create-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

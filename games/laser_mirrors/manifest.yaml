@@ -5,14 +5,15 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию trace(board, start_x, start_y, dx, dy), которая возвращает True, если луч попал в цель."
-description: Луч движется по матрице, отражается от зеркал и должен попасть в цель.
+player_instruction: "Определите функцию trace(board, start_x, start_y, dx, dy), которая симулирует луч до цели, стены, поглотителя, выхода за поле или повторения состояния."
+description: Луч идет по большой матрице, несколько раз отражается от зеркал, избегает поглотителей и должен попасть в цель.
 difficulty: hard
 learning_section: Симуляции мира
 topics:
   - симуляция
   - координаты
   - while
+  - отражение
 slots:
   - key: agent
     title: Код решения

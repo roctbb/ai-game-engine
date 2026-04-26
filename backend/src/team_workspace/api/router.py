@@ -80,7 +80,8 @@ def update_slot_code(
         if session.role in {UserRole.TEACHER, UserRole.ADMIN}
         else session.nickname
     )
-    container.competition.assert_team_code_can_be_updated(team_id=team_id)
+    if session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
+        container.competition.assert_team_code_can_be_updated(team_id=team_id)
     team = container.team_workspace.update_slot_code(
         team_id=team_id,
         actor_user_id=actor_user_id,

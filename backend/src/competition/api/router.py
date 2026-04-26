@@ -65,6 +65,7 @@ def _to_response(competition: Competition) -> CompetitionResponse:
         tie_break_policy=competition.tie_break_policy,
         code_policy=competition.code_policy,
         advancement_top_k=competition.advancement_top_k,
+        min_match_size=competition.min_match_size,
         match_size=competition.match_size,
         status=competition.status,
         entrants=[

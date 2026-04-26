@@ -1,0 +1,21 @@
+{
+  "frame": {
+    "base_hp": 45,
+    "base_hp_max": 45,
+    "budget": 18,
+    "enemies": [],
+    "enemies_destroyed": 0,
+    "enemies_spawned": 0,
+    "kind": "tower_defense",
+    "leaks": 0,
+    "title": "Защита базы башнями",
+    "towers": [
+      0,
+      0,
+      0
+    ],
+    "track_length": 14
+  },
+  "phase": "running",
+  "tick": 0
+}

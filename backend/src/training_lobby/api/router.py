@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.auth import get_current_session, require_roles
-from app.dependencies import ServiceContainer, get_container
+from app.dependencies import ServiceContainer, get_container, get_games_root
 from competition.application.service import CreateCompetitionInput
 from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionStatus, TieBreakPolicy
+from execution.domain.model import RunKind, RunStatus
+from game_catalog.infrastructure.manifest_loader import find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event
-from shared.kernel import ForbiddenError, InvariantViolationError
+from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
 from training_lobby.api.schemas import (
     CreateLobbyRequest,
     JoinLobbyRequest,
@@ -22,13 +26,14 @@ from training_lobby.api.schemas import (
     LobbyParticipantStatsResponse,
     LobbyResponse,
     MatchmakingTickRequest,
+    PatchLobbyRequest,
     PlayLobbyRequest,
     StartLobbyCompetitionRequest,
     SetReadyRequest,
     SetLobbyStatusRequest,
     SwitchGameVersionRequest,
 )
-from training_lobby.application.service import CreateLobbyInput, LobbyLiveView
+from training_lobby.application.service import CreateLobbyInput, LobbyLiveView, LobbyMatchGroupView
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
 
 router = APIRouter(prefix="/lobbies", tags=["training_lobby"])
@@ -38,6 +43,24 @@ _LOBBY_LOCKING_COMPETITION_STATUSES = {
     CompetitionStatus.PAUSED,
     CompetitionStatus.COMPLETED,
 }
+_DEMO_BOT_NAMES = (
+    "Бот Евгений",
+    "Бот Анна",
+    "Бот Максим",
+    "Бот София",
+    "Бот Артем",
+    "Бот Мария",
+    "Бот Илья",
+    "Бот Алиса",
+    "Бот Кирилл",
+    "Бот Полина",
+    "Бот Даниил",
+    "Бот Варвара",
+    "Бот Никита",
+    "Бот Ксения",
+    "Бот Роман",
+    "Бот Вера",
+)
 
 
 def _ensure_can_control_team(container: ServiceContainer, session: AppSession, team_id: str) -> None:
@@ -59,6 +82,7 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
         access=typed.access,
         status=typed.status,
         max_teams=typed.max_teams,
+        auto_delete_training_runs_days=typed.auto_delete_training_runs_days,
         teams=[
             {
                 "team_id": team_state.team_id,
@@ -87,7 +111,35 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
             )
             for item in ([] if redact_private else live_view.participant_stats)
         ],
+        cycle_phase=live_view.cycle_phase,
+        cycle_phase_label=live_view.cycle_phase_label,
+        cycle_message=live_view.cycle_message,
+        cycle_started_at=live_view.cycle_started_at,
+        replay_started_at=live_view.replay_started_at,
+        replay_until=live_view.replay_until,
+        result_until=live_view.result_until,
+        cycle_frame_ms=live_view.cycle_frame_ms,
+        cycle_replay_frame_index=live_view.cycle_replay_frame_index,
+        cycle_replay_frame_count=live_view.cycle_replay_frame_count,
+        cycle_winner_team_ids=[] if redact_private else list(live_view.cycle_winner_team_ids),
+        current_match_groups=[] if redact_private else [_match_group_response(item) for item in live_view.current_match_groups],
+        archived_match_groups=[] if redact_private else [_match_group_response(item) for item in live_view.archived_match_groups],
     )
+
+
+def _match_group_response(item: LobbyMatchGroupView) -> dict[str, object]:
+    return {
+        "group_id": item.group_id,
+        "batch_id": item.batch_id,
+        "run_ids": list(item.run_ids),
+        "team_ids": list(item.team_ids),
+        "status": item.status,
+        "started_at": item.started_at,
+        "finished_at": item.finished_at,
+        "replay_frame_count": item.replay_frame_count,
+        "replay_frame_index": item.replay_frame_index,
+        "winner_team_ids": list(item.winner_team_ids),
+    }
 
 
 def _to_summary_response(
@@ -115,6 +167,7 @@ def _to_summary_response(
         access=lobby.access,
         status=lobby.status,
         max_teams=lobby.max_teams,
+        auto_delete_training_runs_days=None if redact_private else lobby.auto_delete_training_runs_days,
         teams=[
             {
                 "team_id": team_state.team_id,
@@ -180,6 +233,60 @@ def _kick_training_matchmaking_if_possible(container: ServiceContainer, lobby_id
         return
     try:
         container.training_lobby.run_matchmaking_cycle(lobby_id=lobby_id, requested_by="system")
+    except InvariantViolationError:
+        return
+
+
+def _next_demo_bot_name(container: ServiceContainer, lobby: Lobby) -> str:
+    existing_names: set[str] = set()
+    for team_id in lobby.teams:
+        try:
+            team = container.team_workspace.get_team(team_id)
+        except NotFoundError:
+            continue
+        if team.name:
+            existing_names.add(team.name)
+
+    for name in _DEMO_BOT_NAMES:
+        if name not in existing_names:
+            return name
+    for round_index in range(2, 10_000):
+        for name in _DEMO_BOT_NAMES:
+            candidate = f"{name} {round_index}"
+            if candidate not in existing_names:
+                return candidate
+    return f"Бот {uuid4().hex[:8]}"
+
+
+def _demo_bot_code_by_slot(container: ServiceContainer, lobby: Lobby) -> dict[str, str]:
+    game = container.game_catalog.get_game(lobby.game_id)
+    version = container.game_catalog.get_version(game_id=lobby.game_id, version_id=lobby.game_version_id)
+    try:
+        manifest_path = find_game_manifest_path(games_root=get_games_root(), game_id=game.slug)
+        manifest = load_game_manifest(manifest_path)
+    except InvariantViolationError as exc:
+        raise InvariantViolationError("Для игры не найден manifest с примерами") from exc
+
+    package_root = Path(manifest_path).parent
+    codes: dict[str, str] = {}
+    for slot_key in version.required_slot_keys:
+        demo_strategy = next((item for item in manifest.demo_strategies if item.slot_key == slot_key), None)
+        if demo_strategy is not None:
+            demo_path = package_root / demo_strategy.path
+            if demo_path.is_file():
+                codes[slot_key] = demo_path.read_text(encoding="utf-8")
+                continue
+        template_path = package_root / "templates" / f"{slot_key}.py"
+        if template_path.is_file():
+            codes[slot_key] = template_path.read_text(encoding="utf-8")
+            continue
+        raise InvariantViolationError(f"Для роли {slot_key} нет примера или шаблона")
+    return codes
+
+
+def _cleanup_old_training_runs_if_possible(container: ServiceContainer, lobby_id: str) -> None:
+    try:
+        container.training_lobby.cleanup_old_training_runs(lobby_id=lobby_id)
     except InvariantViolationError:
         return
 
@@ -318,9 +425,22 @@ def create_lobby(
             access=request.access,
             access_code=request.access_code,
             max_teams=request.max_teams,
+            auto_delete_training_runs_days=request.auto_delete_training_runs_days,
         )
     )
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
+
+
+@router.post("/matchmaking/tick", response_model=list[LobbyResponse])
+def run_due_matchmaking_ticks(
+    session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> list[LobbyResponse]:
+    lobbies = container.training_lobby.run_due_matchmaking_cycles(requested_by="system")
+    return [
+        _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
+        for lobby in lobbies
+    ]
 
 
 @router.get("/{lobby_id}", response_model=LobbyResponse)
@@ -331,8 +451,42 @@ def get_lobby(
 ) -> LobbyResponse:
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
     _reopen_lobby_after_finished_competition_if_needed(container=container, lobby_id=lobby_id)
+    _cleanup_old_training_runs_if_possible(container=container, lobby_id=lobby_id)
+    container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
     _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname))
+
+
+@router.patch("/{lobby_id}", response_model=LobbyResponse)
+def patch_lobby(
+    lobby_id: str,
+    request: PatchLobbyRequest,
+    session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> LobbyResponse:
+    retention = request.auto_delete_training_runs_days if "auto_delete_training_runs_days" in request.model_fields_set else ...
+    kwargs = {
+        "title": request.title,
+        "access": request.access,
+        "access_code": request.access_code,
+        "max_teams": request.max_teams,
+    }
+    if retention is not ...:
+        kwargs["auto_delete_training_runs_days"] = retention
+    lobby = container.training_lobby.update_lobby_settings(lobby_id=lobby_id, **kwargs)
+    return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
+
+
+@router.delete("/{lobby_id}", status_code=204)
+def delete_lobby(
+    lobby_id: str,
+    _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> Response:
+    if _has_lobby_locking_competition(container=container, lobby_id=lobby_id):
+        raise InvariantViolationError("Нельзя удалить лобби, пока идет или ожидает завершения соревнование")
+    container.training_lobby.delete_lobby(lobby_id=lobby_id)
+    return Response(status_code=204)
 
 
 @router.get("/{lobby_id}/stream")
@@ -346,6 +500,8 @@ def stream_lobby(
 ) -> StreamingResponse:
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
     _reopen_lobby_after_finished_competition_if_needed(container=container, lobby_id=lobby_id)
+    _cleanup_old_training_runs_if_possible(container=container, lobby_id=lobby_id)
+    container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
     _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
@@ -357,6 +513,8 @@ def stream_lobby(
             if await request.is_disconnected():
                 break
             _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
+            _cleanup_old_training_runs_if_possible(container=container, lobby_id=lobby_id)
+            container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
             _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
             lobby_payload = _to_response(
                 container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
@@ -437,6 +595,7 @@ def play_lobby_as_user(
         access_code=request.access_code,
     )
     lobby = container.training_lobby.set_ready(lobby_id=lobby_id, team_id=team_id, ready=True)
+    container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
     if lobby.kind.value == "training" and lobby.status in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
         try:
             lobby = container.training_lobby.run_matchmaking_cycle(
@@ -484,8 +643,17 @@ def start_lobby_competition(
     lobby = container.training_lobby.get_lobby(lobby_id=lobby_id)
     if lobby.kind.value != "training":
         raise InvariantViolationError("Соревнование можно запускать только в training-лобби")
-    live_view = container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
-    if live_view.current_run_ids:
+    active_training_runs = [
+        run
+        for status in (RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING)
+        for run in container.execution.list_runs(
+            lobby_id=lobby_id,
+            run_kind=RunKind.TRAINING_MATCH,
+            status=status,
+            include_result_payload=False,
+        )
+    ]
+    if active_training_runs:
         raise InvariantViolationError("Нельзя начать соревнование, пока в лобби идут тренировочные игры")
     active_competition = next(
         (
@@ -619,6 +787,47 @@ def leave_lobby(
     if _has_lobby_locking_competition(container=container, lobby_id=lobby_id):
         raise InvariantViolationError("Во время соревнования выход из лобби запрещен")
     lobby = container.training_lobby.leave_team(lobby_id=lobby_id, team_id=team_id)
+    return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
+
+
+@router.post("/{lobby_id}/admin-bots", response_model=LobbyResponse)
+def add_admin_demo_bot(
+    lobby_id: str,
+    session: AppSession = Depends(require_roles(UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> LobbyResponse:
+    lobby = container.training_lobby.get_lobby(lobby_id=lobby_id)
+    if _has_lobby_locking_competition(container=container, lobby_id=lobby_id):
+        raise InvariantViolationError("Во время соревнования нельзя добавлять ботов")
+    if lobby.status not in {LobbyStatus.DRAFT, LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+        raise InvariantViolationError("В текущем статусе нельзя добавлять ботов")
+    if len(lobby.teams) >= lobby.max_teams:
+        raise InvariantViolationError("Лобби заполнено")
+
+    slot_codes = _demo_bot_code_by_slot(container=container, lobby=lobby)
+    bot_name = _next_demo_bot_name(container=container, lobby=lobby)
+    captain_user_id = f"bot:{lobby.lobby_id}:{uuid4().hex}"
+    team = container.team_workspace.create_team(
+        game_id=lobby.game_id,
+        name=bot_name,
+        captain_user_id=captain_user_id,
+    )
+    for slot_key, code in slot_codes.items():
+        container.team_workspace.update_slot_code(
+            team_id=team.team_id,
+            actor_user_id=captain_user_id,
+            slot_key=slot_key,
+            code=code,
+        )
+    lobby = container.training_lobby.join_team(
+        lobby_id=lobby.lobby_id,
+        team_id=team.team_id,
+        access_code=None,
+        bypass_access_code=True,
+    )
+    lobby = container.training_lobby.set_ready(lobby_id=lobby.lobby_id, team_id=team.team_id, ready=True)
+    if lobby.kind is LobbyKind.TRAINING and lobby.status in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+        _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby.lobby_id)
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
 
 

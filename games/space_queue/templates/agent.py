@@ -1,7 +1,10 @@
 def schedule(ships):
-    # ships - список словарей с id, priority, fuel и broken.
-    # Чем выше priority, тем раньше корабль. При равенстве раньше меньший fuel.
-    # TODO: отсортируйте ships по убыванию priority и возрастанию fuel.
+    # ships - список словарей с id, priority, fuel, broken,
+    # passengers и service_time.
+    # Срочность:
+    # priority*10 + passengers*2 + broken*20 + (10 - fuel) - service_time
+    # Чем больше срочность, тем раньше корабль.
+    # TODO: отсортируйте ships по убыванию срочности.
     ordered = ships
 
     result = []

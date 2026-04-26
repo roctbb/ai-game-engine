@@ -74,6 +74,10 @@
               <strong class="mono">{{ gameRoleCount(game) }}</strong>
             </div>
             <div>
+              <span>Матч</span>
+              <strong class="mono">{{ matchBoundsLabel(game) }}</strong>
+            </div>
+            <div>
               <span>Версий</span>
               <strong class="mono">{{ game.versions.length }}</strong>
             </div>
@@ -140,8 +144,14 @@ function isLobbyCatalogGame(game: GameDto): boolean {
 }
 
 function modeLabel(mode: GameMode): string {
-  if (mode === 'small_match' || mode === 'massive_lobby') return 'лобби';
+  if (mode === 'multiplayer' || mode === 'small_match' || mode === 'massive_lobby') return 'мультиплеер';
   return 'лобби';
+}
+
+function matchBoundsLabel(game: GameDto): string {
+  const min = game.min_players_per_match ?? 2;
+  const max = game.max_players_per_match ?? min;
+  return min === max ? String(min) : `${min}-${max}`;
 }
 
 function gameRoleCount(game: GameDto): number {

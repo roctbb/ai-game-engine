@@ -8,6 +8,8 @@ from shared.kernel import ConflictError, InvariantViolationError, NotFoundError,
 
 class GameMode(StrEnum):
     SINGLE_TASK = "single_task"
+    MULTIPLAYER = "multiplayer"
+    # Legacy values kept for backward compatibility with existing DB rows and old manifests.
     SMALL_MATCH = "small_match"
     MASSIVE_LOBBY = "massive_lobby"
 
@@ -52,6 +54,8 @@ class Game:
     difficulty: str | None = None
     learning_section: str | None = None
     topics: tuple[str, ...] = ()
+    min_players_per_match: int | None = None
+    max_players_per_match: int | None = None
     catalog_metadata_status: CatalogMetadataStatus = CatalogMetadataStatus.READY
     versions: dict[str, GameVersion] = field(default_factory=dict)
     active_version_id: str | None = None
@@ -65,16 +69,24 @@ class Game:
         difficulty: str | None = None,
         learning_section: str | None = None,
         topics: tuple[str, ...] = (),
+        min_players_per_match: int | None = None,
+        max_players_per_match: int | None = None,
         catalog_metadata_status: CatalogMetadataStatus | None = None,
     ) -> "Game":
         normalized_topics = tuple(topic.strip() for topic in topics if topic.strip())
         normalized_description = description.strip() if description is not None else None
         normalized_difficulty = difficulty.strip().lower() if difficulty is not None else None
         normalized_learning_section = learning_section.strip() if learning_section is not None else None
+        resolved_mode = GameMode.SINGLE_TASK if mode is GameMode.SINGLE_TASK else GameMode.MULTIPLAYER
+        resolved_min_players, resolved_max_players = _resolve_match_player_bounds(
+            mode=mode,
+            min_players_per_match=min_players_per_match,
+            max_players_per_match=max_players_per_match,
+        )
         resolved_status = catalog_metadata_status
         if resolved_status is None:
             if (
-                mode is GameMode.SINGLE_TASK
+                resolved_mode is GameMode.SINGLE_TASK
                 and (
                     not normalized_description
                     or not normalized_difficulty
@@ -89,12 +101,38 @@ class Game:
             game_id=new_id("game"),
             slug=slug,
             title=title,
-            mode=mode,
+            mode=resolved_mode,
             description=normalized_description or None,
             difficulty=normalized_difficulty or None,
             learning_section=normalized_learning_section or None,
             topics=normalized_topics,
+            min_players_per_match=resolved_min_players,
+            max_players_per_match=resolved_max_players,
             catalog_metadata_status=resolved_status,
+        )
+
+    @property
+    def is_multiplayer(self) -> bool:
+        return self.mode in {GameMode.MULTIPLAYER, GameMode.SMALL_MATCH, GameMode.MASSIVE_LOBBY}
+
+    @property
+    def match_player_bounds(self) -> tuple[int, int]:
+        return _resolve_match_player_bounds(
+            mode=self.mode,
+            min_players_per_match=self.min_players_per_match,
+            max_players_per_match=self.max_players_per_match,
+        )
+
+    def set_match_player_bounds(
+        self,
+        *,
+        min_players_per_match: int | None,
+        max_players_per_match: int | None,
+    ) -> None:
+        self.min_players_per_match, self.max_players_per_match = _resolve_match_player_bounds(
+            mode=self.mode,
+            min_players_per_match=min_players_per_match,
+            max_players_per_match=max_players_per_match,
         )
 
     def has_required_single_task_catalog_metadata(self) -> bool:
@@ -166,3 +204,34 @@ def evaluate_slot_schema_compatibility(
             return False, f"Новый обязательный слот '{key}' недопустим в v2"
 
     return True, None
+
+
+def _resolve_match_player_bounds(
+    *,
+    mode: GameMode,
+    min_players_per_match: int | None,
+    max_players_per_match: int | None,
+) -> tuple[int | None, int | None]:
+    if mode is GameMode.SINGLE_TASK:
+        return None, None
+
+    legacy_min: int | None = None
+    legacy_max: int | None = None
+    if mode is GameMode.SMALL_MATCH:
+        legacy_min = 2
+        legacy_max = 2
+    elif mode is GameMode.MASSIVE_LOBBY:
+        legacy_min = 2
+        legacy_max = 64
+
+    resolved_min = min_players_per_match if min_players_per_match is not None else legacy_min
+    resolved_max = max_players_per_match if max_players_per_match is not None else legacy_max
+    if resolved_min is None or resolved_max is None:
+        raise InvariantViolationError("Для multiplayer игры нужно указать min/max игроков в матче")
+    if resolved_min < 2:
+        raise InvariantViolationError("min_players_per_match должен быть >= 2")
+    if resolved_max < resolved_min:
+        raise InvariantViolationError("max_players_per_match должен быть >= min_players_per_match")
+    if resolved_max > 64:
+        raise InvariantViolationError("max_players_per_match должен быть <= 64")
+    return resolved_min, resolved_max

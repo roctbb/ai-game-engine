@@ -221,7 +221,7 @@ def test_game_catalog_version_mutations_require_teacher_or_admin(client, teacher
         json={
             'description': 'Nope',
             'difficulty': 'easy',
-            'learning_section': 'Команды героя',
+            'learning_section': 'Условия и выбор',
             'topics': ['test'],
             'catalog_metadata_status': 'draft',
         },

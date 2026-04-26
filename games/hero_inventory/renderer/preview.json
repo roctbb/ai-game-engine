@@ -1,0 +1,88 @@
+{
+  "frame": {
+    "actual": [
+      "healing_potion",
+      "antidote",
+      "small_key",
+      "torch",
+      "apple",
+      "rope"
+    ],
+    "difficulty": "medium",
+    "expected": [
+      "healing_potion",
+      "antidote",
+      "small_key",
+      "torch",
+      "apple",
+      "rope"
+    ],
+    "kind": "hero_inventory",
+    "learning_section": "Списки и цели",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "cases": [
+        {
+          "dark": true,
+          "door": true,
+          "expected": "healing_potion",
+          "hp": 25,
+          "hungry": true,
+          "poisoned": true
+        },
+        {
+          "dark": false,
+          "door": true,
+          "expected": "antidote",
+          "hp": 70,
+          "hungry": false,
+          "poisoned": true
+        },
+        {
+          "dark": true,
+          "door": true,
+          "expected": "small_key",
+          "hp": 80,
+          "hungry": false,
+          "poisoned": false
+        },
+        {
+          "dark": true,
+          "door": false,
+          "expected": "torch",
+          "hp": 80,
+          "hungry": true,
+          "poisoned": false
+        },
+        {
+          "dark": false,
+          "door": false,
+          "expected": "apple",
+          "hp": 80,
+          "hungry": true,
+          "poisoned": false
+        },
+        {
+          "dark": false,
+          "door": false,
+          "expected": "rope",
+          "hp": 80,
+          "hungry": false,
+          "poisoned": false
+        }
+      ],
+      "inventory": [
+        "rope",
+        "torch",
+        "small_key",
+        "apple",
+        "healing_potion",
+        "antidote"
+      ]
+    },
+    "title": "Инвентарь героя"
+  }
+}

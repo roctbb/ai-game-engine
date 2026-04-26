@@ -1,14 +1,20 @@
 def choose_action(gate):
-    # gate - словарь с описанием ворот.
-    # gate["color"]   - цвет ворот
-    # gate["has_key"] - есть ли ключ
-    # gate["trap"]    - есть ли ловушка
+    # gate - словарь с описанием ситуации у ворот.
+    # gate["enemy_distance"] - расстояние до врага
+    # gate["trap"]           - есть ли ловушка
+    # gate["trap_damage"]    - урон ловушки
+    # gate["hp"]             - здоровье героя
+    # gate["locked"]         - ворота закрыты
+    # gate["has_key"]        - есть ли ключ
     #
-    # Правила:
-    # red  -> "attack"
-    # blue -> "use_key", если ключ есть, иначе "wait"
-    # trap -> "disarm"
-    # иначе -> "open"
-    if gate["color"] == "red":
+    # Приоритеты:
+    # 1. Враг рядом -> "attack"
+    # 2. Безопасная ловушка -> "disarm"
+    # 3. Закрытые ворота и есть ключ -> "use_key"
+    # 4. Закрытые ворота без ключа -> "wait"
+    # 5. Иначе -> "open"
+    if gate["enemy_distance"] <= 1:
         return "attack"
+
+    # TODO: добавьте обработку ловушки и закрытых ворот.
     return "open"

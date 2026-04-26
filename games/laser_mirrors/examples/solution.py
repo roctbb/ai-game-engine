@@ -9,7 +9,7 @@ def trace(board, start_x, start_y, dx, dy):
         cell = board[x][y]
         if cell == "T":
             return True
-        if cell == "#":
+        if cell == "#" or cell == "A":
             return False
         if cell == "/":
             dx, dy = -dy, -dx

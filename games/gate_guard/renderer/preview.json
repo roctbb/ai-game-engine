@@ -1,0 +1,141 @@
+{
+  "frame": {
+    "actual": [
+      "open",
+      "use_key",
+      "wait",
+      "disarm",
+      "attack",
+      "open",
+      "attack",
+      "disarm"
+    ],
+    "difficulty": "easy",
+    "expected": [
+      "open",
+      "use_key",
+      "wait",
+      "disarm",
+      "attack",
+      "open",
+      "attack",
+      "disarm"
+    ],
+    "kind": "gate_guard",
+    "learning_section": "Условия и выбор",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "cases": [
+        {
+          "expected": "open",
+          "input": {
+            "color": "green",
+            "enemy_distance": 5,
+            "has_key": false,
+            "hp": 70,
+            "id": 0,
+            "locked": false,
+            "trap": false,
+            "trap_damage": 0
+          }
+        },
+        {
+          "expected": "use_key",
+          "input": {
+            "color": "blue",
+            "enemy_distance": 6,
+            "has_key": true,
+            "hp": 72,
+            "id": 1,
+            "locked": true,
+            "trap": false,
+            "trap_damage": 0
+          }
+        },
+        {
+          "expected": "wait",
+          "input": {
+            "color": "blue",
+            "enemy_distance": 6,
+            "has_key": false,
+            "hp": 68,
+            "id": 2,
+            "locked": true,
+            "trap": false,
+            "trap_damage": 0
+          }
+        },
+        {
+          "expected": "disarm",
+          "input": {
+            "color": "black",
+            "enemy_distance": 4,
+            "has_key": false,
+            "hp": 60,
+            "id": 3,
+            "locked": false,
+            "trap": true,
+            "trap_damage": 18
+          }
+        },
+        {
+          "expected": "attack",
+          "input": {
+            "color": "black",
+            "enemy_distance": 1,
+            "has_key": true,
+            "hp": 65,
+            "id": 4,
+            "locked": true,
+            "trap": true,
+            "trap_damage": 18
+          }
+        },
+        {
+          "expected": "open",
+          "input": {
+            "color": "gold",
+            "enemy_distance": 3,
+            "has_key": false,
+            "hp": 45,
+            "id": 5,
+            "locked": false,
+            "trap": true,
+            "trap_damage": 90
+          }
+        },
+        {
+          "expected": "attack",
+          "input": {
+            "color": "red",
+            "enemy_distance": 1,
+            "has_key": false,
+            "hp": 50,
+            "id": 6,
+            "locked": false,
+            "trap": false,
+            "trap_damage": 0
+          }
+        },
+        {
+          "expected": "disarm",
+          "input": {
+            "color": "blue",
+            "enemy_distance": 5,
+            "has_key": true,
+            "hp": 55,
+            "id": 7,
+            "locked": true,
+            "trap": true,
+            "trap_damage": 12
+          }
+        }
+      ],
+      "rule": "enemy -> safe trap -> locked gate -> open"
+    },
+    "title": "Страж ворот"
+  }
+}

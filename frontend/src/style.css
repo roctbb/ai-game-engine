@@ -59,8 +59,10 @@ pre,
 }
 
 .agp-navbar {
-  overflow: hidden;
+  overflow: visible;
   background:
+    radial-gradient(circle at 12% 0%, rgba(20, 184, 166, 0.16), transparent 20rem),
+    radial-gradient(circle at 88% 0%, rgba(245, 158, 11, 0.12), transparent 18rem),
     linear-gradient(90deg, rgba(255, 255, 255, 0.94), rgba(240, 253, 250, 0.92)),
     url("data:image/svg+xml,%3Csvg width='96' height='48' viewBox='0 0 96 48' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23f59e0b' stroke-opacity='.13'%3E%3Cpath d='M0 24h96M24 0v48M72 0v48'/%3E%3C/g%3E%3C/svg%3E");
   border-bottom: 1px solid rgba(15, 118, 110, 0.16);
@@ -78,6 +80,7 @@ pre,
   height: 0.16rem;
   background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b, #db2777);
   opacity: 0.72;
+  pointer-events: none;
 }
 
 .agp-topbar {
@@ -100,8 +103,7 @@ pre,
   white-space: nowrap;
 }
 
-.agp-brand::before {
-  content: '';
+.agp-brand-mark {
   width: 1.8rem;
   height: 1.8rem;
   border-radius: 0.55rem;
@@ -111,23 +113,42 @@ pre,
   box-shadow: 0 8px 20px rgba(37, 99, 235, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.55) inset;
 }
 
+.agp-brand-copy {
+  display: grid;
+  gap: 0;
+  line-height: 1.05;
+}
+
+.agp-brand-copy small {
+  color: var(--agp-text-muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .agp-primary-nav {
   display: flex;
   justify-content: center;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .agp-nav-link {
+  position: relative;
   color: var(--agp-text-muted);
   text-decoration: none;
   padding: 0.45rem 0.8rem;
-  border-radius: 0.5rem;
-  font-weight: 700;
-  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-weight: 850;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
 
 .agp-nav-link:hover {
   background: rgba(15, 118, 110, 0.08);
+  border-color: rgba(15, 118, 110, 0.12);
   color: var(--agp-primary);
   transform: translateY(-1px);
 }
@@ -136,37 +157,103 @@ pre,
   color: var(--agp-primary);
   background:
     linear-gradient(135deg, rgba(223, 247, 244, 0.96), rgba(219, 234, 254, 0.82));
-  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.08);
+  border-color: rgba(15, 118, 110, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42), 0 8px 22px rgba(15, 118, 110, 0.08);
 }
 
 .agp-user-menu {
   position: relative;
+  z-index: 80;
 }
 
-.agp-user-menu > summary {
-  list-style: none;
+.agp-user-trigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
   cursor: pointer;
-  border: 1px solid var(--agp-border);
-  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.84);
-  padding: 0.45rem 0.7rem;
-  max-width: 12rem;
+  padding: 0.28rem 0.48rem 0.28rem 0.3rem;
+  max-width: 14rem;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  color: var(--agp-text);
+  font: inherit;
+  text-align: left;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
 }
 
-.agp-user-menu > summary::-webkit-details-marker {
-  display: none;
+.agp-user-trigger:hover,
+.agp-user-trigger[aria-expanded='true'] {
+  border-color: rgba(15, 118, 110, 0.34);
+  background:
+    linear-gradient(135deg, rgba(223, 247, 244, 0.96), rgba(219, 234, 254, 0.82));
+  color: var(--agp-primary);
+}
+
+.agp-user-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #14b8a6, #2563eb);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.36);
+}
+
+.agp-user-trigger-copy {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+.agp-user-trigger-copy strong,
+.agp-user-trigger-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agp-user-trigger-copy strong {
+  font-size: 0.9rem;
+}
+
+.agp-user-trigger-copy small {
+  color: var(--agp-text-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.agp-user-caret {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translateY(-0.08rem);
+  opacity: 0.72;
+}
+
+.agp-user-trigger:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(20, 184, 166, 0.18);
 }
 
 .agp-user-popover {
   position: absolute;
   right: 0;
   top: calc(100% + 0.45rem);
+  z-index: 90;
   width: min(18rem, calc(100vw - 1.5rem));
-  background: var(--agp-surface);
-  border: 1px solid var(--agp-border);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 10rem),
+    var(--agp-surface);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: 0.75rem;
   box-shadow: 0 18px 42px rgba(17, 24, 39, 0.14);
   padding: 0.75rem;
@@ -178,9 +265,11 @@ pre,
   display: grid;
   gap: 0.45rem;
   padding: 0.65rem;
-  border: 1px solid var(--agp-border);
+  border: 1px solid rgba(15, 118, 110, 0.16);
   border-radius: 0.55rem;
-  background: var(--agp-surface-soft);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(245, 158, 11, 0.12), transparent 7rem),
+    var(--agp-surface-soft);
 }
 
 .agp-user-card strong {
@@ -726,10 +815,20 @@ pre,
 
   .agp-primary-nav {
     justify-content: start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .agp-primary-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .agp-nav-link {
     padding-inline: 0.7rem;
+  }
+
+  .agp-user-trigger {
+    max-width: 10.5rem;
   }
 
   .agp-main {
@@ -743,6 +842,21 @@ pre,
   .agp-grid--2,
   .agp-grid--3 {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .agp-topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .agp-user-trigger {
+    grid-template-columns: auto auto;
+    max-width: none;
+  }
+
+  .agp-user-trigger-copy {
+    display: none;
   }
 }
 

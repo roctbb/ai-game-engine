@@ -6,37 +6,67 @@
   <title>Tag Arena Renderer</title>
   <style>
     body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#111827;color:#e5edf5;font-family:Arial,sans-serif}
-    .wrap{width:min(92vmin,760px)}
-    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
-    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+    .wrap{width:min(94vmin,840px)}
+    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155;border-radius:8px}
+    .hud{margin-top:8px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+    .card{border:1px solid rgba(148,163,184,.28);border-radius:8px;background:#1f2937;padding:8px 10px}
+    .name{font-weight:800;margin-bottom:4px}
   </style>
 </head>
 <body>
 <div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
 <script>
 const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
+const TEAM_COLORS={amber:"#f59e0b",teal:"#14b8a6"};
+const ROLE_LABELS={runner:"беглец",hunter:"охотник"};
 function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
-function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
-function drawMiniBar(cx,cy,C,value,max,fill="#22c55e"){const m=Number(max),v=Number(value);if(!Number.isFinite(m)||m<=0||!Number.isFinite(v))return;const pct=Math.max(0,Math.min(1,v/m)),w=C*0.7,h=Math.max(3,C*0.09),x=cx-w/2,y=cy+C*0.36;boardEl.appendChild(el("rect",{x,y,width:w,height:h,rx:h/2,fill:"rgba(15,23,42,.62)"}));boardEl.appendChild(el("rect",{x,y,width:w*pct,height:h,rx:h/2,fill:pct<.25?"#ef4444":fill}))}
+function text(x,y,value,size,fill="#0f172a",weight=800){const t=el("text",{x,y,"text-anchor":"middle","dominant-baseline":"middle","font-size":size,"font-weight":weight,fill});t.textContent=value;return t}
+function drawPlayer(slot,p,frame,C){
+  const team=p.team||slot.split("_")[0], role=p.role||slot.split("_")[1]||"runner";
+  const color=TEAM_COLORS[team]||"#64748b", cx=p.x*C+C/2, cy=p.y*C+C/2;
+  if(role==="hunter"){
+    boardEl.appendChild(el("rect",{x:cx-C*.32,y:cy-C*.32,width:C*.64,height:C*.64,rx:7,fill:color,stroke:"#fff","stroke-width":3}));
+    boardEl.appendChild(text(cx,cy,"H",Math.max(12,C*.34),"#fff",900));
+  }else{
+    boardEl.appendChild(el("circle",{cx,cy,r:C*.34,fill:color,stroke:"#fff","stroke-width":3}));
+    boardEl.appendChild(text(cx,cy,"R",Math.max(12,C*.34),"#fff",900));
+  }
+  const label=(frame.labels||{})[team]||team;
+  const short=String(label).slice(0,12);
+  boardEl.appendChild(el("rect",{x:cx-C*.72,y:cy-C*.78,width:C*1.44,height:C*.34,rx:5,fill:"rgba(255,255,255,.9)"}));
+  boardEl.appendChild(text(cx,cy-C*.6,short,Math.max(7,C*.16),color,900));
+  boardEl.appendChild(el("rect",{x:cx-C*.48,y:cy+C*.38,width:C*.96,height:C*.34,rx:5,fill:"rgba(15,23,42,.82)"}));
+  boardEl.appendChild(text(cx,cy+C*.56,role==="hunter"?"Охотник":"Беглец",Math.max(7,C*.15),"#fff",800));
+  const frozen=(frame.runner_frozen||{})[team]||0;
+  if(role==="runner"&&frozen>0){
+    boardEl.appendChild(el("circle",{cx,cy,r:C*.47,fill:"none",stroke:"#93c5fd","stroke-width":4,"stroke-dasharray":"4 3"}));
+    boardEl.appendChild(text(cx+C*.38,cy-C*.36,String(frozen),Math.max(9,C*.22),"#1d4ed8",900));
+  }
+}
 function draw(frame){
-  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||12, h=Array.isArray(grid[0])?grid[0].length:12, C=32;
+  const grid=Array.isArray(frame.board)?frame.board:[], w=frame.width||grid.length||13, h=frame.height||(Array.isArray(grid[0])?grid[0].length:13), C=32;
   boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const v=grid[x]?.[y]??0;
     boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:v===-1?"#334155":"#f8fafc"}));
-    if(v===1){const t=el("text",{x:x*C+C/2,y:y*C+C*0.66,"text-anchor":"middle","font-size":18,fill:"#eab308"});t.textContent="*";boardEl.appendChild(t)}
+    if(v===1){boardEl.appendChild(el("path",{d:`M ${x*C+C/2} ${y*C+C*.18} L ${x*C+C*.6} ${y*C+C*.43} L ${x*C+C*.86} ${y*C+C*.43} L ${x*C+C*.65} ${y*C+C*.58} L ${x*C+C*.73} ${y*C+C*.84} L ${x*C+C/2} ${y*C+C*.68} L ${x*C+C*.27} ${y*C+C*.84} L ${x*C+C*.35} ${y*C+C*.58} L ${x*C+C*.14} ${y*C+C*.43} L ${x*C+C*.4} ${y*C+C*.43} Z`,fill:"#eab308",stroke:"#a16207","stroke-width":1.3}))}
   }
   const positions=frame.positions||{};
   for(const [slot,p] of Object.entries(positions)){
-    const color=slot==="runner"?"#16a34a":"#dc2626";
-    if(Number.isFinite(p.x)&&Number.isFinite(p.y)){const cx=p.x*C+C/2,cy=p.y*C+C/2;boardEl.appendChild(el("circle",{cx,cy,r:C*0.3,fill:color}));const c=frame.carrying||{},d=frame.delivered||{};const value=slot==="runner"?(frame.stars_collected||0):(c[slot]?"P":(d[slot]||0));drawMiniBadge(cx,cy,C,value,color)}
+    if(Number.isFinite(p.x)&&Number.isFinite(p.y))drawPlayer(slot,p,frame,C);
   }
-  const s=frame.slot_scores||{};
-  hudEl.textContent=`stars=${frame.stars_collected||0} left=${frame.stars_left??"-"} caught=${frame.caught===true} score_runner=${s.runner??"-"} score_hunter=${s.hunter??"-"}`;
+  const s=frame.slot_scores||{}, collected=frame.stars_collected||{}, catches=frame.catches||{};
+  hudEl.replaceChildren();
+  for(const team of frame.teams||Object.keys(collected)){
+    const card=document.createElement("div");card.className="card";
+    const name=document.createElement("div");name.className="name";name.textContent=`${(frame.labels||{})[team]||team}`;
+    const meta=document.createElement("div");meta.textContent=`беглец: ${collected[team]||0} звезд · охотник: ${catches[team]||0} поимок · счет: ${s[team]??"-"}`;
+    card.appendChild(name);card.appendChild(meta);hudEl.appendChild(card);
+  }
 }
 window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
-draw({board:Array.from({length:12},()=>Array(12).fill(0)),positions:{runner:{x:1,y:1},hunter:{x:10,y:10}},stars_collected:0,caught:false});
-window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+draw({width:13,height:13,board:Array.from({length:13},(_,x)=>Array.from({length:13},(_,y)=>x===0||y===0||x===12||y===12?-1:0)),teams:["amber","teal"],labels:{amber:"Команда A",teal:"Команда B"},positions:{amber_runner:{x:1,y:1,team:"amber",role:"runner"},amber_hunter:{x:1,y:11,team:"amber",role:"hunter"},teal_runner:{x:11,y:11,team:"teal",role:"runner"},teal_hunter:{x:11,y:1,team:"teal",role:"hunter"}},stars_collected:{amber:0,teal:0},catches:{amber:0,teal:0},runner_frozen:{amber:0,teal:0}});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"tag-arena-team-roles-2.0"}},"*");
 </script>
 </body>
 </html>

@@ -1,7 +1,14 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: ai-game-postgres-v2
+    logging: *default-logging
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -19,6 +26,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ai-game-redis-v2
+    logging: *default-logging
     command: redis-server --appendonly yes
     ports:
       - "6379:6379"
@@ -35,6 +43,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: ai-game-backend-v2
+    logging: *default-logging
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -76,6 +85,7 @@ services:
       context: .
       dockerfile: services/scheduler/Dockerfile
     container_name: ai-game-scheduler-v2
+    logging: *default-logging
     environment:
       REDIS_URL: redis://redis:6379/0
     ports:
@@ -100,6 +110,7 @@ services:
       context: .
       dockerfile: services/worker/Dockerfile
     container_name: ai-game-worker-v2
+    logging: *default-logging
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
@@ -112,7 +123,11 @@ services:
       DOCKER_BINARY: docker
       DOCKER_IMAGE: python:3.12-slim
       DOCKER_NETWORK_MODE: none
-      MAX_SLOTS: "4"
+      DOCKER_LOG_DRIVER: json-file
+      DOCKER_LOG_MAX_SIZE: 10m
+      DOCKER_LOG_MAX_FILE: "3"
+      MAX_SLOTS: "1"
+      EXECUTION_TIMEOUT_SECONDS: "20"
       AUTO_POLL_ENABLED: "true"
       AUTO_POLL_INTERVAL_SECONDS: "1"
       AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
@@ -146,6 +161,7 @@ services:
       context: .
       dockerfile: services/worker/Dockerfile
     container_name: ai-game-worker-v2-2
+    logging: *default-logging
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
@@ -158,7 +174,11 @@ services:
       DOCKER_BINARY: docker
       DOCKER_IMAGE: python:3.12-slim
       DOCKER_NETWORK_MODE: none
-      MAX_SLOTS: "4"
+      DOCKER_LOG_DRIVER: json-file
+      DOCKER_LOG_MAX_SIZE: 10m
+      DOCKER_LOG_MAX_FILE: "3"
+      MAX_SLOTS: "1"
+      EXECUTION_TIMEOUT_SECONDS: "20"
       AUTO_POLL_ENABLED: "true"
       AUTO_POLL_INTERVAL_SECONDS: "1"
       AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
@@ -192,6 +212,7 @@ services:
       context: .
       dockerfile: services/worker/Dockerfile
     container_name: ai-game-worker-v2-3
+    logging: *default-logging
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
@@ -204,7 +225,11 @@ services:
       DOCKER_BINARY: docker
       DOCKER_IMAGE: python:3.12-slim
       DOCKER_NETWORK_MODE: none
-      MAX_SLOTS: "4"
+      DOCKER_LOG_DRIVER: json-file
+      DOCKER_LOG_MAX_SIZE: 10m
+      DOCKER_LOG_MAX_FILE: "3"
+      MAX_SLOTS: "1"
+      EXECUTION_TIMEOUT_SECONDS: "20"
       AUTO_POLL_ENABLED: "true"
       AUTO_POLL_INTERVAL_SECONDS: "1"
       AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
@@ -238,6 +263,7 @@ services:
       context: .
       dockerfile: services/worker/Dockerfile
     container_name: ai-game-worker-v2-4
+    logging: *default-logging
     environment:
       SCHEDULER_URL: http://scheduler-service:8010
       BACKEND_API_URL: http://backend-api:8000/api/v1
@@ -250,7 +276,11 @@ services:
       DOCKER_BINARY: docker
       DOCKER_IMAGE: python:3.12-slim
       DOCKER_NETWORK_MODE: none
-      MAX_SLOTS: "4"
+      DOCKER_LOG_DRIVER: json-file
+      DOCKER_LOG_MAX_SIZE: 10m
+      DOCKER_LOG_MAX_FILE: "3"
+      MAX_SLOTS: "1"
+      EXECUTION_TIMEOUT_SECONDS: "20"
       AUTO_POLL_ENABLED: "true"
       AUTO_POLL_INTERVAL_SECONDS: "1"
       AUTO_POLL_ERROR_BACKOFF_SECONDS: "3"
@@ -284,6 +314,7 @@ services:
       context: .
       dockerfile: services/builder/Dockerfile
     container_name: ai-game-builder-v2
+    logging: *default-logging
     environment:
       BACKEND_API_URL: http://backend-api:8000/api/v1
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
@@ -309,6 +340,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     container_name: ai-game-frontend-v2
+    logging: *default-logging
     ports:
       - "8080:80"
     depends_on:

@@ -39,7 +39,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     collected = {slot: 0 for slot in _SLOTS}
     invalid = {slot: 0 for slot in _SLOTS}
     turns = 0
-    frames = [_frame(0, "running", positions, walls, energy, chargers, batteries, collected, invalid)]
+    frames = [_frame(0, "running", positions, walls, energy, chargers, batteries, collected, invalid, labels=role_name)]
 
     for turn in range(_MAX_TURNS):
         if not energy:
@@ -79,7 +79,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 events.append({"type": "energy", "tick": turn + 1, "slot": slot})
 
         turns = turn + 1
-        frames.append(_frame(turns, "running", positions, walls, energy, chargers, batteries, collected, invalid))
+        frames.append(_frame(turns, "running", positions, walls, energy, chargers, batteries, collected, invalid, labels=role_name))
 
     compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
     slot_scores = {slot: collected[slot] * 100 + batteries[slot] - invalid[slot] * 10 for slot in _SLOTS}
@@ -103,7 +103,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         metrics["compile_errors"] = compile_errors
         for slot, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": slot, "message": message})
-    frames.append(_frame(len(frames), "finished", positions, walls, energy, chargers, batteries, collected, invalid, slot_scores))
+    frames.append(_frame(len(frames), "finished", positions, walls, energy, chargers, batteries, collected, invalid, slot_scores, labels=role_name))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
     payload["placements"] = placements
     return payload
@@ -139,9 +139,11 @@ def _resolve_participants(ctx):
         return role_code, role_team, role_name
     codes = ctx.get('codes_by_slot')
     if isinstance(codes, dict):
-        code = str(codes.get('player', ''))
-        return {r: code for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
-    return {r: '' for r in _SLOTS}, {r: r for r in _SLOTS}, {r: r for r in _SLOTS}
+        role_code = {r: str(codes.get(r) or codes.get('player') or '') for r in _SLOTS}
+        role_team = {r: f'team-{r}' for r in _SLOTS}
+        return role_code, role_team, dict(role_team)
+    role_team = {r: f'team-{r}' for r in _SLOTS}
+    return {r: '' for r in _SLOTS}, role_team, dict(role_team)
 
 
 
@@ -293,12 +295,13 @@ def _placements(role_team: dict[str, str], slot_scores: dict[str, int]) -> dict[
     return result
 
 
-def _frame(tick: int, phase: str, positions: dict[str, tuple[int, int]], walls: set[tuple[int, int]], energy: set[tuple[int, int]], chargers: set[tuple[int, int]], batteries: dict[str, int], collected: dict[str, int], invalid: dict[str, int], slot_scores: dict[str, int] | None = None) -> dict[str, object]:
+def _frame(tick: int, phase: str, positions: dict[str, tuple[int, int]], walls: set[tuple[int, int]], energy: set[tuple[int, int]], chargers: set[tuple[int, int]], batteries: dict[str, int], collected: dict[str, int], invalid: dict[str, int], slot_scores: dict[str, int] | None = None, labels: dict[str, str] | None = None) -> dict[str, object]:
     frame: dict[str, object] = {
         "board": _board(walls, energy, chargers, positions, "solar"),
         "boards": {slot: _board(walls, energy, chargers, positions, slot) for slot in _SLOTS},
         "width": _WIDTH,
         "height": _HEIGHT,
+        "labels": {slot: (labels or {}).get(slot, slot) for slot in _SLOTS},
         "positions": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in positions.items()},
         "batteries": batteries,
         "collected": collected,

@@ -1,6 +1,8 @@
 id: ttt_connect5_v1
 title: Крестики-нолики до 5
-game_mode: small_match
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 2
 semver: 1.0.0
 code_api_mode: turn_based
 engine_entrypoint: engine.py

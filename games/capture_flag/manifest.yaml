@@ -1,19 +1,24 @@
 id: capture_flag_v1
 title: Захват флага
-game_mode: small_match
-semver: 1.1.0
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 4
+semver: 2.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board, has_flag), возвращающую
-  up/down/left/right/stay. Заберите флаг соперника и вернитесь на свою базу.
-description: Два участника играют в захват флага на случайной карте со стенами.
+  up/down/left/right/stay, shoot_* или build_*. Захватите общий флаг и принесите
+  его на свою базу.
+description: От 2 до 4 участников охотятся за одним общим флагом, строят временные
+  стены и сбивают носителя флага выстрелами.
 difficulty: medium
 learning_section: Соревновательные стратегии
 topics:
 - графы
 - BFS
 - игровые стратегии
+- управление ресурсами
 slots:
 - key: player
   title: Игрок
@@ -24,4 +29,5 @@ demo_strategies:
   title: 'Демо: базовая стратегия'
   language: python
   path: examples/demo.py
-  description: Идет к флагу соперника, затем возвращается на свою базу.
+  description: Идет к общему флагу, возвращается на свою базу и стреляет по носителю
+    флага на прямой линии.

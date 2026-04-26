@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import random
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -85,6 +87,7 @@ class Competition:
     tie_break_policy: TieBreakPolicy
     code_policy: CompetitionCodePolicy
     advancement_top_k: int
+    min_match_size: int
     match_size: int
     lobby_id: str | None = None
     status: CompetitionStatus = CompetitionStatus.DRAFT
@@ -106,11 +109,14 @@ class Competition:
         tie_break_policy: TieBreakPolicy,
         code_policy: CompetitionCodePolicy,
         advancement_top_k: int,
+        min_match_size: int,
         match_size: int,
         lobby_id: str | None = None,
     ) -> "Competition":
-        if match_size < 2:
-            raise InvariantViolationError("match_size должен быть >= 2")
+        if min_match_size < 2:
+            raise InvariantViolationError("min_match_size должен быть >= 2")
+        if match_size < min_match_size:
+            raise InvariantViolationError("match_size должен быть >= min_match_size")
         if advancement_top_k < 1:
             raise InvariantViolationError("advancement_top_k должен быть >= 1")
         if advancement_top_k > match_size:
@@ -125,6 +131,7 @@ class Competition:
             tie_break_policy=tie_break_policy,
             code_policy=code_policy,
             advancement_top_k=advancement_top_k,
+            min_match_size=min_match_size,
             match_size=match_size,
             lobby_id=lobby_id,
         )
@@ -168,8 +175,10 @@ class Competition:
     def start(self) -> None:
         if self.status not in {CompetitionStatus.DRAFT, CompetitionStatus.PAUSED}:
             raise InvariantViolationError("Соревнование можно стартовать только из draft/paused")
-        if len(self.eligible_team_ids()) < 2:
-            raise InvariantViolationError("Для старта требуется минимум 2 ready-команды")
+        if len(self.eligible_team_ids()) < self.min_match_size:
+            raise InvariantViolationError(
+                f"Для старта требуется минимум {self.min_match_size} ready-команды"
+            )
         self.status = CompetitionStatus.RUNNING
         self.pending_reason = None
         self.updated_at = utc_now()
@@ -295,11 +304,20 @@ class Competition:
         if len(team_ids) < 1:
             raise InvariantViolationError("Раунд нельзя построить без участников")
 
+        team_ids = _order_competition_round_seed(
+            competition_id=self.competition_id,
+            round_index=round_index,
+            team_ids=team_ids,
+            min_match_size=self.min_match_size,
+            max_match_size=self.match_size,
+            previous_auto_advances=self._auto_advance_counts(),
+        )
         matches: list[CompetitionMatch] = []
-        cursor = 0
-        while cursor < len(team_ids):
-            chunk = tuple(team_ids[cursor : cursor + self.match_size])
-            cursor += self.match_size
+        for chunk in _partition_competition_matches(
+            team_ids=team_ids,
+            min_match_size=self.min_match_size,
+            max_match_size=self.match_size,
+        ):
             match_id = new_id("cmp_match")
             if len(chunk) == 1:
                 matches.append(
@@ -341,3 +359,123 @@ class Competition:
             if match.match_id == match_id:
                 return match
         raise NotFoundError(f"Матч {match_id} не найден в раунде {round_index}")
+
+    def _auto_advance_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for round_item in self.rounds:
+            for match in round_item.matches:
+                if match.status is not CompetitionMatchStatus.AUTO_ADVANCED:
+                    continue
+                for team_id in match.advanced_team_ids:
+                    counts[team_id] = counts.get(team_id, 0) + 1
+        return counts
+
+
+def _order_competition_round_seed(
+    *,
+    competition_id: str,
+    round_index: int,
+    team_ids: list[str],
+    min_match_size: int,
+    max_match_size: int,
+    previous_auto_advances: dict[str, int],
+) -> list[str]:
+    if len(team_ids) <= 1:
+        return list(team_ids)
+
+    rng = random.Random(_stable_round_seed(competition_id=competition_id, round_index=round_index))
+    shuffled = list(team_ids)
+    rng.shuffle(shuffled)
+
+    playable_count = _competition_playable_count(
+        total=len(shuffled),
+        min_match_size=min_match_size,
+        max_match_size=max_match_size,
+    )
+    auto_advance_count = len(shuffled) - playable_count
+    if auto_advance_count <= 0:
+        return shuffled
+
+    tie_breakers = {team_id: rng.random() for team_id in shuffled}
+    auto_advanced = set(
+        sorted(
+            shuffled,
+            key=lambda team_id: (previous_auto_advances.get(team_id, 0), tie_breakers[team_id], team_id),
+        )[:auto_advance_count]
+    )
+    playable = [team_id for team_id in shuffled if team_id not in auto_advanced]
+    byes = [team_id for team_id in shuffled if team_id in auto_advanced]
+    return playable + byes
+
+
+def _stable_round_seed(*, competition_id: str, round_index: int) -> int:
+    digest = hashlib.sha256(f"{competition_id}:{round_index}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=False)
+
+
+def _competition_playable_count(*, total: int, min_match_size: int, max_match_size: int) -> int:
+    if total <= 1:
+        return total
+    for playable_count in range(total, min_match_size - 1, -1):
+        min_group_count = (playable_count + max_match_size - 1) // max_match_size
+        max_group_count = playable_count // min_match_size
+        for group_count in range(min_group_count, max_group_count + 1):
+            if group_count * min_match_size <= playable_count <= group_count * max_match_size:
+                return playable_count
+    return 0
+
+
+def _partition_competition_matches(
+    *,
+    team_ids: list[str],
+    min_match_size: int,
+    max_match_size: int,
+) -> list[tuple[str, ...]]:
+    total = len(team_ids)
+    if total <= 1:
+        return [tuple(team_ids)] if team_ids else []
+
+    playable_count = _competition_playable_count(
+        total=total,
+        min_match_size=min_match_size,
+        max_match_size=max_match_size,
+    )
+    if playable_count >= min_match_size:
+        min_group_count = (playable_count + max_match_size - 1) // max_match_size
+        max_group_count = playable_count // min_match_size
+        for group_count in range(min_group_count, max_group_count + 1):
+            if group_count * min_match_size <= playable_count <= group_count * max_match_size:
+                sizes = _distribute_competition_match_sizes(
+                    total=playable_count,
+                    group_count=group_count,
+                    min_match_size=min_match_size,
+                    max_match_size=max_match_size,
+                )
+                chunks: list[tuple[str, ...]] = []
+                cursor = 0
+                for size in sizes:
+                    chunks.append(tuple(team_ids[cursor : cursor + size]))
+                    cursor += size
+                chunks.extend((team_id,) for team_id in team_ids[cursor:])
+                return chunks
+
+    return [(team_id,) for team_id in team_ids]
+
+
+def _distribute_competition_match_sizes(
+    *,
+    total: int,
+    group_count: int,
+    min_match_size: int,
+    max_match_size: int,
+) -> list[int]:
+    sizes = [min_match_size for _ in range(group_count)]
+    remaining = total - group_count * min_match_size
+    index = 0
+    while remaining > 0:
+        capacity = max_match_size - sizes[index]
+        delta = min(capacity, remaining)
+        sizes[index] += delta
+        remaining -= delta
+        index = (index + 1) % group_count
+    return sizes

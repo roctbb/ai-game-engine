@@ -143,6 +143,7 @@ function renderMarkdown(source: string): string {
   margin: 1rem 0 0.45rem;
   color: var(--agp-text);
   line-height: 1.2;
+  font-weight: 850;
 }
 
 .agp-markdown :deep(h1) {
@@ -169,21 +170,35 @@ function renderMarkdown(source: string): string {
   padding-left: 1.25rem;
 }
 
+.agp-markdown :deep(li) {
+  margin: 0.28rem 0;
+}
+
+.agp-markdown :deep(a) {
+  color: #0f766e;
+  font-weight: 750;
+  text-decoration-color: rgba(15, 118, 110, 0.35);
+  text-underline-offset: 0.18em;
+}
+
 .agp-markdown :deep(code) {
   border-radius: 0.3rem;
-  background: #eef2f7;
+  background: #e8f4f2;
   padding: 0.05rem 0.25rem;
-  color: #0f172a;
+  color: #0f766e;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88em;
 }
 
 .agp-markdown :deep(pre) {
   overflow-x: auto;
-  border: 1px solid var(--agp-border);
+  border: 1px solid rgba(125, 211, 252, 0.22);
   border-radius: 0.45rem;
-  background: #0f172a;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98)),
+    #0f172a;
   padding: 0.75rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .agp-markdown :deep(pre code) {

@@ -21,6 +21,7 @@ class CompetitionOrm(Base):
     tie_break_policy: Mapped[str] = mapped_column(String(32))
     code_policy: Mapped[str] = mapped_column(String(32), default="locked_on_start")
     advancement_top_k: Mapped[int]
+    min_match_size: Mapped[int] = mapped_column(Integer, default=2)
     match_size: Mapped[int]
     status: Mapped[str] = mapped_column(String(32), index=True)
 

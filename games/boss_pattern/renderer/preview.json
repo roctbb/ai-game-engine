@@ -1,0 +1,72 @@
+{
+  "tick": 0,
+  "phase": "running",
+  "frame": {
+    "title": "Маг против босса",
+    "kind": "boss_pattern",
+    "learning_section": "Режимы поведения",
+    "difficulty": "hard",
+    "task": {
+      "states": [
+        "prepares",
+        "heavy_attack",
+        "rest",
+        "summon",
+        "prepares",
+        "heavy_attack",
+        "rest",
+        "summon",
+        "prepares",
+        "heavy_attack",
+        "rest",
+        "summon"
+      ],
+      "expected": [
+        "attack",
+        "shield",
+        "attack",
+        "area_spell",
+        "heal",
+        "shield",
+        "attack",
+        "area_spell",
+        "attack",
+        "shield",
+        "attack",
+        "area_spell"
+      ]
+    },
+    "score": 0,
+    "solved": false,
+    "actual": [
+      "attack",
+      "shield",
+      "attack",
+      "area_spell",
+      "heal",
+      "shield",
+      "attack",
+      "area_spell",
+      "attack",
+      "shield",
+      "attack",
+      "area_spell"
+    ],
+    "expected": [
+      "attack",
+      "shield",
+      "attack",
+      "area_spell",
+      "heal",
+      "shield",
+      "attack",
+      "area_spell",
+      "attack",
+      "shield",
+      "attack",
+      "area_spell"
+    ],
+    "stage": "briefing",
+    "step_title": "Разведка задания"
+  }
+}

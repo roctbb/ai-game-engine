@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Integer
 from sqlalchemy import JSON as SqlJson
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +21,8 @@ class CatalogGameOrm(Base):
     difficulty: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     learning_section: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     topics: Mapped[list[str]] = mapped_column(SqlJson, default=list)
+    min_players_per_match: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_players_per_match: Mapped[int | None] = mapped_column(Integer, nullable=True)
     catalog_metadata_status: Mapped[str] = mapped_column(String(32), default="ready", index=True)
     active_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 

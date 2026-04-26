@@ -5,37 +5,58 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Territory Duel Renderer</title>
   <style>
-    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#121826;color:#e5edf5;font-family:Arial,sans-serif}
-    .wrap{width:min(92vmin,760px)}
-    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
-    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+    *{box-sizing:border-box}
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#121826;color:#e5edf5;font-family:Arial,sans-serif;overflow:hidden}
+    .wrap{width:min(92vmin,760px);padding:8px}
+    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155;border-radius:6px;display:block}
+    .hud{margin-top:8px;display:flex;gap:10px;flex-wrap:wrap;font:13px ui-monospace,monospace;color:#cbd5e1}
+    .hud b{color:#fff}
   </style>
 </head>
 <body>
-<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<div class="wrap"><svg id="board" role="img" aria-label="Territory duel"></svg><div id="hud" class="hud"></div></div>
 <script>
 const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
-function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
-function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
+const COLORS={green:"#16a34a",purple:"#9333ea",orange:"#f97316",blue:"#2563eb"};
+const SOFT={green:"#bbf7d0",purple:"#e9d5ff",orange:"#fed7aa",blue:"#bfdbfe"};
+function el(t,a={}){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
+function add(t,a){const e=el(t,a);boardEl.appendChild(e);return e}
+function text(x,y,s,size,fill="#0f172a",weight=800){const t=add("text",{x,y,"text-anchor":"middle","dominant-baseline":"middle","font-size":size,"font-weight":weight,fill});t.textContent=String(s);return t}
+function badge(cx,cy,C,label,fill){const r=Math.max(5,C*.18),bx=cx+C*.28,by=cy-C*.28;add("circle",{cx:bx,cy:by,r,fill,stroke:"#fff","stroke-width":Math.max(1,C*.045)});text(bx,by,String(label ?? 0).slice(0,3),Math.max(8,C*.23),"#fff",800)}
+function labelOf(frame,slot){return (frame.labels&&frame.labels[slot])||slot}
 function draw(frame){
-  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||12, h=Array.isArray(grid[0])?grid[0].length:12, C=32;
+  const grid=Array.isArray(frame.board)?frame.board:[], w=frame.width||grid.length||12, h=frame.height||(Array.isArray(grid[0])?grid[0].length:12), C=32;
   boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const v=grid[x]?.[y]??0;
-    const fill=v===-1?"#334155":v===1?"#bbf7d0":v===2?"#e9d5ff":"#f8fafc";
-    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill}));
+    const fill=v===-1?"#334155":v===1?"#bbf7d0":v===2?"#e2e8f0":"#f8fafc";
+    add("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill,stroke:"#dbe5ef","stroke-width":.35});
   }
-  const positions=frame.positions||{};
+  const boards=frame.boards||{}, positions=frame.positions||{}, active=frame.active_slots||Object.keys(positions);
+  for(const slot of active){
+    const own=boards[slot];
+    if(!Array.isArray(own)) continue;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      if(own[x]?.[y]===1) add("rect",{x:x*C+C*.16,y:y*C+C*.16,width:C*.68,height:C*.68,rx:C*.08,fill:SOFT[slot]||"#e2e8f0",opacity:.55});
+    }
+  }
   for(const [slot,p] of Object.entries(positions)){
-    const color=slot==="green"?"#16a34a":"#9333ea";
-    if(Number.isFinite(p.x)&&Number.isFinite(p.y)){const cx=p.x*C+C/2,cy=p.y*C+C/2;boardEl.appendChild(el("circle",{cx,cy,r:C*0.3,fill:color}));drawMiniBadge(cx,cy,C,(frame.area||{})[slot]||0,color)}
+    const color=COLORS[slot]||"#64748b";
+    if(Number.isFinite(p.x)&&Number.isFinite(p.y)){
+      const cx=p.x*C+C/2,cy=p.y*C+C/2;
+      text(cx,cy-C*.48,labelOf(frame,slot),C*.15,color,900);
+      add("ellipse",{cx,cy:cy+C*.22,rx:C*.28,ry:C*.09,fill:"#020617",opacity:.22});
+      add("circle",{cx,cy,r:C*.31,fill:color,stroke:"#fff","stroke-width":C*.05});
+      text(cx,cy,slot[0]?.toUpperCase()||"P",C*.34,"#fff",900);
+      badge(cx,cy,C,(frame.area||{})[slot]||0,color);
+    }
   }
-  const a=frame.area||{}, s=frame.slot_scores||{};
-  hudEl.textContent=`green=${a.green||0} purple=${a.purple||0} painted=${frame.painted_total||0} score_green=${s.green??"-"} score_purple=${s.purple??"-"}`;
+  const area=frame.area||{}, scores=frame.slot_scores||{};
+  hudEl.innerHTML=active.map(slot=>`<span><b style="color:${COLORS[slot]||"#fff"}">${labelOf(frame,slot)}</b> area=${area[slot]||0} score=${scores[slot]??"-"}</span>`).join("");
 }
-window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
-draw({board:Array.from({length:12},()=>Array(12).fill(0)),positions:{green:{x:1,y:1},purple:{x:10,y:10}},area:{green:1,purple:1}});
-window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.init"){window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"territory-duel-4p"}}, "*");return}if(m.type==="agp.renderer.state")draw(m.payload?.frame||m.frame||{});});
+draw({width:12,height:12,board:Array.from({length:12},(_,x)=>Array.from({length:12},(_,y)=>x===0||y===0||x===11||y===11?-1:0)),active_slots:["green","purple","orange","blue"],positions:{green:{x:1,y:1},purple:{x:10,y:10},orange:{x:10,y:1},blue:{x:1,y:10}},area:{green:1,purple:1,orange:1,blue:1},boards:{}});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"territory-duel-4p"}},"*");
 </script>
 </body>
 </html>

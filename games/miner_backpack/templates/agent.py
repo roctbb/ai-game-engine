@@ -1,14 +1,17 @@
 def solve(ores, capacity):
-    # ores - веса кусков руды по порядку.
+    # ores - куски руды по порядку:
+    # {"weight": вес, "value": ценность}
     # capacity - максимальный вес рюкзака.
-    total = 0
-    count = 0
+    #
+    # Верните список команд "take" или "skip".
+    # Берем руду, если она помещается и ценность не меньше веса.
+    commands = []
+    total_weight = 0
 
     for ore in ores:
-        # Берем только пока следующий кусок помещается.
-        if total + ore > capacity:
-            break
-        total += ore
-        count += 1
+        weight = ore["weight"]
+        value = ore["value"]
+        # TODO: проверьте и вместимость, и ценность.
+        commands.append("skip")
 
-    return count
+    return commands

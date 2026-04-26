@@ -286,7 +286,7 @@
       const label = object.properties?.name || "";
       const life = object.properties?.life;
       if (label) {
-        drawText(label, x + cellSide / 2, y + cellSide * 0.28);
+        drawText(label, x + cellSide / 2, Math.max(cellSide * 0.18, y - cellSide * 0.14));
       }
       if (life !== undefined && life !== null && cellSide >= 24) {
         drawText(String(life), x + cellSide / 2, y + cellSide * 0.62);

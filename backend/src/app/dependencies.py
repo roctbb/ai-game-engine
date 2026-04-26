@@ -38,7 +38,7 @@ from execution.infrastructure.sqlalchemy_repository import (
     SqlAlchemyWorkerRepository,
 )
 from game_catalog.application.service import GameCatalogService
-from game_catalog.domain.model import SlotDefinition
+from game_catalog.domain.model import CatalogMetadataStatus, SlotDefinition
 from game_catalog.infrastructure.in_memory_repository import InMemoryGameRepository
 from game_catalog.infrastructure.manifest_loader import GameManifest, load_game_manifests
 from game_catalog.infrastructure.sqlalchemy_repository import SqlAlchemyGameRepository
@@ -66,6 +66,17 @@ from shared.db.base import Base
 from shared.db.session import create_sqlalchemy_engine
 import shared.db.models as _db_models
 from sqlalchemy.orm import sessionmaker
+
+
+REMOVED_MANIFEST_GAME_SLUGS = {
+    "archer_duel_lite_v1",
+    "beacon_duel_v1",
+    "blinking_gem_duel_v1",
+    "hill_control_v1",
+    "jump_gem_duel_v1",
+    "relic_delivery_duel_v1",
+    "template_v1",
+}
 
 
 @dataclass(slots=True)
@@ -251,6 +262,15 @@ def _seed_manifest_games(game_catalog: GameCatalogService) -> None:
             game_catalog.register_game(manifest.to_register_input())
         except ConflictError:
             _update_existing_game(game_catalog, manifest)
+    _archive_removed_manifest_games(game_catalog)
+
+
+def _archive_removed_manifest_games(game_catalog: GameCatalogService) -> None:
+    for slug in REMOVED_MANIFEST_GAME_SLUGS:
+        game = game_catalog.get_game_by_slug(slug)
+        if game is None or game.catalog_metadata_status is CatalogMetadataStatus.ARCHIVED:
+            continue
+        game_catalog.update_game(game.game_id, catalog_metadata_status=CatalogMetadataStatus.ARCHIVED)
 
 
 def _update_existing_game(game_catalog: GameCatalogService, manifest: GameManifest) -> None:

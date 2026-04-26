@@ -38,6 +38,9 @@ def test_execute_manifest_game_uses_docker_runner_with_limits(monkeypatch: Any, 
     settings.docker_binary = "docker"
     settings.docker_image = "python:3.12-slim"
     settings.docker_network_mode = "none"
+    settings.docker_log_driver = "json-file"
+    settings.docker_log_max_size = "10m"
+    settings.docker_log_max_file = "3"
     settings.docker_cpu_limit = "1.5"
     settings.docker_memory_limit = "384m"
     settings.docker_pids_limit = 256
@@ -73,6 +76,11 @@ def test_execute_manifest_game_uses_docker_runner_with_limits(monkeypatch: Any, 
     assert "--rm" in command
     assert "-i" in command
     assert "--read-only" in command
+    assert "--log-driver" in command
+    assert settings.docker_log_driver in command
+    assert "--log-opt" in command
+    assert f"max-size={settings.docker_log_max_size}" in command
+    assert f"max-file={settings.docker_log_max_file}" in command
     assert "--network" in command
     assert settings.docker_network_mode in command
     assert "--cpus" in command

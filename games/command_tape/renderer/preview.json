@@ -1,0 +1,76 @@
+{
+  "frame": {
+    "actual": [
+      "forward",
+      "forward",
+      "collect",
+      "turn_right",
+      "wait",
+      "forward",
+      "attack",
+      "pickup",
+      "turn_left",
+      "collect",
+      "forward",
+      "wait"
+    ],
+    "difficulty": "medium",
+    "expected": [
+      "forward",
+      "forward",
+      "collect",
+      "turn_right",
+      "wait",
+      "forward",
+      "attack",
+      "pickup",
+      "turn_left",
+      "collect",
+      "forward",
+      "wait"
+    ],
+    "kind": "command_tape",
+    "learning_section": "Строки и коды",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "energy_cost": {
+        ".": 0,
+        "A": 2,
+        "C": 1,
+        "F": 1,
+        "L": 0,
+        "P": 2,
+        "R": 0
+      },
+      "energy_limit": 10,
+      "expected": [
+        "forward",
+        "forward",
+        "collect",
+        "turn_right",
+        "wait",
+        "forward",
+        "attack",
+        "pickup",
+        "turn_left",
+        "collect",
+        "forward",
+        "wait"
+      ],
+      "mapping": {
+        ".": "wait",
+        "A": "attack",
+        "C": "collect",
+        "F": "forward",
+        "L": "turn_left",
+        "P": "pickup",
+        "R": "turn_right"
+      },
+      "tape": "FFCR.FAPLCF."
+    },
+    "title": "Командная лента"
+  }
+}

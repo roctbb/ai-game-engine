@@ -21,6 +21,7 @@
 - [x] Read-only API каталога игр (`/games/{id}/versions/{versionId}`, `/games/{id}/topics`, `/games/{id}/templates`).
 - [x] Валидация совместимости slot schema при смене версии.
 - [x] `single_task` metadata lifecycle: `draft|ready|archived`.
+- [x] `multiplayer` game format normalized to `min_players_per_match`/`max_players_per_match`; `small_match`/`massive_lobby` remain only as legacy aliases.
 - [x] Публичный каталог `single_task` показывает только `ready`.
 
 ## 3. Команды, код и snapshot
@@ -34,8 +35,11 @@
 
 ## 4. Лобби и соревнования
 
-- [x] Training lobbies: join/leave/ready/matchmaking.
-- [x] Lifecycle лобби: `open/paused/closed` + `updating`.
+- [x] Training lobbies: join/leave/ready/matchmaking with parallel match batches.
+- [x] Lifecycle лобби: `open/paused/stopped/closed` + `running/updating`.
+- [x] Teacher/admin management: start/pause/stop, edit settings, delete lobby with training runs.
+- [x] Lobby retention setting: `auto_delete_training_runs_days` for old terminal training matches.
+- [x] Lobby cycle phases: `waiting_players`, `waiting_viewer`, `simulation`, `replay`, `result`.
 - [x] `switch-version` в training-лобби останавливает активные `training_match` run (переводит в `canceled`) перед revalidate/swap.
 - [x] Отмены run выставляют диагностические причины (`canceled_by_game_update`, `manual_moderation_ban`, `manual_cancel`, `manual_stop_single_task`) в `error_message`.
 - [x] Контракт reason-code для `error_message` формализован в `SYSTEM_SPEC_V2` (раздел `19.2.1`).

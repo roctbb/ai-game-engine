@@ -22,6 +22,8 @@ class RegisterGameRequest(BaseModel):
     difficulty: str | None = Field(default=None, max_length=32)
     learning_section: str | None = Field(default=None, max_length=80)
     topics: list[str] = Field(default_factory=list, max_length=30)
+    min_players_per_match: int | None = Field(default=None, ge=2, le=64)
+    max_players_per_match: int | None = Field(default=None, ge=2, le=64)
     catalog_metadata_status: CatalogMetadataStatus | None = None
 
 
@@ -49,6 +51,8 @@ class PatchGameRequest(BaseModel):
     difficulty: str | None = Field(default=None, max_length=32)
     learning_section: str | None = Field(default=None, max_length=80)
     topics: list[str] | None = Field(default=None, max_length=30)
+    min_players_per_match: int | None = Field(default=None, ge=2, le=64)
+    max_players_per_match: int | None = Field(default=None, ge=2, le=64)
     catalog_metadata_status: CatalogMetadataStatus | None = None
 
 
@@ -110,6 +114,8 @@ class GameResponse(BaseModel):
     difficulty: str | None = None
     learning_section: str | None = None
     topics: list[str] = Field(default_factory=list)
+    min_players_per_match: int | None = None
+    max_players_per_match: int | None = None
     catalog_metadata_status: CatalogMetadataStatus
     active_version_id: str
     versions: list[GameVersionResponse]

@@ -5,14 +5,15 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию choose_action(gate), которая возвращает attack/use_key/disarm/open/wait."
-description: "Короткие ситуации у ворот тренируют if/elif/else: атаковать, открыть, обезвредить или ждать."
+player_instruction: "Определите функцию choose_action(gate), которая выбирает действие по приоритетам: враг, ловушка, замок, проход."
+description: "Страж ворот тренирует if/elif/else на конфликтующих признаках: враг может быть рядом одновременно с ловушкой и закрытыми воротами."
 difficulty: easy
 learning_section: Условия и выбор
 topics:
   - if
   - условия
   - логика
+  - приоритеты
 slots:
   - key: agent
     title: Код решения

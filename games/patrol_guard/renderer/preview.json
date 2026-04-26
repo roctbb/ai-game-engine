@@ -1,0 +1,93 @@
+{
+  "frame": {
+    "actual": [
+      "patrol",
+      "patrol",
+      "investigate",
+      "patrol",
+      "attack",
+      "return_to_route",
+      "investigate",
+      "patrol",
+      "attack",
+      "patrol"
+    ],
+    "difficulty": "medium",
+    "expected": [
+      "patrol",
+      "patrol",
+      "investigate",
+      "patrol",
+      "attack",
+      "return_to_route",
+      "investigate",
+      "patrol",
+      "attack",
+      "patrol"
+    ],
+    "kind": "patrol_guard",
+    "learning_section": "Режимы поведения",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "events": [
+        {
+          "noise": 0,
+          "type": "clear"
+        },
+        {
+          "noise": 1,
+          "type": "noise"
+        },
+        {
+          "noise": 2,
+          "type": "noise"
+        },
+        {
+          "noise": 0,
+          "type": "clear"
+        },
+        {
+          "noise": 0,
+          "type": "enemy"
+        },
+        {
+          "noise": 0,
+          "type": "lost_route"
+        },
+        {
+          "noise": 3,
+          "type": "noise"
+        },
+        {
+          "noise": 0,
+          "type": "clear"
+        },
+        {
+          "noise": 0,
+          "type": "enemy"
+        },
+        {
+          "noise": 0,
+          "type": "clear"
+        }
+      ],
+      "expected": [
+        "patrol",
+        "patrol",
+        "investigate",
+        "patrol",
+        "attack",
+        "return_to_route",
+        "investigate",
+        "patrol",
+        "attack",
+        "patrol"
+      ],
+      "rule": "enemy -> lost_route -> alert >= 3 -> patrol"
+    },
+    "title": "Патрульный страж"
+  }
+}

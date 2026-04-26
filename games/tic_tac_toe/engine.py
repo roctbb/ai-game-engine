@@ -16,6 +16,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
+    labels = _resolve_labels(ctx)
     player_fn, compile_error = _build_player_fn(
         ctx=ctx,
         slot_key="bot",
@@ -38,6 +39,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 "turns_played": turns_played,
                 "winner_role": winner_role,
                 "next_role": current_role,
+                "labels": labels,
             },
         }
     ]
@@ -76,6 +78,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                     "turns_played": turns_played,
                     "winner_role": winner_role,
                     "next_role": next_role,
+                    "labels": labels,
                 },
             }
         )
@@ -129,6 +132,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 "turns_played": turns_played,
                 "winner_role": winner_role,
                 "draw": winner_role == 0,
+                "labels": labels,
             },
         }
     )
@@ -151,6 +155,18 @@ def _load_context() -> dict[str, Any]:
 
 def _create_board() -> list[list[int]]:
     return [[0 for _ in range(_BOARD_SIZE)] for _ in range(_BOARD_SIZE)]
+
+
+def _resolve_labels(ctx: dict[str, Any]) -> dict[str, str]:
+    participants = ctx.get("participants")
+    if isinstance(participants, list) and participants:
+        first = participants[0]
+        second = participants[1] if len(participants) > 1 else {}
+        player = first.get("display_name") or first.get("captain_user_id") or first.get("team_id") if isinstance(first, dict) else None
+        enemy = second.get("display_name") or second.get("captain_user_id") or second.get("team_id") if isinstance(second, dict) else None
+        return {"1": str(player) if player else "Игрок", "-1": str(enemy) if enemy else "Соперник"}
+    raw = ctx.get("display_name") or ctx.get("team_name") or ctx.get("requested_by")
+    return {"1": str(raw) if raw else "Игрок", "-1": "Соперник"}
 
 
 def _build_player_fn(

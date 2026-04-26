@@ -5,14 +5,15 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию choose_item(inventory, situation), которая возвращает нужный предмет."
-description: Герой ищет подходящий предмет в списке инвентаря.
+player_instruction: "Определите функцию choose_item(inventory, situation), которая выбирает предмет по приоритетам ситуации."
+description: "Герой выбирает предмет из инвентаря: лечение, антидот, ключ, факел, еду или запасной предмет."
 difficulty: medium
 learning_section: Списки и цели
 topics:
   - списки строк
   - поиск
   - условия
+  - приоритеты
 slots:
   - key: agent
     title: Код решения

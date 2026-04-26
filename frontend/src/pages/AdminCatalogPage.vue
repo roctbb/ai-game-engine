@@ -1,7 +1,8 @@
 <template>
-  <section class="agp-grid">
-    <header class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+  <section class="agp-grid admin-catalog-page">
+    <header class="agp-card p-4 admin-catalog-hero">
       <div>
+        <p class="admin-catalog-kicker mb-1">Учебный каталог</p>
         <h1 class="h3 mb-1">Каталог задач</h1>
         <p class="text-muted mb-0">Подготовка учебных задач: черновик → опубликовано → архив.</p>
       </div>
@@ -11,13 +12,37 @@
     </header>
 
     <article class="agp-card p-3" v-if="!canManage">
-      <div class="text-warning-emphasis fw-semibold">Требуется роль преподавателя или администратора</div>
-      <div class="small text-muted">У текущего пользователя нет прав редактирования каталога.</div>
+      <div class="agp-empty-state agp-empty-state--compact">
+        Требуется роль преподавателя или администратора. У текущего пользователя нет прав редактирования каталога.
+      </div>
     </article>
 
-    <article class="agp-card p-3">
-      <div class="row g-2 align-items-end">
-        <div class="col-md-3">
+    <article class="admin-catalog-metrics" aria-label="Сводка каталога задач">
+      <div class="agp-card-soft p-3 admin-catalog-metric">
+        <span>Всего задач</span>
+        <strong class="mono">{{ totalTaskCount }}</strong>
+      </div>
+      <div class="agp-card-soft p-3 admin-catalog-metric admin-catalog-metric--draft">
+        <span>Черновики</span>
+        <strong class="mono">{{ draftCount }}</strong>
+      </div>
+      <div class="agp-card-soft p-3 admin-catalog-metric admin-catalog-metric--ready">
+        <span>Опубликовано</span>
+        <strong class="mono">{{ readyCount }}</strong>
+      </div>
+      <div class="agp-card-soft p-3 admin-catalog-metric admin-catalog-metric--archive">
+        <span>Архив</span>
+        <strong class="mono">{{ archivedCount }}</strong>
+      </div>
+    </article>
+
+    <article class="agp-card p-3 admin-catalog-filter-panel">
+      <div class="admin-catalog-filter-copy">
+        <div class="small text-muted text-uppercase fw-semibold">Фильтр</div>
+        <div class="fw-semibold">Быстро найдите задачу по статусу, названию или коду</div>
+      </div>
+      <div class="admin-catalog-filter-grid">
+        <div>
           <label class="form-label small">Статус</label>
           <select v-model="statusFilter" class="form-select mono">
             <option value="">Все</option>
@@ -26,16 +51,13 @@
             <option value="archived">Архив</option>
           </select>
         </div>
-        <div class="col-md-4">
+        <div>
           <label class="form-label small">Поиск</label>
           <input v-model.trim="searchQuery" class="form-control" placeholder="Название или технический код" />
         </div>
-        <div class="col-md-5 small text-muted catalog-summary">
-          Показано: <span class="mono">{{ rows.length }}</span>
-          из <span class="mono">{{ totalTaskCount }}</span>
-          · черновиков: <span class="mono">{{ draftCount }}</span>
-          · опубликовано: <span class="mono">{{ readyCount }}</span>
-          · архив: <span class="mono">{{ archivedCount }}</span>
+        <div class="admin-catalog-filter-result">
+          <span>Показано</span>
+          <strong class="mono">{{ rows.length }}/{{ totalTaskCount }}</strong>
         </div>
       </div>
     </article>
@@ -47,11 +69,11 @@
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
-    <article class="agp-card p-3">
-      <div v-if="isLoading" class="small text-muted">Загрузка задач...</div>
-      <div v-else-if="rows.length === 0" class="small text-muted">Задачи не найдены.</div>
+    <article class="agp-card p-3 admin-catalog-table-card">
+      <div v-if="isLoading" class="agp-loading-state agp-loading-state--compact">Загрузка задач...</div>
+      <div v-else-if="rows.length === 0" class="agp-empty-state agp-empty-state--compact">Задачи не найдены.</div>
       <div v-else class="table-responsive">
-        <table class="table align-middle mb-0">
+        <table class="table align-middle mb-0 admin-catalog-table">
           <thead>
             <tr>
               <th>Игра</th>
@@ -69,7 +91,7 @@
                   <div class="fw-semibold">{{ game.title }}</div>
                   <div class="small text-muted mono">{{ game.slug }}</div>
                 </td>
-                <td><span class="badge" :class="statusBadgeClass(game.catalog_metadata_status)">{{ statusLabel(game.catalog_metadata_status) }}</span></td>
+                <td><span class="admin-catalog-status" :class="statusBadgeClass(game.catalog_metadata_status)">{{ statusLabel(game.catalog_metadata_status) }}</span></td>
                 <td class="small">{{ difficultyLabel(game.difficulty) }}</td>
                 <td class="small">{{ game.learning_section || '—' }}</td>
                 <td class="small">{{ game.topics.join(', ') || '—' }}</td>
@@ -85,7 +107,7 @@
 
               <tr v-if="isExpanded(game.game_id)">
                 <td colspan="6">
-                  <div class="agp-card-soft p-3 d-flex flex-column gap-2">
+                  <div class="admin-catalog-editor p-3 d-flex flex-column gap-2">
                     <div class="row g-2">
                       <div class="col-md-8">
                         <label class="form-label small">Описание</label>
@@ -238,9 +260,9 @@ const activeFilterSummary = computed(() => {
 });
 
 function statusBadgeClass(status: CatalogMetadataStatus): string {
-  if (status === 'ready') return 'text-bg-success';
-  if (status === 'draft') return 'text-bg-warning';
-  return 'text-bg-secondary';
+  if (status === 'ready') return 'admin-catalog-status--ready';
+  if (status === 'draft') return 'admin-catalog-status--draft';
+  return 'admin-catalog-status--archived';
 }
 
 function statusLabel(status: CatalogMetadataStatus): string {
@@ -436,11 +458,197 @@ watch(
 </script>
 
 <style scoped>
-.catalog-summary {
+.admin-catalog-page {
+  gap: 0.9rem;
+}
+
+.admin-catalog-hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
+    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.16), transparent 14rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.9)),
+    url("data:image/svg+xml,%3Csvg width='184' height='112' viewBox='0 0 184 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M22 22h34v28H22zM76 18h34v28H76zM132 30h30v26h-30zM50 72h32v22H50zM106 68h34v26h-34z'/%3E%3Cpath d='M56 36h20M110 32h22M82 82h24M92 46v22'/%3E%3C/g%3E%3C/svg%3E");
+  background-position: center, center, center, right 1rem center;
+  background-repeat: no-repeat;
+}
+
+.admin-catalog-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
+}
+
+.admin-catalog-hero > * {
+  position: relative;
+}
+
+.admin-catalog-kicker {
+  color: #0f766e;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-catalog-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-catalog-metric {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 0.05rem;
+  border-color: rgba(148, 163, 184, 0.34);
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.admin-catalog-metric::after {
+  content: '';
+  position: absolute;
+  right: -1.2rem;
+  bottom: -1.35rem;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 1.1rem;
+  background: rgba(37, 99, 235, 0.08);
+  transform: rotate(18deg);
+}
+
+.admin-catalog-metric--draft::after {
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.admin-catalog-metric--ready::after {
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.admin-catalog-metric--archive::after {
+  background: rgba(100, 116, 139, 0.12);
+}
+
+.admin-catalog-metric span {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.admin-catalog-metric strong {
+  color: var(--agp-text);
+  font-size: 1.45rem;
+}
+
+.admin-catalog-filter-panel {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.8fr) minmax(0, 1.6fr);
+  gap: 1rem;
+  align-items: end;
+}
+
+.admin-catalog-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(12rem, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.admin-catalog-filter-result {
+  display: grid;
+  gap: 0.05rem;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 0.55rem 0.7rem;
+}
+
+.admin-catalog-filter-result span {
+  color: var(--agp-text-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.admin-catalog-filter-result strong {
+  color: var(--agp-text);
+}
+
+.admin-catalog-table-card,
+.admin-catalog-editor {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-catalog-table-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.18rem;
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.72), rgba(37, 99, 235, 0.5), transparent);
+}
+
+.admin-catalog-table-card > * {
+  position: relative;
+}
+
+.admin-catalog-table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: rgba(248, 250, 252, 0.82);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.admin-catalog-table thead th {
+  color: var(--agp-text-muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-catalog-status {
+  display: inline-flex;
   align-items: center;
+  width: fit-content;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.16rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.admin-catalog-status--ready {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.admin-catalog-status--draft {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.admin-catalog-status--archived {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.admin-catalog-editor {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.85rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 10rem),
+    #f8fafc;
 }
 
 .catalog-active-filter-line {
@@ -454,5 +662,27 @@ watch(
 .catalog-active-filter-line strong {
   color: var(--agp-text);
   font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .admin-catalog-filter-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-catalog-metrics,
+  .admin-catalog-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-catalog-hero {
+    flex-direction: column;
+  }
+
+  .admin-catalog-metrics,
+  .admin-catalog-filter-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

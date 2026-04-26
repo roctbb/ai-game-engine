@@ -23,3 +23,6 @@ class InMemoryReplayRepository:
         items.sort(key=lambda item: item.updated_at, reverse=True)
         return items[:limit]
 
+    def delete_by_run_ids(self, run_ids: list[str]) -> None:
+        for run_id in run_ids:
+            self._items_by_run_id.pop(run_id, None)

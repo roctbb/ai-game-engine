@@ -2,7 +2,13 @@
   <div class="agp-shell" :class="{ 'agp-shell--workspace': isChromeHiddenRoute }">
     <nav v-if="!isChromeHiddenRoute" class="agp-navbar">
       <div class="agp-topbar">
-        <RouterLink class="agp-brand" to="/tasks">Игровая платформа</RouterLink>
+        <RouterLink class="agp-brand" to="/tasks">
+          <span class="agp-brand-mark" aria-hidden="true"></span>
+          <span class="agp-brand-copy">
+            <strong>Игровая платформа</strong>
+            <small>AI Arena</small>
+          </span>
+        </RouterLink>
 
         <div class="agp-primary-nav" aria-label="Главная навигация">
           <RouterLink class="agp-nav-link" to="/tasks">Задачи</RouterLink>
@@ -13,16 +19,26 @@
           </RouterLink>
         </div>
 
-        <details
+        <div
           ref="userMenuRef"
           class="agp-user-menu"
-          @toggle="syncUserMenuOpen"
         >
-          <summary>
-            <span v-if="sessionStore.isAuthenticated">{{ sessionStore.nickname }}</span>
-            <span v-else>Войти</span>
-          </summary>
-          <div class="agp-user-popover">
+          <button
+            class="agp-user-trigger"
+            type="button"
+            :aria-expanded="isUserMenuOpen"
+            aria-controls="agp-user-popover"
+            @click.stop="toggleUserMenu"
+          >
+            <span class="agp-user-avatar" aria-hidden="true">{{ userInitial }}</span>
+            <span class="agp-user-trigger-copy">
+              <strong v-if="sessionStore.isAuthenticated">{{ sessionStore.nickname }}</strong>
+              <strong v-else>Войти</strong>
+              <small>{{ sessionStore.isAuthenticated ? roleLabel : 'Гость' }}</small>
+            </span>
+            <span class="agp-user-caret" aria-hidden="true"></span>
+          </button>
+          <div v-if="isUserMenuOpen" id="agp-user-popover" class="agp-user-popover">
             <div class="agp-user-card" v-if="sessionStore.isAuthenticated">
               <div>
                 <div class="small text-muted">Пользователь</div>
@@ -39,6 +55,15 @@
               Повторы
             </RouterLink>
 
+            <RouterLink
+              v-if="!sessionStore.isAuthenticated"
+              class="btn btn-sm btn-primary w-100"
+              :to="{ name: 'login', query: { next: route.fullPath } }"
+              @click="closeUserMenu"
+            >
+              Войти
+            </RouterLink>
+
             <button
               v-if="sessionStore.isAuthenticated"
               class="btn btn-sm btn-outline-danger w-100"
@@ -47,7 +72,7 @@
               Выйти
             </button>
           </div>
-        </details>
+        </div>
       </div>
     </nav>
 
@@ -66,7 +91,7 @@ import { useSessionStore } from '../stores/session';
 const route = useRoute();
 const router = useRouter();
 const sessionStore = useSessionStore();
-const userMenuRef = ref<HTMLDetailsElement | null>(null);
+const userMenuRef = ref<HTMLDivElement | null>(null);
 const isUserMenuOpen = ref(false);
 const canManage = computed(
   () => sessionStore.role === 'teacher' || sessionStore.role === 'admin'
@@ -82,6 +107,10 @@ const providerLabel = computed(() => {
   if (sessionStore.provider === 'dev') return 'Учебный вход';
   return 'Сессия активна';
 });
+const userInitial = computed(() => {
+  const source = sessionStore.isAuthenticated ? sessionStore.nickname : '?';
+  return source.trim().slice(0, 1).toUpperCase() || '?';
+});
 const isEmbeddedRoute = computed(() => route.query.embed === '1');
 const isChromeHiddenRoute = computed(() =>
   ['login', 'task-run', 'run-watch', 'lobby'].includes(String(route.name ?? '')) || isEmbeddedRoute.value
@@ -92,11 +121,10 @@ const isWorkspaceRoute = computed(() =>
 
 function closeUserMenu(): void {
   isUserMenuOpen.value = false;
-  if (userMenuRef.value) userMenuRef.value.open = false;
 }
 
-function syncUserMenuOpen(event: Event): void {
-  isUserMenuOpen.value = (event.currentTarget as HTMLDetailsElement).open;
+function toggleUserMenu(): void {
+  isUserMenuOpen.value = !isUserMenuOpen.value;
 }
 
 function handleDocumentPointerDown(event: PointerEvent): void {

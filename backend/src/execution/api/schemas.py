@@ -68,15 +68,25 @@ class RunExecutionContextResponse(BaseModel):
     participants: list[dict[str, object]] = Field(default_factory=list)
 
 
+class RunWatchParticipantResponse(BaseModel):
+    run_id: str
+    team_id: str
+    display_name: str
+    captain_user_id: str
+    is_current: bool
+
+
 class RunWatchContextResponse(BaseModel):
     run_id: str
     game_id: str
     game_slug: str
+    game_title: str
     run_kind: RunKind
     status: RunStatus
     renderer_entrypoint: str | None
     renderer_url: str | None
     renderer_protocol: str
+    participants: list[RunWatchParticipantResponse] = Field(default_factory=list)
 
 
 class RegisterWorkerRequest(BaseModel):

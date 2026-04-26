@@ -10,9 +10,9 @@
 | `maze_escape_v1` | `single_task` | `script_based` | ✅ | ✅ (`renderer/index.html`, SVG) | ✅ | ✅ | ✅ ready |
 | `coins_right_down_v1` | `single_task` | `script_based` | ✅ | ✅ (`renderer/index.html`, SVG) | ✅ | ✅ | ✅ ready |
 | `tower_defense_v1` | `single_task` | `script_based` | ✅ | ✅ (`renderer/index.html`, SVG) | ✅ | ✅ | ✅ ready |
-| `ttt_connect5_v1` | `small_match` | `turn_based` | ✅ | ✅ (`renderer/index.html`, SVG preview) | ✅ | ✅ | ✅ ready |
-| `tanks_ctf_v1` | `massive_lobby` | `turn_based` | ✅ | ✅ (`renderer/index.html`, SVG preview) | ✅ | ✅ | ✅ ready |
-| `template_v1` | `small_match` | `turn_based` | ✅ | ✅ (`renderer/index.html`, SVG preview) | ✅ (базовый) | ✅ | ✅ ready |
+| `ttt_connect5_v1` | `multiplayer` | `turn_based` | ✅ | ✅ (`renderer/index.html`, SVG preview) | ✅ | ✅ | ✅ ready |
+| `tanks_ctf_v1` | `multiplayer` | `turn_based` | ✅ | ✅ (`renderer/index.html`, SVG preview) | ✅ | ✅ | ✅ ready |
+| `template_v1` | `multiplayer` | `turn_based` | ✅ | ✅ (`renderer/index.html`, SVG preview) | ✅ (базовый) | ✅ | ✅ ready |
 
 ## 2) Checklist миграции (на игру)
 

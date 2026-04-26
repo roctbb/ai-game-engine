@@ -3,35 +3,56 @@
     <header class="agp-card p-4 tasks-head">
       <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
         <div>
+          <p class="tasks-kicker mb-1">Учебная карта</p>
           <h1 class="h3 mb-2">Задачи</h1>
           <p class="text-muted mb-0">
             Сначала выберите учебный раздел, затем откройте список задач внутри него.
           </p>
         </div>
-        <div class="d-flex gap-2 flex-wrap align-items-start">
-          <span class="agp-pill agp-pill--primary">разделов: {{ sectionCards.length }}</span>
-          <span class="agp-pill agp-pill--neutral">задач: {{ tasks.length }}</span>
-          <span class="agp-pill agp-pill--neutral">решено вами: {{ solvedByCurrentUserCount }}</span>
+        <div class="tasks-head-stats" aria-label="Сводка каталога задач">
+          <div>
+            <span>Разделов</span>
+            <strong class="mono">{{ sectionCards.length }}</strong>
+          </div>
+          <div>
+            <span>Задач</span>
+            <strong class="mono">{{ tasks.length }}</strong>
+          </div>
+          <div>
+            <span>Решено</span>
+            <strong class="mono">{{ solvedByCurrentUserCount }}</strong>
+          </div>
+          <div>
+            <span>Прогресс</span>
+            <strong class="mono">{{ overallProgressPercent }}%</strong>
+          </div>
         </div>
       </div>
     </header>
 
-    <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка разделов...</article>
+    <article v-if="isLoading" class="agp-card p-4">
+      <div class="agp-loading-state agp-loading-state--compact">Загрузка разделов...</div>
+    </article>
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
-    <article v-else-if="tasks.length === 0" class="agp-card p-4 text-muted">Задачи пока не опубликованы.</article>
+    <article v-else-if="tasks.length === 0" class="agp-card p-4">
+      <div class="agp-empty-state">Задачи пока не опубликованы.</div>
+    </article>
 
     <section v-else class="section-card-grid" aria-label="Разделы задач">
       <RouterLink
         v-for="section in sectionCards"
         :key="section.name"
         class="agp-card p-3 section-card"
-        :class="{ 'section-card--done': section.isDone }"
+        :class="{
+          'section-card--done': section.isDone,
+          'section-card--started': section.solved > 0 && !section.isDone,
+        }"
         :to="{ name: 'tasks-section', params: { section: section.name } }"
       >
         <div class="section-card-top">
           <span class="section-index mono">{{ section.index }}</span>
-          <span class="agp-pill" :class="section.isDone ? 'agp-pill--primary' : 'agp-pill--neutral'">
-            {{ section.solved }}/{{ section.total }}
+          <span class="section-status" :class="sectionStatusClass(section)">
+            {{ sectionStatusLabel(section) }}
           </span>
         </div>
         <div>
@@ -42,14 +63,29 @@
           <div :style="{ width: `${section.percent}%` }"></div>
         </div>
         <div class="section-card-foot">
-          <span>{{ section.percent }}%</span>
-          <span>{{ section.isDone ? 'раздел решен' : 'открыть задачи' }}</span>
+          <span>{{ section.solved }}/{{ section.total }} задач</span>
+          <span>{{ section.isDone ? 'раздел решен' : section.solved > 0 ? 'продолжить' : 'начать' }}</span>
         </div>
       </RouterLink>
     </section>
 
     <aside v-if="!isLoading && !errorMessage" class="agp-card p-3 tasks-summary">
-      <h2 class="h6 mb-2">Ваш прогресс</h2>
+      <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+        <div>
+          <p class="tasks-kicker mb-1">Путь игрока</p>
+          <h2 class="h6 mb-0">Ваш прогресс</h2>
+        </div>
+        <strong class="tasks-summary-percent mono">{{ overallProgressPercent }}%</strong>
+      </div>
+      <div
+        class="tasks-summary-progress"
+        role="progressbar"
+        :aria-valuenow="overallProgressPercent"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <i :style="{ width: `${overallProgressPercent}%` }"></i>
+      </div>
       <div class="tasks-summary-grid">
         <span>Всего задач</span>
         <strong class="mono">{{ tasks.length }}</strong>
@@ -101,6 +137,9 @@ const currentUserSolvedGameIds = computed(() => {
 });
 
 const solvedByCurrentUserCount = computed(() => currentUserSolvedGameIds.value.size);
+const overallProgressPercent = computed(() =>
+  tasks.value.length > 0 ? Math.round((solvedByCurrentUserCount.value / tasks.value.length) * 100) : 0
+);
 
 const sectionCards = computed(() => {
   const groups = new Map<string, SingleTaskCatalogItemDto[]>();
@@ -122,13 +161,38 @@ const sectionCards = computed(() => {
         solved,
         percent,
         isDone: total > 0 && solved === total,
-        index: sectionOrder(name) + 1,
+        order: sectionOrder(name),
       };
     })
-    .sort((left, right) => sectionOrder(left.name) - sectionOrder(right.name) || left.name.localeCompare(right.name, 'ru'));
+    .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name, 'ru'))
+    .map(({ order: _order, ...section }, index) => ({
+      ...section,
+      index: index + 1,
+    }));
 });
 
 const completedSectionCount = computed(() => sectionCards.value.filter((section) => section.isDone).length);
+
+type SectionCard = {
+  name: string;
+  total: number;
+  solved: number;
+  percent: number;
+  isDone: boolean;
+  index: number;
+};
+
+function sectionStatusLabel(section: SectionCard): string {
+  if (section.isDone) return 'готово';
+  if (section.solved > 0) return 'в процессе';
+  return 'старт';
+}
+
+function sectionStatusClass(section: SectionCard): string {
+  if (section.isDone) return 'section-status--done';
+  if (section.solved > 0) return 'section-status--started';
+  return 'section-status--idle';
+}
 
 onMounted(async () => {
   isLoading.value = true;
@@ -154,11 +218,63 @@ onMounted(async () => {
 }
 
 .tasks-head {
+  position: relative;
   overflow: hidden;
   background:
     radial-gradient(circle at 12% 20%, rgba(245, 158, 11, 0.18), transparent 16rem),
     radial-gradient(circle at 88% 10%, rgba(37, 99, 235, 0.14), transparent 16rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 251, 235, 0.88));
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 251, 235, 0.88)),
+    url("data:image/svg+xml,%3Csvg width='180' height='112' viewBox='0 0 180 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.13' stroke-width='2'%3E%3Cpath d='M18 28h28v28H18zM76 18h28v28H76zM132 36h28v28h-28zM48 72h28v28H48zM106 68h28v28h-28z'/%3E%3Cpath d='M46 42h30M104 32h28M76 86h30M90 46v22'/%3E%3C/g%3E%3C/svg%3E");
+  background-position: center, center, center, right 1rem center;
+  background-repeat: no-repeat;
+}
+
+.tasks-head::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #f59e0b, #14b8a6, #2563eb);
+}
+
+.tasks-head > * {
+  position: relative;
+}
+
+.tasks-kicker {
+  color: #0f766e;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tasks-head-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(5.5rem, 1fr));
+  gap: 0.55rem;
+  min-width: min(100%, 28rem);
+}
+
+.tasks-head-stats div {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.tasks-head-stats span {
+  color: var(--agp-text-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.tasks-head-stats strong {
+  color: var(--agp-text);
+  font-size: 1.18rem;
 }
 
 .section-card-grid {
@@ -214,6 +330,13 @@ onMounted(async () => {
     linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
 }
 
+.section-card--started {
+  border-color: rgba(20, 184, 166, 0.4);
+  background:
+    radial-gradient(circle at 86% 14%, rgba(20, 184, 166, 0.14), transparent 11rem),
+    linear-gradient(180deg, #f0fdfa 0%, #ffffff 100%);
+}
+
 .section-card-top,
 .section-card-foot {
   display: flex;
@@ -236,6 +359,39 @@ onMounted(async () => {
 .section-card--done .section-index {
   background: #bbf7d0;
   color: #166534;
+}
+
+.section-card--started .section-index {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.section-status {
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.section-status--done {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.section-status--started {
+  border-color: #99f6e4;
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.section-status--idle {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .section-card h2 {
@@ -276,7 +432,52 @@ onMounted(async () => {
 }
 
 .tasks-summary {
+  position: relative;
+  overflow: hidden;
   max-width: 36rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.14), transparent 11rem),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.tasks-summary::before {
+  content: '';
+  position: absolute;
+  right: -2.5rem;
+  bottom: -2.75rem;
+  width: 9rem;
+  height: 9rem;
+  border-radius: 2rem;
+  transform: rotate(18deg);
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(20, 184, 166, 0.11)),
+    url("data:image/svg+xml,%3Csvg width='96' height='96' viewBox='0 0 96 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2314b8a6' stroke-opacity='.35' stroke-width='2'%3E%3Cpath d='M18 48h60M48 18v60M30 30h36v36H30z'/%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+.tasks-summary > * {
+  position: relative;
+}
+
+.tasks-summary-percent {
+  color: #0f766e;
+  font-size: 1.15rem;
+}
+
+.tasks-summary-progress {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+  margin-bottom: 0.75rem;
+}
+
+.tasks-summary-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #14b8a6, #f59e0b);
+  transition: width 0.2s ease;
 }
 
 .tasks-summary-grid {
@@ -289,5 +490,24 @@ onMounted(async () => {
 
 .tasks-summary-grid strong {
   color: var(--agp-text);
+}
+
+@media (max-width: 900px) {
+  .tasks-head-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .tasks-head-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .tasks-head-stats {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -5,14 +5,15 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию solve(ores, capacity), которая возвращает сколько руды можно взять подряд без перегруза."
-description: Шахтер берет руду подряд, пока вес не превысит вместимость рюкзака.
+player_instruction: "Определите функцию solve(ores, capacity), которая возвращает команды take/skip для руды с учетом веса и ценности."
+description: "Шахтер выбирает куски руды по порядку: ценный кусок можно взять, если он помещается в рюкзак."
 difficulty: medium
 learning_section: Счетчики и ресурсы
 topics:
   - счетчики
   - ресурсы
   - while
+  - вес и ценность
 slots:
   - key: agent
     title: Код решения

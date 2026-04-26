@@ -24,6 +24,8 @@ class SqlAlchemyGameRepository:
                     difficulty=game.difficulty,
                     learning_section=game.learning_section,
                     topics=list(game.topics),
+                    min_players_per_match=game.min_players_per_match,
+                    max_players_per_match=game.max_players_per_match,
                     catalog_metadata_status=game.catalog_metadata_status.value,
                     active_version_id=game.active_version_id,
                 )
@@ -36,6 +38,8 @@ class SqlAlchemyGameRepository:
                 existing_game.difficulty = game.difficulty
                 existing_game.learning_section = game.learning_section
                 existing_game.topics = list(game.topics)
+                existing_game.min_players_per_match = game.min_players_per_match
+                existing_game.max_players_per_match = game.max_players_per_match
                 existing_game.catalog_metadata_status = game.catalog_metadata_status.value
                 existing_game.active_version_id = game.active_version_id
 
@@ -133,6 +137,8 @@ def _map_game_from_rows(
         difficulty=game_row.difficulty,
         learning_section=game_row.learning_section,
         topics=tuple(game_row.topics or []),
+        min_players_per_match=getattr(game_row, "min_players_per_match", None),
+        max_players_per_match=getattr(game_row, "max_players_per_match", None),
         catalog_metadata_status=CatalogMetadataStatus(game_row.catalog_metadata_status or "ready"),
         versions=versions,
         active_version_id=game_row.active_version_id,

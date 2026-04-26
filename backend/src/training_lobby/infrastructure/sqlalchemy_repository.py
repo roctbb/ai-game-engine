@@ -25,6 +25,12 @@ class SqlAlchemyLobbyRepository:
             rows = session.scalars(select(LobbyOrm).order_by(desc(LobbyOrm.created_at))).all()
             return [_map_lobby_from_orm(row) for row in rows]
 
+    def delete(self, lobby_id: str) -> None:
+        with self._session_factory.begin() as session:
+            row = session.get(LobbyOrm, lobby_id)
+            if row is not None:
+                session.delete(row)
+
 
 def _map_lobby_to_orm(lobby: Lobby) -> LobbyOrm:
     teams_json: dict[str, dict[str, object]] = {}
@@ -46,6 +52,8 @@ def _map_lobby_to_orm(lobby: Lobby) -> LobbyOrm:
         status=lobby.status.value,
         teams_json=teams_json,
         last_scheduled_run_ids_json=list(lobby.last_scheduled_run_ids),
+        last_scheduled_match_groups_json=[list(group) for group in lobby.last_scheduled_match_groups],
+        auto_delete_training_runs_days=lobby.auto_delete_training_runs_days,
         created_at=lobby.created_at,
     )
 
@@ -59,6 +67,15 @@ def _map_lobby_from_orm(row: LobbyOrm) -> Lobby:
             blocker_reason=(str(raw["blocker_reason"]) if raw.get("blocker_reason") else None),
         )
 
+    raw_groups = row.last_scheduled_match_groups_json or []
+    match_groups: list[tuple[str, ...]] = []
+    for raw_group in raw_groups:
+        if not isinstance(raw_group, list):
+            continue
+        group = tuple(str(item) for item in raw_group if item)
+        if group:
+            match_groups.append(group)
+
     return Lobby(
         lobby_id=row.lobby_id,
         game_id=row.game_id,
@@ -71,5 +88,7 @@ def _map_lobby_from_orm(row: LobbyOrm) -> Lobby:
         status=LobbyStatus(row.status),
         teams=teams,
         last_scheduled_run_ids=tuple(str(item) for item in (row.last_scheduled_run_ids_json or [])),
+        last_scheduled_match_groups=tuple(match_groups),
+        auto_delete_training_runs_days=row.auto_delete_training_runs_days,
         created_at=row.created_at,
     )

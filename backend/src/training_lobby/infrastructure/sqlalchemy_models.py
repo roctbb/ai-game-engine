@@ -25,4 +25,6 @@ class LobbyOrm(Base):
 
     teams_json: Mapped[dict[str, dict[str, object]]] = mapped_column(SqlJson, default=dict)
     last_scheduled_run_ids_json: Mapped[list[str]] = mapped_column(SqlJson, default=list)
+    last_scheduled_match_groups_json: Mapped[list[list[str]]] = mapped_column(SqlJson, default=list)
+    auto_delete_training_runs_days: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

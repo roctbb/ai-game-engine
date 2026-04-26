@@ -5,14 +5,15 @@ semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: "Определите функцию scan(board), которая возвращает лучший ряд или столбец с сокровищами."
-description: Сканер ищет строку или столбец с максимальной суммой сокровищ.
+player_instruction: "Определите функцию scan(board), которая возвращает самый выгодный ряд или столбец: сумма сокровищ минус стоимость сканирования."
+description: Сканер сравнивает строки и столбцы по прибыли, а не только по сумме сокровищ.
 difficulty: medium
 learning_section: Матрицы и координаты
 topics:
   - матрицы
   - суммы
   - максимум
+  - прибыль
 slots:
   - key: agent
     title: Код решения

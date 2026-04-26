@@ -14,10 +14,11 @@ CONFIG = {
   "topics": [
     "while",
     "циклы",
-    "предметы"
+    "предметы",
+    "условия"
   ],
   "kind": "crystal_corridor",
-  "instruction": "Определите функцию solve(corridor), которая возвращает команды collect/move до первой стены.",
+  "instruction": "Определите функцию solve(corridor), которая идет до первой стены, собирает C и B, но пропускает X.",
   "learning_section": "Циклы и повторения",
   "mode": "single_task",
   "slots": [
@@ -116,7 +117,9 @@ def _visual_steps(task: dict[str, object], expected: object, actual: object) -> 
         return _miner_visual_steps(task, expected, actual)
     if CONFIG["kind"] == "laser_mirrors":
         return _laser_visual_steps(task)
-    if CONFIG["kind"] in {"pixel_painter", "treasure_scanner", "minesweeper_numbers", "farm_grid", "gravity_apples"}:
+    if CONFIG["kind"] == "gravity_apples":
+        return _gravity_visual_steps(task, expected, actual)
+    if CONFIG["kind"] in {"pixel_painter", "treasure_scanner", "minesweeper_numbers", "farm_grid"}:
         board = task.get("board") or task.get("pixels") or task.get("field") or task.get("mines")
         board_steps = _board_visual_steps(board, expected, actual)
         if board_steps:
@@ -154,19 +157,34 @@ def _recipe_visual_steps(task: dict[str, object], expected: object, actual: obje
     resources = task.get("resources")
     if not isinstance(recipes, dict) or not isinstance(resources, dict):
         return [_step(0, expected, actual)]
+    costs = task.get("ingredient_costs")
+    ingredient_costs = costs if isinstance(costs, dict) else {}
     steps: list[dict[str, object]] = []
     for index, (name, recipe) in enumerate(recipes.items()):
         if not isinstance(recipe, dict):
             continue
         can_make = all(int(resources.get(k, 0)) >= int(v) for k, v in recipe.items() if k != "value")
+        cost = _recipe_cost(recipe, ingredient_costs)
+        profit = int(recipe.get("value", 0)) - cost
         steps.append(_step(index, expected, actual, {
             "recipe_name": name,
             "recipe": _normalize(recipe),
             "can_make": can_make,
             "recipe_value": recipe.get("value"),
+            "recipe_cost": cost,
+            "recipe_profit": profit,
             "step_title": f"Рецепт {name}",
         }))
     return steps or [_step(0, expected, actual)]
+
+
+def _recipe_cost(recipe: dict[object, object], ingredient_costs: dict[object, object]) -> int:
+    total = 0
+    for resource, amount in recipe.items():
+        if resource == "value":
+            continue
+        total += int(amount) * int(ingredient_costs.get(resource, 1))
+    return total
 
 
 def _enemy_choice_visual_steps(task: dict[str, object], expected: object, actual: object) -> list[dict[str, object]]:
@@ -177,11 +195,17 @@ def _enemy_choice_visual_steps(task: dict[str, object], expected: object, actual
     for index, enemy in enumerate(enemies):
         marker = enemy.get("id") if isinstance(enemy, dict) else None
         score = None
+        reason = None
         if isinstance(enemy, dict) and CONFIG["kind"] == "priority_tower":
-            score = int(enemy.get("danger", 0)) * 3 + int(enemy.get("speed", 0)) * 2 - int(enemy.get("distance", 0))
+            score = _enemy_pressure(enemy)
+            reason = f"{enemy.get('danger', 0)}*3 + {enemy.get('speed', 0)}*2 - {enemy.get('distance', 0)} + {enemy.get('hp', 0)}//10 = {score}"
+        elif isinstance(enemy, dict) and CONFIG["kind"] == "weakest_enemy":
+            reward = int(enemy.get("reward", 0))
+            reason = f"hp {enemy.get('hp', 0)}, distance {enemy.get('distance', 0)}, reward {reward}"
         steps.append(_step(index, expected, actual, {
             "enemy": _normalize(enemy),
             "enemy_score": score,
+            "choice_reason": reason,
             "is_expected_target": marker == expected,
             "is_actual_target": marker == actual,
             "step_title": f"Цель {index + 1}",
@@ -201,12 +225,33 @@ def _ship_queue_visual_steps(task: dict[str, object], expected: object, actual: 
     for index in range(total):
         expected_ship = expected_order[index] if index < len(expected_order) else None
         actual_ship = actual_order[index] if index < len(actual_order) else None
+        ship = by_id.get(expected_ship) or by_id.get(actual_ship) or {}
+        urgency = _ship_urgency(ship) if isinstance(ship, dict) else 0
         steps.append(_step(index, expected_ship, actual_ship, {
-            "ship": _normalize(by_id.get(expected_ship) or by_id.get(actual_ship) or {}),
+            "ship": _normalize(ship),
+            "ship_urgency": urgency,
             "active_ship_id": expected_ship or actual_ship,
             "step_title": f"Место в очереди {index + 1}",
         }))
     return steps
+
+
+def _ship_urgency(ship: dict[object, object]) -> int:
+    priority = int(ship.get("priority", 0))
+    fuel = int(ship.get("fuel", 0))
+    passengers = int(ship.get("passengers", 0))
+    service_time = int(ship.get("service_time", 0))
+    repair_bonus = 20 if ship.get("broken") else 0
+    return priority * 10 + passengers * 2 + repair_bonus + max(0, 10 - fuel) - service_time
+
+
+def _enemy_pressure(enemy: dict[object, object]) -> int:
+    return (
+        int(enemy.get("danger", 0)) * 3
+        + int(enemy.get("speed", 0)) * 2
+        - int(enemy.get("distance", 0))
+        + int(enemy.get("hp", 0)) // 10
+    )
 
 
 def _miner_visual_steps(task: dict[str, object], expected: object, actual: object) -> list[dict[str, object]]:
@@ -216,23 +261,26 @@ def _miner_visual_steps(task: dict[str, object], expected: object, actual: objec
         return [_step(0, expected, actual)]
     steps: list[dict[str, object]] = []
     total_weight = 0
-    expected_count = int(expected) if isinstance(expected, int) else 0
-    actual_count = int(actual) if isinstance(actual, int) else -1
+    expected_actions = expected if isinstance(expected, list) else []
+    actual_actions = actual if isinstance(actual, list) else []
     for index, ore in enumerate(ores):
-        ore_weight = int(ore) if isinstance(ore, int) else 0
-        can_take = total_weight + ore_weight <= capacity
-        if can_take:
+        ore_data = ore if isinstance(ore, dict) else {"weight": ore, "value": ore}
+        ore_weight = int(ore_data.get("weight", 0))
+        ore_value = int(ore_data.get("value", 0))
+        expected_step = expected_actions[index] if index < len(expected_actions) else None
+        actual_step = actual_actions[index] if index < len(actual_actions) else None
+        can_take = total_weight + ore_weight <= capacity and ore_value >= ore_weight
+        if expected_step == "take":
             total_weight += ore_weight
-        steps.append(_step(index, expected_count, actual_count, {
+        steps.append(_step(index, expected_step, actual_step, {
             "active_index": index,
             "ore_weight": ore_weight,
+            "ore_value": ore_value,
             "backpack_weight": total_weight,
             "capacity": capacity,
             "can_take": can_take,
             "step_title": f"Жила {index + 1}",
         }))
-        if not can_take:
-            break
     return steps or [_step(0, expected, actual)]
 
 
@@ -246,7 +294,18 @@ def _board_visual_steps(board: object, expected: object, actual: object) -> list
     selected = cells[::stride][:16]
     if cells[-1] not in selected:
         selected.append(cells[-1])
-    return [_step(index, expected, actual, {"active_x": x, "active_y": y}) for index, (x, y) in enumerate(selected)]
+    steps: list[dict[str, object]] = []
+    width = len(board)
+    height = len(board[0]) if width and isinstance(board[0], list) else 0
+    for index, (x, y) in enumerate(selected):
+        neighbors = [
+            [nx, ny]
+            for nx in range(x - 1, x + 2)
+            for ny in range(y - 1, y + 2)
+            if (nx != x or ny != y) and 0 <= nx < width and 0 <= ny < height
+        ]
+        steps.append(_step(index, expected, actual, {"active_x": x, "active_y": y, "active_neighbors": neighbors}))
+    return steps
 
 
 def _board_cells(board: object) -> list[tuple[int, int]]:
@@ -268,8 +327,14 @@ def _laser_visual_steps(task: dict[str, object]) -> list[dict[str, object]]:
     while 0 <= x < width and 0 <= y < height and (x, y, dx, dy) not in seen and len(steps) < 24:
         seen.add((x, y, dx, dy))
         cell = board[x][y]
-        steps.append(_step(len(steps), task.get("expected"), task.get("expected"), {"active_x": x, "active_y": y, "beam": {"dx": dx, "dy": dy}}))
-        if cell == "T" or cell == "#":
+        steps.append(_step(len(steps), task.get("expected"), task.get("expected"), {
+            "active_x": x,
+            "active_y": y,
+            "beam": {"dx": dx, "dy": dy},
+            "ray_cell": cell,
+            "step_title": f"Луч в клетке ({x}, {y})",
+        }))
+        if cell in {"T", "#", "A"}:
             break
         if cell == "/":
             dx, dy = -dy, -dx
@@ -277,6 +342,58 @@ def _laser_visual_steps(task: dict[str, object]) -> list[dict[str, object]]:
             dx, dy = dy, dx
         x += dx; y += dy
     return steps or [_step(0, task.get("expected"), None)]
+
+
+def _gravity_visual_steps(task: dict[str, object], expected: object, actual: object) -> list[dict[str, object]]:
+    board = task.get("board")
+    if not isinstance(board, list):
+        return [_step(0, expected, actual)]
+    current = [col[:] for col in board if isinstance(col, list)]
+    if not current:
+        return [_step(0, expected, actual)]
+    width = len(current)
+    height = len(current[0]) if width else 0
+    steps = [_step(0, expected, actual, {
+        "board": _normalize(current),
+        "active_x": 0,
+        "active_y": 0,
+        "fall_count": 0,
+        "step_title": "Исходный сад",
+    })]
+    moved = True
+    pass_index = 0
+    while moved and len(steps) < 18:
+        moved = False
+        pass_moves = 0
+        for x in range(width):
+            for y in range(height - 2, -1, -1):
+                if current[x][y] == "A" and current[x][y + 1] == ".":
+                    current[x][y], current[x][y + 1] = ".", "A"
+                    moved = True
+                    pass_moves += 1
+                    steps.append(_step(len(steps), expected, actual, {
+                        "board": _normalize(current),
+                        "active_x": x,
+                        "active_y": y + 1,
+                        "fall_from": [x, y],
+                        "fall_to": [x, y + 1],
+                        "fall_count": pass_moves,
+                        "step_title": f"Падение {pass_index + 1}.{pass_moves}",
+                    }))
+                    if len(steps) >= 18:
+                        break
+            if len(steps) >= 18:
+                break
+        pass_index += 1
+    if len(steps) < 20:
+        steps.append(_step(len(steps), expected, actual, {
+            "board": _normalize(current),
+            "active_x": width - 1,
+            "active_y": height - 1,
+            "fall_count": 0,
+            "step_title": "Устойчивое поле",
+        }))
+    return steps
 
 
 def _run_match(ctx: dict[str, Any], rng: random.Random) -> dict[str, object]:
@@ -339,17 +456,6 @@ def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[st
         "min": min, "print": bot_print, "range": range, "round": round, "set": set, "sorted": sorted,
         "str": str, "sum": sum, "tuple": tuple, "zip": zip,
     }
-
-
-class _Hero:
-    def __init__(self) -> None:
-        self.commands: list[str] = []
-    def forward(self) -> None: self.commands.append("forward")
-    def collect(self) -> None: self.commands.append("collect")
-    def attack(self) -> None: self.commands.append("attack")
-    def turn_left(self) -> None: self.commands.append("turn_left")
-    def turn_right(self) -> None: self.commands.append("turn_right")
-    def wait(self) -> None: self.commands.append("wait")
 
 
 def _call(fn: Callable[..., object] | None, *args: object) -> object:
@@ -436,146 +542,286 @@ def _compare_value(expected: object, actual: object) -> tuple[int, int, int, int
 
 
 def _build_task(kind: str, rng: random.Random) -> dict[str, object]:
-    if kind == "beginner_cave":
-        expected = ["forward", "collect", "forward", "attack", "forward", "collect", "forward"]
-        return {"goal": "repeat_commands", "expected": expected, "timeline": ["монета", "путь", "монстр", "монета", "пещера"]}
     if kind == "gate_guard":
-        colors = ["red", "blue", "black", "green", "blue", "black", "red", "gold"]
-        cases = []
-        for index, color in enumerate(colors):
-            gate = {"id": index, "color": color, "has_key": index % 2 == 0, "trap": color == "black" and index % 3 != 0, "hp": 40 + index * 7}
-            if color == "red": expected = "attack"
-            elif color == "blue": expected = "use_key" if gate["has_key"] else "wait"
-            elif gate["trap"]: expected = "disarm"
-            else: expected = "open"
-            cases.append({"input": gate, "expected": expected})
-        return {"cases": cases}
+        cases = [
+            {"color": "green", "locked": False, "has_key": False, "trap": False, "enemy_distance": 5, "trap_damage": 0, "hp": 70},
+            {"color": "blue", "locked": True, "has_key": True, "trap": False, "enemy_distance": 6, "trap_damage": 0, "hp": 72},
+            {"color": "blue", "locked": True, "has_key": False, "trap": False, "enemy_distance": 6, "trap_damage": 0, "hp": 68},
+            {"color": "black", "locked": False, "has_key": False, "trap": True, "enemy_distance": 4, "trap_damage": 18, "hp": 60},
+            {"color": "black", "locked": True, "has_key": True, "trap": True, "enemy_distance": 1, "trap_damage": 18, "hp": 65},
+            {"color": "gold", "locked": False, "has_key": False, "trap": True, "enemy_distance": 3, "trap_damage": 90, "hp": 45},
+            {"color": "red", "locked": False, "has_key": False, "trap": False, "enemy_distance": 1, "trap_damage": 0, "hp": 50},
+            {"color": "blue", "locked": True, "has_key": True, "trap": True, "enemy_distance": 5, "trap_damage": 12, "hp": 55},
+        ]
+        output = []
+        for index, gate in enumerate(cases):
+            gate = {"id": index, **gate}
+            if int(gate["enemy_distance"]) <= 1:
+                expected = "attack"
+            elif gate["trap"] and int(gate["trap_damage"]) < int(gate["hp"]):
+                expected = "disarm"
+            elif gate["locked"] and gate["has_key"]:
+                expected = "use_key"
+            elif gate["locked"]:
+                expected = "wait"
+            else:
+                expected = "open"
+            output.append({"input": gate, "expected": expected})
+        return {"cases": output, "rule": "enemy -> safe trap -> locked gate -> open"}
     if kind == "wall_archer":
+        fixed_cases = [
+            ({"distance": 5, "hp": 36, "damage": 18, "armor": 1, "is_aiming": False}, 0, 80),
+            ({"distance": 2, "hp": 44, "damage": 12, "armor": 2, "is_aiming": False}, 2, 78),
+            ({"distance": 4, "hp": 20, "damage": 9, "armor": 0, "is_aiming": False}, 1, 70),
+            ({"distance": 6, "hp": 45, "damage": 35, "armor": 1, "is_aiming": True}, 2, 28),
+            ({"distance": 7, "hp": 70, "damage": 18, "armor": 3, "is_aiming": True}, 3, 75),
+            ({"distance": 3, "hp": 75, "damage": 25, "armor": 0, "is_aiming": True}, 1, 30),
+            ({"distance": 8, "hp": 18, "damage": 8, "armor": 0, "is_aiming": False}, 1, 90),
+            ({"distance": 4, "hp": 80, "damage": 12, "armor": 3, "is_aiming": False}, 2, 85),
+        ]
         cases = []
-        for i in range(8):
-            enemy = {"distance": rng.randint(1, 8), "hp": rng.randint(10, 80), "is_aiming": bool(i % 3 == 0)}
-            arrows = rng.randint(0, 3)
-            hp = rng.randint(20, 90)
-            if arrows <= 0: expected = "reload"
-            elif enemy["distance"] <= 3: expected = "shoot"
-            elif enemy["is_aiming"] and hp < 50: expected = "shield"
-            else: expected = "wait"
-            cases.append({"enemy": enemy, "arrows": arrows, "hp": hp, "expected": expected})
-        return {"cases": cases}
+        for enemy, arrows, hp in fixed_cases:
+            threat = int(enemy["damage"]) - int(enemy["distance"]) * 2
+            if arrows <= 0:
+                expected = "reload"
+            elif enemy["is_aiming"] and threat >= 20 and hp < 50:
+                expected = "shield"
+            elif enemy["distance"] <= 3 and enemy["armor"] <= 1:
+                expected = "shoot"
+            elif enemy["hp"] <= 25 and enemy["armor"] <= 1:
+                expected = "shoot"
+            else:
+                expected = "wait"
+            cases.append({"enemy": enemy, "arrows": arrows, "hp": hp, "threat": threat, "expected": expected})
+        return {"cases": cases, "formula": "threat = damage - distance*2"}
     if kind == "farm_row":
-        row = [rng.choice([0, 1, 1]) for _ in range(10)]
-        return {"row": row, "expected": ["water" if cell else "skip" for cell in row]}
+        row = [
+            {"plant": True, "moisture": 1},
+            {"plant": False, "moisture": 0},
+            {"plant": True, "moisture": 4},
+            {"plant": True, "moisture": 2},
+            {"plant": False, "moisture": 0},
+            {"plant": True, "moisture": 0},
+            {"plant": True, "moisture": 5},
+            {"plant": True, "moisture": 3},
+            {"plant": False, "moisture": 0},
+            {"plant": True, "moisture": 1},
+        ]
+        expected = ["water" if cell["plant"] and int(cell["moisture"]) < 3 else "skip" for cell in row]
+        return {"row": row, "threshold": 3, "expected": expected}
     if kind == "crystal_corridor":
-        corridor = [rng.choice([".", "C", "C"]) for _ in range(8)] + ["#"] + ["C", "."]
+        corridor = [".", "C", "B", "X", ".", "C", "X", "B", ".", "#", "C", "."]
         expected: list[str] = []
         for cell in corridor:
             if cell == "#": break
-            if cell == "C": expected.append("collect")
+            if cell in {"C", "B"}: expected.append("collect")
             expected.append("move")
-        return {"corridor": corridor, "expected": expected}
+        return {"corridor": corridor, "expected": expected, "scores": {"C": 1, "B": 3, "X": -2}}
     if kind == "rune_decoder":
-        mapping = {"ᚠ": "forward", "ᚱ": "turn_right", "ᛚ": "turn_left", "ᚲ": "collect", "ᚨ": "attack"}
-        runes = "".join(rng.choice(list(mapping)) for _ in range(9))
+        mapping = {"ᚠ": "forward", "ᚱ": "turn_right", "ᛚ": "turn_left", "ᚲ": "collect", "ᚨ": "attack", "᛫": "wait"}
+        runes = "ᚠᚲ᛫ᚱᚠᚨᛚᚠᚲ᛫"
         return {"runes": runes, "mapping": mapping, "expected": [mapping[ch] for ch in runes]}
     if kind == "miner_backpack":
-        ores = [rng.randint(1, 4) for _ in range(9)]
-        capacity = 9
-        total = count = 0
+        ores = [
+            {"weight": 2, "value": 5},
+            {"weight": 4, "value": 3},
+            {"weight": 1, "value": 2},
+            {"weight": 5, "value": 8},
+            {"weight": 3, "value": 7},
+            {"weight": 2, "value": 1},
+            {"weight": 1, "value": 4},
+            {"weight": 4, "value": 6},
+        ]
+        capacity = 10
+        total = 0
+        expected: list[str] = []
         for ore in ores:
-            if total + ore > capacity: break
-            total += ore; count += 1
-        return {"ores": ores, "capacity": capacity, "expected": count}
+            weight = int(ore["weight"])
+            value = int(ore["value"])
+            if total + weight <= capacity and value >= weight:
+                expected.append("take")
+                total += weight
+            else:
+                expected.append("skip")
+        return {"ores": ores, "capacity": capacity, "expected": expected, "rule": "take if fits and value >= weight"}
     if kind == "battery_robot_lite":
+        states = [
+            {"battery": 2, "on_charger": True, "dirty": True, "front_clear": True, "distance_to_charger": 0},
+            {"battery": 3, "on_charger": False, "dirty": True, "front_clear": True, "distance_to_charger": 4},
+            {"battery": 6, "on_charger": False, "dirty": True, "front_clear": True, "distance_to_charger": 2},
+            {"battery": 5, "on_charger": False, "dirty": False, "front_clear": True, "distance_to_charger": 3},
+            {"battery": 1, "on_charger": False, "dirty": False, "front_clear": True, "distance_to_charger": 1},
+            {"battery": 4, "on_charger": False, "dirty": False, "front_clear": False, "distance_to_charger": 2},
+            {"battery": 8, "on_charger": True, "dirty": False, "front_clear": True, "distance_to_charger": 0},
+            {"battery": 4, "on_charger": False, "dirty": True, "front_clear": True, "distance_to_charger": 3},
+        ]
         cases = []
-        for i in range(8):
-            state = {"battery": rng.randint(1, 8), "on_charger": bool(i % 4 == 0), "dirty": bool(i % 2 == 0), "front_clear": bool(i % 5 != 0)}
-            if state["battery"] <= 2 and state["on_charger"]: expected = "charge"
-            elif state["dirty"] and state["battery"] >= 2: expected = "clean"
-            elif state["front_clear"] and state["battery"] >= 1: expected = "move"
-            else: expected = "wait"
+        for state in states:
+            if state["battery"] <= 2 and state["on_charger"]:
+                expected = "charge"
+            elif state["battery"] <= state["distance_to_charger"] + 1:
+                expected = "return_to_charger"
+            elif state["dirty"] and state["battery"] >= 2:
+                expected = "clean"
+            elif state["front_clear"] and state["battery"] >= 1:
+                expected = "move"
+            else:
+                expected = "wait"
             cases.append({"input": state, "expected": expected})
-        return {"cases": cases}
+        return {"cases": cases, "rule": "charge -> return -> clean -> move -> wait"}
     if kind == "potion_maker":
         resources = {"water": 3, "herb": 4, "crystal": 2, "mushroom": 1}
+        ingredient_costs = {"water": 1, "herb": 2, "crystal": 5, "mushroom": 3}
         recipes = {
-            "heal": {"water": 1, "herb": 2, "value": 30},
-            "mana": {"water": 1, "crystal": 1, "value": 35},
-            "strength": {"herb": 1, "crystal": 2, "value": 45},
-            "sleep": {"mushroom": 2, "water": 1, "value": 50},
+            "heal": {"water": 1, "herb": 2, "value": 22},
+            "mana": {"water": 1, "crystal": 1, "value": 20},
+            "strength": {"herb": 1, "crystal": 2, "value": 33},
+            "sleep": {"mushroom": 2, "water": 1, "value": 36},
+            "stone_skin": {"herb": 3, "crystal": 1, "value": 28},
         }
-        expected = max((name for name, recipe in recipes.items() if all(resources.get(k, 0) >= v for k, v in recipe.items() if k != "value")), key=lambda name: recipes[name]["value"])
-        return {"resources": resources, "recipes": recipes, "expected": expected}
+        available = [
+            (name, int(recipe["value"]) - _recipe_cost(recipe, ingredient_costs))
+            for name, recipe in recipes.items()
+            if all(resources.get(k, 0) >= v for k, v in recipe.items() if k != "value")
+        ]
+        expected = max(available, key=lambda item: (item[1], item[0]))[0]
+        return {"resources": resources, "recipes": recipes, "ingredient_costs": ingredient_costs, "expected": expected}
     if kind == "weakest_enemy":
-        enemies = [{"id": f"enemy_{i}", "hp": rng.randint(10, 90), "distance": rng.randint(1, 8)} for i in range(6)]
-        return {"enemies": enemies, "expected": min(enemies, key=lambda e: e["hp"])["id"]}
+        base_hp = rng.randint(18, 34)
+        enemies = [
+            {"id": "enemy_0", "hp": base_hp + 18, "distance": rng.randint(2, 8), "reward": rng.randint(1, 8)},
+            {"id": "enemy_1", "hp": base_hp, "distance": 6, "reward": 4},
+            {"id": "enemy_2", "hp": base_hp, "distance": 3, "reward": 2},
+            {"id": "enemy_3", "hp": base_hp, "distance": 3, "reward": 8},
+            {"id": "enemy_4", "hp": base_hp + rng.randint(5, 22), "distance": rng.randint(1, 7), "reward": rng.randint(1, 8)},
+            {"id": "enemy_5", "hp": base_hp + rng.randint(8, 28), "distance": rng.randint(1, 7), "reward": rng.randint(1, 8)},
+        ]
+        rng.shuffle(enemies)
+        expected = min(enemies, key=lambda e: (int(e["hp"]), int(e["distance"]), -int(e["reward"])))["id"]
+        return {"enemies": enemies, "expected": expected, "rule": "hp -> distance -> reward"}
     if kind == "priority_tower":
-        enemies = [{"id": f"mob_{i}", "danger": rng.randint(1, 9), "speed": rng.randint(1, 5), "distance": rng.randint(1, 10)} for i in range(6)]
-        def value(e: dict[str, int | str]) -> int: return int(e["danger"]) * 3 + int(e["speed"]) * 2 - int(e["distance"])
-        return {"enemies": enemies, "expected": max(enemies, key=value)["id"], "formula": "danger*3 + speed*2 - distance"}
+        enemies = [
+            {"id": "mob_0", "danger": 4, "speed": 2, "distance": 3, "hp": 20},
+            {"id": "mob_1", "danger": 5, "speed": 1, "distance": 4, "hp": 40},
+            {"id": "mob_2", "danger": 3, "speed": 5, "distance": 6, "hp": 30},
+            {"id": "mob_3", "danger": 5, "speed": 3, "distance": 8, "hp": 70},
+            {"id": "mob_4", "danger": 6, "speed": 2, "distance": 7, "hp": 10},
+            {"id": "mob_5", "danger": 4, "speed": 4, "distance": 5, "hp": 90},
+        ]
+        expected = max(enemies, key=lambda e: (_enemy_pressure(e), -int(e["distance"]), int(e["hp"]), str(e["id"])))["id"]
+        return {"enemies": enemies, "expected": expected, "formula": "danger*3 + speed*2 - distance + hp//10; tie: closer, then higher hp"}
     if kind == "hero_inventory":
-        inventory = ["rope", "torch", "small_key", "apple", "healing_potion"]
+        inventory = ["rope", "torch", "small_key", "apple", "healing_potion", "antidote"]
         situations = [
-            {"hp": 25, "door": False, "dark": False, "expected": "healing_potion"},
-            {"hp": 80, "door": True, "dark": False, "expected": "small_key"},
-            {"hp": 80, "door": False, "dark": True, "expected": "torch"},
-            {"hp": 80, "door": False, "dark": False, "expected": "apple"},
+            {"hp": 25, "poisoned": True, "door": True, "dark": True, "hungry": True, "expected": "healing_potion"},
+            {"hp": 70, "poisoned": True, "door": True, "dark": False, "hungry": False, "expected": "antidote"},
+            {"hp": 80, "poisoned": False, "door": True, "dark": True, "hungry": False, "expected": "small_key"},
+            {"hp": 80, "poisoned": False, "door": False, "dark": True, "hungry": True, "expected": "torch"},
+            {"hp": 80, "poisoned": False, "door": False, "dark": False, "hungry": True, "expected": "apple"},
+            {"hp": 80, "poisoned": False, "door": False, "dark": False, "hungry": False, "expected": "rope"},
         ]
         return {"inventory": inventory, "cases": situations}
     if kind == "space_queue":
-        ships = [{"id": f"ship_{i}", "priority": rng.randint(1, 5), "fuel": rng.randint(0, 9), "broken": bool(i % 4 == 0)} for i in range(7)]
-        expected = [ship["id"] for ship in sorted(ships, key=lambda s: (-int(s["priority"]), int(s["fuel"])))]
-        return {"ships": ships, "expected": expected}
+        ships = [
+            {"id": "ship_0", "priority": 3, "fuel": 2, "broken": True, "passengers": 4, "service_time": 5},
+            {"id": "ship_1", "priority": 5, "fuel": 8, "broken": False, "passengers": 1, "service_time": 3},
+            {"id": "ship_2", "priority": 2, "fuel": 1, "broken": False, "passengers": 8, "service_time": 2},
+            {"id": "ship_3", "priority": 4, "fuel": 5, "broken": True, "passengers": 0, "service_time": 8},
+            {"id": "ship_4", "priority": 3, "fuel": 9, "broken": False, "passengers": 6, "service_time": 1},
+            {"id": "ship_5", "priority": 1, "fuel": 0, "broken": True, "passengers": 2, "service_time": 4},
+            {"id": "ship_6", "priority": 4, "fuel": 3, "broken": False, "passengers": 5, "service_time": 6},
+        ]
+        expected = [ship["id"] for ship in sorted(ships, key=lambda s: (-_ship_urgency(s), str(s["id"])))]
+        return {"ships": ships, "expected": expected, "formula": "priority*10 + passengers*2 + broken*20 + (10 - fuel) - service_time"}
     if kind == "command_tape":
-        mapping = {"F": "forward", "L": "turn_left", "R": "turn_right", "A": "attack", "C": "collect"}
-        tape = "".join(rng.choice(list(mapping)) for _ in range(12))
-        return {"tape": tape, "mapping": mapping, "expected": [mapping[ch] for ch in tape]}
+        mapping = {"F": "forward", "L": "turn_left", "R": "turn_right", "A": "attack", "C": "collect", ".": "wait", "P": "pickup"}
+        energy_cost = {"F": 1, "L": 0, "R": 0, "A": 2, "C": 1, ".": 0, "P": 2}
+        tape = "FFCR.FAPLCF."
+        expected = [mapping[ch] for ch in tape]
+        return {"tape": tape, "mapping": mapping, "energy_cost": energy_cost, "energy_limit": 10, "expected": expected}
     if kind == "pixel_painter":
         palette = {0: "sky", 1: "grass", 2: "stone", 3: "coin"}
-        pixels = [[rng.randint(0, 3) for _ in range(5)] for _ in range(6)]
-        return {"pixels": pixels, "palette": palette, "expected": [[palette[cell] for cell in col] for col in pixels], "board": pixels}
+        pixels = [
+            [0, 1, 2, 3, 4],
+            [1, 1, 4, 2, 0],
+            [2, 3, 3, 4, 1],
+            [0, 4, 2, 1, 3],
+            [3, 2, 1, 0, 4],
+            [4, 0, 1, 3, 2],
+        ]
+        return {"pixels": pixels, "palette": palette, "unknown_color": "transparent", "expected": [[palette.get(cell, "transparent") for cell in col] for col in pixels], "board": pixels}
     if kind == "treasure_scanner":
         board = [[rng.randint(0, 4) for _ in range(5)] for _ in range(6)]
         col_sums = [sum(col) for col in board]
         row_sums = [sum(board[x][y] for x in range(len(board))) for y in range(len(board[0]))]
-        best_col = max(range(len(col_sums)), key=lambda x: col_sums[x])
-        best_row = max(range(len(row_sums)), key=lambda y: row_sums[y])
-        expected = {"axis": "column", "index": best_col, "score": col_sums[best_col]} if col_sums[best_col] >= row_sums[best_row] else {"axis": "row", "index": best_row, "score": row_sums[best_row]}
-        return {"board": board, "expected": expected}
+        column_cost = 3
+        row_cost = 5
+        col_scores = [value - column_cost for value in col_sums]
+        row_scores = [value - row_cost for value in row_sums]
+        best_col = max(range(len(col_scores)), key=lambda x: col_scores[x])
+        best_row = max(range(len(row_scores)), key=lambda y: row_scores[y])
+        expected = {"axis": "column", "index": best_col, "score": col_scores[best_col]} if col_scores[best_col] >= row_scores[best_row] else {"axis": "row", "index": best_row, "score": row_scores[best_row]}
+        return {"board": board, "expected": expected, "column_cost": column_cost, "row_cost": row_cost}
     if kind == "minesweeper_numbers":
-        mines = [[False for _ in range(5)] for _ in range(6)]
-        for x, y in [(1, 1), (3, 2), (4, 4), (0, 3)]: mines[x][y] = True
+        mines = [[False for _ in range(6)] for _ in range(7)]
+        for x, y in [(0, 0), (1, 2), (3, 3), (5, 1), (6, 5), (2, 5)]:
+            mines[x][y] = True
         expected = _minesweeper(mines)
-        return {"mines": mines, "board": [[-1 if mines[x][y] else 0 for y in range(5)] for x in range(6)], "expected": expected}
+        return {"mines": mines, "board": [[-1 if mines[x][y] else 0 for y in range(6)] for x in range(7)], "expected": expected}
     if kind == "farm_grid":
-        field = [[rng.choice([0, 0, 1]) for _ in range(5)] for _ in range(6)]
-        return {"field": field, "board": field, "expected": sum(sum(col) for col in field)}
+        field = [[rng.choice([0, 0, 1, 1, 2, 3]) for _ in range(5)] for _ in range(6)]
+        return {"field": field, "board": field, "expected": sum(sum(col) for col in field), "plant_values": {"1": "carrot", "2": "wheat", "3": "corn"}}
     if kind == "laser_mirrors":
-        board = [list(col) for col in ["....#", "./...", "..\\T.", ".....", ".....", "....."]]
-        return {"board": board, "start_x": 0, "start_y": 1, "dx": 1, "dy": 0, "expected": _trace_laser(board, 0, 1, 1, 0)}
+        board = [list(col) for col in ["........", "..../.\\.", "........", "...\\../.", "..A.....", ".....#..", "....T...", "......#."]]
+        return {"board": board, "start_x": 0, "start_y": 3, "dx": 1, "dy": 0, "expected": _trace_laser(board, 0, 3, 1, 0), "rules": "/: dx,dy=-dy,-dx; \\: dx,dy=dy,dx; A absorbs"}
     if kind == "gravity_apples":
-        board = [list(col) for col in ["A..#.", ".A.#A", "..A..", "#A..A", ".....", "A#..."]]
-        return {"board": board, "expected": _settle_apples(board)}
+        board = [list(col) for col in ["A..#A..", ".A.#..A", "A.A..#.", "#A..A..", "..#A.A.", "A#..A..", "..A.#A."]]
+        return {"board": board, "expected": _settle_apples(board), "rules": "repeat bottom-up passes until no apple can move"}
     if kind == "patrol_guard":
-        events = [rng.choice(["clear", "clear", "enemy", "lost_route"]) for _ in range(10)]
-        expected = ["attack" if e == "enemy" else "return_to_route" if e == "lost_route" else "patrol" for e in events]
-        return {"events": events, "expected": expected}
+        events = [
+            {"type": "clear", "noise": 0},
+            {"type": "noise", "noise": 1},
+            {"type": "noise", "noise": 2},
+            {"type": "clear", "noise": 0},
+            {"type": "enemy", "noise": 0},
+            {"type": "lost_route", "noise": 0},
+            {"type": "noise", "noise": 3},
+            {"type": "clear", "noise": 0},
+            {"type": "enemy", "noise": 0},
+            {"type": "clear", "noise": 0},
+        ]
+        alert = 0
+        expected = []
+        for event in events:
+            if event["type"] == "enemy":
+                expected.append("attack")
+                alert = 0
+            elif event["type"] == "lost_route":
+                expected.append("return_to_route")
+                alert = 0
+            elif event["type"] == "noise":
+                alert += int(event["noise"])
+                expected.append("investigate" if alert >= 3 else "patrol")
+            else:
+                expected.append("patrol")
+        return {"events": events, "expected": expected, "rule": "enemy -> lost_route -> alert >= 3 -> patrol"}
     if kind == "boss_pattern":
         states = ["prepares", "heavy_attack", "rest", "summon"] * 3
-        expected = ["attack" if s == "prepares" else "shield" if s == "heavy_attack" else "attack" if s == "rest" else "area_spell" for s in states]
+        expected = []
+        for turn, state in enumerate(states, start=1):
+            if state == "heavy_attack":
+                expected.append("shield")
+            elif state == "summon":
+                expected.append("area_spell")
+            elif turn % 5 == 0:
+                expected.append("heal")
+            else:
+                expected.append("attack")
         return {"states": states, "expected": expected}
     raise ValueError(kind)
 
 
 def _evaluate_task(kind: str, task: dict[str, object], fn: Callable[..., object] | None, events: list[dict[str, object]]) -> dict[str, object]:
-    if kind == "beginner_cave":
-        hero = _Hero()
-        actual = None
-        if fn is not None and getattr(fn, "__name__", "") == "play":
-            _call(fn, hero)
-            actual = hero.commands
-        else:
-            actual = _call(fn, task)
-        return _score(task["expected"], actual)
     if kind in {"gate_guard", "battery_robot_lite"}:
         actual = []
         for case in task["cases"]: actual.append(_call(fn, case["input"]))
@@ -621,7 +867,8 @@ def _minesweeper(mines: list[list[bool]]) -> list[list[int]]:
                 for dy in (-1, 0, 1):
                     if dx == 0 and dy == 0: continue
                     nx, ny = x + dx, y + dy
-                    if 0 <= nx < width and 0 <= ny < height and mines[nx][ny]: count += 1
+                    if 0 <= nx < width and 0 <= ny < height and mines[nx][ny]:
+                        count += 1
             out[x][y] = count
     return out
 
@@ -633,7 +880,7 @@ def _trace_laser(board: list[list[str]], x: int, y: int, dx: int, dy: int) -> bo
         seen.add((x, y, dx, dy))
         cell = board[x][y]
         if cell == "T": return True
-        if cell == "#": return False
+        if cell in {"#", "A"}: return False
         if cell == "/": dx, dy = -dy, -dx
         elif cell == "\\": dx, dy = dy, dx
         x += dx; y += dy

@@ -1,28 +1,37 @@
 <template>
-  <section class="agp-grid">
-    <header class="d-flex justify-content-between align-items-start gap-3">
+  <section class="agp-grid attempts-page">
+    <header class="agp-card p-4 attempts-hero">
       <div>
+        <p class="attempts-kicker mb-1">Разбор попыток</p>
         <h1 class="h3 mb-1">История попыток задачи</h1>
         <p class="text-muted mb-0">
-          {{ canManage ? 'Разбор попыток учеников и ошибок выполнения.' : 'Ваши прошлые запуски и повторы.' }}
+          {{ game?.title || (canManage ? 'Разбор попыток учеников и ошибок выполнения.' : 'Ваши прошлые запуски и повторы.') }}
         </p>
       </div>
-      <div class="d-flex gap-2">
-        <RouterLink v-if="game" :to="`/tasks/${game.game_id}/run`" class="btn btn-outline-dark">К запуску задачи</RouterLink>
-        <button class="btn btn-outline-secondary" :disabled="isLoading" @click="loadAttempts">{{ isLoading ? 'Обновление...' : 'Обновить' }}</button>
+      <div class="attempts-hero-actions">
+        <RouterLink v-if="game" :to="`/tasks/${game.game_id}/run`" class="btn btn-dark">К запуску задачи</RouterLink>
+        <button class="btn btn-outline-secondary" :disabled="isLoading" @click="loadAttempts">
+          {{ isLoading ? 'Обновление...' : 'Обновить' }}
+        </button>
       </div>
     </header>
 
-    <article v-if="isGameLoading" class="agp-card p-3 text-muted">Загрузка игры...</article>
+    <article v-if="isGameLoading" class="agp-card p-4">
+      <div class="agp-loading-state agp-loading-state--compact">Загрузка игры...</div>
+    </article>
     <article v-else-if="gameError" class="agp-card p-3 text-danger">{{ gameError }}</article>
 
-    <article v-if="game" class="agp-card p-3">
-      <div class="row g-2 align-items-end">
-        <div v-if="canManage" class="col-md-3">
+    <article v-if="game" class="agp-card p-3 attempts-filter-panel">
+      <div class="attempts-filter-copy">
+        <div class="small text-muted text-uppercase fw-semibold">Фильтр</div>
+        <div class="fw-semibold">Найдите нужный запуск по статусу и странице</div>
+      </div>
+      <div class="attempts-filter-grid">
+        <div v-if="canManage">
           <label class="form-label small">Пользователь</label>
           <input v-model.trim="requestedBy" class="form-control mono" placeholder="Имя пользователя" />
         </div>
-        <div :class="canManage ? 'col-md-3' : 'col-md-4'">
+        <div>
           <label class="form-label small">Статус</label>
           <select v-model="statusFilter" class="form-select">
             <option value="">Любой</option>
@@ -35,43 +44,33 @@
             <option value="canceled">Остановлен</option>
           </select>
         </div>
-        <div :class="canManage ? 'col-md-2' : 'col-md-3'">
+        <div>
           <label class="form-label small">Лимит</label>
           <input v-model.number="limit" class="form-control mono" type="number" min="5" max="100" />
         </div>
-        <div :class="canManage ? 'col-md-4' : 'col-md-5'" class="d-flex gap-2">
+        <div class="attempts-filter-actions">
           <button class="btn btn-outline-secondary" @click="applyFilters">Применить</button>
           <button class="btn btn-outline-secondary" @click="resetFilters">Сбросить</button>
         </div>
       </div>
     </article>
 
-    <article v-if="game" class="agp-card p-3">
-      <div class="row g-2">
-        <div class="col-md-3">
-          <div class="agp-card-soft p-2">
-            <div class="small text-muted">Всего на странице</div>
-            <div class="mono">{{ attempts.length }}</div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="agp-card-soft p-2">
-            <div class="small text-muted">Решено</div>
-            <div class="mono">{{ solvedCount }}</div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="agp-card-soft p-2">
-            <div class="small text-muted">В работе</div>
-            <div class="mono">{{ activeCount }}</div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="agp-card-soft p-2">
-            <div class="small text-muted">Лучший счет</div>
-            <div class="mono">{{ bestScore ?? '—' }}</div>
-          </div>
-        </div>
+    <article v-if="game" class="attempts-metrics" aria-label="Сводка попыток">
+      <div class="agp-card-soft p-3 attempts-metric-card">
+        <span>На странице</span>
+        <strong class="mono">{{ attempts.length }}</strong>
+      </div>
+      <div class="agp-card-soft p-3 attempts-metric-card attempts-metric-card--solved">
+        <span>Решено</span>
+        <strong class="mono">{{ solvedCount }}</strong>
+      </div>
+      <div class="agp-card-soft p-3 attempts-metric-card attempts-metric-card--active">
+        <span>В работе</span>
+        <strong class="mono">{{ activeCount }}</strong>
+      </div>
+      <div class="agp-card-soft p-3 attempts-metric-card attempts-metric-card--score">
+        <span>Лучший счет</span>
+        <strong class="mono">{{ bestScore ?? '—' }}</strong>
       </div>
     </article>
 
@@ -87,10 +86,10 @@
         </div>
       </div>
 
-      <div v-if="isLoading && attempts.length === 0" class="small text-muted">Загрузка попыток...</div>
-      <div v-else-if="attempts.length === 0" class="small text-muted">Попытки не найдены.</div>
+      <div v-if="isLoading && attempts.length === 0" class="agp-loading-state agp-loading-state--compact">Загрузка попыток...</div>
+      <div v-else-if="attempts.length === 0" class="agp-empty-state agp-empty-state--compact">Попытки не найдены.</div>
       <div v-else class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table table-sm align-middle mb-0 attempts-table">
           <thead>
             <tr>
               <th v-if="canManage">Пользователь</th>
@@ -106,10 +105,18 @@
           <tbody>
             <tr v-for="attempt in attempts" :key="attempt.run_id">
               <td v-if="canManage" class="mono small">{{ attempt.requested_by }}</td>
-              <td>{{ statusLabel(attempt.status) }}</td>
+              <td>
+                <span class="attempt-status" :class="statusClass(attempt.status)">
+                  {{ statusLabel(attempt.status) }}
+                </span>
+              </td>
               <td v-if="canManage"><RunReasonBadge :reason="attempt.error_message" /></td>
               <td class="mono small">{{ attemptScore(attempt) }}</td>
-              <td>{{ attemptSolved(attempt) }}</td>
+              <td>
+                <span class="attempt-solved" :class="attemptSolvedClass(attempt)">
+                  {{ attemptSolved(attempt) }}
+                </span>
+              </td>
               <td class="small">{{ formatIso(attempt.finished_at || attempt.created_at) }}</td>
               <td v-if="canManage">
                 <details class="small">
@@ -323,6 +330,20 @@ function statusLabel(status: RunDto['status']): string {
   return labels[status] ?? status;
 }
 
+function statusClass(status: RunDto['status']): string {
+  if (status === 'finished') return 'attempt-status--finished';
+  if (status === 'running' || status === 'queued' || status === 'created') return 'attempt-status--active';
+  if (status === 'failed' || status === 'timeout') return 'attempt-status--danger';
+  return 'attempt-status--muted';
+}
+
+function attemptSolvedClass(run: RunDto): string {
+  const solved = attemptSolved(run);
+  if (solved === 'да') return 'attempt-solved--yes';
+  if (solved === 'нет') return 'attempt-solved--no';
+  return 'attempt-solved--unknown';
+}
+
 function formatIso(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return value;
@@ -336,6 +357,123 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.attempts-page {
+  gap: 0.9rem;
+}
+
+.attempts-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
+    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.14), transparent 13rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.9)),
+    url("data:image/svg+xml,%3Csvg width='168' height='104' viewBox='0 0 168 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.13' stroke-width='2'%3E%3Cpath d='M20 24h28v28H20zM74 14h28v28H74zM124 34h26v26h-26zM48 70h28v20H48zM104 66h28v28h-28z'/%3E%3Cpath d='M48 38h26M102 28h22M76 80h28M88 42v24'/%3E%3C/g%3E%3C/svg%3E");
+  background-position: center, center, center, right 1rem center;
+  background-repeat: no-repeat;
+}
+
+.attempts-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
+}
+
+.attempts-hero > * {
+  position: relative;
+}
+
+.attempts-kicker {
+  color: #0f766e;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.attempts-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.attempts-filter-panel {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.8fr) minmax(0, 1.8fr);
+  gap: 1rem;
+  align-items: end;
+}
+
+.attempts-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.attempts-filter-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.attempts-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.attempts-metric-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 0.1rem;
+  border-color: rgba(148, 163, 184, 0.34);
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.attempts-metric-card::after {
+  content: '';
+  position: absolute;
+  right: -1.25rem;
+  bottom: -1.4rem;
+  width: 4.6rem;
+  height: 4.6rem;
+  border-radius: 1.1rem;
+  background: rgba(37, 99, 235, 0.08);
+  transform: rotate(18deg);
+}
+
+.attempts-metric-card span {
+  color: var(--agp-text-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.attempts-metric-card strong {
+  color: var(--agp-text);
+  font-size: 1.45rem;
+}
+
+.attempts-metric-card--solved::after {
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.attempts-metric-card--active::after {
+  background: rgba(20, 184, 166, 0.12);
+}
+
+.attempts-metric-card--score::after {
+  background: rgba(245, 158, 11, 0.16);
+}
+
 .attempts-pager {
   display: flex;
   align-items: center;
@@ -344,9 +482,65 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
+.attempts-table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: rgba(248, 250, 252, 0.78);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.attempts-table thead th {
+  color: var(--agp-text-muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.attempt-status,
+.attempt-solved {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.16rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.attempt-status--finished,
+.attempt-solved--yes {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.attempt-status--active {
+  border-color: #99f6e4;
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.attempt-status--danger,
+.attempt-solved--no {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.attempt-status--muted,
+.attempt-solved--unknown {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
 .attempts-log-panel {
   border: 1px solid var(--agp-border);
-  background: var(--agp-surface-soft);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 10rem),
+    var(--agp-surface-soft);
   border-radius: 8px;
   padding: 0.85rem;
 }
@@ -362,5 +556,40 @@ onMounted(async () => {
   max-height: 18rem;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+@media (max-width: 1100px) {
+  .attempts-filter-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .attempts-filter-grid,
+  .attempts-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .attempts-hero {
+    flex-direction: column;
+  }
+
+  .attempts-hero-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .attempts-hero-actions .btn {
+    flex: 1 1 12rem;
+  }
+
+  .attempts-filter-grid,
+  .attempts-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .attempts-filter-actions .btn {
+    flex: 1 1 8rem;
+  }
 }
 </style>

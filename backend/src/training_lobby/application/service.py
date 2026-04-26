@@ -7,11 +7,11 @@ from threading import Lock
 from execution.application.service import CreateRunInput, ExecutionService
 from execution.domain.model import Run, RunKind, RunStatus
 from game_catalog.application.service import GameCatalogService
-from game_catalog.domain.model import CatalogMetadataStatus, GameMode
+from game_catalog.domain.model import CatalogMetadataStatus
 from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
-from shared.kernel import InvariantViolationError, NotFoundError, utc_now
+from shared.kernel import ExternalServiceError, InvariantViolationError, NotFoundError, utc_now
 
 
 @dataclass(slots=True)
@@ -22,18 +22,78 @@ class CreateLobbyInput:
     access: LobbyAccess
     access_code: str | None
     max_teams: int
+    auto_delete_training_runs_days: int | None = None
 
 
 _ACTIVE_RUN_STATUSES = {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}
 _TERMINAL_RUN_STATUSES = {RunStatus.FINISHED, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}
 _LOBBY_REPLAY_FRAME_MS = 500
-_LOBBY_REPLAY_GRACE_SECONDS = 5
+_LOBBY_RESULT_SECONDS = 5
+_LOBBY_ONLINE_VIEWER_TTL_SECONDS = 20
+_UNSET_RETENTION = object()
 
 
 def _can_change_participation(lobby: Lobby) -> bool:
     if lobby.status in {LobbyStatus.OPEN, LobbyStatus.DRAFT}:
         return True
     return lobby.kind is LobbyKind.TRAINING and lobby.status is LobbyStatus.RUNNING
+
+
+def _partition_match_groups(
+    *,
+    ready_team_ids: list[str],
+    min_players: int,
+    max_players: int,
+) -> list[list[str]]:
+    team_count = len(ready_team_ids)
+    if team_count < min_players:
+        return []
+
+    for scheduled_count in range(team_count, min_players - 1, -1):
+        min_group_count = (scheduled_count + max_players - 1) // max_players
+        max_group_count = scheduled_count // min_players
+        for group_count in range(min_group_count, max_group_count + 1):
+            if group_count * min_players <= scheduled_count <= group_count * max_players:
+                sizes = _distribute_match_sizes(
+                    total=scheduled_count,
+                    group_count=group_count,
+                    min_players=min_players,
+                    max_players=max_players,
+                )
+                groups: list[list[str]] = []
+                cursor = 0
+                for size in sizes:
+                    groups.append(ready_team_ids[cursor : cursor + size])
+                    cursor += size
+                return groups
+    return []
+
+
+def _distribute_match_sizes(
+    *,
+    total: int,
+    group_count: int,
+    min_players: int,
+    max_players: int,
+) -> list[int]:
+    sizes = [min_players for _ in range(group_count)]
+    remaining = total - group_count * min_players
+    index = 0
+    while remaining > 0:
+        capacity = max_players - sizes[index]
+        delta = min(capacity, remaining)
+        sizes[index] += delta
+        remaining -= delta
+        index = (index + 1) % group_count
+    return sizes
+
+
+def _datetime_or_none(value: object | None) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=utc_now().tzinfo)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +104,35 @@ class LobbyParticipantStats:
     matches_total: int
     wins: int
     average_score: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class LobbyMatchGroupView:
+    group_id: str
+    batch_id: str
+    run_ids: tuple[str, ...]
+    team_ids: tuple[str, ...]
+    status: str
+    started_at: datetime | None
+    finished_at: datetime | None
+    replay_frame_count: int
+    replay_frame_index: int
+    winner_team_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _LobbyCycleState:
+    phase: str
+    phase_label: str
+    message: str
+    started_at: datetime | None
+    replay_started_at: datetime | None
+    replay_until: datetime | None
+    result_until: datetime | None
+    replay_frame_index: int
+    replay_frame_count: int
+    winner_team_ids: tuple[str, ...]
+    current_match_groups: tuple[LobbyMatchGroupView, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +147,19 @@ class LobbyLiveView:
     current_run_ids: tuple[str, ...]
     archived_run_ids: tuple[str, ...]
     participant_stats: tuple[LobbyParticipantStats, ...]
+    cycle_phase: str
+    cycle_phase_label: str
+    cycle_message: str
+    cycle_started_at: datetime | None
+    replay_started_at: datetime | None
+    replay_until: datetime | None
+    result_until: datetime | None
+    cycle_frame_ms: int
+    cycle_replay_frame_index: int
+    cycle_replay_frame_count: int
+    cycle_winner_team_ids: tuple[str, ...]
+    current_match_groups: tuple[LobbyMatchGroupView, ...]
+    archived_match_groups: tuple[LobbyMatchGroupView, ...]
 
 
 class TrainingLobbyService:
@@ -77,10 +179,11 @@ class TrainingLobbyService:
             str,
             tuple[tuple[int, object | None], tuple[LobbyParticipantStats, ...]],
         ] = {}
+        self._viewer_last_seen_by_lobby: dict[str, dict[str, datetime]] = {}
 
     def create_lobby(self, data: CreateLobbyInput) -> Lobby:
         game = self._game_catalog.get_game(data.game_id)
-        if game.mode is GameMode.SINGLE_TASK:
+        if not game.is_multiplayer:
             raise InvariantViolationError("Лобби можно создать только для игры, а не для задачи")
         if game.catalog_metadata_status is not CatalogMetadataStatus.READY:
             raise InvariantViolationError("Лобби можно создать только для опубликованной игры")
@@ -93,6 +196,7 @@ class TrainingLobbyService:
             access_code=data.access_code,
             max_teams=data.max_teams,
         )
+        lobby.auto_delete_training_runs_days = data.auto_delete_training_runs_days
         self._repository.save(lobby)
         return lobby
 
@@ -113,6 +217,13 @@ class TrainingLobbyService:
             if team_id in team_ids:
                 return team_id
         return None
+
+    def mark_viewer_online(self, lobby_id: str, user_id: str) -> None:
+        self.get_lobby(lobby_id)
+        now = utc_now()
+        viewers = self._viewer_last_seen_by_lobby.setdefault(lobby_id, {})
+        viewers[user_id] = now
+        self._prune_online_viewers(lobby_id=lobby_id, now=now)
 
     def ensure_user_joined(self, lobby_id: str, user_id: str, access_code: str | None, *, bypass_access_code: bool = False) -> tuple[Lobby, str]:
         lobby = self.get_lobby(lobby_id)
@@ -167,7 +278,22 @@ class TrainingLobbyService:
             include_result_payload=False,
         )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
-        playing_team_ids = tuple(sorted({run.team_id for run in active_runs if run.status is RunStatus.RUNNING}))
+        my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
+        cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
+        current_group_run_ids = {
+            run_id
+            for group in cycle.current_match_groups
+            for run_id in group.run_ids
+        }
+        current_group_team_ids = {
+            team_id
+            for group in cycle.current_match_groups
+            for team_id in group.team_ids
+        }
+        playing_team_ids_set = {run.team_id for run in active_runs if run.status is RunStatus.RUNNING}
+        if cycle.phase in {"replay", "result"}:
+            playing_team_ids_set.update(current_group_team_ids)
+        playing_team_ids = tuple(sorted(playing_team_ids_set))
         queued_team_ids = set(
             run.team_id for run in active_runs if run.status in {RunStatus.CREATED, RunStatus.QUEUED}
         )
@@ -178,10 +304,11 @@ class TrainingLobbyService:
         )
         queued_team_ids_tuple = tuple(sorted(queued_team_ids))
 
-        my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
         current_run_id = None
         if my_team_id is not None:
-            for run in sorted(active_runs, key=lambda item: item.created_at, reverse=True):
+            for run in sorted(runs, key=lambda item: item.created_at, reverse=True):
+                if run.run_id not in current_group_run_ids and run.status not in _ACTIVE_RUN_STATUSES:
+                    continue
                 if run.team_id == my_team_id:
                     current_run_id = run.run_id
                     break
@@ -208,9 +335,18 @@ class TrainingLobbyService:
             if run.status in _TERMINAL_RUN_STATUSES
         ]
         finished_runs.sort(key=lambda item: item.created_at, reverse=True)
-        archived_run_ids = tuple(run.run_id for run in finished_runs[:100])
-        current_run_ids = tuple(run.run_id for run in sorted(active_runs, key=lambda item: item.created_at, reverse=True))
+        archived_run_ids = tuple(run.run_id for run in finished_runs if run.run_id not in current_group_run_ids)[:100]
+        current_run_ids = tuple(
+            run_id
+            for group in cycle.current_match_groups
+            for run_id in group.run_ids
+        ) or tuple(run.run_id for run in sorted(active_runs, key=lambda item: item.created_at, reverse=True))
         participant_stats = self._collect_participant_stats_cached(lobby=lobby, runs=finished_runs)
+        archived_match_groups = self._build_archived_match_group_views(
+            lobby=lobby,
+            runs=[run for run in finished_runs if run.run_id not in current_group_run_ids],
+            limit=100,
+        )
 
         return LobbyLiveView(
             lobby=lobby,
@@ -223,9 +359,29 @@ class TrainingLobbyService:
             current_run_ids=current_run_ids,
             archived_run_ids=archived_run_ids,
             participant_stats=participant_stats,
+            cycle_phase=cycle.phase,
+            cycle_phase_label=cycle.phase_label,
+            cycle_message=cycle.message,
+            cycle_started_at=cycle.started_at,
+            replay_started_at=cycle.replay_started_at,
+            replay_until=cycle.replay_until,
+            result_until=cycle.result_until,
+            cycle_frame_ms=_LOBBY_REPLAY_FRAME_MS,
+            cycle_replay_frame_index=cycle.replay_frame_index,
+            cycle_replay_frame_count=cycle.replay_frame_count,
+            cycle_winner_team_ids=cycle.winner_team_ids,
+            current_match_groups=cycle.current_match_groups,
+            archived_match_groups=archived_match_groups,
         )
 
-    def join_team(self, lobby_id: str, team_id: str, access_code: str | None) -> Lobby:
+    def join_team(
+        self,
+        lobby_id: str,
+        team_id: str,
+        access_code: str | None,
+        *,
+        bypass_access_code: bool = False,
+    ) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         team = self._team_workspace.get_team(team_id)
 
@@ -238,7 +394,7 @@ class TrainingLobbyService:
                     return lobby
                 raise InvariantViolationError("У пользователя уже есть игрок в этом лобби")
 
-        lobby.join_team(team_id=team_id, access_code=access_code)
+        lobby.join_team(team_id=team_id, access_code=access_code, bypass_access_code=bypass_access_code)
         self._repository.save(lobby)
         return lobby
 
@@ -277,12 +433,73 @@ class TrainingLobbyService:
             lobby.pause()
         elif status == LobbyStatus.OPEN:
             lobby.reopen()
+        elif status == LobbyStatus.STOPPED:
+            self._cancel_active_training_runs(lobby_id=lobby_id, message="lobby_stopped")
+            lobby.stop()
         elif status == LobbyStatus.CLOSED:
+            self._cancel_active_training_runs(lobby_id=lobby_id, message="lobby_closed")
             lobby.close()
         else:
-            raise InvariantViolationError("Разрешены только статусы open, paused и closed")
+            raise InvariantViolationError("Разрешены только статусы open, paused, stopped и closed")
         self._repository.save(lobby)
         return lobby
+
+    def update_lobby_settings(
+        self,
+        lobby_id: str,
+        *,
+        title: str | None = None,
+        access: LobbyAccess | None = None,
+        access_code: str | None = None,
+        max_teams: int | None = None,
+        auto_delete_training_runs_days: int | None | object = _UNSET_RETENTION,
+    ) -> Lobby:
+        lobby = self.get_lobby(lobby_id)
+        settings: dict[str, object] = {
+            "title": title,
+            "access": access,
+            "access_code": access_code,
+            "max_teams": max_teams,
+        }
+        if auto_delete_training_runs_days is not _UNSET_RETENTION:
+            settings["auto_delete_training_runs_days"] = auto_delete_training_runs_days
+        lobby.update_settings(**settings)
+        self._repository.save(lobby)
+        self.cleanup_old_training_runs(lobby_id=lobby_id)
+        return lobby
+
+    def delete_lobby(self, lobby_id: str) -> None:
+        lobby = self.get_lobby(lobby_id)
+        self._cancel_active_training_runs(lobby_id=lobby_id, message="lobby_deleted")
+        self._execution.delete_lobby_runs(lobby_id=lobby.lobby_id, run_kind=RunKind.TRAINING_MATCH)
+        self._viewer_last_seen_by_lobby.pop(lobby_id, None)
+        self._participant_stats_cache.pop(lobby_id, None)
+        self._repository.delete(lobby_id)
+
+    def cleanup_old_training_runs(self, lobby_id: str) -> list[str]:
+        lobby = self.get_lobby(lobby_id)
+        if lobby.auto_delete_training_runs_days is None:
+            return []
+        cutoff = utc_now() - timedelta(days=lobby.auto_delete_training_runs_days)
+        excluded_run_ids = set(lobby.last_scheduled_run_ids)
+        deleted = self._execution.delete_lobby_training_runs_older_than(
+            lobby_id=lobby_id,
+            cutoff=cutoff,
+            exclude_run_ids=excluded_run_ids,
+        )
+        if deleted:
+            self._participant_stats_cache.pop(lobby_id, None)
+        return deleted
+
+    def _cancel_active_training_runs(self, lobby_id: str, message: str) -> None:
+        runs = self._execution.list_runs(
+            lobby_id=lobby_id,
+            run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
+        )
+        for run in runs:
+            if run.status in _ACTIVE_RUN_STATUSES:
+                self._execution.cancel_run(run.run_id, message=message)
 
     def reconcile_training_lobby_status(self, lobby_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
@@ -291,20 +508,21 @@ class TrainingLobbyService:
         if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
             return lobby
 
-        active_runs = [
-            run
-            for run in self._execution.list_runs(
-                lobby_id=lobby_id,
-                run_kind=RunKind.TRAINING_MATCH,
-                include_result_payload=False,
-            )
-            if run.status in _ACTIVE_RUN_STATUSES
-        ]
+        runs = self._execution.list_runs(
+            lobby_id=lobby_id,
+            run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
+        )
+        active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
+        cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
         if active_runs:
+            lobby.set_running()
+        elif cycle.phase in {"replay", "result"}:
             lobby.set_running()
         else:
             lobby.set_open()
-            lobby.set_last_scheduled_runs([])
+            if lobby.last_scheduled_run_ids:
+                lobby.set_last_scheduled_match_groups([])
         self._repository.save(lobby)
         return lobby
 
@@ -313,11 +531,26 @@ class TrainingLobbyService:
         with lock:
             return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
 
+    def run_due_matchmaking_cycles(self, requested_by: str = "system") -> tuple[Lobby, ...]:
+        advanced: list[Lobby] = []
+        for lobby in self._repository.list():
+            if lobby.kind is not LobbyKind.TRAINING:
+                continue
+            if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+                continue
+            try:
+                advanced.append(self.run_matchmaking_cycle(lobby_id=lobby.lobby_id, requested_by=requested_by))
+            except InvariantViolationError:
+                continue
+        return tuple(advanced)
+
     def _run_matchmaking_cycle_locked(self, lobby_id: str, requested_by: str) -> Lobby:
+        if requested_by != "system":
+            self.mark_viewer_online(lobby_id=lobby_id, user_id=requested_by)
         lobby = self.get_lobby(lobby_id)
         if lobby.kind is not LobbyKind.TRAINING:
             raise InvariantViolationError("Matchmaking cycle доступен только для training лобби")
-        if lobby.status in {LobbyStatus.PAUSED, LobbyStatus.UPDATING, LobbyStatus.CLOSED, LobbyStatus.DRAFT}:
+        if lobby.status in {LobbyStatus.PAUSED, LobbyStatus.STOPPED, LobbyStatus.UPDATING, LobbyStatus.CLOSED, LobbyStatus.DRAFT}:
             raise InvariantViolationError("В текущем статусе лобби матчмейкинг недоступен")
 
         game = self._game_catalog.get_game(lobby.game_id)
@@ -327,12 +560,16 @@ class TrainingLobbyService:
             include_result_payload=False,
         )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
+        cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
         busy_team_ids = {run.team_id for run in active_runs}
-        if not active_runs and self._is_waiting_for_replay_display(runs):
-            lobby.set_open()
-            lobby.set_last_scheduled_runs([])
+        if active_runs or cycle.phase in {"replay", "result"}:
+            if active_runs:
+                self._queue_recoverable_created_runs(lobby=lobby, active_runs=active_runs)
+            lobby.set_running()
             self._repository.save(lobby)
             return lobby
+        if lobby.last_scheduled_run_ids:
+            lobby.set_last_scheduled_match_groups([])
 
         ready_team_ids = [
             state.team_id
@@ -343,35 +580,38 @@ class TrainingLobbyService:
 
         scheduled_team_groups: list[list[str]] = []
 
-        if game.mode.value == "small_match":
-            while len(ready_team_ids) >= 2:
-                pair = ready_team_ids[:2]
-                del ready_team_ids[:2]
-                scheduled_team_groups.append(pair)
-        elif game.mode.value == "massive_lobby":
-            if len(ready_team_ids) >= 2:
-                scheduled_team_groups.append(list(ready_team_ids))
+        if game.is_multiplayer:
+            min_players, max_players = game.match_player_bounds
+            scheduled_team_groups = _partition_match_groups(
+                ready_team_ids=ready_team_ids,
+                min_players=min_players,
+                max_players=max_players,
+            )
         else:
             # single_task не должен работать через lobby matchmaking.
             raise InvariantViolationError("single_task игра не поддерживает lobby matchmaking")
 
+        if scheduled_team_groups and not self._has_online_ready_viewer(lobby):
+            lobby.set_open()
+            self._repository.save(lobby)
+            return lobby
+
         scheduled_run_ids: list[str] = []
+        scheduled_match_groups: list[list[str]] = []
         for team_ids in scheduled_team_groups:
-            scheduled_run_ids.extend(
-                self._create_training_match_runs(
-                    lobby=lobby,
-                    team_ids=team_ids,
-                    requested_by=requested_by,
-                )
+            group_run_ids = self._create_training_match_runs(
+                lobby=lobby,
+                team_ids=team_ids,
+                requested_by=requested_by,
             )
+            scheduled_match_groups.append(group_run_ids)
+            scheduled_run_ids.extend(group_run_ids)
 
         if scheduled_run_ids:
             lobby.set_running()
-            active_run_ids = [run.run_id for run in active_runs]
-            lobby.set_last_scheduled_runs(active_run_ids + scheduled_run_ids)
+            lobby.set_last_scheduled_match_groups(scheduled_match_groups)
             self._repository.save(lobby)
-            for run_id in scheduled_run_ids:
-                self._execution.queue_run(run_id)
+            self._queue_scheduled_batch(lobby=lobby, run_ids=scheduled_run_ids)
         else:
             if active_runs:
                 lobby.set_running()
@@ -379,10 +619,53 @@ class TrainingLobbyService:
                 return lobby
             else:
                 lobby.set_open()
-                lobby.set_last_scheduled_runs([])
+                lobby.set_last_scheduled_match_groups([])
             self._repository.save(lobby)
 
         return lobby
+
+    def _queue_scheduled_batch(self, *, lobby: Lobby, run_ids: list[str]) -> None:
+        try:
+            for run_id in run_ids:
+                self._execution.queue_run(run_id)
+        except (ExternalServiceError, InvariantViolationError) as exc:
+            self._cancel_unqueued_batch_runs(run_ids=run_ids, message=f"matchmaking_queue_failed: {exc}")
+            lobby.set_last_scheduled_match_groups([])
+            lobby.set_open()
+            self._repository.save(lobby)
+            raise InvariantViolationError("Не удалось поставить матчи лобби в очередь выполнения") from exc
+
+    def _queue_recoverable_created_runs(self, *, lobby: Lobby, active_runs: list[Run]) -> None:
+        current_run_ids = set(lobby.last_scheduled_run_ids)
+        if not current_run_ids:
+            return
+        created_current_runs = [
+            run
+            for run in active_runs
+            if run.run_id in current_run_ids and run.status is RunStatus.CREATED
+        ]
+        if not created_current_runs:
+            return
+        non_created_current_active = [
+            run
+            for run in active_runs
+            if run.run_id in current_run_ids and run.status is not RunStatus.CREATED
+        ]
+        if non_created_current_active:
+            return
+        self._queue_scheduled_batch(lobby=lobby, run_ids=[run.run_id for run in created_current_runs])
+
+    def _cancel_unqueued_batch_runs(self, *, run_ids: list[str], message: str) -> None:
+        for run_id in run_ids:
+            try:
+                run = self._execution.get_run(run_id)
+            except NotFoundError:
+                continue
+            if run.status in _ACTIVE_RUN_STATUSES:
+                try:
+                    self._execution.cancel_run(run_id, message=message)
+                except InvariantViolationError:
+                    continue
 
     def switch_game_version(self, lobby_id: str, version_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
@@ -441,30 +724,309 @@ class TrainingLobbyService:
             run_ids.append(run.run_id)
         return run_ids
 
-    def _is_waiting_for_replay_display(self, runs: list[Run]) -> bool:
-        terminal_runs = [
-            run
-            for run in runs
-            if run.run_kind is RunKind.TRAINING_MATCH
-            and run.status in _TERMINAL_RUN_STATUSES
-            and isinstance(run.finished_at, datetime)
-        ]
-        if not terminal_runs:
-            return False
+    def _compute_cycle_state(self, lobby: Lobby, runs: list[Run]) -> _LobbyCycleState:
+        runs_by_id = {run.run_id: run for run in runs}
+        groups = self._current_match_groups(lobby)
+        current_match_groups: tuple[LobbyMatchGroupView, ...] = ()
+        if groups:
+            current_match_groups = tuple(
+                self._build_match_group_view(
+                    group_id=f"current-{index}",
+                    batch_id=self._batch_id_for_groups(groups=groups, runs_by_id=runs_by_id),
+                    run_ids=group,
+                    runs_by_id=runs_by_id,
+                    archived=False,
+                    replay_started_at=None,
+                    replay_frame_index=0,
+                )
+                for index, group in enumerate(groups)
+            )
 
-        latest_run = max(terminal_runs, key=lambda run: run.finished_at)
-        finished_at = latest_run.finished_at
-        if finished_at is None:
-            return False
-        if finished_at.tzinfo is None:
-            finished_at = finished_at.replace(tzinfo=utc_now().tzinfo)
-        run_with_payload = latest_run
-        if run_with_payload.result_payload is None:
-            run_with_payload = self._execution.get_run(latest_run.run_id)
-        frames_count = self._replay_frames_count(run_with_payload)
-        display_seconds = max(1.0, frames_count * _LOBBY_REPLAY_FRAME_MS / 1000)
-        display_until = finished_at + timedelta(seconds=display_seconds + _LOBBY_REPLAY_GRACE_SECONDS)
-        return utc_now() < display_until
+        current_run_ids = [run_id for group in groups for run_id in group]
+        current_runs = [runs_by_id[run_id] for run_id in current_run_ids if run_id in runs_by_id]
+        active_runs = [run for run in current_runs if run.status in _ACTIVE_RUN_STATUSES]
+        if active_runs:
+            started_at = min((_datetime_or_none(run.created_at) for run in active_runs), default=None)
+            return _LobbyCycleState(
+                phase="simulation",
+                phase_label="Симуляция",
+                message="Матчи выполняются параллельно.",
+                started_at=started_at,
+                replay_started_at=None,
+                replay_until=None,
+                result_until=None,
+                replay_frame_index=0,
+                replay_frame_count=max((group.replay_frame_count for group in current_match_groups), default=0),
+                winner_team_ids=(),
+                current_match_groups=current_match_groups,
+            )
+
+        if current_runs and all(run.status in _TERMINAL_RUN_STATUSES for run in current_runs):
+            terminal_runs = [self._ensure_payload(run) for run in current_runs]
+            replay_started_at = max(
+                (_datetime_or_none(run.finished_at) for run in terminal_runs),
+                default=None,
+            )
+            replay_frame_count = max((self._replay_frames_count(run) for run in terminal_runs), default=1)
+            replay_seconds = max(1.0, replay_frame_count * _LOBBY_REPLAY_FRAME_MS / 1000)
+            replay_until = replay_started_at + timedelta(seconds=replay_seconds) if replay_started_at else None
+            result_until = replay_until + timedelta(seconds=_LOBBY_RESULT_SECONDS) if replay_until else None
+            now = utc_now()
+            if replay_started_at and replay_until and now < replay_until:
+                frame_index = min(
+                    replay_frame_count - 1,
+                    max(0, int((now - replay_started_at).total_seconds() / (_LOBBY_REPLAY_FRAME_MS / 1000))),
+                )
+                current_match_groups = tuple(
+                    self._build_match_group_view(
+                        group_id=f"current-{index}",
+                        batch_id=self._batch_id_for_groups(groups=groups, runs_by_id=runs_by_id),
+                        run_ids=group,
+                        runs_by_id={run.run_id: run for run in terminal_runs},
+                        archived=False,
+                        replay_started_at=replay_started_at,
+                        replay_frame_index=frame_index,
+                    )
+                    for index, group in enumerate(groups)
+                )
+                return _LobbyCycleState(
+                    phase="replay",
+                    phase_label="Идет реплей",
+                    message="Показываем матчи этого запуска, следующий цикл начнется после реплея.",
+                    started_at=self._batch_started_at(groups=groups, runs_by_id=runs_by_id),
+                    replay_started_at=replay_started_at,
+                    replay_until=replay_until,
+                    result_until=result_until,
+                    replay_frame_index=frame_index,
+                    replay_frame_count=replay_frame_count,
+                    winner_team_ids=self._winner_team_ids(terminal_runs),
+                    current_match_groups=current_match_groups,
+                )
+            if result_until and now < result_until:
+                winner_team_ids = self._winner_team_ids(terminal_runs)
+                return _LobbyCycleState(
+                    phase="result",
+                    phase_label="Результат",
+                    message="Победитель: " + (", ".join(winner_team_ids) if winner_team_ids else "не определен"),
+                    started_at=self._batch_started_at(groups=groups, runs_by_id=runs_by_id),
+                    replay_started_at=replay_started_at,
+                    replay_until=replay_until,
+                    result_until=result_until,
+                    replay_frame_index=max(0, replay_frame_count - 1),
+                    replay_frame_count=replay_frame_count,
+                    winner_team_ids=winner_team_ids,
+                    current_match_groups=current_match_groups,
+                )
+
+        ready_count = sum(1 for state in lobby.teams.values() if state.ready)
+        min_players = 2
+        try:
+            game = self._game_catalog.get_game(lobby.game_id)
+            if game.is_multiplayer:
+                min_players = game.match_player_bounds[0]
+        except (NotFoundError, InvariantViolationError):
+            pass
+        if ready_count < min_players:
+            return _LobbyCycleState(
+                phase="waiting_players",
+                phase_label="Ожидание игроков",
+                message=f"Нужно минимум {min_players} готовых игроков для следующего матча.",
+                started_at=None,
+                replay_started_at=None,
+                replay_until=None,
+                result_until=None,
+                replay_frame_index=0,
+                replay_frame_count=0,
+                winner_team_ids=(),
+                current_match_groups=(),
+            )
+        if not self._has_online_ready_viewer(lobby):
+            return _LobbyCycleState(
+                phase="waiting_viewer",
+                phase_label="Ожидание зрителя",
+                message="Ждем хотя бы одного готового игрока онлайн, чтобы показать матч.",
+                started_at=None,
+                replay_started_at=None,
+                replay_until=None,
+                result_until=None,
+                replay_frame_index=0,
+                replay_frame_count=0,
+                winner_team_ids=(),
+                current_match_groups=(),
+            )
+        return _LobbyCycleState(
+            phase="waiting_players",
+            phase_label="Ожидание игроков",
+            message="Готовим следующий запуск.",
+            started_at=None,
+            replay_started_at=None,
+            replay_until=None,
+            result_until=None,
+            replay_frame_index=0,
+            replay_frame_count=0,
+            winner_team_ids=(),
+            current_match_groups=(),
+        )
+
+    def _current_match_groups(self, lobby: Lobby) -> list[list[str]]:
+        if lobby.last_scheduled_match_groups:
+            return [list(group) for group in lobby.last_scheduled_match_groups if group]
+        if lobby.last_scheduled_run_ids:
+            return [list(lobby.last_scheduled_run_ids)]
+        return []
+
+    def _build_archived_match_group_views(
+        self,
+        *,
+        lobby: Lobby,
+        runs: list[Run],
+        limit: int,
+    ) -> tuple[LobbyMatchGroupView, ...]:
+        if not runs:
+            return ()
+        game = self._game_catalog.get_game(lobby.game_id)
+        max_players = game.match_player_bounds[1] if game.is_multiplayer else 2
+        min_datetime = datetime.min.replace(tzinfo=utc_now().tzinfo)
+        sorted_runs = sorted(runs, key=lambda run: _datetime_or_none(run.created_at) or min_datetime, reverse=True)
+        groups: list[list[str]] = []
+        current: list[Run] = []
+        close_seconds = 2.0
+        for run in sorted_runs:
+            previous = current[-1] if current else None
+            if previous is not None:
+                previous_created_at = _datetime_or_none(previous.created_at)
+                created_at = _datetime_or_none(run.created_at)
+                if (
+                    len(current) >= max_players
+                    or previous_created_at is None
+                    or created_at is None
+                    or abs((previous_created_at - created_at).total_seconds()) > close_seconds
+                ):
+                    groups.append([item.run_id for item in current])
+                    current = []
+            current.append(run)
+        if current:
+            groups.append([item.run_id for item in current])
+
+        runs_by_id = {run.run_id: run for run in sorted_runs}
+        return tuple(
+            self._build_match_group_view(
+                group_id=f"archive-{index}",
+                batch_id=self._batch_id_for_groups(groups=[group], runs_by_id=runs_by_id),
+                run_ids=group,
+                runs_by_id=runs_by_id,
+                archived=True,
+                replay_started_at=None,
+                replay_frame_index=0,
+            )
+            for index, group in enumerate(groups[:limit])
+        )
+
+    def _build_match_group_view(
+        self,
+        *,
+        group_id: str,
+        batch_id: str,
+        run_ids: list[str],
+        runs_by_id: dict[str, Run],
+        archived: bool,
+        replay_started_at: datetime | None,
+        replay_frame_index: int,
+    ) -> LobbyMatchGroupView:
+        runs = [runs_by_id[run_id] for run_id in run_ids if run_id in runs_by_id]
+        payload_runs = [self._ensure_payload(run) if run.status in _TERMINAL_RUN_STATUSES else run for run in runs]
+        statuses = {run.status for run in runs}
+        if statuses & _ACTIVE_RUN_STATUSES:
+            status = "simulation"
+        elif archived:
+            status = "finished"
+        elif statuses and statuses <= _TERMINAL_RUN_STATUSES:
+            status = "replay" if replay_started_at is not None else "result"
+        else:
+            status = "pending"
+        started_at = min(
+            (value for run in runs if (value := _datetime_or_none(run.created_at)) is not None),
+            default=None,
+        )
+        finished_at = max(
+            (value for run in runs if (value := _datetime_or_none(run.finished_at)) is not None),
+            default=None,
+        )
+        frame_count = max((self._replay_frames_count(run) for run in payload_runs), default=1)
+        return LobbyMatchGroupView(
+            group_id=group_id,
+            batch_id=batch_id,
+            run_ids=tuple(run.run_id for run in runs),
+            team_ids=tuple(run.team_id for run in runs),
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            replay_frame_count=frame_count,
+            replay_frame_index=max(0, min(replay_frame_index, frame_count - 1)),
+            winner_team_ids=self._winner_team_ids(payload_runs),
+        )
+
+    def _batch_id_for_groups(self, *, groups: list[list[str]], runs_by_id: dict[str, Run]) -> str:
+        started_at = self._batch_started_at(groups=groups, runs_by_id=runs_by_id)
+        return started_at.isoformat() if started_at else "-".join(run_id for group in groups for run_id in group)
+
+    @staticmethod
+    def _batch_started_at(*, groups: list[list[str]], runs_by_id: dict[str, Run]) -> datetime | None:
+        return min(
+            (
+                created_at
+                for group in groups
+                for run_id in group
+                if (created_at := _datetime_or_none(runs_by_id.get(run_id).created_at if runs_by_id.get(run_id) else None))
+                is not None
+            ),
+            default=None,
+        )
+
+    def _ensure_payload(self, run: Run) -> Run:
+        if run.result_payload is not None:
+            return run
+        if run.status not in _TERMINAL_RUN_STATUSES:
+            return run
+        return self._execution.get_run(run.run_id)
+
+    def _has_online_ready_viewer(self, lobby: Lobby) -> bool:
+        now = utc_now()
+        self._prune_online_viewers(lobby_id=lobby.lobby_id, now=now)
+        return bool(self._viewer_last_seen_by_lobby.get(lobby.lobby_id, {}))
+
+    def _prune_online_viewers(self, *, lobby_id: str, now: datetime) -> None:
+        viewers = self._viewer_last_seen_by_lobby.get(lobby_id)
+        if not viewers:
+            return
+        cutoff = now - timedelta(seconds=_LOBBY_ONLINE_VIEWER_TTL_SECONDS)
+        stale = [user_id for user_id, seen_at in viewers.items() if seen_at < cutoff]
+        for user_id in stale:
+            viewers.pop(user_id, None)
+        if not viewers:
+            self._viewer_last_seen_by_lobby.pop(lobby_id, None)
+
+    def _winner_team_ids(self, runs: list[Run]) -> tuple[str, ...]:
+        winners: list[str] = []
+        scored: list[tuple[str, float]] = []
+        for run in runs:
+            payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+            metrics = payload.get("metrics")
+            metrics_dict = metrics if isinstance(metrics, dict) else {}
+            placements = payload.get("placements")
+            if not isinstance(placements, dict):
+                placements = metrics_dict.get("placements")
+            if isinstance(placements, dict) and placements.get(run.team_id) == 1:
+                winners.append(run.team_id)
+            score = self._extract_score(payload=payload, metrics=metrics_dict, team_id=run.team_id)
+            if score is not None:
+                scored.append((run.team_id, score))
+        if winners:
+            return tuple(dict.fromkeys(winners))
+        if scored:
+            best = max(score for _, score in scored)
+            return tuple(team_id for team_id, score in scored if score == best)
+        return ()
 
     @staticmethod
     def _replay_frames_count(run: Run) -> int:
@@ -479,7 +1041,7 @@ class TrainingLobbyService:
             (run.finished_at for run in runs if isinstance(run.finished_at, datetime)),
             default=None,
         )
-        signature = (len(runs), latest_finished_at)
+        signature = (len(runs), latest_finished_at, tuple(sorted(lobby.teams.keys())))
         cached = self._participant_stats_cache.get(lobby.lobby_id)
         if cached is not None and cached[0] == signature:
             return cached[1]

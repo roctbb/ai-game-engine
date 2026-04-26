@@ -321,7 +321,7 @@ def list_runs(
         lobby_id=lobby_id,
         run_kind=run_kind,
         status=status,
-        include_result_payload=True,
+        include_result_payload=False,
     )
     if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
         return [_run_response(run, compact_result_payload=True) for run in runs]
@@ -394,12 +394,135 @@ def get_run_watch_context(
         run_id=run.run_id,
         game_id=run.game_id,
         game_slug=game.slug,
+        game_title=game.title,
         run_kind=run.run_kind,
         status=run.status,
         renderer_entrypoint=renderer_entrypoint,
         renderer_url=renderer_url,
         renderer_protocol="v1",
+        participants=_watch_context_participants(container=container, current_run=run),
     )
+
+
+def _watch_context_participants(container: ServiceContainer, current_run: Run) -> list[dict[str, object]]:
+    run_ids = _watch_context_run_ids(container=container, current_run=current_run)
+    participants: list[dict[str, object]] = []
+    seen_team_ids: set[str] = set()
+
+    for participant_run_id in run_ids:
+        try:
+            participant_run = container.execution.get_run(participant_run_id)
+        except NotFoundError:
+            continue
+        if participant_run.team_id in seen_team_ids:
+            continue
+        seen_team_ids.add(participant_run.team_id)
+        try:
+            team = container.team_workspace.get_team(participant_run.team_id)
+            display_name = team.name or team.captain_user_id or participant_run.team_id
+            captain_user_id = team.captain_user_id
+        except NotFoundError:
+            display_name = participant_run.team_id
+            captain_user_id = participant_run.requested_by
+        participants.append(
+            {
+                "run_id": participant_run.run_id,
+                "team_id": participant_run.team_id,
+                "display_name": display_name,
+                "captain_user_id": captain_user_id,
+                "is_current": participant_run.run_id == current_run.run_id,
+            }
+        )
+
+    return participants
+
+
+def _watch_context_run_ids(container: ServiceContainer, current_run: Run) -> list[str]:
+    run_ids = [current_run.run_id]
+    peer_ids: list[str] = []
+
+    if current_run.run_kind is RunKind.COMPETITION_MATCH and current_run.lobby_id:
+        peer_ids = _competition_watch_peer_run_ids(container=container, current_run=current_run)
+    elif current_run.run_kind is RunKind.TRAINING_MATCH and current_run.lobby_id:
+        peer_ids = _training_watch_peer_run_ids(container=container, current_run=current_run)
+
+    for peer_id in peer_ids:
+        if peer_id not in run_ids:
+            run_ids.append(peer_id)
+    return run_ids
+
+
+def _competition_watch_peer_run_ids(container: ServiceContainer, current_run: Run) -> list[str]:
+    if not current_run.lobby_id:
+        return []
+    try:
+        competition = container.competition.get_competition(current_run.lobby_id)
+    except NotFoundError:
+        return []
+
+    for round_item in competition.rounds:
+        for match in round_item.matches:
+            match_run_ids = [run_id for run_id in match.run_ids_by_team.values() if run_id]
+            if current_run.run_id in match_run_ids:
+                return [run_id for run_id in match_run_ids if run_id != current_run.run_id]
+    return []
+
+
+def _training_watch_peer_run_ids(container: ServiceContainer, current_run: Run) -> list[str]:
+    if not current_run.lobby_id:
+        return []
+    try:
+        lobby = container.training_lobby.get_lobby(current_run.lobby_id)
+    except NotFoundError:
+        return []
+
+    for group in lobby.last_scheduled_match_groups:
+        if current_run.run_id in group:
+            return [run_id for run_id in group if run_id != current_run.run_id]
+
+    peer_ids: list[str] = []
+    if current_run.run_id in lobby.last_scheduled_run_ids:
+        for run_id in lobby.last_scheduled_run_ids:
+            if run_id != current_run.run_id:
+                peer_ids.append(run_id)
+    if peer_ids:
+        return peer_ids
+
+    lobby_runs = container.execution.list_runs(
+        lobby_id=current_run.lobby_id,
+        run_kind=RunKind.TRAINING_MATCH,
+        include_result_payload=False,
+    )
+    game = container.game_catalog.get_game(current_run.game_id)
+    max_players = game.match_player_bounds[1] if game.is_multiplayer else 2
+    close_seconds = 2.0
+    sorted_runs = sorted(
+        (run for run in lobby_runs if run.game_id == current_run.game_id),
+        key=lambda run: run.created_at.timestamp() if run.created_at else 0,
+        reverse=True,
+    )
+    current_group: list[Run] = []
+    groups: list[list[Run]] = []
+    for candidate in sorted_runs:
+        previous = current_group[-1] if current_group else None
+        if previous is not None:
+            if (
+                len(current_group) >= max_players
+                or candidate.created_at is None
+                or previous.created_at is None
+                or abs((previous.created_at - candidate.created_at).total_seconds()) > close_seconds
+            ):
+                groups.append(current_group)
+                current_group = []
+        current_group.append(candidate)
+    if current_group:
+        groups.append(current_group)
+
+    for group in groups:
+        if all(candidate.run_id != current_run.run_id for candidate in group):
+            continue
+        return [candidate.run_id for candidate in group if candidate.run_id != current_run.run_id]
+    return []
 
 
 @router.get("/runs/{run_id}/stream")
@@ -512,17 +635,34 @@ def _execution_context_participants(container: ServiceContainer, current_run_id:
     run_ids = [current_run_id]
     if run.lobby_id is not None and run.run_kind is RunKind.TRAINING_MATCH:
         lobby = container.training_lobby.get_lobby(run.lobby_id)
-        if current_run_id in lobby.last_scheduled_run_ids:
-            # Find runs created at the same time (same match pair)
-            all_ids = list(lobby.last_scheduled_run_ids)
-            peer_ids: list[str] = []
-            for rid in all_ids:
+        peer_ids: list[str] = []
+        for group in lobby.last_scheduled_match_groups:
+            if current_run_id not in group:
+                continue
+            peer_ids.extend(rid for rid in group if rid != current_run_id)
+            break
+        if not peer_ids and current_run_id in lobby.last_scheduled_run_ids:
+            # Backward-compatible fallback for lobbies created before match groups existed.
+            for rid in list(lobby.last_scheduled_run_ids):
                 if rid == current_run_id:
                     continue
                 peer = container.execution.get_run(rid)
                 if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 2:
                     peer_ids.append(rid)
-            run_ids = [current_run_id] + peer_ids
+        if not peer_ids:
+            lobby_runs = container.execution.list_runs(
+                lobby_id=run.lobby_id,
+                run_kind=RunKind.TRAINING_MATCH,
+                include_result_payload=False,
+            )
+            for peer in lobby_runs:
+                if peer.run_id == current_run_id:
+                    continue
+                if peer.status not in {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}:
+                    continue
+                if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 5:
+                    peer_ids.append(peer.run_id)
+        run_ids = [current_run_id] + peer_ids
 
     participants: list[dict[str, object]] = []
     seen: set[str] = set()

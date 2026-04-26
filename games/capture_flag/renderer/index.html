@@ -5,37 +5,160 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Capture Flag Renderer</title>
   <style>
-    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#111827;color:#e5edf5;font-family:Arial,sans-serif}
-    .wrap{width:min(92vmin,780px)}
-    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
-    .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
+    :root{color-scheme:dark}
+    *{box-sizing:border-box}
+    body{
+      margin:0;width:100vw;height:100vh;display:grid;place-items:center;
+      background:#0b1020;color:#e5edf5;font-family:Inter,Arial,sans-serif;
+    }
+    .wrap{width:min(96vmin,980px);padding:12px}
+    .stage{
+      border:1px solid rgba(148,163,184,.32);border-radius:8px;overflow:hidden;
+      background:linear-gradient(180deg,#172033,#0f172a);box-shadow:0 22px 60px rgba(0,0,0,.35);
+    }
+    svg{display:block;width:100%;aspect-ratio:1/1;background:#f8fafc}
+    .hud{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+    .card{
+      min-height:58px;border:1px solid rgba(148,163,184,.28);border-radius:8px;
+      background:rgba(15,23,42,.82);padding:8px 10px;font-size:12px;
+    }
+    .name{font-weight:800;display:flex;align-items:center;gap:6px;margin-bottom:5px}
+    .dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+    .meta{color:#b6c3d1;line-height:1.35}
+    .topline{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;color:#cbd5e1;font-size:13px}
+    .legend{display:flex;gap:10px;flex-wrap:wrap}
+    .legend span{display:inline-flex;align-items:center;gap:5px}
+    .sw{width:13px;height:13px;border-radius:3px;border:1px solid rgba(255,255,255,.35)}
   </style>
 </head>
 <body>
-<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<div class="wrap">
+  <div class="topline">
+    <strong>Захват флага</strong>
+    <div class="legend">
+      <span><i class="sw" style="background:#fde68a"></i>флаг</span>
+      <span><i class="sw" style="background:#dbeafe"></i>база</span>
+      <span><i class="sw" style="background:#64748b"></i>камень</span>
+      <span><i class="sw" style="background:#9a3412"></i>построенная стена</span>
+    </div>
+  </div>
+  <div class="stage"><svg id="board" aria-label="capture flag board"></svg></div>
+  <div id="hud" class="hud"></div>
+</div>
 <script>
-const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
-function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
-function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
-function draw(frame){
-  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||13, h=Array.isArray(grid[0])?grid[0].length:13, C=30;
-  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const v=grid[x]?.[y]??0;
-    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:v===-1?"#334155":v===1?"#fee2e2":v===2?"#dbeafe":"#f8fafc"}));
-    if(v===1||v===2){const t=el("text",{x:x*C+C/2,y:y*C+C*0.66,"text-anchor":"middle","font-size":17,fill:v===1?"#dc2626":"#2563eb"});t.textContent=v===1?"F":"B";boardEl.appendChild(t)}
-  }
-  const positions=frame.positions||{};
-  for(const [slot,p] of Object.entries(positions)){
-    const color=slot==="red"?"#ef4444":"#2563eb";
-    if(Number.isFinite(p.x)&&Number.isFinite(p.y)){const cx=p.x*C+C/2,cy=p.y*C+C/2;boardEl.appendChild(el("circle",{cx,cy,r:C*0.3,fill:color}));drawMiniBadge(cx,cy,C,(frame.has_flag||{})[slot]?"F":((frame.captures||{})[slot]||0),color)}
-  }
-  const c=frame.captures||{}, f=frame.has_flag||{}, s=frame.slot_scores||{};
-  hudEl.textContent=`red=${c.red||0} blue=${c.blue||0} flags=${f.red===true}/${f.blue===true} score_red=${s.red??"-"} score_blue=${s.blue??"-"}`;
+const SVG="http://www.w3.org/2000/svg";
+const boardEl=document.getElementById("board");
+const hudEl=document.getElementById("hud");
+const COLORS={
+  red:{main:"#ef4444",soft:"#fee2e2",dark:"#991b1b",label:"R"},
+  blue:{main:"#3b82f6",soft:"#dbeafe",dark:"#1d4ed8",label:"B"},
+  green:{main:"#22c55e",soft:"#dcfce7",dark:"#15803d",label:"G"},
+  yellow:{main:"#f59e0b",soft:"#fef3c7",dark:"#b45309",label:"Y"}
+};
+function el(tag,attrs={}){const node=document.createElementNS(SVG,tag);for(const[k,v]of Object.entries(attrs))node.setAttribute(k,String(v));return node}
+function text(x,y,value,size,fill="#0f172a",weight=800){const t=el("text",{x,y,"text-anchor":"middle","dominant-baseline":"middle","font-size":size,"font-weight":weight,fill});t.textContent=value;return t}
+function cellCenter(x,y,C){return [x*C+C/2,y*C+C/2]}
+function labelOf(frame,slot){return (frame.labels&&frame.labels[slot])||slot}
+function drawBase(slot,pos,C,frame){
+  const c=COLORS[slot]||COLORS.red, x=pos.x*C, y=pos.y*C;
+  boardEl.appendChild(el("rect",{x:x+3,y:y+3,width:C-6,height:C-6,rx:5,fill:c.soft,stroke:c.main,"stroke-width":3}));
+  boardEl.appendChild(el("path",{d:`M ${x+C*.26} ${y+C*.74} L ${x+C*.26} ${y+C*.25} L ${x+C*.68} ${y+C*.35} L ${x+C*.26} ${y+C*.45}`,fill:c.main,stroke:c.dark,"stroke-width":1.2}));
+  boardEl.appendChild(text(x+C/2,y-C*.15,labelOf(frame,slot),Math.max(7,C*.16),c.main,900));
+  boardEl.appendChild(text(x+C*.72,y+C*.72,"BASE",Math.max(6,C*.17),c.dark,900));
 }
-window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
-draw({board:Array.from({length:13},()=>Array(13).fill(0)),positions:{red:{x:1,y:1},blue:{x:11,y:11}},captures:{red:0,blue:0},has_flag:{red:false,blue:false}});
-window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+function drawFlagAt(x,y,C){
+  const [cx,cy]=cellCenter(x,y,C);
+  boardEl.appendChild(el("circle",{cx,cy,r:C*.36,fill:"#fef9c3",stroke:"#f59e0b","stroke-width":3}));
+  boardEl.appendChild(el("line",{x1:cx-C*.08,y1:cy+C*.22,x2:cx-C*.08,y2:cy-C*.24,stroke:"#92400e","stroke-width":3,"stroke-linecap":"round"}));
+  boardEl.appendChild(el("path",{d:`M ${cx-C*.06} ${cy-C*.25} L ${cx+C*.25} ${cy-C*.16} L ${cx-C*.06} ${cy-C*.04} Z`,fill:"#facc15",stroke:"#a16207","stroke-width":1.4}));
+}
+function drawPlayer(slot,pos,C,hasFlag,frozen,frame){
+  const c=COLORS[slot]||COLORS.red, [cx,cy]=cellCenter(pos.x,pos.y,C);
+  boardEl.appendChild(text(cx,cy-C*.56,labelOf(frame,slot),Math.max(7,C*.16),c.main,900));
+  boardEl.appendChild(el("circle",{cx,cy,r:C*.35,fill:c.main,stroke:"#ffffff","stroke-width":3}));
+  boardEl.appendChild(el("circle",{cx:cx-C*.08,cy:cy-C*.05,r:C*.06,fill:"#fff"}));
+  boardEl.appendChild(el("circle",{cx:cx+C*.1,cy:cy-C*.05,r:C*.06,fill:"#fff"}));
+  boardEl.appendChild(text(cx,cy+C*.16,c.label,Math.max(10,C*.26),"#fff",900));
+  if(hasFlag){
+    boardEl.appendChild(el("line",{x1:cx+C*.24,y1:cy+C*.12,x2:cx+C*.24,y2:cy-C*.38,stroke:"#78350f","stroke-width":3,"stroke-linecap":"round"}));
+    boardEl.appendChild(el("path",{d:`M ${cx+C*.26} ${cy-C*.39} L ${cx+C*.58} ${cy-C*.28} L ${cx+C*.26} ${cy-C*.16} Z`,fill:"#facc15",stroke:"#a16207","stroke-width":1.4}));
+  }
+  if(frozen>0){
+    boardEl.appendChild(el("circle",{cx,cy,r:C*.45,fill:"none",stroke:"#7dd3fc","stroke-width":4,"stroke-dasharray":"4 3"}));
+    boardEl.appendChild(text(cx+C*.38,cy-C*.34,String(frozen),Math.max(9,C*.22),"#0369a1",900));
+  }
+}
+function drawShot(shot,C){
+  const path=Array.isArray(shot.path)?shot.path:[];
+  if(!path.length)return;
+  const points=path.map(p=>cellCenter(p.x,p.y,C).join(",")).join(" ");
+  boardEl.appendChild(el("polyline",{points,fill:"none",stroke:shot.type==="shot_hit"?"#f97316":"#facc15","stroke-width":Math.max(3,C*.1),"stroke-linecap":"round","stroke-linejoin":"round",opacity:.9}));
+  const last=path[path.length-1], [cx,cy]=cellCenter(last.x,last.y,C);
+  boardEl.appendChild(el("circle",{cx,cy,r:C*.16,fill:shot.type==="wall_destroyed"?"#fb923c":shot.type==="shot_hit"?"#ef4444":"#facc15",opacity:.95}));
+}
+function draw(frame){
+  const grid=Array.isArray(frame.board)?frame.board:[], w=frame.width||grid.length||17, h=frame.height||(Array.isArray(grid[0])?grid[0].length:17), C=32;
+  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`);
+  boardEl.replaceChildren();
+  boardEl.appendChild(el("rect",{x:0,y:0,width:w*C,height:h*C,fill:"#ecfdf5"}));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=grid[x]?.[y]??0, px=x*C, py=y*C;
+    let fill=((x+y)%2===0)?"#f8fafc":"#eef7f2";
+    if(v===-1)fill="#64748b";
+    if(v===-3)fill="#9a3412";
+    boardEl.appendChild(el("rect",{x:px,y:py,width:C-1,height:C-1,fill}));
+    if(v===-1)boardEl.appendChild(el("path",{d:`M${px+4} ${py+C-5} L${px+C-5} ${py+4}`,stroke:"#94a3b8","stroke-width":2,opacity:.5}));
+    if(v===-3){
+      boardEl.appendChild(el("rect",{x:px+5,y:py+7,width:C-10,height:C-14,rx:3,fill:"#c2410c",opacity:.9}));
+      boardEl.appendChild(text(px+C/2,py+C/2,"×",Math.max(12,C*.38),"#fed7aa",900));
+    }
+  }
+  const bases=frame.bases||{};
+  for(const [slot,pos] of Object.entries(bases))drawBase(slot,pos,C,frame);
+  const home=frame.flag_home;
+  if(home&&Number.isFinite(home.x)&&Number.isFinite(home.y)){
+    const [hx,hy]=cellCenter(home.x,home.y,C);
+    boardEl.appendChild(el("circle",{cx:hx,cy:hy,r:C*.45,fill:"none",stroke:"#f59e0b","stroke-width":2,"stroke-dasharray":"5 4",opacity:.75}));
+  }
+  const flag=frame.flag||{};
+  if(!flag.carrier&&Number.isFinite(flag.x)&&Number.isFinite(flag.y))drawFlagAt(flag.x,flag.y,C);
+  for(const shot of frame.shots_this_turn||[])drawShot(shot,C);
+  const positions=frame.positions||{}, frozen=frame.frozen||{}, carrier=frame.flag_carrier;
+  for(const slot of frame.active_slots||Object.keys(positions)){
+    const pos=positions[slot];
+    if(pos&&Number.isFinite(pos.x)&&Number.isFinite(pos.y))drawPlayer(slot,pos,C,carrier===slot,Number(frozen[slot]||0),frame);
+  }
+  drawHud(frame);
+}
+function drawHud(frame){
+  const active=frame.active_slots||Object.keys(frame.positions||{});
+  const captures=frame.captures||{}, scores=frame.slot_scores||{}, left=frame.builds_left||{}, frozen=frame.frozen||{}, carrier=frame.flag_carrier;
+  hudEl.replaceChildren();
+  for(const slot of active){
+    const c=COLORS[slot]||COLORS.red;
+    const card=document.createElement("div");card.className="card";
+    const name=document.createElement("div");name.className="name";
+    const dot=document.createElement("span");dot.className="dot";dot.style.background=c.main;
+    name.appendChild(dot);name.appendChild(document.createTextNode(`${labelOf(frame,slot)}${carrier===slot?" несет флаг":""}`));
+    const meta=document.createElement("div");meta.className="meta";
+    meta.textContent=`захваты: ${captures[slot]||0} · стены: ${left[slot]??"-"} · заморозка: ${frozen[slot]||0} · счет: ${scores[slot]??"-"}`;
+    card.appendChild(name);card.appendChild(meta);hudEl.appendChild(card);
+  }
+}
+window.addEventListener("message",event=>{
+  const message=event.data;
+  if(!message||typeof message!=="object")return;
+  if(message.type==="agp.renderer.state")draw(message.payload?.frame||{});
+});
+draw({
+  width:17,height:17,board:Array.from({length:17},()=>Array(17).fill(0)),
+  active_slots:["red","blue","green","yellow"],
+  positions:{red:{x:1,y:1},blue:{x:15,y:15},green:{x:15,y:1},yellow:{x:1,y:15}},
+  bases:{red:{x:1,y:1},blue:{x:15,y:15},green:{x:15,y:1},yellow:{x:1,y:15}},
+  flag:{carrier:null,x:8,y:8},flag_home:{x:8,y:8},flag_carrier:null,
+  captures:{red:0,blue:0,green:0,yellow:0},builds_left:{red:3,blue:3,green:3,yellow:3},frozen:{red:0,blue:0,green:0,yellow:0}
+});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"capture-flag-2.0"}},"*");
 </script>
 </body>
 </html>

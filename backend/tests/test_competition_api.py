@@ -1,13 +1,71 @@
-def _create_small_match_game(client, slug: str, headers: dict[str, str]) -> dict:
+from competition.domain.model import (
+    Competition,
+    CompetitionCodePolicy,
+    CompetitionFormat,
+    CompetitionMatchStatus,
+    TieBreakPolicy,
+)
+
+
+def test_competition_auto_advances_are_rotated_between_rounds() -> None:
+    competition = Competition.create(
+        game_id="game_rotation",
+        game_version_id="version_rotation",
+        title="Rotation Cup",
+        format=CompetitionFormat.SINGLE_ELIMINATION,
+        tie_break_policy=TieBreakPolicy.MANUAL,
+        code_policy=CompetitionCodePolicy.LOCKED_ON_START,
+        advancement_top_k=1,
+        min_match_size=2,
+        match_size=2,
+    )
+
+    first_round = competition.seed_first_round([f"team-{index}" for index in range(5)])
+    first_auto = [
+        team_id
+        for match in first_round.matches
+        if match.status is CompetitionMatchStatus.AUTO_ADVANCED
+        for team_id in match.advanced_team_ids
+    ]
+    assert len(first_auto) == 1
+
+    next_seed = list(first_auto)
+    next_seed.extend(match.team_ids[0] for match in first_round.matches if match.status is not CompetitionMatchStatus.AUTO_ADVANCED)
+    second_round = competition.create_next_round(next_seed)
+    second_auto = [
+        team_id
+        for match in second_round.matches
+        if match.status is CompetitionMatchStatus.AUTO_ADVANCED
+        for team_id in match.advanced_team_ids
+    ]
+
+    assert len(second_auto) == 1
+    assert second_auto[0] != first_auto[0]
+
+
+def _create_small_match_game(
+    client,
+    slug: str,
+    headers: dict[str, str],
+    *,
+    mode: str = "small_match",
+    min_players_per_match: int | None = None,
+    max_players_per_match: int | None = None,
+) -> dict:
+    payload = {
+        "slug": slug,
+        "title": "Competition Game",
+        "mode": mode,
+        "semver": "1.0.0",
+        "required_slots": [{"key": "bot", "title": "Bot", "required": True}],
+    }
+    if min_players_per_match is not None:
+        payload["min_players_per_match"] = min_players_per_match
+    if max_players_per_match is not None:
+        payload["max_players_per_match"] = max_players_per_match
     return client.post(
         "/api/v1/games",
-        json={
-            "slug": slug,
-            "title": "Competition Game",
-            "mode": "small_match",
-            "semver": "1.0.0",
-            "required_slots": [{"key": "bot", "title": "Bot", "required": True}],
-        },
+        json=payload,
         headers=headers,
     ).json()
 
@@ -31,6 +89,63 @@ def _student_headers(client, nickname: str) -> dict[str, str]:
     )
     assert response.status_code == 200
     return {"X-Session-Id": response.json()["session_id"]}
+
+
+def test_competition_uses_multiplayer_match_bounds(client, teacher_headers) -> None:
+    game = _create_small_match_game(
+        client,
+        "competition_api_match_bounds",
+        headers=teacher_headers,
+        mode="multiplayer",
+        min_players_per_match=3,
+        max_players_per_match=4,
+    )
+
+    too_small = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Too Small",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    )
+    assert too_small.status_code == 422
+
+    teams = [
+        _create_ready_team(client, game_id=game["game_id"], name=f"Team {index}", captain=f"bounds-{index}")
+        for index in range(6)
+    ]
+    competition = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Bounds Cup",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 4,
+        },
+        headers=teacher_headers,
+    ).json()
+    assert competition["min_match_size"] == 3
+    for team in teams:
+        client.post(
+            f"/api/v1/competitions/{competition['competition_id']}/register",
+            json={"team_id": team["team_id"]},
+            headers=teacher_headers,
+        )
+
+    started = client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/start",
+        json={"requested_by": "teacher-bounds"},
+        headers=teacher_headers,
+    ).json()
+    match_sizes = sorted(len(match["team_ids"]) for match in started["rounds"][0]["matches"])
+    assert match_sizes == [3, 3]
 
 
 def test_competition_start_schedules_competition_runs(client, teacher_headers) -> None:
@@ -572,7 +687,14 @@ def test_competition_mutations_require_teacher_or_admin(client, teacher_headers)
 
 
 def test_competition_patch_updates_draft_competition(client, teacher_headers) -> None:
-    game = _create_small_match_game(client, "competition_api_patch_ok", headers=teacher_headers)
+    game = _create_small_match_game(
+        client,
+        "competition_api_patch_ok",
+        headers=teacher_headers,
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=4,
+    )
     created = client.post(
         "/api/v1/competitions",
         json={

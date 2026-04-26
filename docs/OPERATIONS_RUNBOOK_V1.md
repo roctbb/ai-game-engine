@@ -57,15 +57,17 @@ bash scripts/run_compose_e2e_smoke.sh
 
 ## 3) Базовые операционные действия
 
-### Пауза/возобновление лобби
+### Пауза/возобновление/остановка лобби
 
 - Пауза: `POST /api/v1/lobbies/{lobbyId}/status {"status":"paused"}`
 - Возобновление: `POST /api/v1/lobbies/{lobbyId}/status {"status":"open"}`
-- Закрытие: `POST /api/v1/lobbies/{lobbyId}/status {"status":"closed"}`
+- Остановка без удаления: `POST /api/v1/lobbies/{lobbyId}/status {"status":"stopped"}`
+- Полное удаление лобби и training-match run/replay: `DELETE /api/v1/lobbies/{lobbyId}`
 
 Важно:
 - операции доступны только `teacher/admin` (`X-Session-Id`);
-- при `closed` команды снимаются с `ready`.
+- при `stopped` активные training run отменяются, команды снимаются с `ready`, лобби можно снова открыть через `open`;
+- `DELETE` запрещен, если к лобби прикреплено активное или ожидающее ручного завершения соревнование.
 
 ### Изоляция проблемного worker
 

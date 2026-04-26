@@ -1,6 +1,8 @@
 id: tanks_ctf_v1
 title: Танки
-game_mode: massive_lobby
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 16
 semver: 1.0.0
 code_api_mode: turn_based
 engine_entrypoint: engine.py

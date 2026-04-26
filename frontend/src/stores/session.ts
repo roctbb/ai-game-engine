@@ -45,6 +45,7 @@ function applySession(store: SessionState, payload: SessionDto): void {
   store.role = payload.role;
   store.provider = payload.provider;
   store.isAuthenticated = true;
+  storeSessionId(payload.session_id);
 }
 
 export const useSessionStore = defineStore('session', {
@@ -64,6 +65,7 @@ export const useSessionStore = defineStore('session', {
           applySession(this, session);
         } catch {
           clearStoredSessionId();
+          this.$patch({ ...DEFAULT_SESSION, options: this.options, isBootstrapped: false });
         }
       } catch (error) {
         this.options = null;
@@ -87,7 +89,6 @@ export const useSessionStore = defineStore('session', {
 
     async loginAsDev(nickname: string, role: UserRole): Promise<void> {
       const session = await devLogin({ nickname, role });
-      storeSessionId(session.session_id);
       applySession(this, session);
     },
 

@@ -1,6 +1,8 @@
 id: energy_race_v1
 title: Гонка энергии
-game_mode: small_match
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 2
 semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py

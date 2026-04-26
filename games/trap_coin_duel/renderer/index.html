@@ -7,7 +7,7 @@
   <style>
     body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#141827;color:#e5edf5;font-family:Arial,sans-serif}
     .wrap{width:min(92vmin,760px)}
-    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155}
+    svg{width:100%;aspect-ratio:1/1;background:#f8fafc;border:1px solid #334155;border-radius:8px}
     .hud{margin-top:8px;font:13px ui-monospace,monospace;color:#cbd5e1}
   </style>
 </head>
@@ -16,28 +16,43 @@
 <script>
 const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
 function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
+function labelOf(frame,slot){return (frame.labels&&frame.labels[slot])||slot}
+function drawLabel(cx,cy,C,label,fill){const t=el("text",{x:cx,y:cy-C*0.42,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.24),"font-weight":800,fill,stroke:"#ffffff","stroke-width":Math.max(2,C*0.06),"paint-order":"stroke"});t.textContent=label;boardEl.appendChild(t)}
 function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
 function drawMiniBar(cx,cy,C,value,max,fill="#22c55e"){const m=Number(max),v=Number(value);if(!Number.isFinite(m)||m<=0||!Number.isFinite(v))return;const pct=Math.max(0,Math.min(1,v/m)),w=C*0.7,h=Math.max(3,C*0.09),x=cx-w/2,y=cy+C*0.36;boardEl.appendChild(el("rect",{x,y,width:w,height:h,rx:h/2,fill:"rgba(15,23,42,.62)"}));boardEl.appendChild(el("rect",{x,y,width:w*pct,height:h,rx:h/2,fill:pct<.25?"#ef4444":fill}))}
+function arrowFor(dx,dy){if(dx>0)return "→";if(dx<0)return "←";if(dy>0)return "↓";if(dy<0)return "↑";return "•"}
 function draw(frame){
   const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||12, h=Array.isArray(grid[0])?grid[0].length:12, C=32;
   boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const v=grid[x]?.[y]??0;
-    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:v===-1?"#334155":v===-3?"#fee2e2":"#f8fafc"}));
-    if(v===1)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.2,fill:"#eab308"}));
-    if(v===-3){const t=el("text",{x:x*C+C/2,y:y*C+C*0.66,"text-anchor":"middle","font-size":18,fill:"#dc2626"});t.textContent="T";boardEl.appendChild(t)}
+    const fill=v===-1?"#334155":v===-4?"#fff1f2":v===-3?"#fecdd3":"#f8fafc";
+    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill}));
+    if(v===1)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.2,fill:"#eab308",stroke:"#a16207","stroke-width":2}));
+    if(v===-4)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.16,fill:"#fb7185",opacity:.45}));
+  }
+  for(const trap of frame.traps||[]){
+    const cx=trap.x*C+C/2,cy=trap.y*C+C/2;
+    boardEl.appendChild(el("circle",{cx,cy,r:C*0.32,fill:"#ef4444",stroke:"#7f1d1d","stroke-width":3}));
+    const t=el("text",{x:cx,y:cy+C*0.04,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(13,C*0.42),"font-weight":900,fill:"#fff"});
+    t.textContent=arrowFor(Number(trap.dx||0),Number(trap.dy||0));
+    boardEl.appendChild(t);
+  }
+  for(const move of frame.trap_moves||[]){
+    const from=move.from,to=move.to;if(!from||!to)continue;
+    boardEl.appendChild(el("line",{x1:from.x*C+C/2,y1:from.y*C+C/2,x2:to.x*C+C/2,y2:to.y*C+C/2,stroke:"#fb7185","stroke-width":4,"stroke-linecap":"round",opacity:.75}));
   }
   const positions=frame.positions||{};
   for(const [slot,p] of Object.entries(positions)){
     const color=slot==="gold"?"#ca8a04":"#64748b";
-    if(Number.isFinite(p.x)&&Number.isFinite(p.y)){const cx=p.x*C+C/2,cy=p.y*C+C/2;boardEl.appendChild(el("circle",{cx,cy,r:C*0.3,fill:color}));const c=frame.collected||frame.activated||{};drawMiniBadge(cx,cy,C,c[slot]||0,color)}
+    if(Number.isFinite(p.x)&&Number.isFinite(p.y)){const cx=p.x*C+C/2,cy=p.y*C+C/2;drawLabel(cx,cy,C,labelOf(frame,slot),color);boardEl.appendChild(el("circle",{cx,cy,r:C*0.3,fill:color}));const c=frame.collected||frame.activated||{};drawMiniBadge(cx,cy,C,c[slot]||0,color)}
   }
   const c=frame.collected||{}, t=frame.trap_hits||{}, s=frame.slot_scores||{};
-  hudEl.textContent=`gold=${c.gold||0} silver=${c.silver||0} traps=${t.gold||0}/${t.silver||0} left=${frame.coins_left??"-"} score_gold=${s.gold??"-"} score_silver=${s.silver??"-"}`;
+  hudEl.textContent=Object.keys(positions).map(slot=>`${labelOf(frame,slot)}=${c[slot]||0} traps=${t[slot]||0} score=${s[slot]??"-"}`).join(" · ")+` · coins_left=${frame.coins_left??"-"} moving_traps=${(frame.traps||[]).length}`;
 }
 window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
-draw({board:Array.from({length:12},()=>Array(12).fill(0)),positions:{gold:{x:1,y:1},silver:{x:10,y:10}},collected:{gold:0,silver:0}});
-window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+draw({board:Array.from({length:12},(_,x)=>Array.from({length:12},(_,y)=>(x===0||y===0||x===11||y===11?-1:0))),positions:{gold:{x:1,y:1},silver:{x:10,y:10}},traps:[{x:5,y:4,dx:1,dy:0},{x:7,y:8,dx:0,dy:-1}],collected:{gold:0,silver:0}});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"trap-coin-moving-traps-1.2"}},"*");
 </script>
 </body>
 </html>

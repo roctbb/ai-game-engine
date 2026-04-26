@@ -1,0 +1,80 @@
+{
+  "frame": {
+    "actual": [
+      "take",
+      "skip",
+      "take",
+      "take",
+      "skip",
+      "skip",
+      "take",
+      "skip"
+    ],
+    "difficulty": "medium",
+    "expected": [
+      "take",
+      "skip",
+      "take",
+      "take",
+      "skip",
+      "skip",
+      "take",
+      "skip"
+    ],
+    "kind": "miner_backpack",
+    "learning_section": "Счетчики и ресурсы",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "capacity": 10,
+      "expected": [
+        "take",
+        "skip",
+        "take",
+        "take",
+        "skip",
+        "skip",
+        "take",
+        "skip"
+      ],
+      "ores": [
+        {
+          "value": 5,
+          "weight": 2
+        },
+        {
+          "value": 3,
+          "weight": 4
+        },
+        {
+          "value": 2,
+          "weight": 1
+        },
+        {
+          "value": 8,
+          "weight": 5
+        },
+        {
+          "value": 7,
+          "weight": 3
+        },
+        {
+          "value": 1,
+          "weight": 2
+        },
+        {
+          "value": 4,
+          "weight": 1
+        },
+        {
+          "value": 6,
+          "weight": 4
+        }
+      ],
+      "rule": "take if fits and value >= weight"
+    },
+    "title": "Рюкзак шахтера"
+  }
+}

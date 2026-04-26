@@ -1,8 +1,9 @@
 def solve(corridor):
     # corridor - клетки коридора слева направо.
-    # "." - пусто, "C" - кристалл, "#" - стена.
+    # "." - пусто, "C" - кристалл, "B" - большой кристалл,
+    # "X" - проклятый кристалл, "#" - стена.
     #
-    # Идите до первой стены. Для кристалла сначала "collect", потом "move".
+    # Идите до первой стены. C и B надо собрать, X надо пропустить.
     commands = []
     index = 0
     while index < len(corridor):
@@ -10,8 +11,7 @@ def solve(corridor):
         if cell == "#":
             break
         if cell == "C":
-            # Перед движением с кристалла нужна команда "collect".
-            # Добавьте ее здесь.
+            # TODO: сначала добавьте "collect".
             commands.append("move")
         else:
             commands.append("move")

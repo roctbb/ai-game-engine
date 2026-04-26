@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     docker_binary: str = "docker"
     docker_image: str = "python:3.12-slim"
     docker_network_mode: str = "none"
+    docker_log_driver: str = "json-file"
+    docker_log_max_size: str = "10m"
+    docker_log_max_file: str = "3"
     docker_cpu_limit: str = "1.0"
     docker_memory_limit: str = "256m"
     docker_pids_limit: int = 128

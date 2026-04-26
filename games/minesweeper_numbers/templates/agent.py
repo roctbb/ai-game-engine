@@ -19,7 +19,8 @@ def build_numbers(mines):
                         continue
                     nx = x + dx
                     ny = y + dy
-                    if 0 <= nx < width and 0 <= ny < height and mines[nx][ny]:
+                    # TODO: проверьте границы и увеличьте count, если рядом мина.
+                    if False:
                         count += 1
             result[x][y] = count
 

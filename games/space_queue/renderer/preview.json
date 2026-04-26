@@ -1,0 +1,100 @@
+{
+  "frame": {
+    "actual": [
+      "ship_0",
+      "ship_3",
+      "ship_1",
+      "ship_6",
+      "ship_2",
+      "ship_4",
+      "ship_5"
+    ],
+    "difficulty": "medium",
+    "expected": [
+      "ship_0",
+      "ship_3",
+      "ship_1",
+      "ship_6",
+      "ship_2",
+      "ship_4",
+      "ship_5"
+    ],
+    "kind": "space_queue",
+    "learning_section": "Списки и цели",
+    "score": 0,
+    "solved": false,
+    "stage": "briefing",
+    "step_title": "Разведка задания",
+    "task": {
+      "expected": [
+        "ship_0",
+        "ship_3",
+        "ship_1",
+        "ship_6",
+        "ship_2",
+        "ship_4",
+        "ship_5"
+      ],
+      "formula": "priority*10 + passengers*2 + broken*20 + (10 - fuel) - service_time",
+      "ships": [
+        {
+          "broken": true,
+          "fuel": 2,
+          "id": "ship_0",
+          "passengers": 4,
+          "priority": 3,
+          "service_time": 5
+        },
+        {
+          "broken": false,
+          "fuel": 8,
+          "id": "ship_1",
+          "passengers": 1,
+          "priority": 5,
+          "service_time": 3
+        },
+        {
+          "broken": false,
+          "fuel": 1,
+          "id": "ship_2",
+          "passengers": 8,
+          "priority": 2,
+          "service_time": 2
+        },
+        {
+          "broken": true,
+          "fuel": 5,
+          "id": "ship_3",
+          "passengers": 0,
+          "priority": 4,
+          "service_time": 8
+        },
+        {
+          "broken": false,
+          "fuel": 9,
+          "id": "ship_4",
+          "passengers": 6,
+          "priority": 3,
+          "service_time": 1
+        },
+        {
+          "broken": true,
+          "fuel": 0,
+          "id": "ship_5",
+          "passengers": 2,
+          "priority": 1,
+          "service_time": 4
+        },
+        {
+          "broken": false,
+          "fuel": 3,
+          "id": "ship_6",
+          "passengers": 5,
+          "priority": 4,
+          "service_time": 6
+        }
+      ]
+    },
+    "title": "Очередь кораблей"
+  }
+}
