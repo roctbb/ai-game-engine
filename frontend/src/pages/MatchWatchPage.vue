@@ -1171,6 +1171,7 @@ function sendRendererStateAndResult(): void {
 
 function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknown }): void {
   if (!isEmbedded.value || !run.value) return;
+  const players = embeddedPlayerStatsForFrame(payload.frame);
   window.parent.postMessage(
     {
       type: 'agp.watch.frame',
@@ -1183,7 +1184,7 @@ function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknow
         replayFrameIndex: replayFrameIndex.value,
         replayFrameCount: replayFrames.value.length,
         participants: watchContext.value?.participants ?? [],
-        players: matchPlayerStats.value.map((player) => ({
+        players: players.map((player) => ({
           id: player.id,
           name: player.name,
           team_id: player.teamId,
@@ -1199,6 +1200,20 @@ function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknow
     },
     window.location.origin,
   );
+}
+
+function embeddedPlayerStatsForFrame(frame: unknown): MatchPlayerStat[] {
+  const players = new Map<string, MatchPlayerStat>();
+  collectFramePlayers(players, frame);
+  if (players.size === 0 && !firstReplayLockActive.value) {
+    collectSummaryPlayers(players);
+  }
+  return [...players.values()].sort((left, right) => {
+    const rightScore = right.score ?? Number.NEGATIVE_INFINITY;
+    const leftScore = left.score ?? Number.NEGATIVE_INFINITY;
+    if (rightScore !== leftScore) return rightScore - leftScore;
+    return left.name.localeCompare(right.name, 'ru');
+  });
 }
 
 function replaySpeedFromQuery(): number {
