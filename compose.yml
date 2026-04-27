@@ -123,7 +123,7 @@ services:
       SESSION_REPOSITORY_AUTO_CREATE_TABLES: "true"
       GAMES_ROOT: /app/games
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
-      BACKEND_WORKERS: "4"
+      BACKEND_WORKERS: "2"
     ports:
       - "8000:8000"
     depends_on:
@@ -140,7 +140,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
           cpus: "2.0"
 
   scheduler-service:

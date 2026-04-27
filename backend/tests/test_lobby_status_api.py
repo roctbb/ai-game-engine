@@ -39,6 +39,15 @@ def _create_lobby(client, game_id: str, headers: dict[str, str]) -> dict:
     ).json()
 
 
+def _admin_headers(client, nickname: str = "admin-lobby-status") -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/dev-login",
+        json={"nickname": nickname, "role": "admin"},
+    )
+    assert response.status_code == 200
+    return {"X-Session-Id": response.json()["session_id"]}
+
+
 def test_training_lobby_status_controls_and_ready_guard(client, teacher_headers) -> None:
     game = _create_game(client, teacher_headers)
     team_a = _create_ready_team(client, game_id=game["game_id"], captain="captain-a", name="Alpha")
@@ -114,6 +123,38 @@ def test_training_lobby_status_controls_and_ready_guard(client, teacher_headers)
         headers=teacher_headers,
     )
     assert join_closed.status_code == 422
+
+
+def test_reopening_stopped_lobby_restores_ready_demo_bots(client, teacher_headers) -> None:
+    admin_headers = _admin_headers(client)
+    games_response = client.get("/api/v1/games", headers=admin_headers)
+    assert games_response.status_code == 200
+    game = next(item for item in games_response.json() if item["slug"] == "ttt_connect5_v1")
+    lobby = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
+
+    bot_response = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/admin-bots", headers=admin_headers)
+    assert bot_response.status_code == 200
+    bot_team = next(item for item in bot_response.json()["teams"] if item["ready"])
+
+    stopped = client.post(
+        f"/api/v1/lobbies/{lobby['lobby_id']}/status",
+        json={"status": "stopped"},
+        headers=teacher_headers,
+    )
+    assert stopped.status_code == 200
+    stopped_bot = next(item for item in stopped.json()["teams"] if item["team_id"] == bot_team["team_id"])
+    assert stopped_bot["ready"] is False
+    assert "остановлено" in (stopped_bot["blocker_reason"] or "").lower()
+
+    reopened = client.post(
+        f"/api/v1/lobbies/{lobby['lobby_id']}/status",
+        json={"status": "open"},
+        headers=teacher_headers,
+    )
+    assert reopened.status_code == 200
+    reopened_bot = next(item for item in reopened.json()["teams"] if item["team_id"] == bot_team["team_id"])
+    assert reopened_bot["ready"] is True
+    assert reopened_bot["blocker_reason"] is None
 
 
 def test_lobby_admin_mutations_require_teacher_or_admin(client, teacher_headers) -> None:

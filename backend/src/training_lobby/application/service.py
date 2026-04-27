@@ -479,6 +479,7 @@ class TrainingLobbyService:
             lobby.pause()
         elif status == LobbyStatus.OPEN:
             lobby.reopen()
+            self._prepare_reopened_lobby(lobby)
         elif status == LobbyStatus.STOPPED:
             self._cancel_active_training_runs(lobby_id=lobby_id, message="lobby_stopped")
             lobby.stop()
@@ -489,6 +490,37 @@ class TrainingLobbyService:
             raise InvariantViolationError("Разрешены только статусы open, paused, stopped и closed")
         self._repository.save(lobby)
         return lobby
+
+    def _prepare_reopened_lobby(self, lobby: Lobby) -> None:
+        compatibility_by_team: dict[str, tuple[bool, str | None]] = {}
+        demo_bot_team_ids: set[str] = set()
+        for team_id in lobby.teams:
+            try:
+                team = self._team_workspace.get_team(team_id)
+                compatibility = self._team_workspace.evaluate_compatibility(
+                    team_id=team_id,
+                    game_id=lobby.game_id,
+                    version_id=lobby.game_version_id,
+                )
+            except NotFoundError:
+                compatibility_by_team[team_id] = (False, "Команда не найдена")
+                continue
+
+            if team.captain_user_id.startswith("bot:"):
+                demo_bot_team_ids.add(team_id)
+            if compatibility.compatible:
+                compatibility_by_team[team_id] = (True, None)
+            else:
+                reason = "Не заполнены обязательные слоты: " + ", ".join(compatibility.missing_required_slots)
+                compatibility_by_team[team_id] = (False, reason)
+
+        lobby.revalidate_ready_states(compatibility_by_team=compatibility_by_team)
+        for team_id in demo_bot_team_ids:
+            state = lobby.teams.get(team_id)
+            compatible, _reason = compatibility_by_team.get(team_id, (False, None))
+            if state is not None and compatible:
+                state.ready = True
+                state.blocker_reason = None
 
     def stop_current_training_games_for_competition(self, lobby_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
