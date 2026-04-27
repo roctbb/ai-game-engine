@@ -15,3 +15,10 @@ class InMemoryCompetitionRepository:
 
     def list(self) -> list[Competition]:
         return sorted(self._items.values(), key=lambda item: item.created_at, reverse=True)
+
+    def list_by_lobby(self, lobby_id: str) -> list[Competition]:
+        return [
+            item
+            for item in self.list()
+            if item.lobby_id == lobby_id
+        ]

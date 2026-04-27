@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Index, Integer, String, Text
 from sqlalchemy import JSON as SqlJson
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,13 +11,16 @@ from shared.db.base import Base
 
 class RunOrm(Base):
     __tablename__ = "execution_runs"
+    __table_args__ = (
+        Index("ix_execution_runs_lobby_kind_created_at", "lobby_id", "run_kind", "created_at"),
+    )
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     team_id: Mapped[str] = mapped_column(String(64), index=True)
     game_id: Mapped[str] = mapped_column(String(64), index=True)
     requested_by: Mapped[str] = mapped_column(String(120), index=True)
     run_kind: Mapped[str] = mapped_column(String(32), index=True)
-    lobby_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lobby_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     target_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     status: Mapped[str] = mapped_column(String(32), index=True)

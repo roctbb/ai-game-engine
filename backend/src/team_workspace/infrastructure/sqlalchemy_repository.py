@@ -31,6 +31,16 @@ class SqlAlchemyTeamRepository:
             ).all()
             return [_map_team_from_orm(row) for row in rows]
 
+    def list_by_game_and_captain(self, game_id: str, captain_user_id: str) -> list[Team]:
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(WorkspaceTeamOrm)
+                .where(WorkspaceTeamOrm.game_id == game_id)
+                .where(WorkspaceTeamOrm.captain_user_id == captain_user_id)
+                .order_by(WorkspaceTeamOrm.team_id)
+            ).all()
+            return [_map_team_from_orm(row) for row in rows]
+
 
 class SqlAlchemyTeamSnapshotRepository:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:

@@ -212,7 +212,10 @@ class TrainingLobbyService:
 
     def find_user_team_in_lobby(self, lobby_id: str, user_id: str) -> str | None:
         lobby = self.get_lobby(lobby_id)
-        game_teams = self._team_workspace.list_teams_by_game_and_captain(game_id=lobby.game_id, captain_user_id=user_id)
+        game_teams = self._team_workspace.list_teams_by_game_and_captain(
+            game_id=lobby.game_id,
+            captain_user_id=user_id,
+        )
         team_ids = {team.team_id for team in game_teams}
         for team_id in lobby.teams:
             if team_id in team_ids:
@@ -220,7 +223,6 @@ class TrainingLobbyService:
         return None
 
     def mark_viewer_online(self, lobby_id: str, user_id: str) -> None:
-        self.get_lobby(lobby_id)
         now = utc_now()
         viewers = self._viewer_last_seen_by_lobby.setdefault(lobby_id, {})
         viewers[user_id] = now
@@ -276,7 +278,7 @@ class TrainingLobbyService:
         runs = self._execution.list_runs(
             lobby_id=lobby_id,
             run_kind=RunKind.TRAINING_MATCH,
-            include_result_payload=False,
+            include_result_payload=True,
         )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
@@ -1289,7 +1291,9 @@ class TrainingLobbyService:
             return cached[1]
 
         runs_with_payload = [
-            run if run.result_payload is not None else self._execution.get_run(run.run_id)
+            run
+            if run.result_payload is not None or run.status is not RunStatus.FINISHED
+            else self._execution.get_run(run.run_id)
             for run in runs
         ]
         stats = self._collect_participant_stats(lobby=lobby, runs=runs_with_payload)

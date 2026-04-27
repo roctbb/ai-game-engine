@@ -129,7 +129,9 @@ class CompetitionService:
         self._repository.save(competition)
         return competition
 
-    def list_competitions(self) -> list[Competition]:
+    def list_competitions(self, lobby_id: str | None = None) -> list[Competition]:
+        if lobby_id is not None:
+            return self._repository.list_by_lobby(lobby_id)
         return self._repository.list()
 
     def get_competition(self, competition_id: str) -> Competition:

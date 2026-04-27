@@ -144,9 +144,7 @@ def list_competitions(
     container: ServiceContainer = Depends(get_container),
 ) -> list[CompetitionResponse]:
     visible: list[CompetitionResponse] = []
-    for item in container.competition.list_competitions():
-        if lobby_id is not None and item.lobby_id != lobby_id:
-            continue
+    for item in container.competition.list_competitions(lobby_id=lobby_id):
         if not _can_view_competition(container=container, session=session, competition=item):
             continue
         visible.append(_to_response(_reconcile_competition_if_ready(container=container, competition=item)))

@@ -198,7 +198,7 @@ def _has_lobby_locking_competition(container: ServiceContainer, lobby_id: str) -
     return any(
         _is_lobby_competition(lobby_id=lobby_id, competition=item)
         and item.status in _LOBBY_LOCKING_COMPETITION_STATUSES
-        for item in container.competition.list_competitions()
+        for item in container.competition.list_competitions(lobby_id=lobby_id)
     )
 
 
@@ -208,7 +208,7 @@ def _reopen_lobby_after_finished_competition_if_needed(container: ServiceContain
         return False
     competitions = [
         item
-        for item in container.competition.list_competitions()
+        for item in container.competition.list_competitions(lobby_id=lobby_id)
         if _is_lobby_competition(lobby_id=lobby_id, competition=item)
     ]
     if not competitions:
@@ -290,6 +290,39 @@ def _cleanup_old_training_runs_if_possible(container: ServiceContainer, lobby_id
         container.training_lobby.cleanup_old_training_runs(lobby_id=lobby_id)
     except InvariantViolationError:
         return
+
+
+def _kick_training_matchmaking_from_live_view_if_needed(
+    *,
+    container: ServiceContainer,
+    live_view: LobbyLiveView,
+    viewer_user_id: str,
+    requested_by: str,
+) -> LobbyLiveView:
+    lobby = live_view.lobby
+    if lobby.kind is not LobbyKind.TRAINING:
+        return live_view
+    if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+        return live_view
+    if live_view.current_run_ids or live_view.cycle_phase in {"simulation", "replay", "result"}:
+        return live_view
+    try:
+        game = container.game_catalog.get_game(lobby.game_id)
+    except (InvariantViolationError, NotFoundError):
+        return live_view
+    min_players = game.match_player_bounds[0] if game.is_multiplayer else 2
+    if len(live_view.queued_team_ids) < min_players:
+        return live_view
+    if _has_lobby_locking_competition(container=container, lobby_id=lobby.lobby_id):
+        return live_view
+    try:
+        lobby = container.training_lobby.run_matchmaking_cycle(
+            lobby_id=lobby.lobby_id,
+            requested_by=requested_by,
+        )
+    except InvariantViolationError:
+        return live_view
+    return container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=viewer_user_id)
 
 
 def _has_lobby_detail_access(
@@ -456,10 +489,15 @@ def get_lobby(
 ) -> LobbyResponse:
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
     _reopen_lobby_after_finished_competition_if_needed(container=container, lobby_id=lobby_id)
-    _cleanup_old_training_runs_if_possible(container=container, lobby_id=lobby_id)
     container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
-    _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
-    return _to_response(container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname))
+    live_view = container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
+    live_view = _kick_training_matchmaking_from_live_view_if_needed(
+        container=container,
+        live_view=live_view,
+        viewer_user_id=session.nickname,
+        requested_by="system",
+    )
+    return _to_response(live_view)
 
 
 @router.patch("/{lobby_id}", response_model=LobbyResponse)
@@ -504,10 +542,7 @@ def stream_lobby(
     container: ServiceContainer = Depends(get_container),
 ) -> StreamingResponse:
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
-    _reopen_lobby_after_finished_competition_if_needed(container=container, lobby_id=lobby_id)
-    _cleanup_old_training_runs_if_possible(container=container, lobby_id=lobby_id)
     container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
-    _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
 
@@ -516,13 +551,15 @@ def stream_lobby(
         last_signature = ""
 
         def _build_payload() -> dict[str, object]:
-            _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
-            _cleanup_old_training_runs_if_possible(container=container, lobby_id=lobby_id)
             container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
-            _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
-            return _to_response(
-                container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
-            ).model_dump(mode="json")
+            live_view = container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
+            live_view = _kick_training_matchmaking_from_live_view_if_needed(
+                container=container,
+                live_view=live_view,
+                viewer_user_id=session.nickname,
+                requested_by="system",
+            )
+            return _to_response(live_view).model_dump(mode="json")
 
         while True:
             if await request.is_disconnected():
@@ -655,7 +692,7 @@ def start_lobby_competition(
     active_competition = next(
         (
             item
-            for item in container.competition.list_competitions()
+            for item in container.competition.list_competitions(lobby_id=lobby_id)
             if _is_lobby_competition(lobby_id=lobby_id, competition=item)
             and item.status is not CompetitionStatus.FINISHED
         ),
@@ -738,7 +775,7 @@ def list_lobby_competition_archive(
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
     competitions = [
         item
-        for item in container.competition.list_competitions()
+        for item in container.competition.list_competitions(lobby_id=lobby_id)
         if _is_lobby_competition(lobby_id=lobby_id, competition=item)
         and item.status is CompetitionStatus.FINISHED
     ]

@@ -38,6 +38,15 @@ class SqlAlchemyCompetitionRepository:
             rows = session.scalars(select(CompetitionOrm).order_by(desc(CompetitionOrm.created_at))).all()
             return [_map_competition_from_orm(row) for row in rows]
 
+    def list_by_lobby(self, lobby_id: str) -> list[Competition]:
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(CompetitionOrm)
+                .where(CompetitionOrm.lobby_id == lobby_id)
+                .order_by(desc(CompetitionOrm.created_at))
+            ).all()
+            return [_map_competition_from_orm(row) for row in rows]
+
 
 def _map_competition_to_orm(competition: Competition) -> CompetitionOrm:
     entrants_json: dict[str, dict[str, object]] = {}

@@ -56,7 +56,10 @@ class TeamWorkspaceService:
         return tuple(self._team_repository.list_by_game(game_id))
 
     def list_teams_by_game_and_captain(self, game_id: str, captain_user_id: str) -> tuple[Team, ...]:
-        teams = [team for team in self._team_repository.list_by_game(game_id) if team.captain_user_id == captain_user_id]
+        teams = self._team_repository.list_by_game_and_captain(
+            game_id=game_id,
+            captain_user_id=captain_user_id,
+        )
         teams.sort(key=lambda team: team.team_id)
         return tuple(teams)
 

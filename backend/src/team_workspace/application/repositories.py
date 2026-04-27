@@ -15,6 +15,9 @@ class TeamRepository(Protocol):
     def list_by_game(self, game_id: str) -> list[Team]:
         ...
 
+    def list_by_game_and_captain(self, game_id: str, captain_user_id: str) -> list[Team]:
+        ...
+
 
 class TeamSnapshotRepository(Protocol):
     def save(self, snapshot: TeamSnapshot) -> None:

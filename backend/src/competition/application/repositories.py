@@ -14,3 +14,6 @@ class CompetitionRepository(Protocol):
 
     def list(self) -> list[Competition]:
         ...
+
+    def list_by_lobby(self, lobby_id: str) -> list[Competition]:
+        ...

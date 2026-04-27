@@ -64,3 +64,9 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     assert {"session_id", "external_user_id", "nickname", "role", "provider", "created_at"}.issubset(
         session_columns
     )
+
+    run_indexes = {item["name"] for item in inspector.get_indexes("execution_runs")}
+    assert {
+        "ix_execution_runs_lobby_id",
+        "ix_execution_runs_lobby_kind_created_at",
+    }.issubset(run_indexes)

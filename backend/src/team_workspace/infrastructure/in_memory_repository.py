@@ -16,6 +16,13 @@ class InMemoryTeamRepository:
     def list_by_game(self, game_id: str) -> list[Team]:
         return [team for team in self._items.values() if team.game_id == game_id]
 
+    def list_by_game_and_captain(self, game_id: str, captain_user_id: str) -> list[Team]:
+        return [
+            team
+            for team in self._items.values()
+            if team.game_id == game_id and team.captain_user_id == captain_user_id
+        ]
+
 
 class InMemoryTeamSnapshotRepository:
     def __init__(self) -> None:
