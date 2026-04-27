@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
@@ -361,10 +362,9 @@ def stream_lobbies(
     async def _events():
         emitted = 0
         last_signature = ""
-        while True:
-            if await request.is_disconnected():
-                break
-            lobbies_payload = [
+
+        def _build_payload() -> list[dict[str, object]]:
+            return [
                 _to_summary_response(
                     item,
                     container=container,
@@ -378,6 +378,11 @@ def stream_lobbies(
                 .model_dump(mode="json")
                 for item in container.training_lobby.list_lobbies()
             ]
+
+        while True:
+            if await request.is_disconnected():
+                break
+            lobbies_payload = await run_in_threadpool(_build_payload)
             signature = json.dumps(lobbies_payload, ensure_ascii=False, sort_keys=True)
             if signature != last_signature:
                 last_signature = signature
@@ -509,16 +514,20 @@ def stream_lobby(
     async def _events():
         emitted = 0
         last_signature = ""
-        while True:
-            if await request.is_disconnected():
-                break
+
+        def _build_payload() -> dict[str, object]:
             _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
             _cleanup_old_training_runs_if_possible(container=container, lobby_id=lobby_id)
             container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
             _kick_training_matchmaking_if_possible(container=container, lobby_id=lobby_id)
-            lobby_payload = _to_response(
+            return _to_response(
                 container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
             ).model_dump(mode="json")
+
+        while True:
+            if await request.is_disconnected():
+                break
+            lobby_payload = await run_in_threadpool(_build_payload)
             signature = json.dumps(lobby_payload, ensure_ascii=False, sort_keys=True)
             if signature != last_signature:
                 last_signature = signature

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import time
 from pathlib import Path, PurePosixPath
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import get_current_session, require_internal_token, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
@@ -540,6 +541,7 @@ def _stored_training_match_peer_run_ids(current_run: Run) -> list[str]:
 
 @router.get("/runs/{run_id}/stream")
 def stream_run(
+    request: Request,
     run_id: str,
     poll_interval_ms: int = 1000,
     max_events: int = 0,
@@ -551,13 +553,23 @@ def stream_run(
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
 
-    def _events():
+    async def _events():
         emitted = 0
         last_payload_signature = ""
-        while True:
+
+        def _build_payload() -> tuple[dict[str, object], str, str]:
             run = container.execution.get_run(run_id=run_id)
             ensure_can_view_run(container=container, session=session, run=run)
-            payload = _run_response(run, compact_result_payload=True).model_dump(mode="json")
+            return (
+                _run_response(run, compact_result_payload=True).model_dump(mode="json"),
+                run.status.value,
+                run.run_id,
+            )
+
+        while True:
+            if await request.is_disconnected():
+                break
+            payload, status, current_run_id = await run_in_threadpool(_build_payload)
             signature = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             if signature != last_payload_signature:
                 last_payload_signature = signature
@@ -565,24 +577,24 @@ def stream_run(
                     "agp.update",
                     sse_envelope(
                         channel="run",
-                        entity_id=run.run_id,
+                        entity_id=current_run_id,
                         kind="snapshot",
                         payload=payload,
-                        status=run.status.value,
+                        status=status,
                     ),
                 )
                 emitted += 1
                 if max_events_bounded > 0 and emitted >= max_events_bounded:
                     break
-                if run.status in _TERMINAL_RUN_STATUSES:
+                if status in {item.value for item in _TERMINAL_RUN_STATUSES}:
                     yield sse_event(
                         "agp.terminal",
                         sse_envelope(
                             channel="run",
-                            entity_id=run.run_id,
+                            entity_id=current_run_id,
                             kind="terminal",
-                            payload={"run_id": run.run_id},
-                            status=run.status.value,
+                            payload={"run_id": current_run_id},
+                            status=status,
                         ),
                     )
                     break
@@ -591,7 +603,7 @@ def stream_run(
                     "agp.keepalive",
                     sse_envelope(channel="run", entity_id=run_id, kind="keepalive"),
                 )
-            time.sleep(interval)
+            await asyncio.sleep(interval)
 
     return StreamingResponse(
         _events(),

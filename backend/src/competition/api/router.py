@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
@@ -207,6 +208,7 @@ def patch_competition(
 
 @router.get("/{competition_id}/stream")
 def stream_competition(
+    request: Request,
     competition_id: str,
     poll_interval_ms: int = 1000,
     max_events: int = 0,
@@ -218,13 +220,19 @@ def stream_competition(
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
 
-    def _events():
+    async def _events():
         emitted = 0
         last_signature = ""
-        while True:
+
+        def _build_payload() -> dict[str, object]:
             competition = container.competition.get_competition(competition_id)
             _ensure_can_view_competition(container=container, session=session, competition=competition)
-            competition_payload = _to_response(competition).model_dump(mode="json")
+            return _to_response(competition).model_dump(mode="json")
+
+        while True:
+            if await request.is_disconnected():
+                break
+            competition_payload = await run_in_threadpool(_build_payload)
             signature = json.dumps(competition_payload, ensure_ascii=False, sort_keys=True)
             if signature != last_signature:
                 last_signature = signature
@@ -259,7 +267,7 @@ def stream_competition(
                     "agp.keepalive",
                     sse_envelope(channel="competition", entity_id=competition_id, kind="keepalive"),
                 )
-            time.sleep(interval)
+            await asyncio.sleep(interval)
 
     return StreamingResponse(
         _events(),
