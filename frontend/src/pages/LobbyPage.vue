@@ -350,18 +350,6 @@
                   @input="lobbySettingsTouched = true"
                 />
               </label>
-              <label class="lobby-competition-setting lobby-competition-setting--wide">
-                <span>Автоудаление старых тренировочных матчей, дней</span>
-                <input
-                  v-model.trim="lobbySettingsRetentionDays"
-                  class="form-control form-control-sm mono"
-                  type="number"
-                  min="1"
-                  max="3650"
-                  placeholder="без автоочистки"
-                  @input="lobbySettingsTouched = true"
-                />
-              </label>
             </div>
 
             <footer class="lobby-dialog-actions">
@@ -1032,7 +1020,6 @@ const lobbySettingsTitle = ref('');
 const lobbySettingsAccess = ref<LobbyAccess>('public');
 const lobbySettingsAccessCode = ref('');
 const lobbySettingsMaxTeams = ref('');
-const lobbySettingsRetentionDays = ref('');
 const lobbySettingsTouched = ref(false);
 const competitionMatchSize = ref(2);
 const competitionAdvanceTopK = ref(1);
@@ -1117,13 +1104,11 @@ const lobbyStatusLabel = computed(() => lobbyStatusText(lobby.value?.status ?? '
 const lobbyStatusPillClass = computed(() => lobbyStatusClass(lobby.value?.status ?? 'open'));
 const lobbySettingsPayload = computed(() => {
   const maxTeams = Number(lobbySettingsMaxTeams.value);
-  const retention = lobbySettingsRetentionDays.value ? Number(lobbySettingsRetentionDays.value) : null;
   return {
     title: lobbySettingsTitle.value.trim(),
     access: lobbySettingsAccess.value,
     access_code: lobbySettingsAccess.value === 'code' && lobbySettingsAccessCode.value.trim() ? lobbySettingsAccessCode.value.trim() : null,
     max_teams: maxTeams,
-    auto_delete_training_runs_days: retention,
   };
 });
 const lobbySettingsValid = computed(() => {
@@ -1131,14 +1116,6 @@ const lobbySettingsValid = computed(() => {
   if (payload.title.length < 2) return false;
   if (!Number.isFinite(payload.max_teams) || payload.max_teams < 1 || payload.max_teams > 512) return false;
   if (payload.access === 'code' && lobby.value?.access !== 'code' && !payload.access_code) return false;
-  if (
-    payload.auto_delete_training_runs_days !== null &&
-    (!Number.isFinite(payload.auto_delete_training_runs_days) ||
-      payload.auto_delete_training_runs_days < 1 ||
-      payload.auto_delete_training_runs_days > 3650)
-  ) {
-    return false;
-  }
   return true;
 });
 const lobbySettingsChanged = computed(() => {
@@ -1149,8 +1126,7 @@ const lobbySettingsChanged = computed(() => {
     payload.title !== current.title ||
     payload.access !== current.access ||
     (payload.access === 'code' && payload.access_code !== null) ||
-    payload.max_teams !== current.max_teams ||
-    payload.auto_delete_training_runs_days !== current.auto_delete_training_runs_days
+    payload.max_teams !== current.max_teams
   );
 });
 const canSaveLobbySettings = computed(() =>
@@ -1232,9 +1208,6 @@ function syncLobbySettings(force = false): void {
   lobbySettingsAccess.value = lobby.value.access;
   lobbySettingsAccessCode.value = '';
   lobbySettingsMaxTeams.value = String(lobby.value.max_teams);
-  lobbySettingsRetentionDays.value = lobby.value.auto_delete_training_runs_days === null
-    ? ''
-    : String(lobby.value.auto_delete_training_runs_days);
   lobbySettingsTouched.value = false;
 }
 
@@ -1257,7 +1230,6 @@ watch(
           lobby.value.title,
           lobby.value.access,
           lobby.value.max_teams,
-          lobby.value.auto_delete_training_runs_days,
         ].join('|')
       : '',
   () => syncLobbySettings(false),
@@ -3078,7 +3050,6 @@ async function saveLobbySettings(): Promise<void> {
       access: payload.access,
       access_code: payload.access_code,
       max_teams: payload.max_teams,
-      auto_delete_training_runs_days: payload.auto_delete_training_runs_days,
     });
     lobbySettingsTouched.value = false;
     syncLobbySettings(true);
