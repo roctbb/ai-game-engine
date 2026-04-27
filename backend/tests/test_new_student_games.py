@@ -1144,7 +1144,7 @@ def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     assert metrics["initial_apples"] == 12
     assert metrics["apples_total"] >= metrics["initial_apples"]
     assert metrics["apples_spawned_total"] == metrics["apples_total"]
-    assert metrics["turn_limit"] == 150
+    assert metrics["turn_limit"] == 1200
     assert metrics["spawn_interval"] == 5
     assert metrics["spawn_batch"] == 3
     assert metrics["max_apples_on_board"] == 18
@@ -1162,7 +1162,7 @@ def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     assert frame["board"] != other["frames"][0]["frame"]["board"]
     assert frame["tree"] == {"x": 7, "y": 7}
     assert frame["board"][7][7] == 3
-    assert frame["turn_limit"] == 150
+    assert frame["turn_limit"] == 1200
     assert all(value == 0 for value in frame["carrying"].values())
     assert all(value == 0 for value in frame["delivered"].values())
     assert all(value == 0 for value in frame["base_apples"].values())

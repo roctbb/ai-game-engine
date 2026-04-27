@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 _WIDTH = 15
 _HEIGHT = 15
-_MAX_TURNS = 150
+_MAX_TURNS = 1200
 _CAPACITY = 3
 _APPLES_PER_JUICE = 4
 _JUICE_TO_WIN = 3

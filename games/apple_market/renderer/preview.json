@@ -1292,8 +1292,8 @@
     "width": 15,
     "height": 15,
     "turn": 18,
-    "turn_limit": 150,
-    "turns_left": 132,
+    "turn_limit": 1200,
+    "turns_left": 1182,
     "spawn_interval": 5,
     "next_spawn_in": 2,
     "active_slots": [

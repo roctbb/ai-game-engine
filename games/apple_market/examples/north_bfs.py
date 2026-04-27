@@ -8,7 +8,9 @@ def make_move(x, y, board, carrying, players=None, bases=None):
 
     steal_target = opponent_base_with_apples(bases, carrying)
     if steal_target is not None:
-        return step_to(x, y, board, steal_target, [("right", 1, 0), ("down", 0, 1), ("left", -1, 0), ("up", 0, -1)])
+        action = step_to(x, y, board, steal_target, [("right", 1, 0), ("down", 0, 1), ("left", -1, 0), ("up", 0, -1)])
+        if action != "stay":
+            return action
 
     target = 2 if carrying >= CAPACITY or not any(cell == 1 for row in board for cell in row) else 1
     return step_to(x, y, board, target, [("right", 1, 0), ("down", 0, 1), ("left", -1, 0), ("up", 0, -1)])

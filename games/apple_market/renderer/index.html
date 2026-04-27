@@ -197,7 +197,7 @@ function drawBoard(frame){
   projectiles.forEach(pr=>drawHitOverlay(frame,pr,C));
 
   hudEl.innerHTML="";
-  const limit=Number(frame.turn_limit||150),turn=Number(frame.turn||0),left=Number(frame.turns_left??Math.max(0,limit-turn));
+  const limit=Number(frame.turn_limit||1200),turn=Number(frame.turn||0),left=Number(frame.turns_left??Math.max(0,limit-turn));
   const percent=Math.max(0,Math.min(1,turn/Math.max(1,limit)));
   const timer=document.createElement("div");
   timer.className="pill";
@@ -231,7 +231,7 @@ drawBoard({
   tree:{x:7,y:7},
   bases:{north_west:{x:1,y:1,apples:0,juice:0},north_east:{x:13,y:1,apples:0,juice:0},south_west:{x:1,y:13,apples:0,juice:0},south_east:{x:13,y:13,apples:0,juice:0}},
   positions:{north_west:{x:1,y:1},north_east:{x:13,y:1},south_west:{x:1,y:13},south_east:{x:13,y:13}},
-  carrying:{},delivered:{},frozen:{},throws:{},turn:0,turn_limit:150,turns_left:150,next_spawn_in:5,apples_left:0,juice_to_win:3,apples_per_juice:4
+  carrying:{},delivered:{},frozen:{},throws:{},turn:0,turn_limit:1200,turns_left:1200,next_spawn_in:5,apples_left:0,juice_to_win:3,apples_per_juice:4
 });
 window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-juice-bases"}},"*");
 </script>
