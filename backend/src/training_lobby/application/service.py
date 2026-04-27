@@ -118,6 +118,7 @@ class LobbyMatchGroupView:
     replay_frame_count: int
     replay_frame_index: int
     winner_team_ids: tuple[str, ...]
+    scores_by_team: dict[str, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,18 +255,18 @@ class TrainingLobbyService:
         lobby = self.get_lobby(lobby_id)
         if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING, LobbyStatus.DRAFT}:
             raise InvariantViolationError("В текущем статусе нельзя нажать Stop")
-        runs = self._execution.list_runs(
-            lobby_id=lobby_id,
-            run_kind=RunKind.TRAINING_MATCH,
-            include_result_payload=False,
+        canceled_run_ids = self._cancel_active_training_runs_for_team(
+            lobby=lobby,
+            team_id=team_id,
+            message="manual_stop_lobby",
         )
-        for run in runs:
-            if run.team_id != team_id:
-                continue
-            if run.status in _ACTIVE_RUN_STATUSES:
-                self._execution.cancel_run(run.run_id, message="manual_stop_lobby")
         if team_id in lobby.teams and lobby.teams[team_id].ready:
             lobby.mark_ready(team_id=team_id, ready=False)
+        if canceled_run_ids:
+            self._remove_canceled_groups_from_lobby(lobby=lobby, canceled_run_ids=canceled_run_ids)
+            self._participant_stats_cache.pop(lobby_id, None)
+            self._repository.save(lobby)
+        elif team_id in lobby.teams:
             self._repository.save(lobby)
         lobby = self.reconcile_training_lobby_status(lobby_id=lobby_id)
         return lobby
@@ -400,9 +401,24 @@ class TrainingLobbyService:
 
     def leave_team(self, lobby_id: str, team_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
+        self._ensure_team_can_leave(lobby=lobby, team_id=team_id)
+        canceled_run_ids = self._cancel_active_training_runs_for_team(
+            lobby=lobby,
+            team_id=team_id,
+            message="team_left_lobby",
+        )
         lobby.leave_team(team_id)
+        if canceled_run_ids:
+            self._remove_canceled_groups_from_lobby(lobby=lobby, canceled_run_ids=canceled_run_ids)
+            self._participant_stats_cache.pop(lobby_id, None)
         self._repository.save(lobby)
         return lobby
+
+    def _ensure_team_can_leave(self, *, lobby: Lobby, team_id: str) -> None:
+        if team_id not in lobby.teams:
+            raise NotFoundError("Команда не состоит в лобби")
+        if lobby.kind == LobbyKind.COMPETITION and lobby.status == LobbyStatus.RUNNING:
+            raise InvariantViolationError("Во время соревнования выход запрещен")
 
     def set_ready(self, lobby_id: str, team_id: str, ready: bool) -> Lobby:
         lobby = self.get_lobby(lobby_id)
@@ -510,6 +526,50 @@ class TrainingLobbyService:
         for run in runs:
             if run.status in _ACTIVE_RUN_STATUSES:
                 self._execution.cancel_run(run.run_id, message=message)
+
+    def _cancel_active_training_runs_for_team(self, *, lobby: Lobby, team_id: str, message: str) -> set[str]:
+        runs = self._execution.list_runs(
+            lobby_id=lobby.lobby_id,
+            run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
+        )
+        active_by_id = {run.run_id: run for run in runs if run.status in _ACTIVE_RUN_STATUSES}
+        target_run_ids = {run.run_id for run in active_by_id.values() if run.team_id == team_id}
+        if not target_run_ids:
+            return set()
+
+        current_groups = self._current_match_groups(lobby)
+        group_run_ids = {
+            run_id
+            for group in current_groups
+            if target_run_ids.intersection(group)
+            for run_id in group
+        }
+        run_ids_to_cancel = group_run_ids or target_run_ids
+        canceled: set[str] = set()
+        for run_id in run_ids_to_cancel:
+            run = active_by_id.get(run_id)
+            if run is None:
+                continue
+            try:
+                self._execution.cancel_run(run_id, message=message)
+            except InvariantViolationError:
+                continue
+            canceled.add(run_id)
+        return canceled
+
+    @staticmethod
+    def _remove_canceled_groups_from_lobby(*, lobby: Lobby, canceled_run_ids: set[str]) -> None:
+        if not lobby.last_scheduled_match_groups:
+            if set(lobby.last_scheduled_run_ids).intersection(canceled_run_ids):
+                lobby.set_last_scheduled_runs([])
+            return
+        remaining_groups = [
+            list(group)
+            for group in lobby.last_scheduled_match_groups
+            if not set(group).intersection(canceled_run_ids)
+        ]
+        lobby.set_last_scheduled_match_groups(remaining_groups)
 
     def reconcile_training_lobby_status(self, lobby_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
@@ -896,34 +956,90 @@ class TrainingLobbyService:
         max_players = game.match_player_bounds[1] if game.is_multiplayer else 2
         min_datetime = datetime.min.replace(tzinfo=utc_now().tzinfo)
         sorted_runs = sorted(runs, key=lambda run: _datetime_or_none(run.created_at) or min_datetime, reverse=True)
+        signature_groups = self._archived_signature_match_run_id_groups(sorted_runs=sorted_runs, max_players=max_players)
+        if signature_groups is not None:
+            unsigned_runs = [run for run in sorted_runs if self._payload_team_signature(run) is None]
+            groups = signature_groups + self._archived_time_match_run_id_groups(
+                sorted_runs=unsigned_runs,
+                max_players=max_players,
+            )
+            runs_by_id = {run.run_id: run for run in sorted_runs}
+            return sorted(
+                groups,
+                key=lambda group: self._batch_started_at(groups=[group], runs_by_id=runs_by_id) or min_datetime,
+                reverse=True,
+            )
+
+        return self._archived_time_match_run_id_groups(sorted_runs=sorted_runs, max_players=max_players)
+
+    def _archived_signature_match_run_id_groups(self, *, sorted_runs: list[Run], max_players: int) -> list[list[str]] | None:
+        close_seconds = 2.0
+        buckets_by_signature: dict[tuple[str, ...], list[list[Run]]] = {}
+        groups: list[list[Run]] = []
+        expected_size_by_group: dict[int, int] = {}
+        saw_signature = False
+        for run in sorted_runs:
+            signature = self._payload_team_signature(run)
+            if signature is None:
+                continue
+            saw_signature = True
+            expected_size = min(max_players, len(signature))
+            buckets = buckets_by_signature.setdefault(signature, [])
+            target = next(
+                (
+                    bucket
+                    for bucket in buckets
+                    if len(bucket) < expected_size
+                    and all(item.team_id != run.team_id for item in bucket)
+                    and self._runs_are_close_enough_for_archive_group(
+                        previous=bucket[-1],
+                        current=run,
+                        close_seconds=close_seconds,
+                    )
+                ),
+                None,
+            )
+            if target is None:
+                target = []
+                buckets.append(target)
+                groups.append(target)
+                expected_size_by_group[id(target)] = expected_size
+            target.append(run)
+        if not saw_signature:
+            return None
+        return [
+            [run.run_id for run in group]
+            for group in groups
+            if len(group) == expected_size_by_group.get(id(group), len(group))
+        ]
+
+    @staticmethod
+    def _runs_are_close_enough_for_archive_group(*, previous: Run, current: Run, close_seconds: float) -> bool:
+        previous_created_at = _datetime_or_none(previous.created_at)
+        created_at = _datetime_or_none(current.created_at)
+        if previous_created_at is None or created_at is None:
+            return False
+        return abs((previous_created_at - created_at).total_seconds()) <= close_seconds
+
+    @staticmethod
+    def _archived_time_match_run_id_groups(*, sorted_runs: list[Run], max_players: int) -> list[list[str]]:
         groups: list[list[str]] = []
         current: list[Run] = []
         close_seconds = 2.0
-        current_signature: tuple[str, ...] | None = None
         for run in sorted_runs:
             previous = current[-1] if current else None
-            run_signature = self._payload_team_signature(run)
             if previous is not None:
                 previous_created_at = _datetime_or_none(previous.created_at)
                 created_at = _datetime_or_none(run.created_at)
-                signature_changed = (
-                    current_signature is not None
-                    and run_signature is not None
-                    and run_signature != current_signature
-                )
                 if (
                     len(current) >= max_players
                     or previous_created_at is None
                     or created_at is None
                     or abs((previous_created_at - created_at).total_seconds()) > close_seconds
-                    or signature_changed
                 ):
                     groups.append([item.run_id for item in current])
                     current = []
-                    current_signature = None
             current.append(run)
-            if current_signature is None and run_signature is not None:
-                current_signature = run_signature
         if current:
             groups.append([item.run_id for item in current])
         return groups
@@ -934,6 +1050,19 @@ class TrainingLobbyService:
         metrics = payload.get("metrics")
         metrics_dict = metrics if isinstance(metrics, dict) else {}
         team_ids: set[str] = set()
+
+        for participant_key in ("match_participants", "participants"):
+            participants = payload.get(participant_key)
+            if isinstance(participants, list):
+                for item in participants:
+                    if not isinstance(item, dict):
+                        continue
+                    team_id = item.get("team_id")
+                    if team_id:
+                        team_ids.add(str(team_id))
+                if len(team_ids) > 1:
+                    return tuple(sorted(team_ids))
+
         for source in (payload, metrics_dict):
             for key in ("scores", "placements"):
                 value = source.get(key)
@@ -1010,6 +1139,7 @@ class TrainingLobbyService:
             replay_frame_count=frame_count,
             replay_frame_index=max(0, min(replay_frame_index, frame_count - 1)),
             winner_team_ids=self._winner_team_ids(payload_runs),
+            scores_by_team=self._scores_by_team(payload_runs),
         )
 
     def _batch_id_for_groups(self, *, groups: list[list[str]], runs_by_id: dict[str, Run]) -> str:
@@ -1056,6 +1186,27 @@ class TrainingLobbyService:
         winner = self._single_winner_team_id(runs)
         return () if winner is None else (winner,)
 
+    def _scores_by_team(self, runs: list[Run]) -> dict[str, float]:
+        scores: dict[str, float] = {}
+        group_team_ids = {run.team_id for run in runs}
+        for run in runs:
+            payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+            metrics = payload.get("metrics")
+            metrics_dict = metrics if isinstance(metrics, dict) else {}
+            payload_scores = payload.get("scores")
+            metrics_scores = metrics_dict.get("scores")
+            for source in (payload_scores, metrics_scores):
+                if not isinstance(source, dict):
+                    continue
+                for team_id, raw_score in source.items():
+                    if team_id not in group_team_ids or not isinstance(raw_score, (int, float)):
+                        continue
+                    scores[team_id] = max(scores.get(team_id, float(raw_score)), float(raw_score))
+            own_score = self._extract_score(payload=payload, metrics=metrics_dict, team_id=run.team_id)
+            if own_score is not None:
+                scores[run.team_id] = max(scores.get(run.team_id, own_score), own_score)
+        return scores
+
     def _winner_team_ids_for_groups(self, *, groups: list[list[str]], runs_by_id: dict[str, Run]) -> tuple[str, ...]:
         winners: list[str] = []
         for group in groups:
@@ -1091,9 +1242,11 @@ class TrainingLobbyService:
             if len(placed_winners) == 1:
                 return placed_winners[0]
 
-        if scored:
-            best = max(scored.values())
-            scored_winners = [team_id for team_id, score in scored.items() if score == best]
+        score_map = self._scores_by_team(runs)
+        scored_candidates = score_map or scored
+        if scored_candidates:
+            best = max(scored_candidates.values())
+            scored_winners = [team_id for team_id, score in scored_candidates.items() if score == best]
             return sorted(scored_winners, key=self._team_sort_key)[0]
 
         if placements_by_team:
@@ -1158,12 +1311,10 @@ class TrainingLobbyService:
             if winner_team_id is not None:
                 wins_by_team[winner_team_id] = wins_by_team.get(winner_team_id, 0) + 1
 
+            group_scores = self._scores_by_team(group_runs)
             for run in group_runs:
                 matches_by_team[run.team_id] = matches_by_team.get(run.team_id, 0) + 1
-                payload = run.result_payload if isinstance(run.result_payload, dict) else {}
-                metrics = payload.get("metrics")
-                metrics_dict = metrics if isinstance(metrics, dict) else {}
-                score = self._extract_score(payload=payload, metrics=metrics_dict, team_id=run.team_id)
+                score = group_scores.get(run.team_id)
                 if score is not None:
                     score_sum_by_team[run.team_id] = score_sum_by_team.get(run.team_id, 0.0) + score
                     score_count_by_team[run.team_id] = score_count_by_team.get(run.team_id, 0) + 1

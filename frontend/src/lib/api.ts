@@ -220,6 +220,7 @@ export interface LobbyMatchGroupDto {
   replay_frame_count: number;
   replay_frame_index: number;
   winner_team_ids: string[];
+  scores_by_team: Record<string, number>;
 }
 
 export interface LobbyDto {
@@ -343,6 +344,7 @@ export interface CompetitionRunItemDto {
   team_id: string;
   status: string;
   error_message: string | null;
+  result_payload: Record<string, unknown> | null;
 }
 
 export interface AntiplagiarismWarningDto {
@@ -447,27 +449,46 @@ const API_BASE = '/api/v1';
 const SESSION_STORAGE_KEY = 'agp_session_id';
 let inMemorySessionId = '';
 
-class ApiError extends Error {
-  constructor(message: string) {
-    super(message);
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly details: string,
+  ) {
+    super(`API ${status}: ${details}`);
     this.name = 'ApiError';
   }
 }
 
+export function isApiErrorStatus(error: unknown, ...statuses: number[]): boolean {
+  return error instanceof ApiError && statuses.includes(error.status);
+}
+
 export function getStoredSessionId(): string {
   if (inMemorySessionId) return inMemorySessionId;
-  inMemorySessionId = localStorage.getItem(SESSION_STORAGE_KEY) ?? '';
+  try {
+    inMemorySessionId = localStorage.getItem(SESSION_STORAGE_KEY) ?? '';
+  } catch {
+    inMemorySessionId = '';
+  }
   return inMemorySessionId;
 }
 
 export function storeSessionId(sessionId: string): void {
   inMemorySessionId = sessionId;
-  localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  } catch {
+    // In-memory session still keeps the current tab usable.
+  }
 }
 
 export function clearStoredSessionId(): void {
   inMemorySessionId = '';
-  localStorage.removeItem(SESSION_STORAGE_KEY);
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore restricted storage contexts.
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -494,7 +515,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // ignore parse errors and keep default status text
     }
-    throw new ApiError(`API ${response.status}: ${details}`);
+    throw new ApiError(response.status, details);
   }
   if (response.status === 204 || response.headers.get('content-length') === '0') {
     return undefined as T;
@@ -707,6 +728,39 @@ export function updateSlotCode(payload: {
       code: payload.code,
     }),
   });
+}
+
+export function updateSlotCodeKeepalive(payload: {
+  team_id: string;
+  slot_key: string;
+  actor_user_id: string;
+  code: string;
+}): boolean {
+  const headers = new Headers();
+  headers.set('Content-Type', 'application/json');
+  const sessionId = getStoredSessionId();
+  if (sessionId) {
+    headers.set('X-Session-Id', sessionId);
+  }
+  try {
+    void fetch(
+      `${API_BASE}/teams/${encodeURIComponent(payload.team_id)}/slots/${encodeURIComponent(payload.slot_key)}`,
+      {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          actor_user_id: payload.actor_user_id,
+          code: payload.code,
+        }),
+        keepalive: true,
+      },
+    ).catch(() => {
+      // The page may already be unloading; the local draft remains as fallback.
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function createRun(payload: {
@@ -993,8 +1047,11 @@ export function listLobbyCompetitionArchive(lobbyId: string): Promise<LobbyCompe
   return request<LobbyCompetitionArchiveDto>(`/lobbies/${encodeURIComponent(lobbyId)}/competitions/archive`);
 }
 
-export function listCompetitions(): Promise<CompetitionDto[]> {
-  return request<CompetitionDto[]>('/competitions');
+export function listCompetitions(filters: { lobby_id?: string } = {}): Promise<CompetitionDto[]> {
+  const query = new URLSearchParams();
+  if (filters.lobby_id) query.set('lobby_id', filters.lobby_id);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request<CompetitionDto[]>(`/competitions${suffix}`);
 }
 
 export function getCompetition(competitionId: string): Promise<CompetitionDto> {

@@ -575,6 +575,9 @@ const draftAdvancementTopK = ref(1);
 let competitionEventSource: EventSource | null = null;
 let competitionPollingHandle: ReturnType<typeof setInterval> | null = null;
 let antiplagRunSignature = '';
+let isRefreshingCompetition = false;
+let pendingCompetitionRefresh = false;
+let pendingCompetitionReload = false;
 
 const canModerate = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const isBracketPrimaryCompatible = computed(() => {
@@ -792,7 +795,7 @@ async function ensureCompetitionLoaded(): Promise<void> {
     }
     competition.value = await getCompetition(competitionIdFromRoute);
     syncDraftSettingsFromCompetition();
-    await refreshCompetitionRelatedData();
+    await refreshCompetitionRelatedData({ reloadCompetition: false });
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить соревнование';
   } finally {
@@ -800,14 +803,38 @@ async function ensureCompetitionLoaded(): Promise<void> {
   }
 }
 
-async function refreshCompetitionRelatedData(): Promise<void> {
+async function refreshCompetitionRelatedData(options: { reloadCompetition?: boolean } = {}): Promise<void> {
   if (!competition.value) return;
-  competition.value = await getCompetition(competition.value.competition_id);
-  syncDraftSettingsFromCompetition();
-  teamsByGame.value = await listTeamsByGame(competition.value.game_id);
-  competitionRuns.value = await listCompetitionRuns(competition.value.competition_id);
-  syncSelectedTeam();
-  await refreshAntiplagiarismWarnings({ silent: true });
+  const reloadCompetition = options.reloadCompetition !== false;
+  if (isRefreshingCompetition) {
+    pendingCompetitionRefresh = true;
+    pendingCompetitionReload = pendingCompetitionReload || reloadCompetition;
+    return;
+  }
+  let shouldReloadCompetition = reloadCompetition;
+  isRefreshingCompetition = true;
+  try {
+    do {
+      pendingCompetitionRefresh = false;
+      shouldReloadCompetition = shouldReloadCompetition || pendingCompetitionReload;
+      pendingCompetitionReload = false;
+      if (!competition.value) return;
+      const competitionId: string = competition.value.competition_id;
+      const nextCompetition: CompetitionDto = shouldReloadCompetition ? await getCompetition(competitionId) : competition.value;
+      shouldReloadCompetition = false;
+      if (competition.value?.competition_id !== competitionId) return;
+      competition.value = nextCompetition;
+      syncDraftSettingsFromCompetition();
+      teamsByGame.value = await listTeamsByGame(nextCompetition.game_id);
+      if (competition.value?.competition_id !== competitionId) return;
+      competitionRuns.value = await listCompetitionRuns(nextCompetition.competition_id);
+      if (competition.value?.competition_id !== competitionId) return;
+      syncSelectedTeam();
+      await refreshAntiplagiarismWarnings({ silent: true });
+    } while (pendingCompetitionRefresh);
+  } finally {
+    isRefreshingCompetition = false;
+  }
 }
 
 async function inspectRunReplay(runId: string): Promise<void> {
@@ -839,10 +866,7 @@ function startCompetitionLiveUpdates(competitionId: string): void {
     if (!payload) return;
     competition.value = payload;
     syncDraftSettingsFromCompetition();
-    teamsByGame.value = await listTeamsByGame(payload.game_id);
-    competitionRuns.value = await listCompetitionRuns(payload.competition_id);
-    syncSelectedTeam();
-    await refreshAntiplagiarismWarnings({ silent: true });
+    await refreshCompetitionRelatedData({ reloadCompetition: false });
   };
 
   competitionEventSource.addEventListener('agp.update', (event: MessageEvent) => {
@@ -884,14 +908,10 @@ function startCompetitionPolling(competitionId: string): void {
   competitionLiveMode.value = 'polling';
   competitionPollingHandle = setInterval(async () => {
     try {
-      competition.value = await getCompetition(competitionId);
-      if (competition.value) {
-        syncDraftSettingsFromCompetition();
-        teamsByGame.value = await listTeamsByGame(competition.value.game_id);
-        competitionRuns.value = await listCompetitionRuns(competition.value.competition_id);
-        syncSelectedTeam();
-        await refreshAntiplagiarismWarnings({ silent: true });
+      if (!competition.value || competition.value.competition_id !== competitionId) {
+        competition.value = await getCompetition(competitionId);
       }
+      await refreshCompetitionRelatedData();
       if (competition.value?.status === 'finished') {
         stopCompetitionLiveUpdates();
       }

@@ -5,6 +5,7 @@ import {
   devLogin,
   getAuthOptions,
   getStoredSessionId,
+  isApiErrorStatus,
   me,
   storeSessionId,
   logout as apiLogout,
@@ -63,9 +64,14 @@ export const useSessionStore = defineStore('session', {
         try {
           const session = await me();
           applySession(this, session);
-        } catch {
-          clearStoredSessionId();
-          this.$patch({ ...DEFAULT_SESSION, options: this.options, isBootstrapped: false });
+        } catch (error) {
+          if (isApiErrorStatus(error, 401, 404)) {
+            clearStoredSessionId();
+            this.$patch({ ...DEFAULT_SESSION, options: this.options, isBootstrapped: false });
+          } else {
+            this.optionsLoadError =
+              error instanceof Error ? error.message : 'Не удалось проверить сохраненную сессию';
+          }
         }
       } catch (error) {
         this.options = null;

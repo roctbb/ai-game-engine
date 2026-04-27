@@ -414,6 +414,58 @@ def test_competition_ban_cancels_active_runs_for_team(client, teacher_headers) -
     assert queued_item["error_message"] is None
 
 
+def test_competition_runs_include_compact_result_payload(client, teacher_headers) -> None:
+    game = _create_small_match_game(client, "competition_api_runs_compact_payload", headers=teacher_headers)
+    team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-compact-a")
+    team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-compact-b")
+
+    competition = client.post(
+        "/api/v1/competitions",
+        json={
+            "game_id": game["game_id"],
+            "title": "Compact Payload Cup",
+            "format": "single_elimination",
+            "tie_break_policy": "manual",
+            "advancement_top_k": 1,
+            "match_size": 2,
+        },
+        headers=teacher_headers,
+    ).json()
+    for team in (team_a, team_b):
+        client.post(
+            f"/api/v1/competitions/{competition['competition_id']}/register",
+            json={"team_id": team["team_id"]},
+            headers=teacher_headers,
+        )
+
+    started = client.post(
+        f"/api/v1/competitions/{competition['competition_id']}/start",
+        json={"requested_by": "teacher-compact"},
+        headers=teacher_headers,
+    ).json()
+    run_id = started["rounds"][0]["matches"][0]["run_ids_by_team"][team_a["team_id"]]
+    finished = client.post(
+        f"/api/v1/internal/runs/{run_id}/finished",
+        json={
+            "payload": {
+                "status": "ok",
+                "frames": [{"tick": 1}],
+                "scores": {team_a["team_id"]: 42},
+                "placements": {team_a["team_id"]: 1},
+                "metrics": {"score": 42},
+            }
+        },
+    )
+    assert finished.status_code == 200
+
+    runs_view = client.get(f"/api/v1/competitions/{competition['competition_id']}/runs", headers=teacher_headers)
+    assert runs_view.status_code == 200
+    item = next(item for item in runs_view.json() if item["run_id"] == run_id)
+    assert item["result_payload"]["scores"] == {team_a["team_id"]: 42}
+    assert item["result_payload"]["placements"] == {team_a["team_id"]: 1}
+    assert "frames" not in item["result_payload"]
+
+
 def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -> None:
     game = _create_small_match_game(client, "competition_api_game_advance", headers=teacher_headers)
     team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-a-2")

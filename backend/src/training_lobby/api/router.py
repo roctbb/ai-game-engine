@@ -138,6 +138,7 @@ def _match_group_response(item: LobbyMatchGroupView) -> dict[str, object]:
         "replay_frame_count": item.replay_frame_count,
         "replay_frame_index": item.replay_frame_index,
         "winner_team_ids": list(item.winner_team_ids),
+        "scores_by_team": dict(item.scores_by_team),
     }
 
 

@@ -113,3 +113,4 @@ class CompetitionRunItemResponse(BaseModel):
     team_id: str
     status: str
     error_message: str | None
+    result_payload: dict[str, object] | None = None

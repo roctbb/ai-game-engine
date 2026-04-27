@@ -600,13 +600,16 @@
                 <h2 class="h6 mb-1">Лидерборд</h2>
                 <p class="small text-muted mb-0">Статус и средняя статистика игроков.</p>
               </div>
+              <span class="lobby-count-pill">{{ lobbyLeaderboard.length }} {{ pluralizePlayers(lobbyLeaderboard.length) }}</span>
               <button
                 v-if="canUseAdminBots"
-                class="btn btn-sm btn-outline-secondary"
+                class="lobby-mini-icon"
                 :disabled="isBusy || !canAddBot"
+                title="Добавить тестового бота"
+                aria-label="Добавить тестового бота"
                 @click="addDemoBot"
               >
-                {{ isBusy ? 'Добавляем...' : 'Добавить бота' }}
+                {{ isBusy ? '...' : '+' }}
               </button>
             </header>
             <div v-if="lobbyLeaderboard.length" class="lobby-leaderboard-list">
@@ -619,18 +622,20 @@
                       {{ teamStatusLabel(stat.team_id) }}
                     </span>
                   </header>
-                  <span>
+                  <span class="lobby-leaderboard-meta">
                     побед {{ stat.wins }} · игр {{ stat.matches_total }} · средний счет {{ averageScoreLabel(stat.average_score) }}
                   </span>
                 </div>
                 <div class="lobby-leaderboard-actions">
                   <button
                     v-if="canManage"
-                    class="btn btn-sm btn-outline-secondary"
+                    class="lobby-mini-icon lobby-mini-icon--code"
                     :disabled="isBusy"
+                    title="Открыть код игрока"
+                    aria-label="Открыть код игрока"
                     @click="openPlayerCode(stat)"
                   >
-                    Код
+                    &lt;/&gt;
                   </button>
                   <button
                     v-if="canUseAdminBots"
@@ -654,6 +659,7 @@
         <article class="lobby-game-view">
           <iframe
             v-if="displayedGameRunId"
+            :key="displayedGameWatchUrl"
             :src="displayedGameWatchUrl"
             title="Текущая игра"
           ></iframe>
@@ -685,8 +691,8 @@
               :key="choice.run_id"
               type="button"
               class="lobby-game-run-card"
-              :class="{ active: selectedTrainingRunId === choice.run_id }"
-              @click="selectedTrainingRunId = choice.run_id"
+              :class="{ active: displayedGameRunId === choice.run_id }"
+              @click="selectReplayChoice(choice.run_id)"
             >
               <i>{{ index + 1 }}</i>
               <strong>{{ choice.label }}</strong>
@@ -857,6 +863,7 @@ import {
   stopLobby,
   updateLobby,
   updateSlotCode,
+  updateSlotCodeKeepalive,
   type CompetitionCodePolicy,
   type CompetitionDto,
   type CompetitionMatchDto,
@@ -938,6 +945,7 @@ interface TrainingMatchGroup {
   replay_frame_count: number;
   replay_frame_index: number;
   winner_team_ids: string[];
+  scores_by_team: Record<string, number>;
   runs: TrainingRunLink[];
 }
 
@@ -1031,8 +1039,9 @@ const competitionTieBreakPolicy = ref<TieBreakPolicy>('manual');
 const competitionCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
 const lastGameRunId = ref('');
 const selectedTrainingRunId = ref('');
+const selectedCompetitionRunId = ref('');
 const displayedGameWatchUrl = ref('');
-const displayedGameWatchRunId = ref('');
+const displayedGameWatchKey = ref('');
 const matchPage = ref(1);
 const matchesPerPage = 5;
 const embeddedGameFrame = ref<EmbeddedGameFrame | null>(null);
@@ -1041,10 +1050,14 @@ const showPlayerCodeDialog = ref(false);
 const showLobbySettingsDialog = ref(false);
 const trainingRunsRefreshSignature = ref('');
 let isRefreshingTrainingRuns = false;
+let pendingTrainingRunsRefresh = false;
+let lobbyRefreshSequence = 0;
+let competitionRefreshSequence = 0;
 let codeAutosaveHandle: ReturnType<typeof setTimeout> | null = null;
 let lobbyEventSource: EventSource | null = null;
 let pollingHandle: ReturnType<typeof setInterval> | null = null;
 let competitionPollingHandle: ReturnType<typeof setInterval> | null = null;
+const CODE_DRAFT_STORAGE_PREFIX = 'agp_lobby_code_draft';
 
 const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const canUseAdminBots = computed(() => sessionStore.role === 'admin');
@@ -1156,8 +1169,12 @@ const canPlay = computed(() =>
 const canStop = computed(
   () => canUseTrainingQueue.value && (lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing'),
 );
-const showPlayAction = computed(() => lobby.value?.my_status !== 'queued' && lobby.value?.my_status !== 'playing');
-const showStopAction = computed(() => lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing');
+const showPlayAction = computed(() =>
+  canUseTrainingQueue.value && lobby.value?.my_status !== 'queued' && lobby.value?.my_status !== 'playing',
+);
+const showStopAction = computed(() =>
+  canUseTrainingQueue.value && (lobby.value?.my_status === 'queued' || lobby.value?.my_status === 'playing'),
+);
 const canLeaveAsPlayer = computed(() =>
   Boolean(canManage.value && lobby.value?.my_team_id && !activeCompetition.value && lobby.value.status !== 'closed'),
 );
@@ -1282,38 +1299,67 @@ const managerCycleStatusHint = computed(() => {
   if (phase === 'waiting_viewer') return 'Система ждет зрителя перед стартом матча.';
   return 'Цикл лобби запустит матч, когда будет достаточно готовых игроков.';
 });
-const currentCompetitionMatch = computed(() => {
+const currentCompetitionRound = computed(() => {
   const competition = activeCompetition.value;
-  const myTeamId = lobby.value?.my_team_id ?? '';
   if (!competition) return null;
-  const currentRound = competition.rounds.find((round) => round.round_index === competition.current_round_index);
-  if (!currentRound) return null;
+  return competition.rounds.find((round) => round.round_index === competition.current_round_index) ?? null;
+});
+const visibleCompetitionMatches = computed(() => {
+  const currentRound = currentCompetitionRound.value;
+  const myTeamId = lobby.value?.my_team_id ?? '';
+  if (!currentRound) return [];
   if (myTeamId) {
-    return currentRound.matches.find(
+    return currentRound.matches.filter(
       (match) =>
-        effectiveCompetitionMatchStatus(match) === 'running' &&
+        competitionMatchHasWatchableRun(match) &&
         match.team_ids.includes(myTeamId) &&
         Boolean(match.run_ids_by_team[myTeamId]),
-    ) ?? null;
+    );
   }
-  if (!canManage.value) return null;
-  return currentRound.matches.find(
-    (match) => effectiveCompetitionMatchStatus(match) === 'running' && Boolean(matchPrimaryRunId(match)),
-  ) ?? null;
+  if (!canManage.value) return [];
+  return currentRound.matches.filter(
+    (match) => competitionMatchHasWatchableRun(match) && Boolean(matchPrimaryRunId(match)),
+  );
+});
+const currentCompetitionMatch = computed(() => {
+  const selected = selectedCompetitionRunId.value;
+  if (selected) {
+    const selectedMatch = visibleCompetitionMatches.value.find(
+      (match) => Object.values(match.run_ids_by_team).includes(selected),
+    );
+    if (selectedMatch) return selectedMatch;
+  }
+  return visibleCompetitionMatches.value[0] ?? null;
 });
 const currentCompetitionRun = computed(() => {
   const myTeamId = lobby.value?.my_team_id ?? '';
   if (!activeCompetition.value) return null;
-  const activeStatuses = new Set(['created', 'queued', 'running']);
-  if (!myTeamId && canManage.value) {
-    return competitionRuns.value.find((item) => activeStatuses.has(item.status)) ?? null;
+  if (
+    selectedCompetitionRunId.value &&
+    visibleCompetitionMatches.value.some((match) => Object.values(match.run_ids_by_team).includes(selectedCompetitionRunId.value))
+  ) {
+    return competitionRunsById.value[selectedCompetitionRunId.value] ?? null;
   }
-  if (!myTeamId) return null;
-  return competitionRuns.value.find((item) => item.team_id === myTeamId && activeStatuses.has(item.status)) ?? null;
+  const match = currentCompetitionMatch.value;
+  if (match && myTeamId) {
+    const runId = match.run_ids_by_team[myTeamId] ?? '';
+    return runId ? competitionRunsById.value[runId] ?? null : null;
+  }
+  if (match && canManage.value) {
+    const runId = matchPrimaryRunId(match);
+    return runId ? competitionRunsById.value[runId] ?? null : null;
+  }
+  return null;
 });
 const currentCompetitionRunId = computed(() => {
   const myTeamId = lobby.value?.my_team_id ?? '';
   if (!activeCompetition.value) return '';
+  if (
+    selectedCompetitionRunId.value &&
+    visibleCompetitionMatches.value.some((match) => Object.values(match.run_ids_by_team).includes(selectedCompetitionRunId.value))
+  ) {
+    return selectedCompetitionRunId.value;
+  }
   if (currentCompetitionRun.value) return currentCompetitionRun.value.run_id;
   if (currentCompetitionMatch.value && myTeamId) return currentCompetitionMatch.value.run_ids_by_team[myTeamId] ?? '';
   if (currentCompetitionMatch.value && canManage.value) return matchPrimaryRunId(currentCompetitionMatch.value) ?? '';
@@ -1326,6 +1372,14 @@ const currentGameRunId = computed(() => {
   return lobby.value?.current_run_id || currentTrainingMatchGroups.value[0]?.runs[0]?.run_id || '';
 });
 const displayedGameRunId = computed(() => currentGameRunId.value || (activeCompetition.value ? '' : lastGameRunId.value));
+const displayedGameWatchKeySource = computed(() => [
+  displayedGameRunId.value,
+  sessionStore.sessionId,
+  lobby.value?.cycle_frame_ms ?? 500,
+  lobby.value?.replay_started_at ?? '',
+  lobby.value?.cycle_replay_frame_count ?? 0,
+  canShowDisplayedRunPrint.value ? 'print' : 'no-print',
+].join('|'));
 function buildDisplayedGameWatchUrl(runId: string): string {
   if (!runId) return '';
   const params = new URLSearchParams({
@@ -1334,6 +1388,9 @@ function buildDisplayedGameWatchUrl(runId: string): string {
     speed_ms: String(lobby.value?.cycle_frame_ms ?? 500),
     show_print: canShowDisplayedRunPrint.value ? '1' : '0',
   });
+  if (sessionStore.sessionId) {
+    params.set('session_id', sessionStore.sessionId);
+  }
   const replayStartedAt = lobby.value?.replay_started_at;
   if (replayStartedAt) {
     params.set('sync_started_at', replayStartedAt);
@@ -1378,7 +1435,9 @@ const codeLockedByCompetition = computed(() => {
   if (competition.code_policy === 'locked_on_start') {
     return ['running', 'paused', 'completed'].includes(competition.status);
   }
-  if (competition.code_policy === 'allowed_between_matches') return Boolean(currentCompetitionRun.value);
+  if (competition.code_policy === 'allowed_between_matches') {
+    return Boolean(currentCompetitionRun.value || currentCompetitionMatch.value);
+  }
   return false;
 });
 const canEditSelectedCode = computed(() =>
@@ -1414,7 +1473,18 @@ const archivedTrainingMatchGroups = computed(() => {
 const currentTrainingRunIdSet = computed(() => new Set(
   currentTrainingMatchGroups.value.flatMap((group) => group.runs.map((run) => run.run_id)),
 ));
-const currentReplayChoices = computed(() =>
+const competitionReplayChoices = computed(() =>
+  visibleCompetitionMatches.value.map((match, matchIndex) => {
+    const myTeamId = lobby.value?.my_team_id ?? '';
+    const viewerRunId = (myTeamId ? match.run_ids_by_team[myTeamId] : '') || matchPrimaryRunId(match);
+    return {
+      run_id: viewerRunId,
+      label: `Матч ${matchIndex + 1}`,
+      meta: match.team_ids.map(teamLabel).join(' · '),
+    };
+  }).filter((choice) => Boolean(choice.run_id)),
+);
+const trainingReplayChoices = computed(() =>
   currentTrainingMatchGroups.value.map((group, groupIndex) => {
     const myTeamId = lobby.value?.my_team_id ?? '';
     const ownRun = group.runs.find((run) => run.team_id === myTeamId);
@@ -1425,6 +1495,9 @@ const currentReplayChoices = computed(() =>
       meta: group.runs.map((run) => teamLabel(run.team_id)).join(' · '),
     };
   }).filter((choice) => Boolean(choice.run_id)),
+);
+const currentReplayChoices = computed(() =>
+  activeCompetition.value ? competitionReplayChoices.value : trainingReplayChoices.value,
 );
 const allTrainingMatchGroups = computed(() => [
   ...currentTrainingMatchGroups.value,
@@ -1463,13 +1536,22 @@ watch(allTrainingMatchGroups, () => {
 watch(currentReplayChoices, (choices) => {
   if (!choices.length) {
     selectedTrainingRunId.value = '';
+    selectedCompetitionRunId.value = '';
     return;
   }
-  if (selectedTrainingRunId.value && choices.some((choice) => choice.run_id === selectedTrainingRunId.value)) {
-    return;
+  if (activeCompetition.value) {
+    if (selectedCompetitionRunId.value && choices.some((choice) => choice.run_id === selectedCompetitionRunId.value)) {
+      return;
+    }
+    const preferred = currentCompetitionRun.value?.run_id;
+    selectedCompetitionRunId.value = choices.find((choice) => choice.run_id === preferred)?.run_id ?? choices[0].run_id;
+  } else {
+    if (selectedTrainingRunId.value && choices.some((choice) => choice.run_id === selectedTrainingRunId.value)) {
+      return;
+    }
+    const preferred = lobby.value?.current_run_id;
+    selectedTrainingRunId.value = choices.find((choice) => choice.run_id === preferred)?.run_id ?? choices[0].run_id;
   }
-  const preferred = lobby.value?.current_run_id;
-  selectedTrainingRunId.value = choices.find((choice) => choice.run_id === preferred)?.run_id ?? choices[0].run_id;
 });
 const displayedTrainingRunIds = computed(() => {
   if (!displayedGameRunId.value) return [];
@@ -1495,46 +1577,55 @@ function isDisplayedEmbeddedGameFrame(message: EmbeddedGameFrame | null): messag
 const frameGameStats = computed<CurrentGameStatRow[]>(() => {
   const message = embeddedGameFrame.value;
   if (!isDisplayedEmbeddedGameFrame(message)) return [];
-  if (message.players.length) {
-    return dedupeCurrentGameStats(message.players.map((player, index) => buildCurrentGameStatFromEmbeddedPlayer(message, player, index)));
-  }
   const players = collectFrameGamePlayers(message);
-  return dedupeCurrentGameStats(players.map((player, index) => buildCurrentGameStatFromFrame(message, player, index)));
+  const embeddedRows = message.players.map((player, index) => buildCurrentGameStatFromEmbeddedPlayer(message, player, index));
+  const frameRows = players.map((player, index) => buildCurrentGameStatFromFrame(message, player, index));
+  return dedupeCurrentGameStats([...embeddedRows, ...frameRows]);
 });
-const currentGameStats = computed<CurrentGameStatRow[]>(() =>
-  sortCurrentGameStats(frameGameStats.value.length
-    ? frameGameStats.value
-    : displayedTrainingRunIds.value.flatMap((runId) => {
-      const trainingRun = trainingRunsById.value[runId];
-      if (trainingRun) {
-        return [{
-          run_id: trainingRun.run_id,
-          team_id: trainingRun.team_id,
-          display_name: teamLabel(trainingRun.team_id),
-          status: runStatusLabel(trainingRun.status),
-          score: runScoreLabel(trainingRun),
-          scoreValue: extractRunScore(isRecord(trainingRun.result_payload) ? trainingRun.result_payload : {}, trainingRun.team_id),
-          lifePercent: 0,
-          shieldPercent: 0,
-          meta: '',
-          isSelf: trainingRun.team_id === lobby.value?.my_team_id,
-        }];
-      }
-      const competitionRun = competitionRunsById.value[runId];
-      if (!competitionRun) return [];
+const fallbackGameStats = computed<CurrentGameStatRow[]>(() =>
+  displayedTrainingRunIds.value.flatMap((runId) => {
+    const trainingRun = trainingRunsById.value[runId];
+    if (trainingRun) {
+      const groupScore = displayedGameMatchGroup.value?.scores_by_team[trainingRun.team_id];
+      const payloadScore = extractRunScore(isRecord(trainingRun.result_payload) ? trainingRun.result_payload : {}, trainingRun.team_id);
+      const scoreValue = payloadScore ?? (typeof groupScore === 'number' && Number.isFinite(groupScore) ? groupScore : null);
       return [{
-        run_id: competitionRun.run_id,
-        team_id: competitionRun.team_id,
-        display_name: teamLabel(competitionRun.team_id),
-        status: runStatusLabel(competitionRun.status as RunDto['status']),
-        score: 'пока нет',
-        scoreValue: null,
+        run_id: trainingRun.run_id,
+        team_id: trainingRun.team_id,
+        display_name: teamLabel(trainingRun.team_id),
+        status: runStatusLabel(trainingRun.status),
+        score: scoreValue === null ? runScoreLabel(trainingRun) : scoreLabel(scoreValue),
+        scoreValue,
         lifePercent: 0,
         shieldPercent: 0,
         meta: '',
-        isSelf: competitionRun.team_id === lobby.value?.my_team_id,
+        isSelf: trainingRun.team_id === lobby.value?.my_team_id,
       }];
-    })),
+    }
+    const competitionRun = competitionRunsById.value[runId];
+    if (!competitionRun) return [];
+    const payloadScore = extractRunScore(
+      isRecord(competitionRun.result_payload) ? competitionRun.result_payload : {},
+      competitionRun.team_id,
+    );
+    const competitionScore = currentCompetitionMatch.value?.scores_by_team[competitionRun.team_id];
+    const scoreValue = payloadScore ?? (typeof competitionScore === 'number' && Number.isFinite(competitionScore) ? competitionScore : null);
+    return [{
+      run_id: competitionRun.run_id,
+      team_id: competitionRun.team_id,
+      display_name: teamLabel(competitionRun.team_id),
+      status: runStatusLabel(competitionRun.status as RunDto['status']),
+      score: scoreValue === null ? 'пока нет' : scoreLabel(scoreValue),
+      scoreValue,
+      lifePercent: 0,
+      shieldPercent: 0,
+      meta: '',
+      isSelf: competitionRun.team_id === lobby.value?.my_team_id,
+    }];
+  }),
+);
+const currentGameStats = computed<CurrentGameStatRow[]>(() =>
+  sortCurrentGameStats(dedupeCurrentGameStats([...frameGameStats.value, ...fallbackGameStats.value])),
 );
 const currentGameFrameLabel = computed(() => {
   const message = embeddedGameFrame.value;
@@ -1580,14 +1671,18 @@ const replayFinishedInViewer = computed(() => {
   if (message.replayFrameCount > 1) return message.replayFrameIndex >= message.replayFrameCount - 1;
   return message.phase === 'finished';
 });
-const currentGameLeaderLabel = computed(() => {
-  const leader = [...currentGameStats.value].sort((left, right) => {
+const currentGameLeader = computed(() => {
+  const scoredRows = currentGameStats.value.filter((row) => row.scoreValue !== null);
+  if (!scoredRows.length) return null;
+  return [...scoredRows].sort((left, right) => {
     const rightScore = right.scoreValue ?? Number.NEGATIVE_INFINITY;
     const leftScore = left.scoreValue ?? Number.NEGATIVE_INFINITY;
-    return rightScore - leftScore;
-  })[0];
-  return leader?.display_name ?? '—';
+    if (rightScore !== leftScore) return rightScore - leftScore;
+    if (right.isSelf !== left.isSelf) return Number(right.isSelf) - Number(left.isSelf);
+    return left.display_name.localeCompare(right.display_name, 'ru');
+  })[0] ?? null;
 });
+const currentGameLeaderLabel = computed(() => currentGameLeader.value?.display_name ?? '—');
 const currentGameWinnerLabel = computed(() => {
   const groupWinners = displayedGameMatchGroup.value?.winner_team_ids ?? [];
   const groupWinner = primaryWinnerTeamId(groupWinners, currentGameScoreMap.value);
@@ -1605,7 +1700,7 @@ const currentGameWinnerLabel = computed(() => {
     if (competitionWinner) return teamLabel(competitionWinner);
   }
 
-  return currentGameLeaderLabel.value;
+  return currentGameLeader.value?.display_name ?? 'не определен';
 });
 const currentGameScoreMap = computed(() => {
   const result = new Map<string, number>();
@@ -1858,7 +1953,6 @@ function matchPlayerIsVisibleWinner(group: TrainingMatchGroup, teamId: string): 
 }
 
 function matchPlayerScoreLabel(group: TrainingMatchGroup, teamId: string): string {
-  if (shouldHideMatchWinner(group)) return '';
   const score = matchGroupScoreMap(group).get(teamId);
   return score === undefined ? '' : scoreLabel(score);
 }
@@ -1904,7 +1998,12 @@ function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
   if (explicitWinners.size) return [...explicitWinners];
   if (placements.size) {
     const bestPlacement = Math.min(...placements.values());
-    return [...placements.entries()].filter(([, placement]) => placement === bestPlacement).map(([teamId]) => teamId);
+    const placementWinners = [...placements.entries()]
+      .filter(([, placement]) => placement === bestPlacement)
+      .map(([teamId]) => teamId);
+    if (placementWinners.length === 1 || !scores.size) return placementWinners;
+    const bestScore = Math.max(...placementWinners.map((teamId) => scores.get(teamId) ?? Number.NEGATIVE_INFINITY));
+    return placementWinners.filter((teamId) => (scores.get(teamId) ?? Number.NEGATIVE_INFINITY) === bestScore);
   }
   if (scores.size) {
     const bestScore = Math.max(...scores.values());
@@ -1915,6 +2014,9 @@ function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
 
 function matchGroupScoreMap(group: TrainingMatchGroup): Map<string, number> {
   const scores = new Map<string, number>();
+  for (const [teamId, score] of Object.entries(group.scores_by_team)) {
+    if (Number.isFinite(score)) scores.set(teamId, score);
+  }
   for (const runLink of group.runs) {
     const run = trainingRunsById.value[runLink.run_id];
     const payload = isRecord(run?.result_payload) ? run.result_payload : {};
@@ -1956,6 +2058,14 @@ function runCreatedAtMs(run: { run_id: string }): number {
   return Number.isFinite(value) ? value : 0;
 }
 
+function selectReplayChoice(runId: string): void {
+  if (activeCompetition.value) {
+    selectedCompetitionRunId.value = runId;
+    return;
+  }
+  selectedTrainingRunId.value = runId;
+}
+
 function trainingMatchGroupFromDto(group: LobbyMatchGroupDto, archived: boolean): TrainingMatchGroup {
   return {
     group_id: group.group_id,
@@ -1967,6 +2077,7 @@ function trainingMatchGroupFromDto(group: LobbyMatchGroupDto, archived: boolean)
     replay_frame_count: group.replay_frame_count,
     replay_frame_index: group.replay_frame_index,
     winner_team_ids: group.winner_team_ids,
+    scores_by_team: group.scores_by_team ?? {},
     runs: group.run_ids.map((runId, index) => ({
       run_id: runId,
       team_id: group.team_ids[index] ?? trainingRunsById.value[runId]?.team_id ?? '',
@@ -1995,6 +2106,7 @@ function buildTrainingMatchGroups(runIds: string[], archived: boolean): Training
         replay_frame_count: 0,
         replay_frame_index: 0,
         winner_team_ids: [],
+        scores_by_team: {},
         runs: groupRuns,
       });
     }
@@ -2019,6 +2131,7 @@ function buildTrainingMatchGroups(runIds: string[], archived: boolean): Training
         replay_frame_count: 0,
         replay_frame_index: 0,
         winner_team_ids: [],
+        scores_by_team: {},
         runs: currentGroup,
       });
       currentGroup = [];
@@ -2036,6 +2149,7 @@ function buildTrainingMatchGroups(runIds: string[], archived: boolean): Training
       replay_frame_count: 0,
       replay_frame_index: 0,
       winner_team_ids: [],
+      scores_by_team: {},
       runs: currentGroup,
     });
   }
@@ -2081,7 +2195,7 @@ function collectFrameGamePlayers(message: EmbeddedGameFrame): Record<string, unk
       );
     if (hasPlayerShape) {
       const id = String(value.team_id ?? value.key ?? value.role ?? value.name ?? `player-${byId.size + 1}`);
-      byId.set(id, value);
+      upsertFrameGamePlayer(byId, id, value);
     }
     Object.values(value).forEach(visit);
   };
@@ -2125,7 +2239,7 @@ function collectRoleMapGamePlayers(byId: Map<string, Record<string, unknown>>, m
           ? Math.max(0, deliveredValue * 120 + carryingValue * 30 + throwsValue * 5 - invalidValue * 10)
           : Math.max(0, collectedValue * 100 + (batteryValue ?? 0) - invalidValue * 10)
       );
-    byId.set(teamId, {
+    upsertFrameGamePlayer(byId, teamId, {
       team_id: teamId,
       name: participant?.display_name || label || role,
       role,
@@ -2162,7 +2276,7 @@ function collectSnakeGamePlayers(byId: Map<string, Record<string, unknown>>, mes
       ?? numericFrameValue(slotScores[role])
       ?? Math.max(0, food * 100 + (length ?? 0) * 5 + (alive ? 30 : 0) - invalid * 10);
 
-    byId.set(teamId, {
+    upsertFrameGamePlayer(byId, teamId, {
       team_id: teamId,
       name: typeof raw.name === 'string' && raw.name ? raw.name : participant?.display_name || role,
       role,
@@ -2175,6 +2289,25 @@ function collectSnakeGamePlayers(byId: Map<string, Record<string, unknown>>, mes
       life: length,
     });
   });
+}
+
+function upsertFrameGamePlayer(byId: Map<string, Record<string, unknown>>, id: string, next: Record<string, unknown>): void {
+  const previous = byId.get(id);
+  if (!previous) {
+    byId.set(id, next);
+    return;
+  }
+
+  const previousScore = numericFrameValue(previous.score ?? previous.points);
+  const nextScore = numericFrameValue(next.score ?? next.points);
+  const previousDetails = Object.values(previous).filter((value) => value !== null && value !== undefined && value !== '').length;
+  const nextDetails = Object.values(next).filter((value) => value !== null && value !== undefined && value !== '').length;
+  if (
+    (previousScore === null && nextScore !== null) ||
+    (previousScore === nextScore && nextDetails > previousDetails)
+  ) {
+    byId.set(id, next);
+  }
 }
 
 function buildCurrentGameStatFromFrame(
@@ -2259,7 +2392,10 @@ function dedupeCurrentGameStats(rows: CurrentGameStatRow[]): CurrentGameStatRow[
 
     const previousHasScore = previous.scoreValue !== null;
     const rowHasScore = row.scoreValue !== null;
-    if ((!previousHasScore && rowHasScore) || row.meta.length > previous.meta.length) {
+    if (
+      (!previousHasScore && rowHasScore) ||
+      (previousHasScore === rowHasScore && row.meta.length > previous.meta.length)
+    ) {
       result.set(key, row);
     }
   };
@@ -2396,6 +2532,11 @@ function effectiveCompetitionMatchStatus(match: CompetitionMatchDto): Competitio
   return allTerminal ? 'finished' : match.status;
 }
 
+function competitionMatchHasWatchableRun(match: CompetitionMatchDto): boolean {
+  if (match.status === 'pending' || match.status === 'auto_advanced') return false;
+  return Object.values(match.run_ids_by_team).some(Boolean);
+}
+
 function isCompetitionMatchLoser(match: CompetitionMatchDto, teamId: string): boolean {
   return isResolvedCompetitionMatch(match) && !match.advanced_team_ids.includes(teamId);
 }
@@ -2451,6 +2592,46 @@ function clearCodeAutosave(): void {
   codeAutosaveHandle = null;
 }
 
+function codeDraftKey(teamId: string, slotKey: string): string {
+  return [
+    CODE_DRAFT_STORAGE_PREFIX,
+    sessionStore.sessionId || 'anonymous',
+    teamId,
+    slotKey,
+  ].join(':');
+}
+
+function readCodeDraft(teamId: string, slotKey: string): string | null {
+  try {
+    return localStorage.getItem(codeDraftKey(teamId, slotKey));
+  } catch {
+    return null;
+  }
+}
+
+function writeCodeDraft(teamId: string, slotKey: string, code: string): void {
+  try {
+    localStorage.setItem(codeDraftKey(teamId, slotKey), code);
+  } catch {
+    // Autosave is still attempted through the API; local draft is best effort.
+  }
+}
+
+function clearCodeDraft(teamId: string, slotKey: string): void {
+  try {
+    localStorage.removeItem(codeDraftKey(teamId, slotKey));
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function persistCurrentCodeDraft(): void {
+  const teamId = codeWorkspaceTeamId.value;
+  const slotKey = activeSlotKey.value;
+  if (!teamId || !slotKey || !canEditSelectedCode.value || editorCode.value === savedCode.value) return;
+  writeCodeDraft(teamId, slotKey, editorCode.value);
+}
+
 async function persistCode(slotKey: string, code: string): Promise<void> {
   const teamId = codeWorkspaceTeamId.value;
   if (!teamId || !slotKey || !canEditSelectedCode.value) return;
@@ -2466,6 +2647,7 @@ async function persistCode(slotKey: string, code: string): Promise<void> {
     const slot = workspace.value?.slot_states.find((item) => item.slot_key === slotKey);
     if (slot) slot.code = code;
     if (activeSlotKey.value === slotKey) savedCode.value = code;
+    clearCodeDraft(teamId, slotKey);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось сохранить код';
   } finally {
@@ -2482,20 +2664,42 @@ async function flushCodeAutosave(): Promise<void> {
 function scheduleCodeAutosave(): void {
   clearCodeAutosave();
   if (!canAutosaveCode.value) return;
+  persistCurrentCodeDraft();
   codeAutosaveHandle = setTimeout(() => {
     void flushCodeAutosave();
   }, 900);
 }
 
+function flushCodeAutosaveOnPageHide(): void {
+  clearCodeAutosave();
+  persistCurrentCodeDraft();
+  const teamId = codeWorkspaceTeamId.value;
+  const slotKey = activeSlotKey.value;
+  if (!teamId || !slotKey || !canAutosaveCode.value) return;
+  updateSlotCodeKeepalive({
+    team_id: teamId,
+    slot_key: slotKey,
+    actor_user_id: sessionStore.nickname,
+    code: editorCode.value,
+  });
+}
+
 async function selectSlot(slotKey: string): Promise<void> {
   await flushCodeAutosave();
   const slot = slotStates.value.find((item) => item.slot_key === slotKey);
+  const serverCode = slot?.code ?? '';
+  const teamId = codeWorkspaceTeamId.value;
+  const draftCode = teamId ? readCodeDraft(teamId, slotKey) : null;
+  if (teamId && draftCode !== null && draftCode === serverCode) {
+    clearCodeDraft(teamId, slotKey);
+  }
   isHydratingEditor.value = true;
   activeSlotKey.value = slotKey;
-  editorCode.value = slot?.code ?? '';
-  savedCode.value = slot?.code ?? '';
+  editorCode.value = draftCode ?? serverCode;
+  savedCode.value = serverCode;
   requestAnimationFrame(() => {
     isHydratingEditor.value = false;
+    if (draftCode !== null && draftCode !== serverCode) scheduleCodeAutosave();
   });
 }
 
@@ -2582,12 +2786,18 @@ async function refreshWorkspace(): Promise<void> {
   } else if (activeSlotKey.value) {
     const slot = workspace.value.slot_states.find((item) => item.slot_key === activeSlotKey.value);
     const wasDirty = isDirty.value;
-    savedCode.value = slot?.code ?? '';
+    const serverCode = slot?.code ?? '';
+    const draftCode = readCodeDraft(teamId, activeSlotKey.value);
+    if (draftCode !== null && draftCode === serverCode) {
+      clearCodeDraft(teamId, activeSlotKey.value);
+    }
+    savedCode.value = serverCode;
     if (!wasDirty) {
       isHydratingEditor.value = true;
-      editorCode.value = savedCode.value;
+      editorCode.value = draftCode ?? serverCode;
       requestAnimationFrame(() => {
         isHydratingEditor.value = false;
+        if (draftCode !== null && draftCode !== serverCode) scheduleCodeAutosave();
       });
     }
   }
@@ -2596,15 +2806,21 @@ async function refreshWorkspace(): Promise<void> {
 async function refreshCompetitions(): Promise<void> {
   if (!lobby.value) return;
   const lobbyIdValue = lobby.value.lobby_id;
-  const competitions = await listCompetitions();
-  activeCompetition.value =
+  const refreshId = ++competitionRefreshSequence;
+  const competitions = await listCompetitions({ lobby_id: lobbyIdValue });
+  if (refreshId !== competitionRefreshSequence || lobby.value?.lobby_id !== lobbyIdValue) return;
+  const nextActiveCompetition =
     competitions.find(
       (item) => item.lobby_id === lobbyIdValue && item.status !== 'finished',
     ) ?? null;
-  competitionRuns.value = activeCompetition.value
-    ? await listCompetitionRuns(activeCompetition.value.competition_id)
+  const nextCompetitionRuns = nextActiveCompetition
+    ? await listCompetitionRuns(nextActiveCompetition.competition_id)
     : [];
-  const archive = await listLobbyCompetitionArchive(lobby.value.lobby_id);
+  if (refreshId !== competitionRefreshSequence || lobby.value?.lobby_id !== lobbyIdValue) return;
+  const archive = await listLobbyCompetitionArchive(lobbyIdValue);
+  if (refreshId !== competitionRefreshSequence || lobby.value?.lobby_id !== lobbyIdValue) return;
+  activeCompetition.value = nextActiveCompetition;
+  competitionRuns.value = nextCompetitionRuns;
   competitionArchive.value = archive.items;
   if (activeCompetition.value && activeTab.value === 'archive') activeTab.value = 'competition';
   if (!activeCompetition.value && activeTab.value === 'competition') {
@@ -2616,14 +2832,24 @@ async function refreshCompetitions(): Promise<void> {
 }
 
 async function refreshTrainingRuns(): Promise<void> {
-  if (!lobby.value) return;
-  if (isRefreshingTrainingRuns) return;
+  if (isRefreshingTrainingRuns) {
+    pendingTrainingRunsRefresh = true;
+    return;
+  }
   isRefreshingTrainingRuns = true;
   try {
-    trainingRuns.value = await listRuns({
-      lobby_id: lobby.value.lobby_id,
-      run_kind: 'training_match',
-    });
+    do {
+      pendingTrainingRunsRefresh = false;
+      const lobbyIdValue = lobby.value?.lobby_id;
+      if (!lobbyIdValue) break;
+      const runs = await listRuns({
+        lobby_id: lobbyIdValue,
+        run_kind: 'training_match',
+      });
+      if (lobby.value?.lobby_id === lobbyIdValue) {
+        trainingRuns.value = runs;
+      }
+    } while (pendingTrainingRunsRefresh);
   } catch {
     // Keep the latest known run details; lobby state itself is still useful.
   } finally {
@@ -2639,6 +2865,10 @@ function lobbyRunsSignature(nextLobby: LobbyDto | null): string {
       group.status,
       group.run_ids.join(','),
       group.winner_team_ids.join(','),
+      Object.entries(group.scores_by_team)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([teamId, score]) => `${teamId}=${score}`)
+        .join(','),
     ].join(':'))
     .join('|');
   return [
@@ -2693,11 +2923,21 @@ async function loadLobby(): Promise<void> {
   }
 }
 
-async function refreshLobbyOnly(): Promise<void> {
+async function refreshLobbyOnly(options: { forceRuns?: boolean; refreshCompetitions?: boolean } = {}): Promise<void> {
   if (!lobby.value) return;
-  lobby.value = await getLobby(lobby.value.lobby_id);
-  await refreshTrainingRuns();
-  await refreshCompetitions();
+  const refreshId = ++lobbyRefreshSequence;
+  const nextLobby = await getLobby(lobby.value.lobby_id);
+  if (refreshId !== lobbyRefreshSequence) return;
+  lobby.value = nextLobby;
+  if (options.forceRuns) {
+    trainingRunsRefreshSignature.value = lobbyRunsSignature(lobby.value);
+    await refreshTrainingRuns();
+  } else {
+    refreshTrainingRunsWhenChanged(lobby.value);
+  }
+  if (options.refreshCompetitions !== false) {
+    await refreshCompetitions();
+  }
 }
 
 async function submitLobbyAccessCode(): Promise<void> {
@@ -2953,7 +3193,9 @@ function startLiveUpdates(): void {
 function startCompetitionPolling(): void {
   stopCompetitionPolling();
   competitionPollingHandle = setInterval(() => {
-    void refreshCompetitions();
+    refreshCompetitions().catch(() => {
+      // Keep the last known bracket; the next polling tick can recover.
+    });
   }, 10000);
 }
 
@@ -2966,7 +3208,9 @@ function stopCompetitionPolling(): void {
 function startPolling(): void {
   if (pollingHandle) return;
   pollingHandle = setInterval(() => {
-    void refreshLobbyOnly();
+    refreshLobbyOnly({ refreshCompetitions: false }).catch(() => {
+      // Keep the latest useful lobby snapshot while the network is unstable.
+    });
   }, 5000);
 }
 
@@ -3000,15 +3244,16 @@ watch(
 );
 
 watch(
-  () => displayedGameRunId.value,
-  (runId) => {
+  displayedGameWatchKeySource,
+  (watchKey) => {
+    const runId = displayedGameRunId.value;
     if (!runId) {
-      displayedGameWatchRunId.value = '';
+      displayedGameWatchKey.value = '';
       displayedGameWatchUrl.value = '';
       return;
     }
-    if (displayedGameWatchRunId.value === runId && displayedGameWatchUrl.value) return;
-    displayedGameWatchRunId.value = runId;
+    if (displayedGameWatchKey.value === watchKey && displayedGameWatchUrl.value) return;
+    displayedGameWatchKey.value = watchKey;
     displayedGameWatchUrl.value = buildDisplayedGameWatchUrl(runId);
   },
   { immediate: true },
@@ -3036,8 +3281,16 @@ onBeforeRouteLeave(async () => {
   await flushCodeAutosave();
 });
 
+function handlePageVisibilityChange(): void {
+  if (document.visibilityState === 'hidden') {
+    flushCodeAutosaveOnPageHide();
+  }
+}
+
 onMounted(async () => {
   window.addEventListener('message', handleEmbeddedGameFrameMessage);
+  window.addEventListener('pagehide', flushCodeAutosaveOnPageHide);
+  document.addEventListener('visibilitychange', handlePageVisibilityChange);
   isLoading.value = true;
   errorMessage.value = '';
   try {
@@ -3054,8 +3307,10 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  clearCodeAutosave();
+  flushCodeAutosaveOnPageHide();
   window.removeEventListener('message', handleEmbeddedGameFrameMessage);
+  window.removeEventListener('pagehide', flushCodeAutosaveOnPageHide);
+  document.removeEventListener('visibilitychange', handlePageVisibilityChange);
   stopLiveUpdates();
   stopCompetitionPolling();
 });
@@ -4033,9 +4288,40 @@ onUnmounted(() => {
   gap: 0.35rem;
 }
 
+.lobby-mini-icon {
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(204, 251, 241, 0.76);
+  color: #0f766e;
+  font-size: 0.98rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.lobby-mini-icon:hover:not(:disabled) {
+  border-color: rgba(20, 184, 166, 0.54);
+  background: rgba(153, 246, 228, 0.92);
+}
+
+.lobby-mini-icon:disabled {
+  opacity: 0.45;
+}
+
+.lobby-mini-icon--code {
+  border-color: rgba(59, 130, 246, 0.24);
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
 .lobby-leaderboard-player-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
   min-width: 0;
@@ -4045,12 +4331,21 @@ onUnmounted(() => {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
 }
 
-.lobby-leaderboard-row span:not(.lobby-leaderboard-place) {
+.lobby-leaderboard-meta,
+.lobby-leaderboard-row span:not(.lobby-leaderboard-place):not(.lobby-status-badge) {
   color: var(--agp-text-muted);
   font-size: 0.78rem;
+}
+
+.lobby-leaderboard-meta {
+  display: block;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .lobby-status-badge {

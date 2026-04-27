@@ -6,14 +6,23 @@ function scopedKey(gameId: string, userId: string): string {
 
 function readMap(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(TEAM_MAPPING_STORAGE_KEY) ?? '{}') as Record<string, string>;
+    const raw = JSON.parse(localStorage.getItem(TEAM_MAPPING_STORAGE_KEY) ?? '{}') as unknown;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    return Object.fromEntries(
+      Object.entries(raw)
+        .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'),
+    );
   } catch {
     return {};
   }
 }
 
 function writeMap(map: Record<string, string>): void {
-  localStorage.setItem(TEAM_MAPPING_STORAGE_KEY, JSON.stringify(map));
+  try {
+    localStorage.setItem(TEAM_MAPPING_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // Mapping is only a convenience cache; API data remains the source of truth.
+  }
 }
 
 export function loadTeamMapping(gameId: string, userId: string): string {

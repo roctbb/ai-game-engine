@@ -259,6 +259,7 @@ import {
   type RunWatchContextDto,
   type StreamEnvelopeDto,
 } from '../lib/api';
+import { sanitizeForPostMessage } from '../lib/postMessage';
 import { useSessionStore } from '../stores/session';
 
 interface RendererLogItem {
@@ -337,6 +338,9 @@ let runPollingHandle: ReturnType<typeof setInterval> | null = null;
 let runEventSource: EventSource | null = null;
 let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
 let replayClockHandle: ReturnType<typeof setInterval> | null = null;
+let isPollingRun = false;
+let pendingRunPoll = false;
+let runPollingToken = 0;
 
 const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(watchContext.value?.renderer_url));
 const runStatusLabel = computed(() => {
@@ -515,10 +519,15 @@ const isReplayAtLastFrame = computed(
 );
 const showWinnerBanner = computed(() => replayFrames.value.length > 0 && isReplayAtLastFrame.value && !firstReplayLockActive.value);
 const finalWinnerLabel = computed(() => {
-  const placedWinner = matchPlayerStats.value.find((player) => player.place === 1);
-  if (placedWinner) return placedWinner.name;
   const explicitWinner = primaryReplayWinnerTeamId(explicitReplayWinnerTeamIds());
   if (explicitWinner) return playerDisplayName(explicitWinner, compactTeamLabel(explicitWinner));
+  const placedWinners = matchPlayerStats.value.filter((player) => player.place === 1);
+  if (placedWinners.length === 1) return placedWinners[0].name;
+  if (placedWinners.length > 1) {
+    const bestScore = Math.max(...placedWinners.map((player) => player.score ?? Number.NEGATIVE_INFINITY));
+    const scoredWinner = placedWinners.find((player) => (player.score ?? Number.NEGATIVE_INFINITY) === bestScore);
+    if (scoredWinner) return scoredWinner.name;
+  }
   return matchLeaderLabel.value;
 });
 
@@ -1108,14 +1117,6 @@ function sendToRenderer(message: Record<string, unknown>): void {
   frame.contentWindow.postMessage(sanitizeForPostMessage(message), window.location.origin);
 }
 
-function sanitizeForPostMessage(value: unknown): unknown {
-  try {
-    return JSON.parse(JSON.stringify(value ?? {}));
-  } catch {
-    return {};
-  }
-}
-
 function sendRendererInit(): void {
   if (!watchContext.value || !run.value) return;
   sendToRenderer({
@@ -1509,21 +1510,43 @@ function startRunLiveUpdates(runId: string): void {
 function startRunPolling(runId: string): void {
   liveMode.value = 'polling';
   stopRunPolling();
-  runPollingHandle = setInterval(async () => {
+  const token = ++runPollingToken;
+  const poll = async (): Promise<void> => {
+    if (token !== runPollingToken) return;
+    if (isPollingRun) {
+      pendingRunPoll = true;
+      return;
+    }
+    isPollingRun = true;
     try {
-      run.value = await getRun(runId);
-      sendRendererStateAndResult();
+      do {
+        pendingRunPoll = false;
+        const nextRun = await getRun(runId);
+        if (token !== runPollingToken) return;
+        if (nextRun.run_id !== runId) return;
+        run.value = nextRun;
+        sendRendererStateAndResult();
+      } while (pendingRunPoll);
+      if (token !== runPollingToken) return;
       if (run.value && isTerminalStatus(run.value.status)) {
         stopRunPolling();
         await ensureReplayLoaded(runId);
       }
     } catch {
       // keep the latest known state and continue polling
+    } finally {
+      isPollingRun = false;
     }
+  };
+  void poll();
+  runPollingHandle = setInterval(() => {
+    void poll();
   }, 1200);
 }
 
 function stopRunPolling(): void {
+  runPollingToken += 1;
+  pendingRunPoll = false;
   if (!runPollingHandle) return;
   clearInterval(runPollingHandle);
   runPollingHandle = null;

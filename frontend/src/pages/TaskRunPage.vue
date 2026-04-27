@@ -429,6 +429,7 @@ import {
   type TeamDto,
   type TeamWorkspaceDto,
 } from '../lib/api';
+import { sanitizeForPostMessage } from '../lib/postMessage';
 import { loadTeamMapping, saveTeamMapping } from '../lib/teamMapping';
 import { useSessionStore } from '../stores/session';
 
@@ -493,6 +494,9 @@ const isHeaderCondensed = ref(false);
 let pollingHandle: ReturnType<typeof setInterval> | null = null;
 let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
 let victoryCelebrationHandle: ReturnType<typeof setTimeout> | null = null;
+let isPollingRun = false;
+let pendingRunPoll = false;
+let runPollingToken = 0;
 const celebratedRunIds = new Set<string>();
 
 const rendererUrl = computed(() => (game.value ? `/api/v1/renderers/${game.value.slug}/renderer/index.html` : ''));
@@ -691,14 +695,6 @@ function appendConsoleMessage(
 
 function isActiveRun(run: RunDto | null): run is RunDto {
   return Boolean(run && ['created', 'queued', 'running'].includes(run.status));
-}
-
-function sanitizeForPostMessage(value: unknown): unknown {
-  try {
-    return JSON.parse(JSON.stringify(value ?? {}));
-  } catch {
-    return {};
-  }
 }
 
 function toggleCompetitionPanel(): void {
@@ -1032,22 +1028,44 @@ async function restartRun(): Promise<void> {
 
 function startRunPolling(runId: string): void {
   stopRunPolling();
-  pollingHandle = setInterval(async () => {
+  const token = ++runPollingToken;
+  const poll = async (): Promise<void> => {
+    if (token !== runPollingToken) return;
+    if (isPollingRun) {
+      pendingRunPoll = true;
+      return;
+    }
+    isPollingRun = true;
     try {
-      currentRun.value = await getRun(runId);
-      sendRendererState();
-      if (currentRun.value && !isRunActive.value) {
+      do {
+        pendingRunPoll = false;
+        const nextRun = await getRun(runId);
+        if (token !== runPollingToken) return;
+        if (nextRun.run_id !== runId) return;
+        currentRun.value = nextRun;
+        sendRendererState();
+      } while (pendingRunPoll);
+      if (token !== runPollingToken) return;
+      if (currentRun.value && currentRun.value.run_id === runId && !isRunActive.value) {
         stopRunPolling();
         await loadReplay(runId);
         await refreshStats();
       }
     } catch {
       // keep latest state
+    } finally {
+      isPollingRun = false;
     }
+  };
+  void poll();
+  pollingHandle = setInterval(() => {
+    void poll();
   }, 1200);
 }
 
 function stopRunPolling(): void {
+  runPollingToken += 1;
+  pendingRunPoll = false;
   if (!pollingHandle) return;
   clearInterval(pollingHandle);
   pollingHandle = null;

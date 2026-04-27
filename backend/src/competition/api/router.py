@@ -138,11 +138,14 @@ def _reconcile_competition_if_ready(
 
 @router.get("", response_model=list[CompetitionResponse])
 def list_competitions(
+    lobby_id: str | None = None,
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[CompetitionResponse]:
     visible: list[CompetitionResponse] = []
     for item in container.competition.list_competitions():
+        if lobby_id is not None and item.lobby_id != lobby_id:
+            continue
         if not _can_view_competition(container=container, session=session, competition=item):
             continue
         visible.append(_to_response(_reconcile_competition_if_ready(container=container, competition=item)))

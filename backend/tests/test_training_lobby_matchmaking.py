@@ -309,6 +309,584 @@ def test_archived_match_groups_use_payload_participants_for_parallel_batches(cli
     archived_groups = lobby_view.json()["archived_match_groups"]
     assert len(archived_groups) == 2
     assert {frozenset(group["team_ids"]) for group in archived_groups} == {frozenset(group) for group in expected_groups}
+    for group in archived_groups:
+        assert set(group["scores_by_team"]) == set(group["team_ids"])
+
+
+def test_finished_training_runs_store_match_participants_for_archive_grouping(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="finished_runs_store_match_participants",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=4,
+        headers=teacher_headers,
+    )
+    teams = [
+        _create_ready_team(client, game_id=game["game_id"], captain=f"stored-group-{index}", name=f"Team {index}")
+        for index in range(6)
+    ]
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Stored Archive Groups", headers=teacher_headers)
+    for team in teams:
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    run_groups: list[list[str]] = []
+    for group in (teams[:3], teams[3:]):
+        run_group: list[str] = []
+        for team in group:
+            run = client.post(
+                "/api/v1/runs",
+                json={
+                    "team_id": team["team_id"],
+                    "game_id": game["game_id"],
+                    "requested_by": "teacher-mm",
+                    "run_kind": "training_match",
+                    "lobby_id": lobby["lobby_id"],
+                },
+                headers=teacher_headers,
+            )
+            assert run.status_code == 200
+            queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+            assert queued.status_code == 200
+            run_group.append(run.json()["run_id"])
+        run_groups.append(run_group)
+
+    lobby_model = container.training_lobby.get_lobby(lobby["lobby_id"])
+    lobby_model.set_last_scheduled_match_groups(run_groups)
+    container.training_lobby._repository.save(lobby_model)
+
+    expected_groups = [[team["team_id"] for team in teams[:3]], [team["team_id"] for team in teams[3:]]]
+    for group_index, run_group in enumerate(run_groups):
+        for index, run_id in enumerate(run_group):
+            team_id = expected_groups[group_index][index]
+            finished = client.post(
+                f"/api/v1/internal/runs/{run_id}/finished",
+                json={
+                    "payload": {
+                        "status": "ok",
+                        "scores": {team_id: 100 - index},
+                        "placements": {team_id: index + 1},
+                    }
+                },
+            )
+            assert finished.status_code == 200
+            assert {item["team_id"] for item in finished.json()["result_payload"]["match_participants"]} == set(
+                expected_groups[group_index]
+            )
+
+    lobby_model = container.training_lobby.get_lobby(lobby["lobby_id"])
+    lobby_model.set_last_scheduled_match_groups([])
+    container.training_lobby._repository.save(lobby_model)
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    archived_groups = lobby_view.json()["archived_match_groups"]
+    assert len(archived_groups) == 2
+    assert {frozenset(group["team_ids"]) for group in archived_groups} == {frozenset(group) for group in expected_groups}
+    assert all(len(group["team_ids"]) == 3 for group in archived_groups)
+
+
+def test_archived_training_watch_context_uses_stored_match_participants(client, teacher_headers, container) -> None:
+    game = next(item for item in client.get("/api/v1/games").json() if item["slug"] == "ttt_connect5_v1")
+    teams = [
+        _create_ready_team(client, game_id=game["game_id"], captain=f"watch-group-{index}", name=f"Team {index}")
+        for index in range(4)
+    ]
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Stored Watch Context", headers=teacher_headers)
+    for team in teams:
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    expected_groups = [[team["team_id"] for team in teams[:2]], [team["team_id"] for team in teams[2:]]]
+    run_groups: list[list[str]] = []
+    for group in expected_groups:
+        group_run_ids: list[str] = []
+        for team_id in group:
+            run = client.post(
+                "/api/v1/runs",
+                json={
+                    "team_id": team_id,
+                    "game_id": game["game_id"],
+                    "requested_by": "teacher-mm",
+                    "run_kind": "training_match",
+                    "lobby_id": lobby["lobby_id"],
+                },
+                headers=teacher_headers,
+            )
+            assert run.status_code == 200
+            queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+            assert queued.status_code == 200
+            group_run_ids.append(run.json()["run_id"])
+        run_groups.append(group_run_ids)
+
+    lobby_model = container.training_lobby.get_lobby(lobby["lobby_id"])
+    lobby_model.set_last_scheduled_match_groups(run_groups)
+    container.training_lobby._repository.save(lobby_model)
+
+    for group, run_group in zip(expected_groups, run_groups, strict=True):
+        for index, (team_id, run_id) in enumerate(zip(group, run_group, strict=True)):
+            finished = client.post(
+                f"/api/v1/internal/runs/{run_id}/finished",
+                json={
+                    "payload": {
+                        "status": "ok",
+                        "scores": {team_id: 100 - index},
+                        "placements": {team_id: index + 1},
+                    }
+                },
+            )
+            assert finished.status_code == 200
+
+    lobby_model = container.training_lobby.get_lobby(lobby["lobby_id"])
+    lobby_model.set_last_scheduled_match_groups([])
+    container.training_lobby._repository.save(lobby_model)
+
+    watched = client.get(f"/api/v1/runs/{run_groups[0][0]}/watch-context", headers=teacher_headers)
+    assert watched.status_code == 200
+    assert {item["team_id"] for item in watched.json()["participants"]} == set(expected_groups[0])
+
+
+def test_incomplete_signed_archive_group_does_not_count_as_solo_match(client, teacher_headers) -> None:
+    game = _create_game(
+        client,
+        slug="incomplete_signed_archive_group",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="orphan-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="orphan-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Incomplete Signed Group", headers=teacher_headers)
+    for team in (team_a, team_b):
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    run = client.post(
+        "/api/v1/runs",
+        json={
+            "team_id": team_a["team_id"],
+            "game_id": game["game_id"],
+            "requested_by": "teacher-mm",
+            "run_kind": "training_match",
+            "lobby_id": lobby["lobby_id"],
+        },
+        headers=teacher_headers,
+    )
+    assert run.status_code == 200
+    queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+    assert queued.status_code == 200
+    finished = client.post(
+        f"/api/v1/internal/runs/{run.json()['run_id']}/finished",
+        json={
+            "payload": {
+                "status": "ok",
+                "scores": {team_a["team_id"]: 100, team_b["team_id"]: 80},
+                "placements": {team_a["team_id"]: 1, team_b["team_id"]: 2},
+                "match_participants": [
+                    {"run_id": run.json()["run_id"], "team_id": team_a["team_id"], "display_name": "Alpha"},
+                    {"run_id": "missing-peer", "team_id": team_b["team_id"], "display_name": "Bravo"},
+                ],
+            }
+        },
+    )
+    assert finished.status_code == 200
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    payload = lobby_view.json()
+    assert payload["archived_match_groups"] == []
+    stats_by_team = {item["team_id"]: item for item in payload["participant_stats"]}
+    assert stats_by_team[team_a["team_id"]]["matches_total"] == 0
+    assert stats_by_team[team_a["team_id"]]["wins"] == 0
+    assert stats_by_team[team_b["team_id"]]["matches_total"] == 0
+    assert stats_by_team[team_b["team_id"]]["wins"] == 0
+
+
+def test_archived_match_groups_do_not_depend_on_run_order_for_same_players(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="interleaved_archive_groups",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="interleave-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="interleave-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Interleaved Archive", headers=teacher_headers)
+    for team in (team_a, team_b):
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    created_runs: list[dict] = []
+    for _match_index in range(2):
+        for team in (team_a, team_b):
+            run = client.post(
+                "/api/v1/runs",
+                json={
+                    "team_id": team["team_id"],
+                    "game_id": game["game_id"],
+                    "requested_by": "teacher-mm",
+                    "run_kind": "training_match",
+                    "lobby_id": lobby["lobby_id"],
+                },
+                headers=teacher_headers,
+            )
+            assert run.status_code == 200
+            queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+            assert queued.status_code == 200
+            finished = client.post(
+                f"/api/v1/internal/runs/{run.json()['run_id']}/finished",
+                json={
+                    "payload": {
+                        "status": "ok",
+                        "scores": {team_a["team_id"]: 100, team_b["team_id"]: 90},
+                        "placements": {team_a["team_id"]: 1, team_b["team_id"]: 2},
+                    }
+                },
+            )
+            assert finished.status_code == 200
+            created_runs.append(run.json())
+
+    # Force the repository order to be A2, A1, B2, B1. Time-only grouping would
+    # pair equal teams together, while payload-signature grouping restores matches.
+    base_time = datetime.now(tz=UTC)
+    ordered_run_ids = [
+        created_runs[2]["run_id"],
+        created_runs[0]["run_id"],
+        created_runs[3]["run_id"],
+        created_runs[1]["run_id"],
+    ]
+    for offset, run_id in enumerate(ordered_run_ids):
+        model = container.execution._run_repository.get(run_id)
+        model.created_at = base_time - timedelta(milliseconds=offset)
+        container.execution._run_repository.save(model)
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    archived_groups = lobby_view.json()["archived_match_groups"]
+    assert len(archived_groups) == 2
+    assert [set(group["team_ids"]) for group in archived_groups] == [
+        {team_a["team_id"], team_b["team_id"]},
+        {team_a["team_id"], team_b["team_id"]},
+    ]
+
+
+def test_archived_match_groups_keep_same_players_separate_across_time_windows(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="same_players_archive_windows",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="window-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="window-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Archive Windows", headers=teacher_headers)
+    for team in (team_a, team_b):
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    match_run_ids: list[list[str]] = []
+    for match_index in range(2):
+        group_ids: list[str] = []
+        for team in (team_a, team_b):
+            run = client.post(
+                "/api/v1/runs",
+                json={
+                    "team_id": team["team_id"],
+                    "game_id": game["game_id"],
+                    "requested_by": "teacher-mm",
+                    "run_kind": "training_match",
+                    "lobby_id": lobby["lobby_id"],
+                },
+                headers=teacher_headers,
+            )
+            assert run.status_code == 200
+            queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+            assert queued.status_code == 200
+            finished = client.post(
+                f"/api/v1/internal/runs/{run.json()['run_id']}/finished",
+                json={
+                    "payload": {
+                        "status": "ok",
+                        "scores": {team_a["team_id"]: 100 + match_index, team_b["team_id"]: 90 + match_index},
+                        "placements": {team_a["team_id"]: 1, team_b["team_id"]: 2},
+                    }
+                },
+            )
+            assert finished.status_code == 200
+            group_ids.append(run.json()["run_id"])
+        match_run_ids.append(group_ids)
+
+    first_window = datetime.now(tz=UTC) - timedelta(minutes=10)
+    second_window = datetime.now(tz=UTC)
+    for run_id in match_run_ids[0]:
+        model = container.execution._run_repository.get(run_id)
+        model.created_at = first_window
+        container.execution._run_repository.save(model)
+    for run_id in match_run_ids[1]:
+        model = container.execution._run_repository.get(run_id)
+        model.created_at = second_window
+        container.execution._run_repository.save(model)
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    archived_groups = lobby_view.json()["archived_match_groups"]
+    assert len(archived_groups) == 2
+    assert [set(group["run_ids"]) for group in archived_groups] == [
+        set(match_run_ids[1]),
+        set(match_run_ids[0]),
+    ]
+
+
+def test_archived_match_groups_keep_legacy_unsigned_runs_in_time_order(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="mixed_archive_group_order",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    teams = [
+        _create_ready_team(client, game_id=game["game_id"], captain=f"mixed-{index}", name=f"Team {index}")
+        for index in range(4)
+    ]
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Mixed Archive Order", headers=teacher_headers)
+    for team in teams:
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    def create_finished_run(team: dict, payload: dict) -> str:
+        run = client.post(
+            "/api/v1/runs",
+            json={
+                "team_id": team["team_id"],
+                "game_id": game["game_id"],
+                "requested_by": "teacher-mm",
+                "run_kind": "training_match",
+                "lobby_id": lobby["lobby_id"],
+            },
+            headers=teacher_headers,
+        )
+        assert run.status_code == 200
+        queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+        assert queued.status_code == 200
+        finished = client.post(
+            f"/api/v1/internal/runs/{run.json()['run_id']}/finished",
+            json={"payload": payload},
+        )
+        assert finished.status_code == 200
+        return run.json()["run_id"]
+
+    signed_ids = [
+        create_finished_run(
+            team,
+            {
+                "status": "ok",
+                "scores": {teams[0]["team_id"]: 10, teams[1]["team_id"]: 5},
+                "placements": {teams[0]["team_id"]: 1, teams[1]["team_id"]: 2},
+            },
+        )
+        for team in teams[:2]
+    ]
+    legacy_ids = [
+        create_finished_run(
+            team,
+            {
+                "status": "ok",
+                "scores": {teams[2]["team_id"]: 8, teams[3]["team_id"]: 4},
+                "placements": {teams[2]["team_id"]: 1, teams[3]["team_id"]: 2},
+            },
+        )
+        for team in teams[2:]
+    ]
+
+    older_time = datetime.now(tz=UTC) - timedelta(minutes=5)
+    newer_time = datetime.now(tz=UTC)
+    for run_id in signed_ids:
+        model = container.execution._run_repository.get(run_id)
+        model.created_at = older_time
+        container.execution._run_repository.save(model)
+    for run_id in legacy_ids:
+        model = container.execution._run_repository.get(run_id)
+        model.created_at = newer_time
+        model.result_payload = {"status": "ok", "metrics": {"score": 1}}
+        container.execution._run_repository.save(model)
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    archived_groups = lobby_view.json()["archived_match_groups"]
+    assert len(archived_groups) == 2
+    assert set(archived_groups[0]["run_ids"]) == set(legacy_ids)
+    assert set(archived_groups[1]["run_ids"]) == set(signed_ids)
+
+
+def test_participant_stats_count_one_win_per_archived_match(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="participant_stats_repeated_pairs",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="stats-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="stats-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Stats Repeated Pairs", headers=teacher_headers)
+    for team in (team_a, team_b):
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    match_count = 3
+    match_run_ids: list[list[str]] = []
+    for match_index in range(match_count):
+        group_ids: list[str] = []
+        scores = {team_a["team_id"]: 100 + match_index, team_b["team_id"]: 10 + match_index}
+        placements = {team_a["team_id"]: 1, team_b["team_id"]: 2}
+        for team in (team_a, team_b):
+            run = client.post(
+                "/api/v1/runs",
+                json={
+                    "team_id": team["team_id"],
+                    "game_id": game["game_id"],
+                    "requested_by": "teacher-mm",
+                    "run_kind": "training_match",
+                    "lobby_id": lobby["lobby_id"],
+                },
+                headers=teacher_headers,
+            )
+            assert run.status_code == 200
+            queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+            assert queued.status_code == 200
+            finished = client.post(
+                f"/api/v1/internal/runs/{run.json()['run_id']}/finished",
+                json={"payload": {"status": "ok", "scores": scores, "placements": placements}},
+            )
+            assert finished.status_code == 200
+            group_ids.append(run.json()["run_id"])
+        match_run_ids.append(group_ids)
+
+    base_time = datetime.now(tz=UTC)
+    for match_index, group in enumerate(match_run_ids):
+        created_at = base_time + timedelta(seconds=match_index * 10)
+        for run_id in group:
+            model = container.execution._run_repository.get(run_id)
+            model.created_at = created_at
+            container.execution._run_repository.save(model)
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    stats_by_team = {item["team_id"]: item for item in lobby_view.json()["participant_stats"]}
+    assert stats_by_team[team_a["team_id"]]["matches_total"] == match_count
+    assert stats_by_team[team_b["team_id"]]["matches_total"] == match_count
+    assert stats_by_team[team_a["team_id"]]["wins"] == match_count
+    assert stats_by_team[team_b["team_id"]]["wins"] == 0
+    assert sum(item["wins"] for item in stats_by_team.values()) == match_count
+
+
+def test_lobby_winner_and_stats_use_group_scores_from_any_payload(client, teacher_headers) -> None:
+    game = _create_game(
+        client,
+        slug="group_scores_from_any_payload",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="group-score-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="group-score-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="Group Scores", headers=teacher_headers)
+    for team in (team_a, team_b):
+        joined = client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        assert joined.status_code == 200
+
+    runs: list[dict] = []
+    for team in (team_a, team_b):
+        run = client.post(
+            "/api/v1/runs",
+            json={
+                "team_id": team["team_id"],
+                "game_id": game["game_id"],
+                "requested_by": "teacher-mm",
+                "run_kind": "training_match",
+                "lobby_id": lobby["lobby_id"],
+            },
+            headers=teacher_headers,
+        )
+        assert run.status_code == 200
+        queued = client.post(f"/api/v1/runs/{run.json()['run_id']}/queue", headers=teacher_headers)
+        assert queued.status_code == 200
+        runs.append(run.json())
+
+    participants = [
+        {"run_id": runs[0]["run_id"], "team_id": team_a["team_id"], "display_name": "Alpha"},
+        {"run_id": runs[1]["run_id"], "team_id": team_b["team_id"], "display_name": "Bravo"},
+    ]
+    first_finished = client.post(
+        f"/api/v1/internal/runs/{runs[0]['run_id']}/finished",
+        json={
+            "payload": {
+                "status": "ok",
+                "scores": {team_a["team_id"]: 10, team_b["team_id"]: 100},
+                "match_participants": participants,
+            }
+        },
+    )
+    assert first_finished.status_code == 200
+    second_finished = client.post(
+        f"/api/v1/internal/runs/{runs[1]['run_id']}/finished",
+        json={"payload": {"status": "ok", "scores": {team_b["team_id"]: 0}, "match_participants": participants}},
+    )
+    assert second_finished.status_code == 200
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    payload = lobby_view.json()
+    archived_group = payload["archived_match_groups"][0]
+    assert archived_group["winner_team_ids"] == [team_b["team_id"]]
+    assert archived_group["scores_by_team"] == {team_a["team_id"]: 10.0, team_b["team_id"]: 100.0}
+    stats_by_team = {item["team_id"]: item for item in payload["participant_stats"]}
+    assert stats_by_team[team_a["team_id"]]["wins"] == 0
+    assert stats_by_team[team_a["team_id"]]["average_score"] == 10.0
+    assert stats_by_team[team_b["team_id"]]["wins"] == 1
+    assert stats_by_team[team_b["team_id"]]["average_score"] == 100.0
 
 
 def test_matchmaking_queue_failure_clears_batch_and_does_not_leave_created_runs(

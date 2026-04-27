@@ -32,6 +32,7 @@ from execution.api.schemas import (
 )
 from execution.api.access import ensure_can_view_run
 from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
+from execution.domain.result_payload import compact_result_payload as compact_run_result_payload
 from game_catalog.infrastructure.manifest_loader import GameManifest, find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event
@@ -44,24 +45,6 @@ _TERMINAL_RUN_STATUSES = {
     RunStatus.TIMEOUT,
     RunStatus.CANCELED,
 }
-
-
-def _compact_result_payload(payload: dict[str, object] | None) -> dict[str, object] | None:
-    if not isinstance(payload, dict):
-        return None
-    allowed_keys = {
-        "status",
-        "score",
-        "scores",
-        "placement",
-        "placements",
-        "winner",
-        "winners",
-        "metrics",
-        "error",
-    }
-    return {key: value for key, value in payload.items() if key in allowed_keys}
-
 
 def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunResponse:
     return RunResponse(
@@ -77,7 +60,7 @@ def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunRespo
         snapshot_version_id=run.snapshot_version_id,
         worker_id=run.worker_id,
         revisions_by_slot=run.revisions_by_slot,
-        result_payload=_compact_result_payload(run.result_payload) if compact_result_payload else run.result_payload,
+        result_payload=compact_run_result_payload(run.result_payload) if compact_result_payload else run.result_payload,
         error_message=run.error_message,
         created_at=run.created_at,
         queued_at=run.queued_at,
@@ -417,24 +400,33 @@ def _watch_context_participants(container: ServiceContainer, current_run: Run) -
         if participant_run.team_id in seen_team_ids:
             continue
         seen_team_ids.add(participant_run.team_id)
-        try:
-            team = container.team_workspace.get_team(participant_run.team_id)
-            display_name = team.name or team.captain_user_id or participant_run.team_id
-            captain_user_id = team.captain_user_id
-        except NotFoundError:
-            display_name = participant_run.team_id
-            captain_user_id = participant_run.requested_by
-        participants.append(
-            {
-                "run_id": participant_run.run_id,
-                "team_id": participant_run.team_id,
-                "display_name": display_name,
-                "captain_user_id": captain_user_id,
-                "is_current": participant_run.run_id == current_run.run_id,
-            }
-        )
+        participants.append(_participant_summary(container=container, run=participant_run, current_run_id=current_run.run_id))
 
     return participants
+
+
+def _participant_summary(
+    *,
+    container: ServiceContainer,
+    run: Run,
+    current_run_id: str | None = None,
+) -> dict[str, object]:
+    try:
+        team = container.team_workspace.get_team(run.team_id)
+        display_name = team.name or team.captain_user_id or run.team_id
+        captain_user_id = team.captain_user_id
+    except NotFoundError:
+        display_name = run.team_id
+        captain_user_id = run.requested_by
+    result: dict[str, object] = {
+        "run_id": run.run_id,
+        "team_id": run.team_id,
+        "display_name": display_name,
+        "captain_user_id": captain_user_id,
+    }
+    if current_run_id is not None:
+        result["is_current"] = run.run_id == current_run_id
+    return result
 
 
 def _watch_context_run_ids(container: ServiceContainer, current_run: Run) -> list[str]:
@@ -480,6 +472,10 @@ def _training_watch_peer_run_ids(container: ServiceContainer, current_run: Run) 
         if current_run.run_id in group:
             return [run_id for run_id in group if run_id != current_run.run_id]
 
+    stored_peer_ids = _stored_training_match_peer_run_ids(current_run)
+    if stored_peer_ids:
+        return stored_peer_ids
+
     peer_ids: list[str] = []
     if current_run.run_id in lobby.last_scheduled_run_ids:
         for run_id in lobby.last_scheduled_run_ids:
@@ -523,6 +519,23 @@ def _training_watch_peer_run_ids(container: ServiceContainer, current_run: Run) 
             continue
         return [candidate.run_id for candidate in group if candidate.run_id != current_run.run_id]
     return []
+
+
+def _stored_training_match_peer_run_ids(current_run: Run) -> list[str]:
+    payload = current_run.result_payload if isinstance(current_run.result_payload, dict) else {}
+    participants = payload.get("match_participants")
+    if not isinstance(participants, list):
+        return []
+    peer_run_ids: list[str] = []
+    for item in participants:
+        if not isinstance(item, dict):
+            continue
+        run_id = item.get("run_id")
+        if not isinstance(run_id, str) or not run_id or run_id == current_run.run_id:
+            continue
+        if run_id not in peer_run_ids:
+            peer_run_ids.append(run_id)
+    return peer_run_ids
 
 
 @router.get("/runs/{run_id}/stream")
@@ -818,7 +831,8 @@ def mark_run_finished(
     _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
-    run = container.execution.finish_run(run_id=run_id, payload=request.payload)
+    payload = _payload_with_training_match_context(container=container, run_id=run_id, payload=request.payload)
+    run = container.execution.finish_run(run_id=run_id, payload=payload)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)
@@ -835,6 +849,47 @@ def mark_run_failed(
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)
+
+
+def _payload_with_training_match_context(
+    *,
+    container: ServiceContainer,
+    run_id: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    run = container.execution.get_run(run_id=run_id)
+    if run.run_kind is not RunKind.TRAINING_MATCH or run.lobby_id is None:
+        return payload
+
+    try:
+        lobby = container.training_lobby.get_lobby(run.lobby_id)
+    except NotFoundError:
+        return payload
+    match_run_ids: list[str] = []
+    for group in lobby.last_scheduled_match_groups:
+        if run_id in group:
+            match_run_ids = list(group)
+            break
+    if len(match_run_ids) <= 1:
+        return payload
+
+    participants: list[dict[str, object]] = []
+    seen_team_ids: set[str] = set()
+    for participant_run_id in match_run_ids:
+        try:
+            participant_run = container.execution.get_run(participant_run_id)
+        except NotFoundError:
+            continue
+        if participant_run.team_id in seen_team_ids:
+            continue
+        seen_team_ids.add(participant_run.team_id)
+        participants.append(_participant_summary(container=container, run=participant_run))
+
+    if len(participants) <= 1:
+        return payload
+    result = dict(payload)
+    result["match_participants"] = participants
+    return result
 
 
 @router.post("/internal/builds/start", response_model=BuildResponse)

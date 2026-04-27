@@ -15,6 +15,7 @@ from competition.domain.model import (
 )
 from execution.application.service import CreateRunInput, ExecutionService
 from execution.domain.model import Run, RunKind, RunStatus
+from execution.domain.result_payload import compact_result_payload
 from game_catalog.application.service import GameCatalogService
 from shared.kernel import InvariantViolationError, NotFoundError, utc_now
 from team_workspace.application.service import TeamWorkspaceService
@@ -194,6 +195,8 @@ class CompetitionService:
             ):
                 raise InvariantViolationError("Код заблокирован политикой соревнования: locked_on_start")
             if competition.code_policy is CompetitionCodePolicy.ALLOWED_BETWEEN_MATCHES:
+                if self._team_has_running_competition_match(competition=competition, team_id=team_id):
+                    raise InvariantViolationError("Код можно менять только между матчами соревнования")
                 active_runs = self._execution.list_runs(
                     team_id=team_id,
                     lobby_id=competition.competition_id,
@@ -201,6 +204,20 @@ class CompetitionService:
                 )
                 if any(run.status in _ACTIVE_STATUSES for run in active_runs):
                     raise InvariantViolationError("Код можно менять только между матчами соревнования")
+
+    @staticmethod
+    def _team_has_running_competition_match(*, competition: Competition, team_id: str) -> bool:
+        if competition.status not in _ACTIVE_COMPETITION_STATUSES:
+            return False
+        for round_item in competition.rounds:
+            for match in round_item.matches:
+                if (
+                    match.status is CompetitionMatchStatus.RUNNING
+                    and team_id in match.team_ids
+                    and match.run_ids_by_team.get(team_id) is not None
+                ):
+                    return True
+        return False
 
     def register_team(self, competition_id: str, team_id: str) -> Competition:
         competition = self.get_competition(competition_id)
@@ -384,6 +401,7 @@ class CompetitionService:
                 "team_id": run.team_id,
                 "status": run.status.value,
                 "error_message": run.error_message,
+                "result_payload": compact_result_payload(run.result_payload),
             }
             for run in runs
         ]

@@ -69,7 +69,7 @@ pre,
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 200;
   box-shadow: 0 10px 32px rgba(15, 23, 42, 0.05);
 }
 
@@ -163,7 +163,7 @@ pre,
 
 .agp-user-menu {
   position: relative;
-  z-index: 80;
+  z-index: 210;
 }
 
 .agp-user-trigger {
@@ -248,7 +248,7 @@ pre,
   position: absolute;
   right: 0;
   top: calc(100% + 0.45rem);
-  z-index: 90;
+  z-index: 220;
   width: min(18rem, calc(100vw - 1.5rem));
   background:
     radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 10rem),

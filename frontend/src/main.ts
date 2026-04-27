@@ -13,6 +13,11 @@ const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
 
+const initialSessionId = new URL(window.location.href).searchParams.get('session_id')?.trim();
+if (initialSessionId) {
+  storeSessionId(initialSessionId);
+}
+
 const sessionStore = useSessionStore(pinia);
 const sessionReady = sessionStore.bootstrap();
 

@@ -85,6 +85,7 @@ class LobbyMatchGroupResponse(BaseModel):
     replay_frame_count: int
     replay_frame_index: int
     winner_team_ids: list[str] = Field(default_factory=list)
+    scores_by_team: dict[str, float] = Field(default_factory=dict)
 
 
 class LobbyResponse(BaseModel):
