@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -7,6 +8,11 @@ from typing import Any
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, sort_keys=True)}\n\n"
+
+
+def sse_payload_hash(payload: object) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
+    return hashlib.sha256(raw).hexdigest()
 
 
 def sse_envelope(

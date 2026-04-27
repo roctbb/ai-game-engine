@@ -18,6 +18,7 @@ class Lease:
 class SchedulerQueue:
     def __init__(self, redis_client: Redis) -> None:
         self._redis = redis_client
+        self._last_requeue_check_epoch: int | None = None
 
     def enqueue(self, run_id: str, required_worker_labels: dict[str, str] | None = None) -> bool:
         normalized_required_labels = self._normalize_label_map(required_worker_labels)
@@ -44,7 +45,7 @@ class SchedulerQueue:
         leased_at_epoch: int,
         worker_labels: dict[str, str] | None = None,
     ) -> str | None:
-        self._requeue_expired_leases(now_epoch=leased_at_epoch)
+        self._requeue_expired_leases_if_due(now_epoch=leased_at_epoch)
         normalized_worker_labels = self._normalize_label_map(worker_labels)
         queue_depth = int(self._redis.llen(settings.queue_key))
 
@@ -84,11 +85,13 @@ class SchedulerQueue:
         if lease is None or lease.worker_id != worker_id:
             return False
 
-        self._redis.hdel(settings.run_lease_hash_key, run_id)
-        self._redis.hdel(self._lease_key(worker_id), run_id)
-        self._redis.hdel(settings.run_requirements_hash_key, run_id)
-        self._redis.srem(settings.known_set_key, run_id)
-        self._redis.srem(settings.queued_set_key, run_id)
+        pipe = self._redis.pipeline()
+        pipe.hdel(settings.run_lease_hash_key, run_id)
+        pipe.hdel(self._lease_key(worker_id), run_id)
+        pipe.hdel(settings.run_requirements_hash_key, run_id)
+        pipe.srem(settings.known_set_key, run_id)
+        pipe.srem(settings.queued_set_key, run_id)
+        pipe.execute()
         return True
 
     def stats(self) -> dict[str, object]:
@@ -125,22 +128,37 @@ class SchedulerQueue:
             },
         }
 
+    def _requeue_expired_leases_if_due(self, now_epoch: int) -> None:
+        if self._last_requeue_check_epoch is not None:
+            elapsed = now_epoch - self._last_requeue_check_epoch
+            if elapsed < settings.lease_requeue_check_interval_seconds:
+                return
+
+        self._last_requeue_check_epoch = now_epoch
+        self._requeue_expired_leases(now_epoch=now_epoch)
+
     def _requeue_expired_leases(self, now_epoch: int) -> None:
         raw_leases = self._redis.hgetall(settings.run_lease_hash_key)
+        expired: list[tuple[str, Lease]] = []
         for raw_run_id, raw_payload in raw_leases.items():
             run_id = raw_run_id.decode("utf-8") if isinstance(raw_run_id, bytes) else str(raw_run_id)
             lease = self._lease_from_payload(run_id=run_id, raw_payload=raw_payload)
             if lease is None:
                 self._redis.hdel(settings.run_lease_hash_key, run_id)
                 continue
+            if now_epoch - lease.leased_at >= settings.lease_ttl_seconds:
+                expired.append((run_id, lease))
 
-            if now_epoch - lease.leased_at < settings.lease_ttl_seconds:
-                continue
+        if not expired:
+            return
 
-            # lease expired: remove lease and return run back to queue if it is still active.
-            self._redis.hdel(settings.run_lease_hash_key, run_id)
-            self._redis.hdel(self._lease_key(lease.worker_id), run_id)
+        pipe = self._redis.pipeline()
+        for run_id, lease in expired:
+            pipe.hdel(settings.run_lease_hash_key, run_id)
+            pipe.hdel(self._lease_key(lease.worker_id), run_id)
+        pipe.execute()
 
+        for run_id, _lease in expired:
             if bool(self._redis.sismember(settings.known_set_key, run_id)):
                 queued_inserted = self._redis.sadd(settings.queued_set_key, run_id)
                 if queued_inserted == 1:

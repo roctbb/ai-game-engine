@@ -12,6 +12,7 @@ class FakeRedis:
         self._sets: dict[str, set[str]] = defaultdict(set)
         self._lists: dict[str, deque[str]] = defaultdict(deque)
         self._hashes: dict[str, dict[str, object]] = defaultdict(dict)
+        self.hgetall_calls: dict[str, int] = defaultdict(int)
 
     def sadd(self, key: str, value: str) -> int:
         if value in self._sets[key]:
@@ -55,6 +56,7 @@ class FakeRedis:
                     yield key
 
     def hgetall(self, key: str) -> dict[str, object]:
+        self.hgetall_calls[key] += 1
         return dict(self._hashes[key])
 
 
@@ -134,6 +136,26 @@ def test_expired_lease_requeued_on_next_pull() -> None:
         }
     finally:
         settings.lease_ttl_seconds = old_ttl
+
+
+def test_pull_next_throttles_expired_lease_scan() -> None:
+    old_interval = settings.lease_requeue_check_interval_seconds
+    settings.lease_requeue_check_interval_seconds = 5
+    try:
+        redis = FakeRedis()
+        queue = SchedulerQueue(redis_client=redis)
+        queue.enqueue(run_id="run-1")
+
+        first_pull = queue.pull_next(worker_id="w-1", leased_at_epoch=100)
+        second_pull = queue.pull_next(worker_id="w-2", leased_at_epoch=101)
+        third_pull = queue.pull_next(worker_id="w-3", leased_at_epoch=105)
+
+        assert first_pull == "run-1"
+        assert second_pull is None
+        assert third_pull is None
+        assert redis.hgetall_calls[settings.run_lease_hash_key] == 2
+    finally:
+        settings.lease_requeue_check_interval_seconds = old_interval
 
 
 def test_pull_next_respects_required_worker_labels() -> None:

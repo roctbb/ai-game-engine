@@ -136,6 +136,7 @@ import {
   type LobbyStatus,
   type StreamEnvelopeDto,
 } from '../lib/api';
+import { createResilientSSE } from '../lib/resilientSSE';
 import { useSessionStore } from '../stores/session';
 
 const router = useRouter();
@@ -295,32 +296,32 @@ function startLobbiesLiveUpdates(): void {
     return;
   }
 
-  const source = new EventSource(
-    `/api/v1/lobbies/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`
-  );
-  lobbiesEventSource = source;
-
-  source.addEventListener('agp.update', (event: MessageEvent) => {
-    try {
-      const envelope = JSON.parse(event.data) as StreamEnvelopeDto<{ items?: LobbyDto[] }>;
-      if (envelope.channel !== 'lobbies') return;
-      const items = envelope.payload?.items;
-      if (!Array.isArray(items)) return;
-      lobbies.value = items;
-    } catch {
-      // Ignore malformed stream payload; the next snapshot will repair state.
-    }
+  const sse = createResilientSSE({
+    url: `/api/v1/lobbies/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
+    onOpen(source) {
+      source.addEventListener('agp.update', (event: MessageEvent) => {
+        try {
+          const envelope = JSON.parse(event.data) as StreamEnvelopeDto<{ items?: LobbyDto[] }>;
+          if (envelope.channel !== 'lobbies') return;
+          const items = envelope.payload?.items;
+          if (!Array.isArray(items)) return;
+          lobbies.value = items;
+        } catch {
+          // Ignore malformed stream payload; the next snapshot will repair state.
+        }
+      });
+    },
+    onFallbackToPolling() {
+      startLobbiesPolling();
+    },
   });
-
-  source.onerror = () => {
-    stopLobbiesLiveUpdates();
-    startLobbiesPolling();
-  };
+  lobbiesEventSource = sse as unknown as EventSource;
 }
 
 function startLobbiesPolling(): void {
   stopLobbiesPolling();
   lobbiesPollingHandle = setInterval(async () => {
+    if (document.hidden) return;
     try {
       lobbies.value = await listLobbies();
     } catch {
@@ -337,7 +338,7 @@ function stopLobbiesPolling(): void {
 
 function stopLobbiesEventStream(): void {
   if (!lobbiesEventSource) return;
-  lobbiesEventSource.close();
+  (lobbiesEventSource as unknown as { close: () => void }).close();
   lobbiesEventSource = null;
 }
 

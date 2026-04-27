@@ -27,4 +27,4 @@ COPY games /app/games
 RUN pip install --no-cache-dir .
 
 EXPOSE 8020
-CMD ["uvicorn", "worker_service.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8020"]
+CMD ["uvicorn", "worker_service.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8020", "--no-access-log"]

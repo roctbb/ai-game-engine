@@ -1,3 +1,4 @@
+import ast
 import json
 from pathlib import Path
 
@@ -163,3 +164,46 @@ def test_repository_renderers_have_initial_preview_frames() -> None:
         preview = json.loads(preview_path.read_text(encoding="utf-8"))
         assert isinstance(preview.get("frame"), dict), manifest.id
         assert preview["frame"], manifest.id
+
+
+def test_repository_game_turn_limits_do_not_exceed_platform_cap() -> None:
+    max_allowed_turns = 500
+    limit_names = {"_MAX_TURNS", "_MAX_STEPS", "_MAX_TICKS"}
+
+    for engine_path in sorted((_repo_root() / "games").glob("*/engine.py")):
+        tree = ast.parse(engine_path.read_text(encoding="utf-8"), filename=str(engine_path))
+        constants: dict[str, int] = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name):
+                continue
+            value = _eval_int_constant(node.value, constants)
+            if value is not None:
+                constants[target.id] = value
+
+        for name in limit_names:
+            if name in constants:
+                assert constants[name] <= max_allowed_turns, f"{engine_path}:{name}={constants[name]}"
+
+
+def _eval_int_constant(node: ast.AST, constants: dict[str, int]) -> int | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
+        return node.value
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    if isinstance(node, ast.BinOp):
+        left = _eval_int_constant(node.left, constants)
+        right = _eval_int_constant(node.right, constants)
+        if left is None or right is None:
+            return None
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.FloorDiv) and right != 0:
+            return left // right
+    return None

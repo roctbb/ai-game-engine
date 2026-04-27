@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     docker_pids_limit: int = 128
     docker_tmpfs_size: str = "64m"
     execution_timeout_seconds: float = 5.0
+    engine_timeout_cap_seconds: float = 60.0
+    result_max_turns: int = 500
     request_timeout_seconds: float = 5.0
     request_max_attempts: int = 3
     retry_base_delay_ms: int = 100

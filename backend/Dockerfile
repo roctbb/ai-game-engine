@@ -5,6 +5,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY backend/pyproject.toml /app/pyproject.toml
 COPY backend/src /app/src
 COPY backend/alembic.ini /app/alembic.ini

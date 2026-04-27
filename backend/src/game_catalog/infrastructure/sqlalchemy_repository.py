@@ -60,7 +60,7 @@ class SqlAlchemyGameRepository:
             if game_row is None:
                 return None
             version_rows = session.scalars(
-                select(CatalogGameVersionOrm).where(CatalogGameVersionOrm.game_id == game_row.game_id)
+                select(CatalogGameVersionOrm).where(CatalogGameVersionOrm.game_id == game_id)
             ).all()
             return _map_game_from_rows(game_row, version_rows)
 
@@ -80,13 +80,18 @@ class SqlAlchemyGameRepository:
             if not game_rows:
                 return []
 
-            result: list[Game] = []
-            for game_row in game_rows:
-                version_rows = session.scalars(
-                    select(CatalogGameVersionOrm).where(CatalogGameVersionOrm.game_id == game_row.game_id)
-                ).all()
-                result.append(_map_game_from_rows(game_row, version_rows))
-            return result
+            game_ids = [g.game_id for g in game_rows]
+            all_versions = session.scalars(
+                select(CatalogGameVersionOrm).where(CatalogGameVersionOrm.game_id.in_(game_ids))
+            ).all()
+            versions_by_game: dict[str, list[CatalogGameVersionOrm]] = {}
+            for v in all_versions:
+                versions_by_game.setdefault(v.game_id, []).append(v)
+
+            return [
+                _map_game_from_rows(game_row, versions_by_game.get(game_row.game_id, []))
+                for game_row in game_rows
+            ]
 
 
 def _map_version_to_orm(game_id: str, version: GameVersion) -> CatalogGameVersionOrm:

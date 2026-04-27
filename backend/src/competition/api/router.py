@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
-from shared.api.sse import sse_envelope, sse_event
+from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
 from shared.kernel import ForbiddenError, InvariantViolationError
 from competition.api.schemas import (
     AdvanceCompetitionRequest,
@@ -231,7 +231,7 @@ def stream_competition(
             if await request.is_disconnected():
                 break
             competition_payload = await run_in_threadpool(_build_payload)
-            signature = json.dumps(competition_payload, ensure_ascii=False, sort_keys=True)
+            signature = sse_payload_hash(competition_payload)
             if signature != last_signature:
                 last_signature = signature
                 status = str(competition_payload.get("status", ""))

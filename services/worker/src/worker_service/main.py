@@ -24,6 +24,8 @@ _auto_poll_task: asyncio.Task[None] | None = None
 _auto_poll_stop_event: asyncio.Event | None = None
 _worker_registration_expires_at: float = 0.0
 _worker_heartbeat_expires_at: float = 0.0
+_persistent_client: httpx.Client | None = None
+_package_archive_cache: dict[str, bytes] = {}
 
 SUPPORTED_RUN_KINDS: set[str] = {"single_task", "training_match", "competition_match"}
 SUPPORTED_CODE_API_MODES: set[str] = {"script_based", "turn_based"}
@@ -42,7 +44,8 @@ def healthcheck() -> dict[str, str]:
 
 @app.on_event("startup")
 async def start_auto_poll_loop() -> None:
-    global _auto_poll_stop_event, _auto_poll_task
+    global _auto_poll_stop_event, _auto_poll_task, _persistent_client
+    _persistent_client = httpx.Client(timeout=settings.request_timeout_seconds)
     if not settings.auto_poll_enabled:
         return
     _auto_poll_stop_event = asyncio.Event()
@@ -51,7 +54,7 @@ async def start_auto_poll_loop() -> None:
 
 @app.on_event("shutdown")
 async def stop_auto_poll_loop() -> None:
-    global _auto_poll_stop_event, _auto_poll_task
+    global _auto_poll_stop_event, _auto_poll_task, _persistent_client
     if _auto_poll_stop_event is not None:
         _auto_poll_stop_event.set()
     if _auto_poll_task is not None:
@@ -60,6 +63,9 @@ async def stop_auto_poll_loop() -> None:
             await _auto_poll_task
     _auto_poll_stop_event = None
     _auto_poll_task = None
+    if _persistent_client is not None:
+        _persistent_client.close()
+        _persistent_client = None
 
 
 @app.post("/internal/workers/heartbeat")
@@ -90,7 +96,12 @@ async def _auto_poll_loop(stop_event: asyncio.Event) -> None:
 
 def _pull_and_execute_once() -> dict[str, object]:
     # MVP: worker запрашивает следующую задачу у scheduler и проходит lifecycle accepted->started->finished.
-    with httpx.Client(timeout=settings.request_timeout_seconds) as client:
+    client = _persistent_client
+    owns_client = False
+    if client is None:
+        client = httpx.Client(timeout=settings.request_timeout_seconds)
+        owns_client = True
+    try:
         try:
             registered_status = _ensure_worker_registered(client=client)
             heartbeat_status = _best_effort_send_worker_heartbeat(
@@ -205,6 +216,11 @@ def _pull_and_execute_once() -> dict[str, object]:
             "status": "completed",
             "run_id": run_id,
         }
+    finally:
+        if owns_client:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
 
 
 def _ensure_worker_registered(client: httpx.Client) -> str | None:
@@ -308,7 +324,7 @@ def _execute_manifest_game_locally(
         env=env,
         text=True,
         capture_output=True,
-        timeout=settings.execution_timeout_seconds,
+        timeout=_engine_timeout_seconds(),
         check=False,
     )
     if completed.returncode != 0:
@@ -370,7 +386,7 @@ def _execute_manifest_game_in_docker(
             command,
             input=package_archive,
             capture_output=True,
-            timeout=settings.execution_timeout_seconds,
+            timeout=_engine_timeout_seconds(),
             check=False,
         )
     except FileNotFoundError as exc:
@@ -386,7 +402,17 @@ def _execute_manifest_game_in_docker(
     return _parse_engine_payload(stdout_text)
 
 
+def _engine_timeout_seconds() -> float:
+    configured_timeout = float(settings.execution_timeout_seconds)
+    hard_cap = float(settings.engine_timeout_cap_seconds)
+    return max(0.1, min(configured_timeout, hard_cap))
+
+
 def _build_package_archive(package_dir: Path) -> bytes:
+    cache_key = str(package_dir)
+    cached = _package_archive_cache.get(cache_key)
+    if cached is not None:
+        return cached
     buffer = BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
         for path in sorted(package_dir.rglob("*")):
@@ -396,7 +422,9 @@ def _build_package_archive(package_dir: Path) -> bytes:
             if relative.parts and relative.parts[0].startswith("."):
                 continue
             archive.add(path, arcname=str(relative))
-    return buffer.getvalue()
+    result = buffer.getvalue()
+    _package_archive_cache[cache_key] = result
+    return result
 
 
 def _parse_engine_payload(stdout: str) -> dict[str, object]:
@@ -407,8 +435,99 @@ def _parse_engine_payload(stdout: str) -> dict[str, object]:
         parsed = json.loads(stripped)
         if not isinstance(parsed, dict):
             raise RuntimeError("Game engine must print a JSON object")
-        return parsed
+        return _enforce_result_turn_limit(parsed)
     raise RuntimeError("Game engine did not print result payload")
+
+
+def _enforce_result_turn_limit(payload: dict[str, object]) -> dict[str, object]:
+    max_turns = max(int(settings.result_max_turns), 0)
+    frames = payload.get("frames")
+    if not isinstance(frames, list):
+        return payload
+
+    kept_frames: list[object] = []
+    dropped_frames = 0
+    final_frame: object | None = None
+    for frame in frames:
+        if isinstance(frame, dict) and frame.get("phase") == "finished":
+            final_frame = frame
+
+        tick = _frame_tick(frame)
+        if tick is None or tick <= max_turns:
+            kept_frames.append(frame)
+        else:
+            dropped_frames += 1
+
+    if final_frame is not None and final_frame not in kept_frames:
+        if isinstance(final_frame, dict):
+            capped_final = dict(final_frame)
+            capped_final["tick"] = max_turns
+            kept_frames.append(capped_final)
+        else:
+            kept_frames.append(final_frame)
+
+    if dropped_frames <= 0:
+        return payload
+
+    payload = dict(payload)
+    payload["frames"] = kept_frames
+    payload["metrics"] = _metrics_with_turn_limit(
+        payload.get("metrics"),
+        max_turns=max_turns,
+        dropped_frames=dropped_frames,
+    )
+    payload["events"] = _events_with_turn_limit(
+        payload.get("events"),
+        max_turns=max_turns,
+        dropped_frames=dropped_frames,
+    )
+    return payload
+
+
+def _frame_tick(frame: object) -> int | None:
+    if not isinstance(frame, dict):
+        return None
+
+    tick = frame.get("tick")
+    if isinstance(tick, bool):
+        return None
+    if isinstance(tick, int):
+        return tick
+    if isinstance(tick, float) and tick.is_integer():
+        return int(tick)
+    return None
+
+
+def _metrics_with_turn_limit(raw_metrics: object, *, max_turns: int, dropped_frames: int) -> dict[str, object]:
+    metrics = dict(raw_metrics) if isinstance(raw_metrics, dict) else {}
+    metrics["turn_limit_enforced"] = True
+    metrics["max_turns"] = min(int(metrics.get("max_turns", max_turns)), max_turns)
+    metrics["result_max_turns"] = max_turns
+    metrics["dropped_frames"] = dropped_frames
+    return metrics
+
+
+def _events_with_turn_limit(raw_events: object, *, max_turns: int, dropped_frames: int) -> list[object]:
+    raw_items = raw_events if isinstance(raw_events, list) else []
+    events: list[object] = []
+    dropped_events = 0
+    for event in raw_items:
+        tick = _frame_tick(event)
+        if tick is None or tick <= max_turns:
+            events.append(event)
+        else:
+            dropped_events += 1
+
+    events.append(
+        {
+            "type": "turn_limit_enforced",
+            "tick": max_turns,
+            "message": f"Игра принудительно ограничена {max_turns} ходами.",
+            "dropped_frames": dropped_frames,
+            "dropped_events": dropped_events,
+        }
+    )
+    return events
 
 
 def _best_effort_report_failed(client: httpx.Client, run_id: str, error: str) -> bool:

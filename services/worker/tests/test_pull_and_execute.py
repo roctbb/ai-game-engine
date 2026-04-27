@@ -68,7 +68,7 @@ def _expected_maze_escape_payload(context: dict[str, Any]) -> dict[str, Any]:
         Path(__file__).resolve().parents[3] / "games" / "maze_escape" / "engine.py",
         "worker_test_maze_engine",
     )
-    return engine_module.run(context)
+    return worker_main._enforce_result_turn_limit(engine_module.run(context))
 
 
 class ScriptedHttpxClient:

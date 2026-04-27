@@ -29,7 +29,10 @@ class InMemoryRunRepository:
         lobby_id: str | None = None,
         run_kind: RunKind | None = None,
         status: RunStatus | None = None,
+        requested_by: str | None = None,
         include_result_payload: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Run]:
         runs: list[Run] = []
         for run in self._items.values():
@@ -43,8 +46,15 @@ class InMemoryRunRepository:
                 continue
             if status is not None and run.status is not status:
                 continue
+            if requested_by is not None and run.requested_by != requested_by:
+                continue
             runs.append(run if include_result_payload else replace(run, result_payload=None))
-        return sorted(runs, key=lambda item: item.created_at, reverse=True)
+        result = sorted(runs, key=lambda item: item.created_at, reverse=True)
+        if offset is not None and offset > 0:
+            result = result[offset:]
+        if limit is not None:
+            result = result[:limit]
+        return result
 
     def list_active_by_requested_by_and_kind(
         self, requested_by: str, run_kind: RunKind

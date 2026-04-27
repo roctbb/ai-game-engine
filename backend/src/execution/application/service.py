@@ -173,7 +173,10 @@ class ExecutionService:
         lobby_id: str | None = None,
         run_kind: RunKind | None = None,
         status: RunStatus | None = None,
+        requested_by: str | None = None,
         include_result_payload: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Run]:
         return self._run_repository.list_filtered(
             team_id=team_id,
@@ -181,7 +184,10 @@ class ExecutionService:
             lobby_id=lobby_id,
             run_kind=run_kind,
             status=status,
+            requested_by=requested_by,
             include_result_payload=include_result_payload,
+            limit=limit,
+            offset=offset,
         )
 
     def delete_runs(self, run_ids: list[str]) -> None:

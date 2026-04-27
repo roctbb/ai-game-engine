@@ -5,10 +5,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY services/builder/pyproject.toml /app/pyproject.toml
 COPY services/builder/src /app/src
 
 RUN pip install --no-cache-dir .
 
 EXPOSE 8030
-CMD ["uvicorn", "builder_service.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8030"]
+CMD ["uvicorn", "builder_service.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8030", "--workers", "2", "--no-access-log"]

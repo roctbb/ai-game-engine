@@ -37,7 +37,7 @@ from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 from execution.domain.result_payload import compact_result_payload as compact_run_result_payload
 from game_catalog.infrastructure.manifest_loader import GameManifest, find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
-from shared.api.sse import sse_envelope, sse_event
+from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
 from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
 
 router = APIRouter(tags=["execution"])
@@ -260,21 +260,21 @@ def list_single_task_attempts(
 ) -> list[RunResponse]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
+    effective_requested_by: str | None = None
+    if session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
+        effective_requested_by = session.nickname
+    elif requested_by is not None and requested_by.strip():
+        effective_requested_by = requested_by.strip()
     runs = container.execution.list_runs(
         game_id=game_id,
         run_kind=RunKind.SINGLE_TASK,
+        status=status,
+        requested_by=effective_requested_by,
         include_result_payload=False,
+        limit=bounded_limit,
+        offset=bounded_offset,
     )
-    runs.sort(key=lambda run: run.created_at, reverse=True)
-    if session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
-        requested = session.nickname
-        runs = [run for run in runs if run.requested_by == requested]
-    elif requested_by is not None and requested_by.strip():
-        requested = requested_by.strip()
-        runs = [run for run in runs if run.requested_by == requested]
-    if status is not None:
-        runs = [run for run in runs if run.status is status]
-    return [_run_response(run, compact_result_payload=True) for run in runs[bounded_offset : bounded_offset + bounded_limit]]
+    return [_run_response(run, compact_result_payload=True) for run in runs]
 
 
 @router.get("/single-task-attempts/{attempt_id}", response_model=RunResponse)
@@ -332,13 +332,67 @@ def list_runs(
     if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
         return [_run_response(run, compact_result_payload=True) for run in runs]
 
+    # Batch access check: preload teams and lobby memberships to avoid N+1
+    user_id = session.nickname
+    user_team_ids: set[str] = set()
+    user_lobby_ids: set[str] = set()
+
+    # Collect unique team_ids and lobby_ids from runs
+    needed_team_ids = {run.team_id for run in runs}
+    needed_lobby_ids = {run.lobby_id for run in runs if run.lobby_id}
+
+    # Batch: check which teams the user captains
+    for tid in needed_team_ids:
+        try:
+            team = container.team_workspace.get_team(tid)
+            if team.captain_user_id == user_id:
+                user_team_ids.add(tid)
+        except NotFoundError:
+            pass
+
+    # Batch: check which lobbies the user is a member of
+    for lid in needed_lobby_ids:
+        try:
+            if container.training_lobby.find_user_team_in_lobby(lobby_id=lid, user_id=user_id):
+                user_lobby_ids.add(lid)
+        except NotFoundError:
+            pass
+
+    # Batch: check competition entrants for competition_match runs
+    competition_lobby_ids = {
+        run.lobby_id for run in runs
+        if run.run_kind is RunKind.COMPETITION_MATCH and run.lobby_id
+    }
+    user_competition_ids: set[str] = set()
+    for comp_id in competition_lobby_ids:
+        try:
+            competition = container.competition.get_competition(comp_id)
+            user_teams = container.team_workspace.list_teams_by_game_and_captain(
+                game_id=competition.game_id if hasattr(competition, 'game_id') else runs[0].game_id,
+                captain_user_id=user_id,
+            )
+            if any(t.team_id in competition.entrants for t in user_teams):
+                user_competition_ids.add(comp_id)
+            elif competition.lobby_id and competition.lobby_id in user_lobby_ids:
+                user_competition_ids.add(comp_id)
+        except NotFoundError:
+            pass
+
     visible_runs: list[Run] = []
     for run in runs:
-        try:
-            ensure_can_view_run(container=container, session=session, run=run)
-        except ForbiddenError:
+        if run.requested_by == user_id:
+            visible_runs.append(run)
             continue
-        visible_runs.append(run)
+        if run.team_id in user_team_ids:
+            visible_runs.append(run)
+            continue
+        if run.run_kind is RunKind.TRAINING_MATCH and run.lobby_id and run.lobby_id in user_lobby_ids:
+            visible_runs.append(run)
+            continue
+        if run.run_kind is RunKind.COMPETITION_MATCH and run.lobby_id and run.lobby_id in user_competition_ids:
+            visible_runs.append(run)
+            continue
+
     return [_run_response(run, compact_result_payload=True) for run in visible_runs]
 
 
@@ -599,7 +653,7 @@ def stream_run(
             if await request.is_disconnected():
                 break
             payload, status, current_run_id = await run_in_threadpool(_build_payload)
-            signature = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            signature = sse_payload_hash(payload)
             if signature != last_payload_signature:
                 last_payload_signature = signature
                 yield sse_event(

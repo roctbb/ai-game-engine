@@ -533,6 +533,7 @@ import {
   type TeamDto,
   type TieBreakPolicy,
 } from '../lib/api';
+import { createResilientSSE } from '../lib/resilientSSE';
 import { useSessionStore } from '../stores/session';
 
 interface CompetitionTeamStatRow {
@@ -857,9 +858,6 @@ function startCompetitionLiveUpdates(competitionId: string): void {
     startCompetitionPolling(competitionId);
     return;
   }
-  competitionEventSource = new EventSource(
-    `/api/v1/competitions/${encodeURIComponent(competitionId)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
-  );
   competitionLiveMode.value = 'sse';
 
   const applyCompetitionSnapshot = async (payload: CompetitionDto | null): Promise<void> => {
@@ -869,44 +867,50 @@ function startCompetitionLiveUpdates(competitionId: string): void {
     await refreshCompetitionRelatedData({ reloadCompetition: false });
   };
 
-  competitionEventSource.addEventListener('agp.update', (event: MessageEvent) => {
-    try {
-      const envelope = JSON.parse(event.data) as StreamEnvelopeDto<CompetitionDto>;
-      if (envelope.channel !== 'competition') return;
-      void applyCompetitionSnapshot(envelope.payload ?? null);
-    } catch {
-      // ignore malformed stream payload
-    }
-  });
-
-  competitionEventSource.addEventListener('competition', (event: MessageEvent) => {
-    try {
-      void applyCompetitionSnapshot(JSON.parse(event.data) as CompetitionDto);
-    } catch {
-      // ignore malformed legacy payload
-    }
-  });
-
   const onTerminal = (): void => {
     stopCompetitionLiveUpdates();
   };
-  competitionEventSource.addEventListener('agp.terminal', onTerminal);
-  competitionEventSource.addEventListener('terminal', onTerminal);
 
-  competitionEventSource.onerror = () => {
-    if (competition.value?.status === 'finished') {
-      stopCompetitionLiveUpdates();
-      return;
-    }
-    stopCompetitionLiveUpdates();
-    startCompetitionPolling(competitionId);
-  };
+  const sse = createResilientSSE({
+    url: `/api/v1/competitions/${encodeURIComponent(competitionId)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
+    onOpen(source) {
+      source.addEventListener('agp.update', (event: MessageEvent) => {
+        try {
+          const envelope = JSON.parse(event.data) as StreamEnvelopeDto<CompetitionDto>;
+          if (envelope.channel !== 'competition') return;
+          void applyCompetitionSnapshot(envelope.payload ?? null);
+        } catch {
+          // ignore malformed stream payload
+        }
+      });
+
+      source.addEventListener('competition', (event: MessageEvent) => {
+        try {
+          void applyCompetitionSnapshot(JSON.parse(event.data) as CompetitionDto);
+        } catch {
+          // ignore malformed legacy payload
+        }
+      });
+
+      source.addEventListener('agp.terminal', onTerminal);
+      source.addEventListener('terminal', onTerminal);
+    },
+    onFallbackToPolling() {
+      if (competition.value?.status === 'finished') {
+        stopCompetitionLiveUpdates();
+        return;
+      }
+      startCompetitionPolling(competitionId);
+    },
+  });
+  competitionEventSource = sse as unknown as EventSource;
 }
 
 function startCompetitionPolling(competitionId: string): void {
   stopCompetitionPolling();
   competitionLiveMode.value = 'polling';
   competitionPollingHandle = setInterval(async () => {
+    if (document.hidden) return;
     try {
       if (!competition.value || competition.value.competition_id !== competitionId) {
         competition.value = await getCompetition(competitionId);
@@ -929,7 +933,7 @@ function stopCompetitionPolling(): void {
 
 function stopCompetitionEventStream(): void {
   if (!competitionEventSource) return;
-  competitionEventSource.close();
+  (competitionEventSource as unknown as { close: () => void }).close();
   competitionEventSource = null;
 }
 

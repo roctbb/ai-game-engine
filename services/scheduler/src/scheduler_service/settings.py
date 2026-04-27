@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     run_lease_hash_key: str = "agp:runs:leases"
     run_requirements_hash_key: str = "agp:runs:requirements"
     lease_ttl_seconds: int = 30
+    lease_requeue_check_interval_seconds: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

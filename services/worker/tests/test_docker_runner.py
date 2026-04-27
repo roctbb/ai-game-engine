@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tarfile
 from io import BytesIO
 from pathlib import Path
@@ -7,7 +8,13 @@ from typing import Any
 
 import pytest
 
-from worker_service.main import _build_package_archive, _execute_manifest_game, settings
+from worker_service.main import (
+    _build_package_archive,
+    _engine_timeout_seconds,
+    _execute_manifest_game,
+    _parse_engine_payload,
+    settings,
+)
 
 
 def test_build_package_archive_contains_game_files(tmp_path: Path) -> None:
@@ -46,6 +53,7 @@ def test_execute_manifest_game_uses_docker_runner_with_limits(monkeypatch: Any, 
     settings.docker_pids_limit = 256
     settings.docker_tmpfs_size = "96m"
     settings.execution_timeout_seconds = 3.0
+    settings.engine_timeout_cap_seconds = 60.0
 
     captured: dict[str, Any] = {}
 
@@ -120,3 +128,50 @@ def test_execute_manifest_game_reports_missing_docker_binary(monkeypatch: Any, t
                 "engine_entrypoint": "engine.py",
             }
         )
+
+
+def test_parse_engine_payload_enforces_result_turn_limit() -> None:
+    old_limit = settings.result_max_turns
+    settings.result_max_turns = 500
+    try:
+        payload = {
+            "status": "finished",
+            "metrics": {"turns": 700},
+            "frames": [
+                {"tick": 0, "phase": "running", "frame": {"value": 0}},
+                {"tick": 500, "phase": "running", "frame": {"value": 500}},
+                {"tick": 501, "phase": "running", "frame": {"value": 501}},
+                {"tick": 700, "phase": "finished", "frame": {"value": 700}},
+            ],
+            "events": [
+                {"type": "kept", "tick": 500},
+                {"type": "dropped", "tick": 501},
+            ],
+        }
+
+        parsed = _parse_engine_payload(json.dumps(payload))
+
+        assert [frame["tick"] for frame in parsed["frames"]] == [0, 500, 500]
+        assert parsed["frames"][-1]["phase"] == "finished"
+        assert parsed["metrics"]["turn_limit_enforced"] is True
+        assert parsed["metrics"]["result_max_turns"] == 500
+        assert parsed["metrics"]["dropped_frames"] == 2
+        assert [event["type"] for event in parsed["events"]] == ["kept", "turn_limit_enforced"]
+        assert parsed["events"][-1]["dropped_events"] == 1
+    finally:
+        settings.result_max_turns = old_limit
+
+
+def test_engine_timeout_is_capped_to_one_minute() -> None:
+    old_timeout = settings.execution_timeout_seconds
+    old_cap = settings.engine_timeout_cap_seconds
+    try:
+        settings.execution_timeout_seconds = 120.0
+        settings.engine_timeout_cap_seconds = 60.0
+        assert _engine_timeout_seconds() == 60.0
+
+        settings.execution_timeout_seconds = 20.0
+        assert _engine_timeout_seconds() == 20.0
+    finally:
+        settings.execution_timeout_seconds = old_timeout
+        settings.engine_timeout_cap_seconds = old_cap

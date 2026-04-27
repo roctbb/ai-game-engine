@@ -260,6 +260,7 @@ import {
   type StreamEnvelopeDto,
 } from '../lib/api';
 import { sanitizeForPostMessage } from '../lib/postMessage';
+import { createResilientSSE } from '../lib/resilientSSE';
 import { useSessionStore } from '../stores/session';
 
 interface RendererLogItem {
@@ -1441,10 +1442,6 @@ function startRunLiveUpdates(runId: string): void {
     return;
   }
 
-  const source = new EventSource(
-    `/api/v1/runs/${encodeURIComponent(runId)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
-  );
-  runEventSource = source;
   liveMode.value = 'sse';
   appendRendererLog('info', 'Поток обновлений подключен');
 
@@ -1456,24 +1453,6 @@ function startRunLiveUpdates(runId: string): void {
     run.value = candidate;
     sendRendererStateAndResult();
   };
-
-  source.addEventListener('agp.update', (event: MessageEvent) => {
-    try {
-      const envelope = JSON.parse(event.data) as StreamEnvelopeDto<RunDto>;
-      if (envelope.channel !== 'run') return;
-      applyRunUpdate(envelope.payload ?? null);
-    } catch {
-      appendRendererLog('warn', 'Некорректное сообщение обновления из потока');
-    }
-  });
-
-  source.addEventListener('run', (event: MessageEvent) => {
-    try {
-      applyRunUpdate(JSON.parse(event.data) as RunDto);
-    } catch {
-      appendRendererLog('warn', 'Некорректное старое сообщение запуска из потока');
-    }
-  });
 
   const handleTerminal = async (statusFromEnvelope?: string): Promise<void> => {
     if (run.value && statusFromEnvelope) {
@@ -1489,29 +1468,51 @@ function startRunLiveUpdates(runId: string): void {
     stopRunLiveUpdates();
   };
 
-  source.addEventListener('agp.terminal', (event: MessageEvent) => {
-    try {
-      const envelope = JSON.parse(event.data) as StreamEnvelopeDto<Record<string, unknown>>;
-      if (envelope.channel !== 'run') return;
-      void handleTerminal(envelope.status);
-    } catch {
-      void handleTerminal();
-    }
-  });
+  const sse = createResilientSSE({
+    url: `/api/v1/runs/${encodeURIComponent(runId)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
+    onOpen(source) {
+      source.addEventListener('agp.update', (event: MessageEvent) => {
+        try {
+          const envelope = JSON.parse(event.data) as StreamEnvelopeDto<RunDto>;
+          if (envelope.channel !== 'run') return;
+          applyRunUpdate(envelope.payload ?? null);
+        } catch {
+          appendRendererLog('warn', 'Некорректное сообщение обновления из потока');
+        }
+      });
 
-  source.addEventListener('terminal', () => {
-    void handleTerminal();
-  });
+      source.addEventListener('run', (event: MessageEvent) => {
+        try {
+          applyRunUpdate(JSON.parse(event.data) as RunDto);
+        } catch {
+          appendRendererLog('warn', 'Некорректное старое сообщение запуска из потока');
+        }
+      });
 
-  source.onerror = () => {
-    if (run.value && isTerminalStatus(run.value.status)) {
-      stopRunLiveUpdates();
-      return;
-    }
-    appendRendererLog('warn', 'Поток обновлений отключился, включен периодический опрос');
-    stopRunLiveUpdates();
-    startRunPolling(runId);
-  };
+      source.addEventListener('agp.terminal', (event: MessageEvent) => {
+        try {
+          const envelope = JSON.parse(event.data) as StreamEnvelopeDto<Record<string, unknown>>;
+          if (envelope.channel !== 'run') return;
+          void handleTerminal(envelope.status);
+        } catch {
+          void handleTerminal();
+        }
+      });
+
+      source.addEventListener('terminal', () => {
+        void handleTerminal();
+      });
+    },
+    onFallbackToPolling() {
+      if (run.value && isTerminalStatus(run.value.status)) {
+        stopRunLiveUpdates();
+        return;
+      }
+      appendRendererLog('warn', 'Поток обновлений отключился, включен периодический опрос');
+      startRunPolling(runId);
+    },
+  });
+  runEventSource = sse as unknown as EventSource;
 }
 
 function startRunPolling(runId: string): void {
@@ -1547,6 +1548,7 @@ function startRunPolling(runId: string): void {
   };
   void poll();
   runPollingHandle = setInterval(() => {
+    if (document.hidden) return;
     void poll();
   }, 1200);
 }
@@ -1561,7 +1563,7 @@ function stopRunPolling(): void {
 
 function stopRunEventStream(): void {
   if (!runEventSource) return;
-  runEventSource.close();
+  (runEventSource as unknown as { close: () => void }).close();
   runEventSource = null;
 }
 

@@ -23,7 +23,10 @@ class RunRepository(Protocol):
         lobby_id: str | None = None,
         run_kind: RunKind | None = None,
         status: RunStatus | None = None,
+        requested_by: str | None = None,
         include_result_payload: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Run]:
         ...
 

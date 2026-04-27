@@ -885,6 +885,7 @@ import {
   type TeamWorkspaceDto,
   type TieBreakPolicy,
 } from '../lib/api';
+import { createResilientSSE } from '../lib/resilientSSE';
 import { useSessionStore } from '../stores/session';
 
 const ParticipantColumn = defineComponent({
@@ -3167,24 +3168,25 @@ function startLiveUpdates(): void {
     startPolling();
     return;
   }
-  const source = new EventSource(
-    `/api/v1/lobbies/${encodeURIComponent(lobby.value.lobby_id)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`
-  );
-  lobbyEventSource = source;
-  source.addEventListener('agp.update', (event: MessageEvent) => {
-    try {
-      const envelope = JSON.parse(event.data) as StreamEnvelopeDto<LobbyDto>;
-      if (envelope.channel !== 'lobby' || !envelope.payload) return;
-      lobby.value = envelope.payload;
-      refreshTrainingRunsWhenChanged(lobby.value);
-    } catch {
-      // Keep last valid snapshot.
-    }
+  const sse = createResilientSSE({
+    url: `/api/v1/lobbies/${encodeURIComponent(lobby.value.lobby_id)}/stream?poll_interval_ms=1000&session_id=${encodeURIComponent(sessionStore.sessionId)}`,
+    onOpen(source) {
+      source.addEventListener('agp.update', (event: MessageEvent) => {
+        try {
+          const envelope = JSON.parse(event.data) as StreamEnvelopeDto<LobbyDto>;
+          if (envelope.channel !== 'lobby' || !envelope.payload) return;
+          lobby.value = envelope.payload;
+          refreshTrainingRunsWhenChanged(lobby.value);
+        } catch {
+          // Keep last valid snapshot.
+        }
+      });
+    },
+    onFallbackToPolling() {
+      startPolling();
+    },
   });
-  source.onerror = () => {
-    stopLiveUpdates();
-    startPolling();
-  };
+  lobbyEventSource = sse as unknown as EventSource;
 }
 
 function startCompetitionPolling(): void {
@@ -3213,7 +3215,7 @@ function startPolling(): void {
 
 function stopLiveUpdates(): void {
   if (lobbyEventSource) {
-    lobbyEventSource.close();
+    (lobbyEventSource as unknown as { close: () => void }).close();
     lobbyEventSource = null;
   }
   if (pollingHandle) {

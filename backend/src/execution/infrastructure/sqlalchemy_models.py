@@ -13,6 +13,8 @@ class RunOrm(Base):
     __tablename__ = "execution_runs"
     __table_args__ = (
         Index("ix_execution_runs_lobby_kind_created_at", "lobby_id", "run_kind", "created_at"),
+        Index("ix_execution_runs_requested_kind_status", "requested_by", "run_kind", "status"),
+        Index("ix_execution_runs_game_kind_created_at", "game_id", "run_kind", "created_at"),
     )
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)

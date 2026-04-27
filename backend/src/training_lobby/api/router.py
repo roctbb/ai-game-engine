@@ -15,7 +15,7 @@ from competition.application.service import CreateCompetitionInput
 from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionStatus, TieBreakPolicy
 from game_catalog.infrastructure.manifest_loader import find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
-from shared.api.sse import sse_envelope, sse_event
+from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
 from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
 from training_lobby.api.schemas import (
     CreateLobbyRequest,
@@ -416,7 +416,7 @@ def stream_lobbies(
             if await request.is_disconnected():
                 break
             lobbies_payload = await run_in_threadpool(_build_payload)
-            signature = json.dumps(lobbies_payload, ensure_ascii=False, sort_keys=True)
+            signature = sse_payload_hash(lobbies_payload)
             if signature != last_signature:
                 last_signature = signature
                 yield sse_event(
@@ -549,25 +549,31 @@ def stream_lobby(
     async def _events():
         emitted = 0
         last_signature = ""
+        _matchmaking_kicked = False
 
         def _build_payload() -> dict[str, object]:
+            nonlocal _matchmaking_kicked
             container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
             live_view = container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
-            live_view = _kick_training_matchmaking_from_live_view_if_needed(
-                container=container,
-                live_view=live_view,
-                viewer_user_id=session.nickname,
-                requested_by="system",
-            )
+            # Only attempt matchmaking once per state change, not every tick
+            if not _matchmaking_kicked:
+                live_view = _kick_training_matchmaking_from_live_view_if_needed(
+                    container=container,
+                    live_view=live_view,
+                    viewer_user_id=session.nickname,
+                    requested_by="system",
+                )
+                _matchmaking_kicked = True
             return _to_response(live_view).model_dump(mode="json")
 
         while True:
             if await request.is_disconnected():
                 break
             lobby_payload = await run_in_threadpool(_build_payload)
-            signature = json.dumps(lobby_payload, ensure_ascii=False, sort_keys=True)
+            signature = sse_payload_hash(lobby_payload)
             if signature != last_signature:
                 last_signature = signature
+                _matchmaking_kicked = False  # state changed, allow matchmaking on next tick
                 status = str(lobby_payload.get("status", ""))
                 yield sse_event(
                     "agp.update",

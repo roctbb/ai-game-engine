@@ -68,7 +68,10 @@ class SqlAlchemyRunRepository:
         lobby_id: str | None = None,
         run_kind: RunKind | None = None,
         status: RunStatus | None = None,
+        requested_by: str | None = None,
         include_result_payload: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Run]:
         statement = select(RunOrm).order_by(desc(RunOrm.created_at))
         if team_id is not None:
@@ -81,6 +84,8 @@ class SqlAlchemyRunRepository:
             statement = statement.where(RunOrm.run_kind == run_kind.value)
         if status is not None:
             statement = statement.where(RunOrm.status == status.value)
+        if requested_by is not None:
+            statement = statement.where(RunOrm.requested_by == requested_by)
         if not include_result_payload:
             statement = statement.options(
                 load_only(
@@ -103,6 +108,10 @@ class SqlAlchemyRunRepository:
                     RunOrm.error_message,
                 )
             )
+        if offset is not None and offset > 0:
+            statement = statement.offset(offset)
+        if limit is not None:
+            statement = statement.limit(limit)
         with self._session_factory() as session:
             rows = session.scalars(statement).all()
             return [
