@@ -1375,9 +1375,6 @@ const displayedGameRunId = computed(() => currentGameRunId.value || (activeCompe
 const displayedGameWatchKeySource = computed(() => [
   displayedGameRunId.value,
   sessionStore.sessionId,
-  lobby.value?.cycle_frame_ms ?? 500,
-  lobby.value?.replay_started_at ?? '',
-  lobby.value?.cycle_replay_frame_count ?? 0,
   canShowDisplayedRunPrint.value ? 'print' : 'no-print',
 ].join('|'));
 function buildDisplayedGameWatchUrl(runId: string): string {
