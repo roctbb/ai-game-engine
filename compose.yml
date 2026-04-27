@@ -61,7 +61,7 @@ services:
       SESSION_REPOSITORY_AUTO_CREATE_TABLES: "true"
       GAMES_ROOT: /app/games
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
-      BACKEND_WORKERS: "16"
+      BACKEND_WORKERS: "8"
     ports:
       - "8000:8000"
     depends_on:
