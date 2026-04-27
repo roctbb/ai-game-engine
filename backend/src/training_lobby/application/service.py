@@ -178,8 +178,13 @@ class TrainingLobbyService:
         self._matchmaking_locks: dict[str, Lock] = {}
         self._participant_stats_cache: dict[
             str,
-            tuple[tuple[int, object | None], tuple[LobbyParticipantStats, ...]],
+            tuple[object, tuple[LobbyParticipantStats, ...]],
         ] = {}
+        self._archived_match_groups_cache: dict[
+            str,
+            tuple[object, tuple[LobbyMatchGroupView, ...]],
+        ] = {}
+        self._finished_runs_payload_cache: dict[str, tuple[object, list[Run]]] = {}
         self._viewer_last_seen_by_lobby: dict[str, dict[str, datetime]] = {}
 
     def create_lobby(self, data: CreateLobbyInput) -> Lobby:
@@ -266,7 +271,7 @@ class TrainingLobbyService:
             lobby.mark_ready(team_id=team_id, ready=False)
         if canceled_run_ids:
             self._remove_canceled_groups_from_lobby(lobby=lobby, canceled_run_ids=canceled_run_ids)
-            self._participant_stats_cache.pop(lobby_id, None)
+            self._clear_lobby_derived_caches(lobby_id)
             self._repository.save(lobby)
         elif team_id in lobby.teams:
             self._repository.save(lobby)
@@ -278,7 +283,7 @@ class TrainingLobbyService:
         runs = self._execution.list_runs(
             lobby_id=lobby_id,
             run_kind=RunKind.TRAINING_MATCH,
-            include_result_payload=True,
+            include_result_payload=False,
         )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
@@ -345,7 +350,7 @@ class TrainingLobbyService:
             for run_id in group.run_ids
         ) or tuple(run.run_id for run in sorted(active_runs, key=lambda item: item.created_at, reverse=True))
         participant_stats = self._collect_participant_stats_cached(lobby=lobby, runs=finished_runs)
-        archived_match_groups = self._build_archived_match_group_views(
+        archived_match_groups = self._build_archived_match_group_views_cached(
             lobby=lobby,
             runs=[run for run in finished_runs if run.run_id not in current_group_run_ids],
             limit=100,
@@ -412,7 +417,7 @@ class TrainingLobbyService:
         lobby.leave_team(team_id)
         if canceled_run_ids:
             self._remove_canceled_groups_from_lobby(lobby=lobby, canceled_run_ids=canceled_run_ids)
-            self._participant_stats_cache.pop(lobby_id, None)
+            self._clear_lobby_derived_caches(lobby_id)
         self._repository.save(lobby)
         return lobby
 
@@ -468,7 +473,7 @@ class TrainingLobbyService:
             raise InvariantViolationError("Соревнование можно запускать только в training-лобби")
         self._cancel_active_training_runs(lobby_id=lobby_id, message="competition_started")
         lobby.set_last_scheduled_runs([])
-        self._participant_stats_cache.pop(lobby_id, None)
+        self._clear_lobby_derived_caches(lobby_id)
         self._repository.save(lobby)
         return lobby
 
@@ -501,7 +506,7 @@ class TrainingLobbyService:
         self._cancel_active_training_runs(lobby_id=lobby_id, message="lobby_deleted")
         self._execution.delete_lobby_runs(lobby_id=lobby.lobby_id, run_kind=RunKind.TRAINING_MATCH)
         self._viewer_last_seen_by_lobby.pop(lobby_id, None)
-        self._participant_stats_cache.pop(lobby_id, None)
+        self._clear_lobby_derived_caches(lobby_id)
         self._repository.delete(lobby_id)
 
     def cleanup_old_training_runs(self, lobby_id: str) -> list[str]:
@@ -516,7 +521,7 @@ class TrainingLobbyService:
             exclude_run_ids=excluded_run_ids,
         )
         if deleted:
-            self._participant_stats_cache.pop(lobby_id, None)
+            self._clear_lobby_derived_caches(lobby_id)
         return deleted
 
     def _cancel_active_training_runs(self, lobby_id: str, message: str) -> None:
@@ -1083,7 +1088,7 @@ class TrainingLobbyService:
     ) -> tuple[LobbyMatchGroupView, ...]:
         if not runs:
             return ()
-        runs_with_payload = [self._ensure_payload(run) for run in runs]
+        runs_with_payload = self._finished_runs_with_payload_cached(lobby=lobby, runs=runs)
         groups = self._archived_match_run_id_groups(lobby=lobby, runs=runs_with_payload)
         runs_by_id = {run.run_id: run for run in runs_with_payload}
         return tuple(
@@ -1098,6 +1103,22 @@ class TrainingLobbyService:
             )
             for index, group in enumerate(groups[:limit])
         )
+
+    def _build_archived_match_group_views_cached(
+        self,
+        *,
+        lobby: Lobby,
+        runs: list[Run],
+        limit: int,
+    ) -> tuple[LobbyMatchGroupView, ...]:
+        signature = (self._finished_runs_signature(lobby=lobby, runs=runs), limit)
+        cached = self._archived_match_groups_cache.get(lobby.lobby_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+
+        groups = self._build_archived_match_group_views(lobby=lobby, runs=runs, limit=limit)
+        self._archived_match_groups_cache[lobby.lobby_id] = (signature, groups)
+        return groups
 
     def _build_match_group_view(
         self,
@@ -1281,12 +1302,19 @@ class TrainingLobbyService:
         return 1
 
     def _collect_participant_stats_cached(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
-        latest_finished_at = max(
-            (run.finished_at for run in runs if isinstance(run.finished_at, datetime)),
-            default=None,
-        )
-        signature = (len(runs), latest_finished_at, tuple(sorted(lobby.teams.keys())))
+        signature = self._finished_runs_signature(lobby=lobby, runs=runs)
         cached = self._participant_stats_cache.get(lobby.lobby_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+
+        runs_with_payload = self._finished_runs_with_payload_cached(lobby=lobby, runs=runs)
+        stats = self._collect_participant_stats(lobby=lobby, runs=runs_with_payload)
+        self._participant_stats_cache[lobby.lobby_id] = (signature, stats)
+        return stats
+
+    def _finished_runs_with_payload_cached(self, *, lobby: Lobby, runs: list[Run]) -> list[Run]:
+        signature = self._finished_runs_signature(lobby=lobby, runs=runs)
+        cached = self._finished_runs_payload_cache.get(lobby.lobby_id)
         if cached is not None and cached[0] == signature:
             return cached[1]
 
@@ -1296,9 +1324,28 @@ class TrainingLobbyService:
             else self._execution.get_run(run.run_id)
             for run in runs
         ]
-        stats = self._collect_participant_stats(lobby=lobby, runs=runs_with_payload)
-        self._participant_stats_cache[lobby.lobby_id] = (signature, stats)
-        return stats
+        self._finished_runs_payload_cache[lobby.lobby_id] = (signature, runs_with_payload)
+        return runs_with_payload
+
+    def _finished_runs_signature(self, *, lobby: Lobby, runs: list[Run]) -> object:
+        return (
+            tuple(
+                sorted(
+                    (
+                        run.run_id,
+                        run.status.value,
+                        _datetime_or_none(run.finished_at),
+                    )
+                    for run in runs
+                )
+            ),
+            tuple(sorted(lobby.teams.keys())),
+        )
+
+    def _clear_lobby_derived_caches(self, lobby_id: str) -> None:
+        self._participant_stats_cache.pop(lobby_id, None)
+        self._archived_match_groups_cache.pop(lobby_id, None)
+        self._finished_runs_payload_cache.pop(lobby_id, None)
 
     def _collect_participant_stats(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
         wins_by_team: dict[str, int] = {}

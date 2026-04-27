@@ -10,10 +10,16 @@ class ReplayRepository(Protocol):
     def save(self, replay: ReplayRecord) -> None:
         ...
 
-    def get_by_run_id(self, run_id: str) -> ReplayRecord | None:
+    def get_by_run_id(self, run_id: str, *, include_content: bool = True) -> ReplayRecord | None:
         ...
 
-    def list(self, game_id: str | None = None, run_kind: RunKind | None = None, limit: int = 50) -> list[ReplayRecord]:
+    def list(
+        self,
+        game_id: str | None = None,
+        run_kind: RunKind | None = None,
+        limit: int = 50,
+        include_content: bool = True,
+    ) -> list[ReplayRecord]:
         ...
 
     def delete_by_run_ids(self, run_ids: list[str]) -> None:

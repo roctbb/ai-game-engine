@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import ClassVar, Literal
 
 from execution.application.service import ExecutionService
 from execution.domain.model import RunKind, RunStatus
@@ -97,6 +97,10 @@ class _UserAggregate:
 
 
 class SingleTaskProgressService:
+    _attempts_cache: ClassVar[
+        dict[str, tuple[object, tuple[SingleTaskAttemptRecord, ...]]]
+    ] = {}
+
     def __init__(self, game_catalog: GameCatalogService, execution: ExecutionService) -> None:
         self._game_catalog = game_catalog
         self._execution = execution
@@ -217,11 +221,32 @@ class SingleTaskProgressService:
         return SolvedSummary(total_single_tasks=total_single_tasks, entries=tuple(entries))
 
     def _collect_attempts(self, game_id: str | None) -> list[SingleTaskAttemptRecord]:
-        runs = self._execution.list_runs(game_id=game_id, run_kind=RunKind.SINGLE_TASK)
+        runs = self._execution.list_runs(
+            game_id=game_id,
+            run_kind=RunKind.SINGLE_TASK,
+            include_result_payload=False,
+        )
+        finished_runs = [run for run in runs if run.status == RunStatus.FINISHED]
+        cache_key = game_id or "__all__"
+        signature = tuple(
+            sorted(
+                (
+                    run.run_id,
+                    run.game_id,
+                    run.requested_by,
+                    run.finished_at,
+                )
+                for run in finished_runs
+            )
+        )
+        cached = self._attempts_cache.get(cache_key)
+        if cached is not None and cached[0] == signature:
+            return list(cached[1])
+
         attempts: list[SingleTaskAttemptRecord] = []
-        for run in runs:
-            if run.status != RunStatus.FINISHED:
-                continue
+        for run in finished_runs:
+            if run.result_payload is None:
+                run = self._execution.get_run(run.run_id)
             payload = run.result_payload
             if not isinstance(payload, dict):
                 continue
@@ -239,6 +264,7 @@ class SingleTaskProgressService:
                     score=score,
                 )
             )
+        self._attempts_cache[cache_key] = (signature, tuple(attempts))
         return attempts
 
     @staticmethod

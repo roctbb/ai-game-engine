@@ -160,8 +160,11 @@ class ExecutionService:
         self._run_replay_recorder.record_run(run)
         return run
 
-    def get_run(self, run_id: str) -> Run:
-        return require_run(self._run_repository.get(run_id), run_id)
+    def get_run(self, run_id: str, *, include_result_payload: bool = True) -> Run:
+        return require_run(
+            self._run_repository.get(run_id, include_result_payload=include_result_payload),
+            run_id,
+        )
 
     def list_runs(
         self,

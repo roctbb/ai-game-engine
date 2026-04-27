@@ -23,10 +23,37 @@ class SqlAlchemyRunRepository:
         with self._session_factory.begin() as session:
             session.merge(_map_run_to_orm(run))
 
-    def get(self, run_id: str) -> Run | None:
+    def get(self, run_id: str, *, include_result_payload: bool = True) -> Run | None:
         with self._session_factory() as session:
-            row = session.get(RunOrm, run_id)
-            return None if row is None else _map_run_from_orm(row)
+            if include_result_payload:
+                row = session.get(RunOrm, run_id)
+            else:
+                row = session.scalar(
+                    select(RunOrm)
+                    .where(RunOrm.run_id == run_id)
+                    .options(
+                        load_only(
+                            RunOrm.run_id,
+                            RunOrm.team_id,
+                            RunOrm.game_id,
+                            RunOrm.requested_by,
+                            RunOrm.run_kind,
+                            RunOrm.lobby_id,
+                            RunOrm.target_version_id,
+                            RunOrm.status,
+                            RunOrm.snapshot_id,
+                            RunOrm.snapshot_version_id,
+                            RunOrm.revisions_by_slot,
+                            RunOrm.worker_id,
+                            RunOrm.created_at,
+                            RunOrm.queued_at,
+                            RunOrm.started_at,
+                            RunOrm.finished_at,
+                            RunOrm.error_message,
+                        )
+                    )
+                )
+            return None if row is None else _map_run_from_orm(row, include_result_payload=include_result_payload)
 
     def list(self) -> list[Run]:
         with self._session_factory() as session:

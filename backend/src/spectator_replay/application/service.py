@@ -51,8 +51,11 @@ class SpectatorReplayService:
             )
         self._repository.save(current)
 
-    def get_by_run_id(self, run_id: str) -> ReplayRecord:
-        return require_replay(self._repository.get_by_run_id(run_id), run_id=run_id)
+    def get_by_run_id(self, run_id: str, *, include_content: bool = True) -> ReplayRecord:
+        return require_replay(
+            self._repository.get_by_run_id(run_id, include_content=include_content),
+            run_id=run_id,
+        )
 
     def list_replays(self, query: ListReplaysQuery) -> list[ReplayRecord]:
         bounded_limit = max(1, min(query.limit, 200))
@@ -60,6 +63,7 @@ class SpectatorReplayService:
             game_id=query.game_id,
             run_kind=query.run_kind,
             limit=bounded_limit,
+            include_content=False,
         )
 
     def delete_runs(self, run_ids: list[str]) -> None:

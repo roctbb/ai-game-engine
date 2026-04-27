@@ -1039,7 +1039,7 @@ function startRunPolling(runId: string): void {
     try {
       do {
         pendingRunPoll = false;
-        const nextRun = await getRun(runId);
+        const nextRun = await getRun(runId, { compactPayload: true });
         if (token !== runPollingToken) return;
         if (nextRun.run_id !== runId) return;
         currentRun.value = nextRun;

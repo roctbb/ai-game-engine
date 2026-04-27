@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, Request
@@ -68,6 +69,23 @@ def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunRespo
         started_at=run.started_at,
         finished_at=run.finished_at,
     )
+
+
+def _attach_replay_summary_payload_if_available(
+    *,
+    container: ServiceContainer,
+    run: Run,
+) -> Run:
+    if run.result_payload is not None or run.status not in _TERMINAL_RUN_STATUSES:
+        return run
+    try:
+        replay = container.spectator_replay.get_by_run_id(
+            run.run_id,
+            include_content=False,
+        )
+    except NotFoundError:
+        return run
+    return replace(run, result_payload=dict(replay.summary))
 
 
 def _worker_response(worker: WorkerNode) -> WorkerResponse:
@@ -242,7 +260,11 @@ def list_single_task_attempts(
 ) -> list[RunResponse]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
-    runs = container.execution.list_runs(game_id=game_id, run_kind=RunKind.SINGLE_TASK)
+    runs = container.execution.list_runs(
+        game_id=game_id,
+        run_kind=RunKind.SINGLE_TASK,
+        include_result_payload=False,
+    )
     runs.sort(key=lambda run: run.created_at, reverse=True)
     if session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
         requested = session.nickname
@@ -252,7 +274,7 @@ def list_single_task_attempts(
         runs = [run for run in runs if run.requested_by == requested]
     if status is not None:
         runs = [run for run in runs if run.status is status]
-    return [_run_response(run) for run in runs[bounded_offset : bounded_offset + bounded_limit]]
+    return [_run_response(run, compact_result_payload=True) for run in runs[bounded_offset : bounded_offset + bounded_limit]]
 
 
 @router.get("/single-task-attempts/{attempt_id}", response_model=RunResponse)
@@ -350,12 +372,18 @@ def cancel_run(
 @router.get("/runs/{run_id}", response_model=RunResponse)
 def get_run(
     run_id: str,
+    compact_payload: bool = False,
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
-    run = container.execution.get_run(run_id=run_id)
+    run = container.execution.get_run(
+        run_id=run_id,
+        include_result_payload=not compact_payload,
+    )
     ensure_can_view_run(container=container, session=session, run=run)
-    return _run_response(run)
+    if compact_payload:
+        run = _attach_replay_summary_payload_if_available(container=container, run=run)
+    return _run_response(run, compact_result_payload=compact_payload)
 
 
 @router.get("/runs/{run_id}/watch-context", response_model=RunWatchContextResponse)
@@ -548,7 +576,7 @@ def stream_run(
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> StreamingResponse:
-    initial_run = container.execution.get_run(run_id=run_id)
+    initial_run = container.execution.get_run(run_id=run_id, include_result_payload=False)
     ensure_can_view_run(container=container, session=session, run=initial_run)
     interval = max(50, min(poll_interval_ms, 10_000)) / 1000
     max_events_bounded = max(0, min(max_events, 10_000))
@@ -558,8 +586,9 @@ def stream_run(
         last_payload_signature = ""
 
         def _build_payload() -> tuple[dict[str, object], str, str]:
-            run = container.execution.get_run(run_id=run_id)
+            run = container.execution.get_run(run_id=run_id, include_result_payload=False)
             ensure_can_view_run(container=container, session=session, run=run)
+            run = _attach_replay_summary_payload_if_available(container=container, run=run)
             return (
                 _run_response(run, compact_result_payload=True).model_dump(mode="json"),
                 run.status.value,

@@ -12,8 +12,11 @@ class InMemoryRunRepository:
     def save(self, run: Run) -> None:
         self._items[run.run_id] = run
 
-    def get(self, run_id: str) -> Run | None:
-        return self._items.get(run_id)
+    def get(self, run_id: str, *, include_result_payload: bool = True) -> Run | None:
+        run = self._items.get(run_id)
+        if run is None or include_result_payload:
+            return run
+        return replace(run, result_payload=None)
 
     def list(self) -> list[Run]:
         return sorted(self._items.values(), key=lambda run: run.created_at, reverse=True)

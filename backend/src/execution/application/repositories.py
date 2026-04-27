@@ -9,7 +9,7 @@ class RunRepository(Protocol):
     def save(self, run: Run) -> None:
         ...
 
-    def get(self, run_id: str) -> Run | None:
+    def get(self, run_id: str, *, include_result_payload: bool = True) -> Run | None:
         ...
 
     def list(self) -> list[Run]:

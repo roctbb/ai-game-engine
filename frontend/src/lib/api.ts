@@ -830,8 +830,11 @@ export function queueRun(runId: string): Promise<RunDto> {
   });
 }
 
-export function getRun(runId: string): Promise<RunDto> {
-  return request<RunDto>(`/runs/${encodeURIComponent(runId)}`);
+export function getRun(runId: string, options: { compactPayload?: boolean } = {}): Promise<RunDto> {
+  const query = new URLSearchParams();
+  if (options.compactPayload) query.set('compact_payload', 'true');
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request<RunDto>(`/runs/${encodeURIComponent(runId)}${suffix}`);
 }
 
 export function getRunWatchContext(runId: string): Promise<RunWatchContextDto> {

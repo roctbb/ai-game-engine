@@ -131,6 +131,12 @@ def test_list_runs_omits_heavy_result_payload_fields(client) -> None:
     assert detailed.status_code == 200
     assert detailed.json()["result_payload"]["frames"]
 
+    compact = client.get(f"/api/v1/runs/{run_id}?compact_payload=true")
+    assert compact.status_code == 200
+    compact_payload = compact.json()["result_payload"]
+    assert "frames" not in compact_payload
+    assert compact_payload["scores"] == {team["team_id"]: 42}
+
 
 def test_student_list_runs_only_returns_visible_runs_and_generic_create_is_restricted(client) -> None:
     games = client.get("/api/v1/games").json()

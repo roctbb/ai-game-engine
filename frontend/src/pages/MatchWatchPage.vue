@@ -1376,7 +1376,10 @@ function onRendererMessage(event: MessageEvent): void {
 }
 
 async function loadRunAndContext(runId: string): Promise<void> {
-  const [freshContext, freshRun] = await Promise.all([getRunWatchContext(runId), getRun(runId)]);
+  const [freshContext, freshRun] = await Promise.all([
+    getRunWatchContext(runId),
+    getRun(runId, { compactPayload: true }),
+  ]);
   watchContext.value = freshContext;
   run.value = freshRun;
 }
@@ -1525,7 +1528,7 @@ function startRunPolling(runId: string): void {
     try {
       do {
         pendingRunPoll = false;
-        const nextRun = await getRun(runId);
+        const nextRun = await getRun(runId, { compactPayload: true });
         if (token !== runPollingToken) return;
         if (nextRun.run_id !== runId) return;
         run.value = nextRun;

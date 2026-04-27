@@ -87,6 +87,10 @@ def test_replay_created_for_finished_run_and_available_via_api(client) -> None:
     assert listing.status_code == 200
     items = listing.json()
     assert any(item["run_id"] == run["run_id"] for item in items)
+    listed_replay = next(item for item in items if item["run_id"] == run["run_id"])
+    assert listed_replay["frames"] == []
+    assert listed_replay["events"] == []
+    assert listed_replay["summary"]["metrics"]["duration_ms"] == 42
 
     student_listing = client.get(
         f"/api/v1/replays?game_id={game['game_id']}&run_kind=single_task",
