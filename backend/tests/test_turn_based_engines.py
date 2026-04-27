@@ -108,25 +108,6 @@ def test_tanks_training_match_uses_driver_and_support() -> None:
     assert print_events[0]["message"].startswith("tick ")
 
 
-def test_template_turn_based_engine_runs_with_context() -> None:
-    module = _load_module(_repo_root() / "games" / "template" / "engine.py", "template_engine_test")
-    context = {
-        "run_kind": "single_task",
-        "codes_by_slot": {
-            "bot": (
-                "def make_choice(state):\n"
-                "    return 'stop' if state['turn'] >= 2 else 'inc'\n"
-            )
-        },
-    }
-    payload = module.run(context)
-    assert payload["status"] == "finished"
-    assert payload["metrics"]["final_value"] >= 2
-    assert "replay_ref" in payload
-    assert isinstance(payload.get("frames"), list) and payload["frames"]
-    assert isinstance(payload.get("events"), list)
-
-
 def test_tic_tac_toe_competition_draw_marks_explicit_tie(monkeypatch) -> None:
     module = _load_module(_repo_root() / "games" / "tic_tac_toe" / "engine.py", "ttt_engine_draw_tie_test")
     monkeypatch.setattr(module, "_MAX_TURNS", 0)

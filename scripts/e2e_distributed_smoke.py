@@ -667,20 +667,19 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args()
 
-    print("[1/21] healthchecks...")
+    print("[1/19] healthchecks...")
     backend_root = args.backend[:-7] if args.backend.endswith("/api/v1") else args.backend.rstrip("/")
     backend_health_path = "/api/v1/health" if args.backend.endswith("/api/v1") else "/health"
     _healthcheck(backend_root, backend_health_path)
     _healthcheck(args.scheduler)
     _healthcheck(args.worker)
 
-    print("[2/21] load catalog...")
+    print("[2/19] load catalog...")
     games_by_slug = _get_games_by_slug(args.backend)
     required_slugs = {
         "maze_escape_v1",
         "coins_right_down_v1",
         "tower_defense_v1",
-        "template_v1",
         "ttt_connect5_v1",
         "tanks_ctf_v1",
     }
@@ -695,7 +694,7 @@ def main() -> int:
 
     summary: dict[str, object] = {}
 
-    print("[3/21] catalog publication workflow smoke")
+    print("[3/19] catalog publication workflow smoke")
     catalog_slug = f"smoke_catalog_{uuid4().hex[:8]}"
     draft_game = _register_single_task_catalog_game(
         backend_api=args.backend,
@@ -750,7 +749,7 @@ def main() -> int:
         "visible_when_archived": False,
     }
 
-    print("[4/21] single_task smoke: maze_escape_v1")
+    print("[4/19] single_task smoke: maze_escape_v1")
     summary["maze_escape_v1"] = _single_task_smoke(
         backend_api=args.backend,
         worker_api=args.worker,
@@ -768,7 +767,7 @@ def main() -> int:
         timeout_sec=args.timeout,
     )
 
-    print("[5/21] single_task smoke: coins_right_down_v1")
+    print("[5/19] single_task smoke: coins_right_down_v1")
     summary["coins_right_down_v1"] = _single_task_smoke(
         backend_api=args.backend,
         worker_api=args.worker,
@@ -784,7 +783,7 @@ def main() -> int:
         timeout_sec=args.timeout,
     )
 
-    print("[6/21] single_task smoke: tower_defense_v1")
+    print("[6/19] single_task smoke: tower_defense_v1")
     summary["tower_defense_v1"] = _single_task_smoke(
         backend_api=args.backend,
         worker_api=args.worker,
@@ -797,46 +796,7 @@ def main() -> int:
         timeout_sec=args.timeout,
     )
 
-    print("[7/21] prepare small_match teams: template_v1")
-    template_game = games_by_slug["template_v1"]
-    template_slot = template_game["versions"][0]["required_slot_keys"][0]
-    template_teams = []
-    for idx in range(2):
-        user = f"smoke-tpl-{idx}-{uuid4().hex[:6]}"
-        team = _create_team(
-            backend_api=args.backend,
-            game_id=template_game["game_id"],
-            name=f"TPL Team {idx}",
-            captain=user,
-        )
-        _put_slot_code(
-            backend_api=args.backend,
-            team_id=team["team_id"],
-            slot_key=template_slot,
-            actor=user,
-            code_text=(
-                "def make_choice(state):\n"
-                "    turn = state.get('turn', 0)\n"
-                "    if turn >= 8:\n"
-                "        return 'stop'\n"
-                "    return 'inc'\n"
-            ),
-        )
-        template_teams.append(team)
-
-    print("[8/21] training lobby matchmaking smoke: template_v1")
-    summary["template_v1"] = _run_training_lobby_matchmaking(
-        backend_api=args.backend,
-        worker_api=args.worker,
-        game=template_game,
-        teams=template_teams,
-        requested_by=f"teacher-tpl-{uuid4().hex[:6]}",
-        expected_runs=2,
-        timeout_sec=args.timeout,
-        admin_headers=admin_headers,
-    )
-
-    print("[9/21] prepare small_match teams: ttt_connect5_v1")
+    print("[7/19] prepare small_match teams: ttt_connect5_v1")
     ttt_game = games_by_slug["ttt_connect5_v1"]
     ttt_slot = ttt_game["versions"][0]["required_slot_keys"][0]
     ttt_teams = []
@@ -863,7 +823,7 @@ def main() -> int:
         )
         ttt_teams.append(team)
 
-    print("[10/21] training lobby matchmaking smoke: ttt_connect5_v1")
+    print("[8/19] training lobby matchmaking smoke: ttt_connect5_v1")
     summary["ttt_connect5_v1"] = _run_training_lobby_matchmaking(
         backend_api=args.backend,
         worker_api=args.worker,
@@ -875,7 +835,7 @@ def main() -> int:
         admin_headers=admin_headers,
     )
 
-    print("[11/21] prepare massive_lobby teams")
+    print("[9/19] prepare massive_lobby teams")
     tanks_game = games_by_slug["tanks_ctf_v1"]
     tanks_slot = tanks_game["versions"][0]["required_slot_keys"][0]
     tanks_teams = []
@@ -908,7 +868,7 @@ def main() -> int:
         )
         tanks_teams.append(team)
 
-    print("[12/21] training lobby matchmaking smoke: tanks_ctf_v1")
+    print("[10/19] training lobby matchmaking smoke: tanks_ctf_v1")
     summary["tanks_ctf_v1"] = _run_training_lobby_matchmaking(
         backend_api=args.backend,
         worker_api=args.worker,
@@ -920,7 +880,7 @@ def main() -> int:
         admin_headers=admin_headers,
     )
 
-    print("[13/21] game source sync smoke")
+    print("[11/19] game source sync smoke")
     game_source = _create_game_source(
         backend_api=args.backend,
         repo_url=f"https://github.com/example/agp-smoke-{uuid4().hex[:8]}",
@@ -963,7 +923,7 @@ def main() -> int:
         "history_count": len(sync_history),
     }
 
-    print("[14/21] worker status gate smoke")
+    print("[12/19] worker status gate smoke")
     worker_warmup_code, _worker_warmup_payload = _request(
         "POST",
         f"{args.worker}/internal/worker/pull-and-execute",
@@ -1016,7 +976,7 @@ def main() -> int:
         "resume_response": resumed_payload,
     }
 
-    print("[15/21] label-aware scheduler smoke")
+    print("[13/19] label-aware scheduler smoke")
     resolved_worker = _resolve_worker_node(backend_api=args.backend, admin_headers=admin_headers)
     worker_labels = {
         str(key): str(value)
@@ -1138,12 +1098,11 @@ def main() -> int:
         "terminal_status": labeled_run["status"],
     }
 
-    print("[16/21] replay availability smoke")
+    print("[14/19] replay availability smoke")
     replay_run_ids = [
         summary["maze_escape_v1"]["run_id"],
         summary["coins_right_down_v1"]["run_id"],
         summary["tower_defense_v1"]["run_id"],
-        summary["template_v1"][0]["run_id"],
         summary["ttt_connect5_v1"][0]["run_id"],
         summary["tanks_ctf_v1"][0]["run_id"],
     ]
@@ -1160,7 +1119,7 @@ def main() -> int:
         )
     summary["replay_checks"] = replay_checks
 
-    print("[17/21] run stream smoke")
+    print("[15/19] run stream smoke")
     stream_probe_run_id = summary["maze_escape_v1"]["run_id"]
     stream_body = _assert_run_stream_available(
         backend_api=args.backend,
@@ -1171,7 +1130,7 @@ def main() -> int:
         "body_preview": stream_body[:200],
     }
 
-    print("[18/21] canceled run smoke")
+    print("[16/19] canceled run smoke")
     cancel_game = games_by_slug["maze_escape_v1"]
     cancel_slot = cancel_game["versions"][0]["required_slot_keys"][0]
     cancel_user = f"smoke-cancel-{uuid4().hex[:6]}"
@@ -1221,7 +1180,7 @@ def main() -> int:
         "stream_preview": canceled_stream_body[:200],
     }
 
-    print("[19/21] lobby stream smoke")
+    print("[17/19] lobby stream smoke")
     probe_lobby = _create_training_lobby(
         backend_api=args.backend,
         game_id=template_game["game_id"],
@@ -1237,7 +1196,7 @@ def main() -> int:
         "body_preview": lobby_stream_body[:200],
     }
 
-    print("[20/21] competition stream smoke")
+    print("[18/19] competition stream smoke")
     code, probe_competition = _request(
         "POST",
         f"{args.backend}/competitions",
@@ -1262,7 +1221,7 @@ def main() -> int:
         "body_preview": competition_stream_body[:200],
     }
 
-    print("[21/21] inspect scheduler queue stats")
+    print("[19/19] inspect scheduler queue stats")
     code, queue_stats = _request("GET", f"{args.scheduler}/internal/queue/stats")
     if code != 200:
         raise RuntimeError(f"Scheduler stats failed: HTTP {code}, body={queue_stats}")

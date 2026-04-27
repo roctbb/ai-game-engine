@@ -2,7 +2,7 @@
 
 from administration.infrastructure.sqlalchemy_models import GameSourceOrm, GameSourceSyncOrm
 from competition.infrastructure.sqlalchemy_models import CompetitionOrm
-from execution.infrastructure.sqlalchemy_models import BuildOrm, RunOrm, WorkerOrm
+from execution.infrastructure.sqlalchemy_models import BuildOrm, MatchExecutionOrm, RunOrm, WorkerOrm
 from game_catalog.infrastructure.sqlalchemy_models import CatalogGameOrm, CatalogGameVersionOrm
 from identity.infrastructure.sqlalchemy_models import IdentitySessionOrm
 from spectator_replay.infrastructure.sqlalchemy_models import ReplayOrm
@@ -15,6 +15,7 @@ __all__ = [
     "GameSourceOrm",
     "GameSourceSyncOrm",
     "RunOrm",
+    "MatchExecutionOrm",
     "WorkerOrm",
     "BuildOrm",
     "ReplayOrm",

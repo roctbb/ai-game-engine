@@ -57,6 +57,8 @@ def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunRespo
         run_kind=run.run_kind,
         lobby_id=run.lobby_id,
         target_version_id=run.target_version_id,
+        match_execution_id=run.match_execution_id,
+        match_primary_run_id=run.match_primary_run_id,
         status=run.status,
         snapshot_id=run.snapshot_id,
         snapshot_version_id=run.snapshot_version_id,
@@ -419,6 +421,7 @@ def cancel_run(
         run_id=run_id,
         message="manual_cancel",
     )
+    container.training_lobby.cancel_shadow_match_runs(primary_run=canceled, message="manual_cancel")
     _reconcile_training_lobby_for_terminal_run(container=container, run=canceled)
     return _run_response(canceled)
 
@@ -928,6 +931,7 @@ def mark_run_finished(
 ) -> RunResponse:
     payload = _payload_with_training_match_context(container=container, run_id=run_id, payload=request.payload)
     run = container.execution.finish_run(run_id=run_id, payload=payload)
+    container.training_lobby.finish_shadow_match_runs(primary_run=run, payload=payload)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)
@@ -941,6 +945,7 @@ def mark_run_failed(
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     run = container.execution.fail_run(run_id=run_id, message=request.message)
+    container.training_lobby.fail_shadow_match_runs(primary_run=run, message=request.message)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)

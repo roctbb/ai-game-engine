@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
+from execution.domain.model import BuildJob, MatchExecution, Run, RunKind, RunStatus, WorkerNode
 
 
 class RunRepository(Protocol):
@@ -36,6 +36,20 @@ class RunRepository(Protocol):
         ...
 
     def delete_many(self, run_ids: list[str]) -> None:
+        ...
+
+
+class MatchExecutionRepository(Protocol):
+    def save(self, match: MatchExecution) -> None:
+        ...
+
+    def get(self, match_execution_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+        ...
+
+    def find_by_run_id(self, run_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+        ...
+
+    def delete_many(self, match_execution_ids: list[str]) -> None:
         ...
 
 

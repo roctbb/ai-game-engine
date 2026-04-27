@@ -31,6 +31,21 @@ services:
   scheduler-service:
     ports: !override []
 
+  matchmaker-service:
+    environment:
+      APP_ENV: ${APP_ENV}
+      DEBUG: ${DEBUG}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_DEV_LOGIN: ${ENABLE_DEV_LOGIN}
+      ENABLE_GEEKCLASS_LOGIN: ${ENABLE_GEEKCLASS_LOGIN}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_MAX_AGE_SECONDS: ${JWT_MAX_AGE_SECONDS}
+      GEEKCLASS_HOST: ${GEEKCLASS_HOST}
+      BACKEND_URL: ${BACKEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+
   worker-service:
     environment:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}

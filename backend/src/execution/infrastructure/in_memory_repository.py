@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
+from execution.domain.model import BuildJob, MatchExecution, Run, RunKind, RunStatus, WorkerNode
 
 
 class InMemoryRunRepository:
@@ -71,6 +71,30 @@ class InMemoryRunRepository:
     def delete_many(self, run_ids: list[str]) -> None:
         for run_id in run_ids:
             self._items.pop(run_id, None)
+
+
+class InMemoryMatchExecutionRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, MatchExecution] = {}
+
+    def save(self, match: MatchExecution) -> None:
+        self._items[match.match_execution_id] = match
+
+    def get(self, match_execution_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+        match = self._items.get(match_execution_id)
+        if match is None or include_result_payload:
+            return match
+        return replace(match, result_payload=None)
+
+    def find_by_run_id(self, run_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+        for match in self._items.values():
+            if run_id in match.run_ids:
+                return match if include_result_payload else replace(match, result_payload=None)
+        return None
+
+    def delete_many(self, match_execution_ids: list[str]) -> None:
+        for match_execution_id in match_execution_ids:
+            self._items.pop(match_execution_id, None)
 
 
 class InMemoryWorkerRepository:

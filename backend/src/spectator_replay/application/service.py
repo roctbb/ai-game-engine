@@ -18,6 +18,9 @@ class SpectatorReplayService:
         self._repository = repository
 
     def record_run(self, run: Run) -> None:
+        if _is_shadow_match_run(run):
+            self._repository.delete_by_run_ids([run.run_id])
+            return
         if run.status is not RunStatus.FINISHED:
             self._repository.delete_by_run_ids([run.run_id])
             return
@@ -61,6 +64,12 @@ class SpectatorReplayService:
 
     def delete_runs(self, run_ids: list[str]) -> None:
         self._repository.delete_by_run_ids(run_ids)
+
+
+def _is_shadow_match_run(run: Run) -> bool:
+    if run.match_primary_run_id is not None:
+        return run.run_id != run.match_primary_run_id
+    return isinstance(run.worker_id, str) and run.worker_id.startswith("shadow:")
 
 
 def _build_replay_payload(run: Run) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, object]]:

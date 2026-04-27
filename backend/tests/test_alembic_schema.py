@@ -32,6 +32,7 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
         "training_lobbies",
         "competitions",
         "execution_runs",
+        "execution_match_executions",
         "execution_workers",
         "execution_builds",
         "spectator_replays",
@@ -69,7 +70,12 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     assert {
         "ix_execution_runs_lobby_id",
         "ix_execution_runs_lobby_kind_created_at",
+        "ix_execution_runs_match_execution_id",
+        "ix_execution_runs_match_primary_run_id",
     }.issubset(run_indexes)
+
+    match_columns = {item["name"] for item in inspector.get_columns("execution_match_executions")}
+    assert {"match_execution_id", "primary_run_id", "run_ids", "result_payload"}.issubset(match_columns)
 
     replay_indexes = {item["name"] for item in inspector.get_indexes("spectator_replays")}
     assert "ix_spectator_replays_game_kind_updated_at" in replay_indexes

@@ -16,6 +16,7 @@ from competition.domain.model import Competition, CompetitionCodePolicy, Competi
 from game_catalog.infrastructure.manifest_loader import find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
+from shared.config.settings import settings
 from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
 from training_lobby.api.schemas import (
     CreateLobbyRequest,
@@ -299,6 +300,8 @@ def _kick_training_matchmaking_from_live_view_if_needed(
     viewer_user_id: str,
     requested_by: str,
 ) -> LobbyLiveView:
+    if settings.training_lobby_auto_matchmaking_enabled:
+        return live_view
     lobby = live_view.lobby
     if lobby.kind is not LobbyKind.TRAINING:
         return live_view

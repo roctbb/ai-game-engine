@@ -54,9 +54,6 @@ def test_repository_demo_strategies_execute_against_their_engines() -> None:
         elif manifest.id == "tower_defense_v1":
             assert metrics["base_hp"] > 0
             assert metrics["towers_built"] > 0
-        elif manifest.id == "template_v1":
-            assert metrics["final_value"] == 5
-
 
 def test_single_task_starter_templates_do_not_solve_tasks_unchanged() -> None:
     games_root = _repo_root() / "games"

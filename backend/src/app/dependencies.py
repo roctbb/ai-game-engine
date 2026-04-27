@@ -30,11 +30,13 @@ from execution.domain.model import RunKind, WorkerStatus
 from execution.infrastructure.http_scheduler_gateway import HttpSchedulerGateway
 from execution.infrastructure.in_memory_repository import (
     InMemoryBuildRepository,
+    InMemoryMatchExecutionRepository,
     InMemoryRunRepository,
     InMemoryWorkerRepository,
 )
 from execution.infrastructure.sqlalchemy_repository import (
     SqlAlchemyBuildRepository,
+    SqlAlchemyMatchExecutionRepository,
     SqlAlchemyRunRepository,
     SqlAlchemyWorkerRepository,
 )
@@ -198,10 +200,12 @@ def _build_container() -> ServiceContainer:
     if use_execution_sqlalchemy:
         assert sql_session_factory is not None
         run_repo = SqlAlchemyRunRepository(sql_session_factory)
+        match_execution_repo = SqlAlchemyMatchExecutionRepository(sql_session_factory)
         worker_repo = SqlAlchemyWorkerRepository(sql_session_factory)
         build_repo = SqlAlchemyBuildRepository(sql_session_factory)
     else:
         run_repo = InMemoryRunRepository()
+        match_execution_repo = InMemoryMatchExecutionRepository()
         worker_repo = InMemoryWorkerRepository()
         build_repo = InMemoryBuildRepository()
 
@@ -239,6 +243,7 @@ def _build_container() -> ServiceContainer:
     )
     execution = ExecutionService(
         run_repository=run_repo,
+        match_execution_repository=match_execution_repo,
         worker_repository=worker_repo,
         build_repository=build_repo,
         scheduler_gateway=scheduler_gateway,

@@ -2,9 +2,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from execution.domain.model import BuildJob, Run, RunKind, WorkerNode
+from execution.domain.model import BuildJob, MatchExecution, MatchExecutionStatus, Run, RunKind, WorkerNode
 from execution.infrastructure.sqlalchemy_repository import (
     SqlAlchemyBuildRepository,
+    SqlAlchemyMatchExecutionRepository,
     SqlAlchemyRunRepository,
     SqlAlchemyWorkerRepository,
 )
@@ -52,6 +53,29 @@ def test_sqlalchemy_run_repository_persists_and_filters_active_runs() -> None:
         run_kind=RunKind.SINGLE_TASK,
     )
     assert active_after_cancel == []
+
+
+def test_sqlalchemy_match_execution_repository_roundtrip() -> None:
+    session_factory = _build_session_factory()
+    repository = SqlAlchemyMatchExecutionRepository(session_factory)
+
+    match = MatchExecution.create(
+        primary_run_id='run-a',
+        run_ids=['run-a', 'run-b'],
+        game_id='game-1',
+        run_kind=RunKind.TRAINING_MATCH,
+        lobby_id='lobby-1',
+    )
+    match.mark_queued()
+    match.mark_started('worker-1')
+    match.mark_finished({'scores': {'team-a': 1, 'team-b': 0}})
+    repository.save(match)
+
+    loaded = repository.get(match.match_execution_id)
+    assert loaded is not None
+    assert loaded.status is MatchExecutionStatus.FINISHED
+    assert loaded.run_ids == ('run-a', 'run-b')
+    assert loaded.result_payload == {'scores': {'team-a': 1, 'team-b': 0}}
 
 
 def test_sqlalchemy_worker_repository_roundtrip() -> None:

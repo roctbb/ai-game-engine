@@ -33,6 +33,8 @@ _REPLAYABLE_RUN_STATUSES = {RunStatus.FINISHED}
 _LOBBY_REPLAY_FRAME_MS = 500
 _LOBBY_RESULT_SECONDS = 5
 _LOBBY_ONLINE_VIEWER_TTL_SECONDS = 20
+_LOBBY_LIVE_CACHE_TTL_SECONDS = 0.75
+_LOBBY_VIEWER_PRESENCE_KEY_PREFIX = "ai-game:training-lobby:viewer-presence:"
 _UNSET_RETENTION = object()
 
 
@@ -158,6 +160,15 @@ class _LobbyCycleState:
 
 
 @dataclass(frozen=True, slots=True)
+class _CachedLobbyLiveState:
+    expires_at: datetime
+    lobby_signature: object
+    runs: tuple[Run, ...]
+    active_runs: tuple[Run, ...]
+    cycle: _LobbyCycleState
+
+
+@dataclass(frozen=True, slots=True)
 class LobbyLiveView:
     lobby: Lobby
     my_team_id: str | None
@@ -208,6 +219,7 @@ class TrainingLobbyService:
             tuple[object, tuple[LobbyMatchGroupView, ...]],
         ] = {}
         self._finished_runs_payload_cache: dict[str, tuple[object, list[Run]]] = {}
+        self._live_state_cache: dict[str, _CachedLobbyLiveState] = {}
         self._viewer_last_seen_by_lobby: dict[str, dict[str, datetime]] = {}
 
     def create_lobby(self, data: CreateLobbyInput) -> Lobby:
@@ -252,6 +264,8 @@ class TrainingLobbyService:
 
     def mark_viewer_online(self, lobby_id: str, user_id: str) -> None:
         now = utc_now()
+        if self._mark_viewer_online_in_redis(lobby_id=lobby_id, user_id=user_id, now=now):
+            return
         viewers = self._viewer_last_seen_by_lobby.setdefault(lobby_id, {})
         viewers[user_id] = now
         self._prune_online_viewers(lobby_id=lobby_id, now=now)
@@ -303,14 +317,8 @@ class TrainingLobbyService:
 
     def get_live_view(self, lobby_id: str, user_id: str) -> LobbyLiveView:
         lobby = self.get_lobby(lobby_id)
-        runs = self._execution.list_runs(
-            lobby_id=lobby_id,
-            run_kind=RunKind.TRAINING_MATCH,
-            include_result_payload=False,
-        )
-        active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
+        runs, active_runs, cycle = self._get_cached_lobby_live_state(lobby)
         my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
-        cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
         current_group_run_ids = {
             run_id
             for group in cycle.current_match_groups
@@ -322,7 +330,7 @@ class TrainingLobbyService:
             for team_id in group.team_ids
         }
         playing_team_ids_set = {run.team_id for run in active_runs if run.status is RunStatus.RUNNING}
-        if cycle.phase in {"replay", "result"}:
+        if cycle.phase in {"simulation", "replay", "result"}:
             playing_team_ids_set.update(current_group_team_ids)
         playing_team_ids = tuple(sorted(playing_team_ids_set))
         queued_team_ids = set(
@@ -656,6 +664,7 @@ class TrainingLobbyService:
             if lobby.last_scheduled_run_ids:
                 lobby.set_last_scheduled_match_groups([])
         self._repository.save(lobby)
+        self._clear_lobby_derived_caches(lobby_id)
         return lobby
 
     def run_matchmaking_cycle(self, lobby_id: str, requested_by: str) -> Lobby:
@@ -765,7 +774,7 @@ class TrainingLobbyService:
             lobby.set_running()
             lobby.set_last_scheduled_match_groups(scheduled_match_groups)
             self._repository.save(lobby)
-            self._queue_scheduled_batch(lobby=lobby, run_ids=scheduled_run_ids)
+            self._queue_scheduled_match_groups(lobby=lobby, match_groups=scheduled_match_groups)
         else:
             if active_runs:
                 lobby.set_running()
@@ -778,10 +787,13 @@ class TrainingLobbyService:
 
         return lobby
 
-    def _queue_scheduled_batch(self, *, lobby: Lobby, run_ids: list[str]) -> None:
+    def _queue_scheduled_match_groups(self, *, lobby: Lobby, match_groups: list[list[str]]) -> None:
+        run_ids = [run_id for group in match_groups for run_id in group]
         try:
-            for run_id in run_ids:
-                self._execution.queue_run(run_id)
+            for group in match_groups:
+                if not group:
+                    continue
+                self._execution.queue_match_group(group)
         except (ExternalServiceError, InvariantViolationError) as exc:
             self._cancel_unqueued_batch_runs(run_ids=run_ids, message=f"matchmaking_queue_failed: {exc}")
             lobby.set_last_scheduled_match_groups([])
@@ -807,7 +819,93 @@ class TrainingLobbyService:
         ]
         if non_created_current_active:
             return
-        self._queue_scheduled_batch(lobby=lobby, run_ids=[run.run_id for run in created_current_runs])
+        created_run_ids = {run.run_id for run in created_current_runs}
+        match_groups = [
+            [run_id for run_id in group if run_id in created_run_ids]
+            for group in self._current_match_groups(lobby)
+        ]
+        self._queue_scheduled_match_groups(
+            lobby=lobby,
+            match_groups=[group for group in match_groups if group],
+        )
+
+    def finish_shadow_match_runs(self, primary_run: Run, payload: dict[str, object]) -> list[Run]:
+        if primary_run.run_kind is not RunKind.TRAINING_MATCH or primary_run.lobby_id is None:
+            return []
+        shadow_runs = self._shadow_match_runs(primary_run)
+        finished: list[Run] = []
+        for shadow_run in shadow_runs:
+            if shadow_run.status not in _ACTIVE_RUN_STATUSES:
+                continue
+            if not self._execution.is_shadow_of(shadow_run, primary_run.run_id):
+                continue
+            try:
+                finished.append(self._execution.finish_run(shadow_run.run_id, _compact_shadow_payload(payload)))
+            except InvariantViolationError:
+                continue
+        if finished:
+            self._clear_lobby_derived_caches(primary_run.lobby_id)
+        return finished
+
+    def fail_shadow_match_runs(self, primary_run: Run, message: str) -> list[Run]:
+        if primary_run.run_kind is not RunKind.TRAINING_MATCH or primary_run.lobby_id is None:
+            return []
+        shadow_runs = self._shadow_match_runs(primary_run)
+        failed: list[Run] = []
+        for shadow_run in shadow_runs:
+            if shadow_run.status not in _ACTIVE_RUN_STATUSES:
+                continue
+            if not self._execution.is_shadow_of(shadow_run, primary_run.run_id):
+                continue
+            try:
+                failed.append(self._execution.fail_run(shadow_run.run_id, message))
+            except InvariantViolationError:
+                continue
+        if failed:
+            self._clear_lobby_derived_caches(primary_run.lobby_id)
+        return failed
+
+    def cancel_shadow_match_runs(self, primary_run: Run, message: str) -> list[Run]:
+        if primary_run.run_kind is not RunKind.TRAINING_MATCH or primary_run.lobby_id is None:
+            return []
+        shadow_runs = self._shadow_match_runs(primary_run)
+        canceled: list[Run] = []
+        for shadow_run in shadow_runs:
+            if shadow_run.status not in _ACTIVE_RUN_STATUSES:
+                continue
+            if not self._execution.is_shadow_of(shadow_run, primary_run.run_id):
+                continue
+            try:
+                canceled.append(self._execution.cancel_run(shadow_run.run_id, message=message))
+            except InvariantViolationError:
+                continue
+        if canceled:
+            self._clear_lobby_derived_caches(primary_run.lobby_id)
+        return canceled
+
+    def _shadow_match_runs(self, primary_run: Run) -> list[Run]:
+        if primary_run.lobby_id is None:
+            return []
+        try:
+            lobby = self.get_lobby(primary_run.lobby_id)
+        except NotFoundError:
+            return []
+        group_run_ids: list[str] = []
+        for group in lobby.last_scheduled_match_groups:
+            if primary_run.run_id in group:
+                group_run_ids = list(group)
+                break
+        if len(group_run_ids) <= 1:
+            return []
+        runs: list[Run] = []
+        for run_id in group_run_ids:
+            if run_id == primary_run.run_id:
+                continue
+            try:
+                runs.append(self._execution.get_run(run_id))
+            except NotFoundError:
+                continue
+        return runs
 
     def _cancel_unqueued_batch_runs(self, *, run_ids: list[str], message: str) -> None:
         for run_id in run_ids:
@@ -1268,6 +1366,9 @@ class TrainingLobbyService:
 
     def _has_online_ready_viewer(self, lobby: Lobby) -> bool:
         now = utc_now()
+        redis_count = self._online_viewer_count_from_redis(lobby_id=lobby.lobby_id, now=now)
+        if redis_count is not None:
+            return redis_count > 0
         self._prune_online_viewers(lobby_id=lobby.lobby_id, now=now)
         return bool(self._viewer_last_seen_by_lobby.get(lobby.lobby_id, {}))
 
@@ -1281,6 +1382,39 @@ class TrainingLobbyService:
             viewers.pop(user_id, None)
         if not viewers:
             self._viewer_last_seen_by_lobby.pop(lobby_id, None)
+
+    def _mark_viewer_online_in_redis(self, *, lobby_id: str, user_id: str, now: datetime) -> bool:
+        client = self._matchmaking_lock_client
+        zadd = getattr(client, "zadd", None)
+        expire = getattr(client, "expire", None)
+        if not callable(zadd):
+            return False
+        key = self._viewer_presence_key(lobby_id)
+        try:
+            zadd(key, {user_id: now.timestamp()})
+            if callable(expire):
+                expire(key, _LOBBY_ONLINE_VIEWER_TTL_SECONDS * 2)
+        except Exception:
+            return False
+        return True
+
+    def _online_viewer_count_from_redis(self, *, lobby_id: str, now: datetime) -> int | None:
+        client = self._matchmaking_lock_client
+        zremrangebyscore = getattr(client, "zremrangebyscore", None)
+        zcard = getattr(client, "zcard", None)
+        if not callable(zremrangebyscore) or not callable(zcard):
+            return None
+        key = self._viewer_presence_key(lobby_id)
+        cutoff = now.timestamp() - _LOBBY_ONLINE_VIEWER_TTL_SECONDS
+        try:
+            zremrangebyscore(key, "-inf", cutoff)
+            return int(zcard(key))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _viewer_presence_key(lobby_id: str) -> str:
+        return f"{_LOBBY_VIEWER_PRESENCE_KEY_PREFIX}{lobby_id}"
 
     def _winner_team_ids(self, runs: list[Run]) -> tuple[str, ...]:
         winner = self._single_winner_team_id(runs)
@@ -1423,6 +1557,50 @@ class TrainingLobbyService:
         self._participant_stats_cache.pop(lobby_id, None)
         self._archived_match_groups_cache.pop(lobby_id, None)
         self._finished_runs_payload_cache.pop(lobby_id, None)
+        self._live_state_cache.pop(lobby_id, None)
+
+    def _get_cached_lobby_live_state(self, lobby: Lobby) -> tuple[tuple[Run, ...], tuple[Run, ...], _LobbyCycleState]:
+        now = utc_now()
+        signature = self._lobby_live_signature(lobby)
+        cached = self._live_state_cache.get(lobby.lobby_id)
+        if cached is not None and cached.expires_at > now and cached.lobby_signature == signature:
+            return cached.runs, cached.active_runs, cached.cycle
+
+        runs = tuple(
+            self._execution.list_runs(
+                lobby_id=lobby.lobby_id,
+                run_kind=RunKind.TRAINING_MATCH,
+                include_result_payload=False,
+            )
+        )
+        active_runs = tuple(run for run in runs if run.status in _ACTIVE_RUN_STATUSES)
+        cycle = self._compute_cycle_state(lobby=lobby, runs=list(runs))
+        if cycle.phase not in {"replay", "result"}:
+            self._live_state_cache[lobby.lobby_id] = _CachedLobbyLiveState(
+                expires_at=now + timedelta(seconds=_LOBBY_LIVE_CACHE_TTL_SECONDS),
+                lobby_signature=signature,
+                runs=runs,
+                active_runs=active_runs,
+                cycle=cycle,
+            )
+        else:
+            self._live_state_cache.pop(lobby.lobby_id, None)
+        return runs, active_runs, cycle
+
+    @staticmethod
+    def _lobby_live_signature(lobby: Lobby) -> object:
+        return (
+            lobby.status.value,
+            lobby.game_version_id,
+            tuple(lobby.last_scheduled_run_ids),
+            tuple(tuple(group) for group in lobby.last_scheduled_match_groups),
+            tuple(
+                sorted(
+                    (team_id, state.ready, state.blocker_reason)
+                    for team_id, state in lobby.teams.items()
+                )
+            ),
+        )
 
     def _collect_participant_stats(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
         wins_by_team: dict[str, int] = {}
@@ -1489,3 +1667,13 @@ class TrainingLobbyService:
                 if isinstance(only_value, (int, float)):
                     return float(only_value)
         return None
+
+
+def _compact_shadow_payload(payload: dict[str, object]) -> dict[str, object]:
+    compact = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"frames", "events"}
+    }
+    compact["shadow_result"] = True
+    return compact

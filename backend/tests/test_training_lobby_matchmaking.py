@@ -14,6 +14,14 @@ class _FailingSchedulerGateway(SchedulerGateway):
         raise ExternalServiceError("scheduler unavailable")
 
 
+class _RecordingSchedulerGateway(SchedulerGateway):
+    def __init__(self) -> None:
+        self.scheduled_run_ids: list[str] = []
+
+    def schedule_run(self, run_id: str, required_worker_labels: dict[str, str] | None = None) -> None:
+        self.scheduled_run_ids.append(run_id)
+
+
 class _FakeDistributedLock:
     def __init__(self, *, acquired: bool = True) -> None:
         self.acquired = acquired
@@ -113,7 +121,9 @@ def _create_training_lobby(client, game_id: str, title: str, headers: dict[str, 
     ).json()
 
 
-def test_multiplayer_matchmaking_schedules_only_full_pairs(client, teacher_headers) -> None:
+def test_multiplayer_matchmaking_schedules_only_full_pairs(client, teacher_headers, container) -> None:
+    scheduler = _RecordingSchedulerGateway()
+    container.execution._scheduler_gateway = scheduler
     game = next(item for item in client.get("/api/v1/games").json() if item["slug"] == "ttt_connect5_v1")
     team_a = _create_ready_team(client, game_id=game["game_id"], captain="cap-a", name="Alpha")
     team_b = _create_ready_team(client, game_id=game["game_id"], captain="cap-b", name="Bravo")
@@ -139,11 +149,15 @@ def test_multiplayer_matchmaking_schedules_only_full_pairs(client, teacher_heade
     auto_tick = ready_responses[1].json()
     assert auto_tick["status"] == "running"
     assert len(auto_tick["last_scheduled_run_ids"]) == 2
+    assert scheduler.scheduled_run_ids == [auto_tick["last_scheduled_run_ids"][0]]
 
     runs = client.get(f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match").json()
     assert len(runs) == 2
     assert {item["team_id"] for item in runs} == {team_a["team_id"], team_b["team_id"]}
     assert all(item["status"] == "queued" for item in runs)
+    assert len({item["match_execution_id"] for item in runs}) == 1
+    assert sum(1 for item in runs if item["run_id"] == item["match_primary_run_id"]) == 1
+    assert all(item["worker_id"] is None for item in runs)
     for run in runs:
         context = client.get(f"/api/v1/internal/runs/{run['run_id']}/execution-context")
         assert context.status_code == 200
@@ -158,6 +172,14 @@ def test_multiplayer_matchmaking_schedules_only_full_pairs(client, teacher_heade
         headers=teacher_headers,
     ).json()
     assert set(tick_again["last_scheduled_run_ids"]) == set(auto_tick["last_scheduled_run_ids"])
+
+    primary_run = next(item for item in runs if item["run_id"] == item["match_primary_run_id"])
+    shadow_run = next(item for item in runs if item["run_id"] != item["match_primary_run_id"])
+    canceled = client.post(f"/api/v1/runs/{primary_run['run_id']}/cancel", headers=teacher_headers)
+    assert canceled.status_code == 200
+    shadow_after_cancel = client.get(f"/api/v1/runs/{shadow_run['run_id']}", headers=teacher_headers)
+    assert shadow_after_cancel.status_code == 200
+    assert shadow_after_cancel.json()["status"] == "canceled"
 
 
 def test_matchmaking_cycle_uses_distributed_lock(client, teacher_headers, container) -> None:
@@ -247,12 +269,26 @@ def test_multiplayer_matchmaking_continues_after_finished_match(client, teacher_
     ).json()
     assert len(first_runs) == 2
 
-    for index, run in enumerate(first_runs):
-        finished = client.post(
-            f"/api/v1/internal/runs/{run['run_id']}/finished",
-            json={"payload": {"status": "ok", "scores": {run["team_id"]: 10 - index}}},
-        )
-        assert finished.status_code == 200
+    primary_run = next(item for item in first_runs if item["run_id"] == item["match_primary_run_id"])
+    shadow_run = next(item for item in first_runs if item["run_id"] != item["match_primary_run_id"])
+    finished = client.post(
+        f"/api/v1/internal/runs/{primary_run['run_id']}/finished",
+        json={
+            "payload": {
+                "status": "ok",
+                "frames": [{"tick": 0}, {"tick": 1}],
+                "events": [{"type": "finished"}],
+                "scores": {primary_run["team_id"]: 10, shadow_run["team_id"]: 9},
+            }
+        },
+    )
+    assert finished.status_code == 200
+    stored_primary = client.get(f"/api/v1/runs/{primary_run['run_id']}", headers=teacher_headers).json()
+    stored_shadow = client.get(f"/api/v1/runs/{shadow_run['run_id']}", headers=teacher_headers).json()
+    assert stored_primary["result_payload"]["frames"]
+    assert "frames" not in stored_shadow["result_payload"]
+    assert "events" not in stored_shadow["result_payload"]
+    assert stored_shadow["result_payload"]["shadow_result"] is True
 
     all_runs = client.get(
         f"/api/v1/runs?lobby_id={lobby['lobby_id']}&run_kind=training_match",
@@ -261,6 +297,13 @@ def test_multiplayer_matchmaking_continues_after_finished_match(client, teacher_
     active_runs = [item for item in all_runs if item["status"] in {"created", "queued", "running"}]
     assert len(all_runs) == 2
     assert active_runs == []
+    assert all(item["status"] == "finished" for item in all_runs)
+    replays = client.get(f"/api/v1/replays?game_id={game['game_id']}&run_kind=training_match", headers=teacher_headers)
+    assert replays.status_code == 200
+    assert [item["run_id"] for item in replays.json()] == [primary_run["run_id"]]
+    shadow_replay = client.get(f"/api/v1/replays/runs/{shadow_run['run_id']}", headers=teacher_headers)
+    assert shadow_replay.status_code == 200
+    assert shadow_replay.json()["run_id"] == shadow_run["run_id"]
 
     lobby_during_result = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers).json()
     assert lobby_during_result["cycle_phase"] in {"replay", "result"}

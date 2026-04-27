@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     matchmaking_lock_ttl_seconds: float = 30.0
     matchmaking_lock_blocking_timeout_seconds: float = 5.0
+    training_lobby_auto_matchmaking_enabled: bool = False
+    training_lobby_auto_matchmaking_interval_seconds: float = 1.0
     scheduler_service_url: str | None = None
     builder_service_url: str | None = None
     enable_dev_login: bool = True

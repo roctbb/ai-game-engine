@@ -5,19 +5,20 @@ from fastapi import APIRouter, Depends
 from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
 from execution.api.access import ensure_can_view_run
-from execution.domain.model import RunKind
+from execution.domain.model import Run, RunKind
 from identity.domain.model import AppSession, UserRole
 from spectator_replay.api.schemas import ReplayResponse
 from spectator_replay.application.service import ListReplaysQuery
 from spectator_replay.domain.model import ReplayRecord
+from shared.kernel import NotFoundError
 
 router = APIRouter(prefix="/replays", tags=["spectator_replay"])
 
 
-def _to_response(item: ReplayRecord) -> ReplayResponse:
+def _to_response(item: ReplayRecord, *, run_id_override: str | None = None) -> ReplayResponse:
     return ReplayResponse(
         replay_id=item.replay_id,
-        run_id=item.run_id,
+        run_id=run_id_override or item.run_id,
         game_id=item.game_id,
         run_kind=item.run_kind,
         status=item.status,
@@ -38,7 +39,15 @@ def get_replay_by_run_id(
 ) -> ReplayResponse:
     run = container.execution.get_run(run_id)
     ensure_can_view_run(container=container, session=session, run=run)
-    return _to_response(container.spectator_replay.get_by_run_id(run_id))
+    try:
+        replay = container.spectator_replay.get_by_run_id(run_id)
+        return _to_response(replay)
+    except NotFoundError:
+        primary_run_id = _shadow_primary_run_id(run)
+        if primary_run_id is None:
+            raise
+        replay = container.spectator_replay.get_by_run_id(primary_run_id)
+        return _to_response(replay, run_id_override=run_id)
 
 
 @router.get("", response_model=list[ReplayResponse])
@@ -53,3 +62,12 @@ def list_replays(
         ListReplaysQuery(game_id=game_id, run_kind=run_kind, limit=limit)
     )
     return [_to_response(item) for item in items]
+
+
+def _shadow_primary_run_id(run: Run) -> str | None:
+    if run.match_primary_run_id is not None and run.run_id != run.match_primary_run_id:
+        return run.match_primary_run_id
+    if isinstance(run.worker_id, str) and run.worker_id.startswith("shadow:"):
+        primary_run_id = run.worker_id.removeprefix("shadow:").strip()
+        return primary_run_id or None
+    return None

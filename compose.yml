@@ -100,6 +100,7 @@ services:
           cpus: "0.5"
 
   backend-api:
+    image: ai-game-engine-backend-api
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -124,6 +125,8 @@ services:
       GAMES_ROOT: /app/games
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       BACKEND_WORKERS: "2"
+      TRAINING_LOBBY_AUTO_MATCHMAKING_ENABLED: "false"
+      TRAINING_LOBBY_AUTO_MATCHMAKING_INTERVAL_SECONDS: "1.0"
     ports:
       - "8000:8000"
     depends_on:
@@ -142,6 +145,43 @@ services:
         limits:
           memory: 2G
           cpus: "2.0"
+
+  matchmaker-service:
+    image: ai-game-engine-backend-api
+    container_name: ai-game-matchmaker-v2
+    logging: *default-logging
+    restart: unless-stopped
+    command: ["python", "-m", "app.matchmaker"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: game-engine
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://redis:6379/0
+      SCHEDULER_SERVICE_URL: http://scheduler-service:8010
+      CORE_REPOSITORY_BACKEND: sqlalchemy
+      CORE_REPOSITORY_AUTO_CREATE_TABLES: "false"
+      EXECUTION_REPOSITORY_BACKEND: sqlalchemy
+      EXECUTION_REPOSITORY_AUTO_CREATE_TABLES: "false"
+      SESSION_REPOSITORY_BACKEND: sqlalchemy
+      SESSION_REPOSITORY_AUTO_CREATE_TABLES: "false"
+      GAMES_ROOT: /app/games
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+      TRAINING_LOBBY_AUTO_MATCHMAKING_ENABLED: "true"
+      TRAINING_LOBBY_AUTO_MATCHMAKING_INTERVAL_SECONDS: "1.0"
+    depends_on:
+      backend-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      scheduler-service:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
 
   scheduler-service:
     build:

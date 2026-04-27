@@ -38,6 +38,8 @@ class RunResponse(BaseModel):
     run_kind: RunKind
     lobby_id: str | None
     target_version_id: str | None
+    match_execution_id: str | None = None
+    match_primary_run_id: str | None = None
     status: RunStatus
     snapshot_id: str | None
     snapshot_version_id: str | None

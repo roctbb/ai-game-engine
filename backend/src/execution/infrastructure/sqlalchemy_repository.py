@@ -6,13 +6,15 @@ from sqlalchemy.orm import Session, load_only, sessionmaker
 from execution.domain.model import (
     BuildJob,
     BuildStatus,
+    MatchExecution,
+    MatchExecutionStatus,
     Run,
     RunKind,
     RunStatus,
     WorkerNode,
     WorkerStatus,
 )
-from execution.infrastructure.sqlalchemy_models import BuildOrm, RunOrm, WorkerOrm
+from execution.infrastructure.sqlalchemy_models import BuildOrm, MatchExecutionOrm, RunOrm, WorkerOrm
 
 
 class SqlAlchemyRunRepository:
@@ -40,6 +42,8 @@ class SqlAlchemyRunRepository:
                             RunOrm.run_kind,
                             RunOrm.lobby_id,
                             RunOrm.target_version_id,
+                            RunOrm.match_execution_id,
+                            RunOrm.match_primary_run_id,
                             RunOrm.status,
                             RunOrm.snapshot_id,
                             RunOrm.snapshot_version_id,
@@ -96,6 +100,8 @@ class SqlAlchemyRunRepository:
                     RunOrm.run_kind,
                     RunOrm.lobby_id,
                     RunOrm.target_version_id,
+                    RunOrm.match_execution_id,
+                    RunOrm.match_primary_run_id,
                     RunOrm.status,
                     RunOrm.snapshot_id,
                     RunOrm.snapshot_version_id,
@@ -147,6 +153,68 @@ class SqlAlchemyRunRepository:
             session.execute(delete(RunOrm).where(RunOrm.run_id.in_(run_ids)))
 
 
+class SqlAlchemyMatchExecutionRepository:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def save(self, match: MatchExecution) -> None:
+        with self._session_factory.begin() as session:
+            session.merge(_map_match_to_orm(match))
+
+    def get(self, match_execution_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+        with self._session_factory() as session:
+            if include_result_payload:
+                row = session.get(MatchExecutionOrm, match_execution_id)
+            else:
+                row = session.scalar(
+                    select(MatchExecutionOrm)
+                    .where(MatchExecutionOrm.match_execution_id == match_execution_id)
+                    .options(
+                        load_only(
+                            MatchExecutionOrm.match_execution_id,
+                            MatchExecutionOrm.primary_run_id,
+                            MatchExecutionOrm.run_ids,
+                            MatchExecutionOrm.game_id,
+                            MatchExecutionOrm.run_kind,
+                            MatchExecutionOrm.lobby_id,
+                            MatchExecutionOrm.status,
+                            MatchExecutionOrm.worker_id,
+                            MatchExecutionOrm.created_at,
+                            MatchExecutionOrm.queued_at,
+                            MatchExecutionOrm.started_at,
+                            MatchExecutionOrm.finished_at,
+                            MatchExecutionOrm.error_message,
+                        )
+                    )
+                )
+            return None if row is None else _map_match_from_orm(row, include_result_payload=include_result_payload)
+
+    def find_by_run_id(self, run_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+        with self._session_factory() as session:
+            row = session.scalar(
+                select(MatchExecutionOrm)
+                .where(MatchExecutionOrm.run_ids.contains([run_id]))
+                .order_by(desc(MatchExecutionOrm.created_at))
+            )
+            if row is None:
+                row = session.scalar(
+                    select(MatchExecutionOrm)
+                    .where(MatchExecutionOrm.primary_run_id == run_id)
+                    .order_by(desc(MatchExecutionOrm.created_at))
+                )
+            return None if row is None else _map_match_from_orm(row, include_result_payload=include_result_payload)
+
+    def delete_many(self, match_execution_ids: list[str]) -> None:
+        if not match_execution_ids:
+            return
+        with self._session_factory.begin() as session:
+            session.execute(
+                delete(MatchExecutionOrm).where(
+                    MatchExecutionOrm.match_execution_id.in_(match_execution_ids)
+                )
+            )
+
+
 class SqlAlchemyWorkerRepository:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
@@ -189,6 +257,8 @@ def _map_run_to_orm(run: Run) -> RunOrm:
         run_kind=run.run_kind.value,
         lobby_id=run.lobby_id,
         target_version_id=run.target_version_id,
+        match_execution_id=run.match_execution_id,
+        match_primary_run_id=run.match_primary_run_id,
         status=run.status.value,
         snapshot_id=run.snapshot_id,
         snapshot_version_id=run.snapshot_version_id,
@@ -212,10 +282,50 @@ def _map_run_from_orm(row: RunOrm, *, include_result_payload: bool = True) -> Ru
         run_kind=RunKind(row.run_kind),
         lobby_id=row.lobby_id,
         target_version_id=row.target_version_id,
+        match_execution_id=row.match_execution_id,
+        match_primary_run_id=row.match_primary_run_id,
         status=RunStatus(row.status),
         snapshot_id=row.snapshot_id,
         snapshot_version_id=row.snapshot_version_id,
         revisions_by_slot=dict(row.revisions_by_slot or {}),
+        worker_id=row.worker_id,
+        created_at=row.created_at,
+        queued_at=row.queued_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        result_payload=row.result_payload if include_result_payload else None,
+        error_message=row.error_message,
+    )
+
+
+def _map_match_to_orm(match: MatchExecution) -> MatchExecutionOrm:
+    return MatchExecutionOrm(
+        match_execution_id=match.match_execution_id,
+        primary_run_id=match.primary_run_id,
+        run_ids=list(match.run_ids),
+        game_id=match.game_id,
+        run_kind=match.run_kind.value,
+        lobby_id=match.lobby_id,
+        status=match.status.value,
+        worker_id=match.worker_id,
+        created_at=match.created_at,
+        queued_at=match.queued_at,
+        started_at=match.started_at,
+        finished_at=match.finished_at,
+        result_payload=match.result_payload,
+        error_message=match.error_message,
+    )
+
+
+def _map_match_from_orm(row: MatchExecutionOrm, *, include_result_payload: bool = True) -> MatchExecution:
+    return MatchExecution(
+        match_execution_id=row.match_execution_id,
+        primary_run_id=row.primary_run_id,
+        run_ids=tuple(str(run_id) for run_id in (row.run_ids or [])),
+        game_id=row.game_id,
+        run_kind=RunKind(row.run_kind),
+        lobby_id=row.lobby_id,
+        status=MatchExecutionStatus(row.status),
         worker_id=row.worker_id,
         created_at=row.created_at,
         queued_at=row.queued_at,

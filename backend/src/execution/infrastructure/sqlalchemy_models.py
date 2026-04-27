@@ -24,6 +24,8 @@ class RunOrm(Base):
     run_kind: Mapped[str] = mapped_column(String(32), index=True)
     lobby_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     target_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    match_execution_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    match_primary_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     status: Mapped[str] = mapped_column(String(32), index=True)
     snapshot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -36,6 +38,29 @@ class RunOrm(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(SqlJson, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MatchExecutionOrm(Base):
+    __tablename__ = "execution_match_executions"
+    __table_args__ = (
+        Index("ix_execution_match_executions_lobby_kind_created_at", "lobby_id", "run_kind", "created_at"),
+        Index("ix_execution_match_executions_game_kind_created_at", "game_id", "run_kind", "created_at"),
+    )
+
+    match_execution_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    primary_run_id: Mapped[str] = mapped_column(String(64), index=True)
+    run_ids: Mapped[list[str]] = mapped_column(SqlJson, default=list)
+    game_id: Mapped[str] = mapped_column(String(64), index=True)
+    run_kind: Mapped[str] = mapped_column(String(32), index=True)
+    lobby_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result_payload: Mapped[dict[str, object] | None] = mapped_column(SqlJson, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
