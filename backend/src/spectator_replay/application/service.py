@@ -6,14 +6,6 @@ from execution.domain.model import Run, RunKind, RunStatus
 from spectator_replay.application.repositories import ReplayRepository
 from spectator_replay.domain.model import ReplayRecord, ReplayVisibility, require_replay
 
-_TERMINAL_RUN_STATUSES = {
-    RunStatus.FINISHED,
-    RunStatus.FAILED,
-    RunStatus.TIMEOUT,
-    RunStatus.CANCELED,
-}
-
-
 @dataclass(slots=True)
 class ListReplaysQuery:
     game_id: str | None = None
@@ -26,7 +18,8 @@ class SpectatorReplayService:
         self._repository = repository
 
     def record_run(self, run: Run) -> None:
-        if run.status not in _TERMINAL_RUN_STATUSES:
+        if run.status is not RunStatus.FINISHED:
+            self._repository.delete_by_run_ids([run.run_id])
             return
 
         frames, events, summary = _build_replay_payload(run)

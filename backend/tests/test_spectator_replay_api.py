@@ -99,7 +99,7 @@ def test_replay_created_for_finished_run_and_available_via_api(client) -> None:
     assert student_listing.status_code == 403
 
 
-def test_replay_created_for_failed_run_with_error_summary(client) -> None:
+def test_replay_not_created_for_failed_run(client) -> None:
     _, run = _create_single_task_run(client, requested_by="captain-replay-failed")
 
     fail_response = client.post(
@@ -109,8 +109,4 @@ def test_replay_created_for_failed_run_with_error_summary(client) -> None:
     assert fail_response.status_code == 200
 
     replay_response = client.get(f"/api/v1/replays/runs/{run['run_id']}")
-    assert replay_response.status_code == 200
-    replay = replay_response.json()
-    assert replay["status"] == "failed"
-    assert replay["summary"]["error_message"] == "engine crashed"
-    assert replay["events"][-1]["type"] == "run_error"
+    assert replay_response.status_code == 404

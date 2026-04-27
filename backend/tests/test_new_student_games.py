@@ -300,6 +300,39 @@ def test_gem_race_demo_returns_competitive_scores_on_random_map() -> None:
     assert frame["board"] != other["frames"][0]["frame"]["board"]
 
 
+def test_gem_race_same_cell_collision_randomly_allows_one_player(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "gem_race" / "engine.py", "gem_race_collision_test")
+
+    monkeypatch.setattr(engine, "_MAX_TURNS", 1)
+    monkeypatch.setattr(engine, "_STARTS", {"red": (1, 2), "blue": (3, 2)})
+    monkeypatch.setattr(
+        engine,
+        "_build_map",
+        lambda _ctx: {"walls": set(engine._BORDER_WALLS), "gems": {(2, 2), (8, 8)}},
+    )
+
+    payload = engine.run(
+        {
+            "run_id": "gem-race-collision",
+            "codes_by_slot": {
+                "red": "def make_move(x, y, board, score):\n    return 'right'\n",
+                "blue": "def make_move(x, y, board, score):\n    return 'left'\n",
+            },
+        }
+    )
+
+    frame = payload["frames"][1]["frame"]
+    positions = frame["positions"]
+    collision = next(event for event in payload["events"] if event.get("type") == "collision_bounce")
+    winner = str(collision["winner"])
+    blocked = set(collision["blocked"])
+
+    assert winner in {"red", "blue"}
+    assert blocked == ({"red", "blue"} - {winner})
+    assert positions[winner] == {"x": 2, "y": 2}
+    assert sum(payload["metrics"]["collected"].values()) == 1
+
+
 def test_fire_rescue_demo_extinguishes_random_map() -> None:
     engine = _load_module(_repo_root() / "games" / "fire_rescue" / "engine.py", "fire_rescue_engine_test")
     payload = engine.run(
@@ -366,11 +399,73 @@ def test_territory_duel_demo_returns_competitive_scores_on_random_map() -> None:
     assert set(payload["scores"]) == {"team-green", "team-purple", "team-orange", "team-blue"}
     assert metrics["active_slots"] == ["green", "purple", "orange", "blue"]
     assert metrics["painted_total"] > 2
+    assert metrics["neutral_left"] >= 0
+    assert metrics["stopped_reason"] in {"turn_limit", "no_moves"}
     assert metrics["walls_total"] > 0
     assert sum(metrics["area"].values()) == metrics["painted_total"]
     assert "compile_errors" not in metrics
     assert isinstance(frame["board"], list)
+    assert frame["width"] == 16
+    assert frame["height"] == 16
     assert frame["board"] != other["frames"][0]["frame"]["board"]
+
+
+def test_territory_duel_blocks_enemy_territory(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "territory_duel" / "engine.py", "territory_duel_enemy_territory_test")
+
+    starts = dict(engine._STARTS)
+    starts["green"] = (1, 1)
+    starts["purple"] = (2, 1)
+    monkeypatch.setattr(engine, "_STARTS", starts)
+    monkeypatch.setattr(engine, "_MAX_TURNS", 1)
+    monkeypatch.setattr(engine, "_build_walls", lambda _ctx: set(engine._BORDER_WALLS))
+
+    payload = engine.run(
+        {
+            "run_id": "territory-duel-enemy-territory",
+            "codes_by_slot": {
+                "green": "def make_move(x, y, board):\n    return 'right'\n",
+                "purple": "def make_move(x, y, board):\n    return 'stay'\n",
+            },
+        }
+    )
+
+    frame = payload["frames"][1]["frame"]
+
+    assert frame["positions"]["green"] == {"x": 1, "y": 1}
+    assert payload["metrics"]["invalid_moves"]["green"] == 1
+    assert any(event.get("type") == "blocked_move" and event.get("reason") == "enemy_territory" for event in payload["events"])
+
+
+def test_territory_duel_finishes_when_no_one_can_expand(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "territory_duel" / "engine.py", "territory_duel_no_moves_test")
+
+    starts = dict(engine._STARTS)
+    starts["green"] = (1, 1)
+    starts["purple"] = (14, 14)
+    monkeypatch.setattr(engine, "_STARTS", starts)
+    blocked = {
+        (x, y)
+        for x in range(1, engine._WIDTH - 1)
+        for y in range(1, engine._HEIGHT - 1)
+        if (x, y) not in {(1, 1), (14, 14)}
+    }
+    monkeypatch.setattr(engine, "_build_walls", lambda _ctx: set(engine._BORDER_WALLS) | blocked)
+
+    payload = engine.run(
+        {
+            "run_id": "territory-duel-no-moves",
+            "codes_by_slot": {
+                "green": "def make_move(x, y, board):\n    return 'stay'\n",
+                "purple": "def make_move(x, y, board):\n    return 'stay'\n",
+            },
+        }
+    )
+
+    assert payload["metrics"]["turns"] == 0
+    assert payload["metrics"]["stopped_reason"] == "no_moves"
+    assert payload["metrics"]["neutral_left"] == 0
+    assert any(event.get("type") == "no_moves" for event in payload["events"])
 
 
 def test_flood_escape_demo_reaches_exit_on_dynamic_random_map() -> None:
@@ -969,6 +1064,8 @@ def test_energy_race_demo_returns_competitive_scores_on_random_map() -> None:
     assert set(payload["scores"]) == {"team-solar", "team-lunar"}
     assert metrics["energy_total"] == 14
     assert metrics["chargers_total"] == 4
+    assert frame["battery_max"] == 24
+    assert set(frame["batteries"]) == {"solar", "lunar"}
     assert metrics["walls_total"] > 0
     assert sum(metrics["collected"].values()) > 0
     assert "compile_errors" not in metrics
@@ -1044,16 +1141,20 @@ def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     assert "placements" in payload
     assert set(payload["scores"]) == {"team-alpha", "team-beta", "team-gamma", "team-delta"}
     assert metrics["active_slots"] == ["north_west", "north_east", "south_west", "south_east"]
-    assert metrics["initial_apples"] == 8
+    assert metrics["initial_apples"] == 12
     assert metrics["apples_total"] >= metrics["initial_apples"]
     assert metrics["apples_spawned_total"] == metrics["apples_total"]
     assert metrics["turn_limit"] == 150
-    assert metrics["spawn_interval"] == 10
-    assert metrics["spawn_batch"] == 2
-    assert metrics["max_apples_on_board"] == 12
-    assert metrics["capacity"] == 2
+    assert metrics["spawn_interval"] == 5
+    assert metrics["spawn_batch"] == 3
+    assert metrics["max_apples_on_board"] == 18
+    assert metrics["capacity"] == 3
+    assert metrics["apples_per_juice"] == 4
+    assert metrics["juice_to_win"] == 3
     assert metrics["walls_total"] > 0
     assert sum(metrics["delivered"].values()) > 0
+    assert set(metrics["base_apples"]) == set(metrics["active_slots"])
+    assert set(metrics["juice"]) == set(metrics["active_slots"])
     assert set(metrics["throws"]) == set(metrics["active_slots"])
     assert set(metrics["frozen"]) == set(metrics["active_slots"])
     assert "compile_errors" not in metrics
@@ -1064,6 +1165,11 @@ def test_apple_market_demo_returns_competitive_scores_on_random_map() -> None:
     assert frame["turn_limit"] == 150
     assert all(value == 0 for value in frame["carrying"].values())
     assert all(value == 0 for value in frame["delivered"].values())
+    assert all(value == 0 for value in frame["base_apples"].values())
+    assert all(value == 0 for value in frame["juice"].values())
+    assert frame["apples_per_juice"] == 4
+    assert frame["juice_to_win"] == 3
+    assert len(frame["base_info"]) == 4
     assert any(cell == 1 for row in frame["board"] for cell in row)
     assert any(cell == 2 for row in frame["board"] for cell in row)
     delivered_events = [event for event in payload["events"] if event.get("type") == "delivered"]
@@ -1149,6 +1255,148 @@ def test_apple_market_throw_spends_apple_and_freezes_hit_player(monkeypatch) -> 
     assert projectile["spent_apple"] is True
     assert projectile["carrying_after"] == 0
     assert any(event.get("type") == "freeze" and event.get("slot") == "south_east" for event in payload["events"])
+
+
+def test_apple_market_players_parameter_shows_opponent_carrying(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "apple_market" / "engine.py", "apple_market_players_param_test")
+
+    starts = dict(engine._STARTS)
+    starts["south_east"] = (4, 1)
+    monkeypatch.setattr(engine, "_STARTS", starts)
+    monkeypatch.setattr(engine, "_MAX_TURNS", 2)
+    monkeypatch.setattr(
+        engine,
+        "_build_map",
+        lambda _ctx, _slots: {"walls": set(engine._BORDER_WALLS), "apples": {(2, 1)}, "spawn_cells": []},
+    )
+
+    collector_code = (
+        "def make_move(x, y, board, carrying):\n"
+        "    if carrying == 0:\n"
+        "        return 'right'\n"
+        "    return 'stay'\n"
+    )
+    watcher_code = (
+        "def make_move(x, y, board, carrying, players):\n"
+        "    for player in players:\n"
+        "        if not player['is_me'] and player['carrying'] > 0:\n"
+        "            return 'left'\n"
+        "    return 'stay'\n"
+    )
+    payload = engine.run(
+        {
+            "run_id": "apple-market-players-param",
+            "participants": [
+                {"team_id": "team-alpha", "display_name": "Сборщик", "codes_by_slot": {"player": collector_code}},
+                {"team_id": "team-beta", "display_name": "Наблюдатель", "codes_by_slot": {"player": watcher_code}},
+            ],
+        }
+    )
+
+    after_collect = payload["frames"][1]["frame"]
+    after_reaction = payload["frames"][2]["frame"]
+    watcher = next(player for player in after_reaction["players"] if player["slot"] == "south_east")
+
+    assert after_collect["players"][0]["name"] == "Сборщик"
+    assert after_collect["players"][0]["carrying"] == 1
+    assert after_collect["players"][1]["name"] == "Наблюдатель"
+    assert after_reaction["positions"]["south_east"] == {"x": 3, "y": 1}
+    assert watcher["x"] == 3
+    assert watcher["carrying"] == 0
+
+
+def test_apple_market_turns_four_base_apples_into_juice(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "apple_market" / "engine.py", "apple_market_juice_test")
+
+    starts = dict(engine._STARTS)
+    starts["north_west"] = (2, 1)
+    monkeypatch.setattr(engine, "_STARTS", starts)
+    monkeypatch.setattr(engine, "_MAX_TURNS", 10)
+    monkeypatch.setattr(
+        engine,
+        "_build_map",
+        lambda _ctx, _slots: {"walls": set(engine._BORDER_WALLS), "apples": {(2, 1), (3, 1), (4, 1), (2, 2)}, "spawn_cells": []},
+    )
+
+    collector_code = (
+        "ACTIONS = ['stay', 'right', 'right', 'left', 'left', 'left', 'right', 'down', 'up', 'left']\n"
+        "INDEX = [0]\n"
+        "def make_move(x, y, board, carrying, players, bases):\n"
+        "    action = ACTIONS[INDEX[0]] if INDEX[0] < len(ACTIONS) else 'stay'\n"
+        "    INDEX[0] += 1\n"
+        "    return action\n"
+    )
+    payload = engine.run(
+        {
+            "run_id": "apple-market-juice",
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": collector_code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": "def make_move(x, y, board, carrying):\n    return 'stay'\n"}},
+            ],
+        }
+    )
+
+    assert payload["metrics"]["delivered"]["north_west"] == 4
+    assert payload["metrics"]["base_apples"]["north_west"] == 0
+    assert payload["metrics"]["juice"]["north_west"] == 1
+    assert payload["frames"][-1]["frame"]["bases"]["north_west"]["juice"] == 1
+    assert any(event.get("type") == "juice_made" and event.get("slot") == "north_west" for event in payload["events"])
+
+
+def test_apple_market_bases_parameter_exposes_stealable_base_apples(monkeypatch) -> None:
+    engine = _load_module(_repo_root() / "games" / "apple_market" / "engine.py", "apple_market_base_steal_test")
+
+    starts = dict(engine._STARTS)
+    starts["north_west"] = (2, 1)
+    starts["south_east"] = (1, 2)
+    monkeypatch.setattr(engine, "_STARTS", starts)
+    monkeypatch.setattr(engine, "_MAX_TURNS", 7)
+    monkeypatch.setattr(
+        engine,
+        "_build_map",
+        lambda _ctx, _slots: {"walls": set(engine._BORDER_WALLS), "apples": {(2, 1), (3, 1), (4, 1)}, "spawn_cells": []},
+    )
+
+    depositor_code = (
+        "ACTIONS = ['stay', 'right', 'right', 'left', 'left', 'left', 'right']\n"
+        "INDEX = [0]\n"
+        "def make_move(x, y, board, carrying, players, bases):\n"
+        "    action = ACTIONS[INDEX[0]] if INDEX[0] < len(ACTIONS) else 'stay'\n"
+        "    INDEX[0] += 1\n"
+        "    return action\n"
+    )
+    thief_code = (
+        "def make_move(x, y, board, carrying, players, bases):\n"
+        "    for base in bases:\n"
+        "        if not base['is_me'] and base['apples'] > 0:\n"
+        "            if y > base['y']:\n"
+        "                return 'up'\n"
+        "            if y < base['y']:\n"
+        "                return 'down'\n"
+        "            if x > base['x']:\n"
+        "                return 'left'\n"
+        "            if x < base['x']:\n"
+        "                return 'right'\n"
+        "    return 'stay'\n"
+    )
+    payload = engine.run(
+        {
+            "run_id": "apple-market-base-steal",
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": depositor_code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": thief_code}},
+            ],
+        }
+    )
+
+    final_frame = payload["frames"][-1]["frame"]
+
+    assert payload["metrics"]["delivered"]["north_west"] == 3
+    assert payload["metrics"]["base_apples"]["north_west"] == 0
+    assert payload["metrics"]["juice"]["north_west"] == 0
+    assert payload["metrics"]["carrying"]["south_east"] == 3
+    assert final_frame["carrying"]["south_east"] == 3
+    assert any(event.get("type") == "stolen" and event.get("from") == "north_west" and event.get("amount") == 3 for event in payload["events"])
 
 
 def test_box_buttons_demo_solves_random_sokoban_map() -> None:

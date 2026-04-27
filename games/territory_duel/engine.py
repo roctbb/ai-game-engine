@@ -6,17 +6,17 @@ import random
 from typing import Any, Callable
 
 
-_WIDTH = 12
-_HEIGHT = 12
-_MAX_TURNS = 100
+_WIDTH = 16
+_HEIGHT = 16
+_MAX_TURNS = 180
 _SLOTS = ("green", "purple", "orange", "blue")
 _STARTS = {
     "green": (1, 1),
-    "purple": (10, 10),
-    "orange": (10, 1),
-    "blue": (1, 10),
+    "purple": (14, 14),
+    "orange": (14, 1),
+    "blue": (1, 14),
 }
-_RANDOM_WALLS = 18
+_RANDOM_WALLS = 34
 _DELTAS = {
     "up": (0, -1),
     "down": (0, 1),
@@ -39,14 +39,20 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     active_slots, role_code, role_team, role_name = _resolve_participants(ctx)
     bots = {role: _build_fn(role_code.get(role, ''), role, events, print_context) for role in active_slots}
     walls = _build_walls(ctx)
+    collision_rng = random.Random(_map_seed(ctx, "territory_duel_offline") + ":collisions")
 
     positions = {slot: _STARTS[slot] for slot in active_slots}
     ownership = {position: slot for slot, position in positions.items()}
     invalid = {slot: 0 for slot in active_slots}
     turns = 0
+    stopped_reason = "turn_limit"
     frames = [_frame(0, "running", active_slots, walls, ownership, positions, invalid, labels=role_name)]
 
     for turn in range(_MAX_TURNS):
+        if not _has_any_expansion_move(active_slots, positions, walls, ownership):
+            stopped_reason = "no_moves"
+            events.append({"type": "no_moves", "tick": turn, "message": "Ни один игрок больше не может добраться до нейтральной клетки."})
+            break
         print_context["tick"] = turn
         intents: dict[str, tuple[int, int]] = {}
         for slot in active_slots:
@@ -63,23 +69,13 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 invalid[slot] += 1
                 target = (x, y)
                 events.append({"type": "blocked_move", "message": "Ход заблокирован: там стена, закрытая клетка или другой непроходимый объект.", "tick": turn, "slot": slot})
+            elif target in ownership and ownership[target] != slot:
+                invalid[slot] += 1
+                target = (x, y)
+                events.append({"type": "blocked_move", "reason": "enemy_territory", "message": "Нельзя наступать на уже покрашенную клетку другого цвета.", "tick": turn, "slot": slot})
             intents[slot] = target
 
-        blocked_slots: set[str] = set()
-        by_target: dict[tuple[int, int], list[str]] = {}
-        for slot, target in intents.items():
-            by_target.setdefault(target, []).append(slot)
-        for target, slots in by_target.items():
-            if len(slots) > 1:
-                blocked_slots.update(slots)
-                events.append({"type": "collision_bounce", "tick": turn + 1, "slots": slots, "x": target[0], "y": target[1]})
-        for index, a in enumerate(active_slots):
-            for b in active_slots[index + 1:]:
-                if intents[a] == positions[b] and intents[b] == positions[a]:
-                    blocked_slots.update([a, b])
-                    events.append({"type": "swap_blocked", "tick": turn + 1, "slots": [a, b]})
-        for slot in blocked_slots:
-            intents[slot] = positions[slot]
+        intents = _resolve_random_cell_collisions(active_slots, positions, intents, events, turn, collision_rng)
 
         positions = intents
         for slot in active_slots:
@@ -101,6 +97,8 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "is_tie": _is_tie(active_slots, slot_scores),
         "area": area,
         "painted_total": len(ownership),
+        "neutral_left": (_WIDTH - 2) * (_HEIGHT - 2) - (len(walls) - len(_BORDER_WALLS)) - len(ownership),
+        "stopped_reason": stopped_reason,
         "walls_total": len(walls) - len(_BORDER_WALLS),
         "invalid_moves": invalid,
         "slot_scores": slot_scores,
@@ -203,7 +201,7 @@ def _build_walls(context: dict[str, Any]) -> set[tuple[int, int]]:
         rng.shuffle(candidates)
         walls = set(_BORDER_WALLS) | set(candidates[:_RANDOM_WALLS])
         reachable = [_reachable_cells(_STARTS[slot], walls) for slot in _SLOTS]
-        if len(set.intersection(*reachable)) >= 60:
+        if len(set.intersection(*reachable)) >= 110:
             return walls
     return set(_BORDER_WALLS)
 
@@ -287,6 +285,54 @@ def _move(position: tuple[int, int], action: str) -> tuple[int, int]:
     return position[0] + dx, position[1] + dy
 
 
+def _has_any_expansion_move(active_slots: list[str], positions: dict[str, tuple[int, int]], walls: set[tuple[int, int]], ownership: dict[tuple[int, int], str]) -> bool:
+    return any(_can_reach_neutral(slot, positions[slot], walls, ownership) for slot in active_slots)
+
+
+def _can_reach_neutral(slot: str, start: tuple[int, int], walls: set[tuple[int, int]], ownership: dict[tuple[int, int], str]) -> bool:
+    queue = [start]
+    seen = {start}
+    head = 0
+    while head < len(queue):
+        current = queue[head]
+        head += 1
+        for action in ("up", "down", "left", "right"):
+            nxt = _move(current, action)
+            if nxt in seen or nxt in walls:
+                continue
+            owner = ownership.get(nxt)
+            if owner is not None and owner != slot:
+                continue
+            if owner is None:
+                return True
+            seen.add(nxt)
+            queue.append(nxt)
+    return False
+
+
+def _resolve_random_cell_collisions(slots: list[str], positions: dict[str, tuple[int, int]], intents: dict[str, tuple[int, int]], events: list[dict[str, object]], turn: int, rng: random.Random) -> dict[str, tuple[int, int]]:
+    result = dict(intents)
+    by_target: dict[tuple[int, int], list[str]] = {}
+    for slot, target in intents.items():
+        by_target.setdefault(target, []).append(slot)
+    for target, contenders in by_target.items():
+        if len(contenders) <= 1:
+            continue
+        incumbents = [slot for slot in contenders if positions[slot] == target]
+        winner = rng.choice(incumbents or contenders)
+        blocked = [slot for slot in contenders if slot != winner]
+        for slot in blocked:
+            result[slot] = positions[slot]
+        events.append({"type": "collision_bounce", "tick": turn + 1, "slots": contenders, "winner": winner, "blocked": blocked, "x": target[0], "y": target[1]})
+    for index, first in enumerate(slots):
+        for second in slots[index + 1:]:
+            if intents[first] == positions[second] and intents[second] == positions[first]:
+                result[first] = positions[first]
+                result[second] = positions[second]
+                events.append({"type": "swap_blocked", "tick": turn + 1, "slots": [first, second]})
+    return result
+
+
 def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
     queue = [start]
     seen = {start}
@@ -338,6 +384,7 @@ def _frame(
     labels: dict[str, str] | None = None,
 ) -> dict[str, object]:
     area = {slot: sum(1 for owner in ownership.values() if owner == slot) for slot in active_slots}
+    neutral_left = (_WIDTH - 2) * (_HEIGHT - 2) - (len(walls) - len(_BORDER_WALLS)) - len(ownership)
     frame: dict[str, object] = {
         "board": _board(walls, ownership, positions, active_slots, active_slots[0]),
         "boards": {slot: _board(walls, ownership, positions, active_slots, slot) for slot in active_slots},
@@ -348,6 +395,7 @@ def _frame(
         "positions": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in positions.items()},
         "area": area,
         "painted_total": len(ownership),
+        "neutral_left": neutral_left,
         "invalid_moves": invalid,
     }
     if slot_scores is not None:

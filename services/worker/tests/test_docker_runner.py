@@ -132,29 +132,29 @@ def test_execute_manifest_game_reports_missing_docker_binary(monkeypatch: Any, t
 
 def test_parse_engine_payload_enforces_result_turn_limit() -> None:
     old_limit = settings.result_max_turns
-    settings.result_max_turns = 500
+    settings.result_max_turns = 1200
     try:
         payload = {
             "status": "finished",
-            "metrics": {"turns": 700},
+            "metrics": {"turns": 1300},
             "frames": [
                 {"tick": 0, "phase": "running", "frame": {"value": 0}},
-                {"tick": 500, "phase": "running", "frame": {"value": 500}},
-                {"tick": 501, "phase": "running", "frame": {"value": 501}},
-                {"tick": 700, "phase": "finished", "frame": {"value": 700}},
+                {"tick": 1200, "phase": "running", "frame": {"value": 1200}},
+                {"tick": 1201, "phase": "running", "frame": {"value": 1201}},
+                {"tick": 1300, "phase": "finished", "frame": {"value": 1300}},
             ],
             "events": [
-                {"type": "kept", "tick": 500},
-                {"type": "dropped", "tick": 501},
+                {"type": "kept", "tick": 1200},
+                {"type": "dropped", "tick": 1201},
             ],
         }
 
         parsed = _parse_engine_payload(json.dumps(payload))
 
-        assert [frame["tick"] for frame in parsed["frames"]] == [0, 500, 500]
+        assert [frame["tick"] for frame in parsed["frames"]] == [0, 1200, 1200]
         assert parsed["frames"][-1]["phase"] == "finished"
         assert parsed["metrics"]["turn_limit_enforced"] is True
-        assert parsed["metrics"]["result_max_turns"] == 500
+        assert parsed["metrics"]["result_max_turns"] == 1200
         assert parsed["metrics"]["dropped_frames"] == 2
         assert [event["type"] for event in parsed["events"]] == ["kept", "turn_limit_enforced"]
         assert parsed["events"][-1]["dropped_events"] == 1

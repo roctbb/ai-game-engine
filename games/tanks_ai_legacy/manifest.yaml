@@ -3,7 +3,7 @@ title: TanksAI Classic
 game_mode: multiplayer
 min_players_per_match: 2
 max_players_per_match: 16
-semver: 1.0.0
+semver: 1.1.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html

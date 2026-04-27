@@ -65,6 +65,7 @@ from shared.config.settings import settings
 from shared.db.base import Base
 from shared.db.session import create_sqlalchemy_engine
 import shared.db.models as _db_models
+from redis import Redis
 from sqlalchemy.orm import sessionmaker
 
 
@@ -190,6 +191,11 @@ def _build_container() -> ServiceContainer:
         session_repo = SqlAlchemySessionRepository(sql_session_factory)
     else:
         session_repo = InMemorySessionRepository()
+
+    matchmaking_lock_client = None
+    if use_any_sqlalchemy:
+        matchmaking_lock_client = Redis.from_url(settings.redis_url)
+
     scheduler_gateway: SchedulerGateway
     if settings.scheduler_service_url:
         scheduler_gateway = HttpSchedulerGateway(settings.scheduler_service_url)
@@ -226,6 +232,7 @@ def _build_container() -> ServiceContainer:
         game_catalog=game_catalog,
         team_workspace=team_workspace,
         execution=execution,
+        matchmaking_lock_client=matchmaking_lock_client,
     )
     competition = CompetitionService(
         repository=competition_repo,

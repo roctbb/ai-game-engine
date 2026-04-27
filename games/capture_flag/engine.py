@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import random
-from collections import Counter
 from typing import Any, Callable
 
 
@@ -48,6 +47,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     active_slots, role_code, role_team, role_name = _resolve_participants(ctx)
     bots = {slot: _build_fn(role_code.get(slot, ""), slot, events, print_context) for slot in active_slots}
     fixed_walls = _build_walls(ctx, active_slots)
+    collision_rng = random.Random(_map_seed(ctx, "capture_flag_offline") + ":collisions")
 
     positions = {slot: _STARTS[slot] for slot in active_slots}
     flag: dict[str, object] = {"carrier": None, "x": _FLAG_HOME[0], "y": _FLAG_HOME[1]}
@@ -141,7 +141,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 target = positions[slot]
             intents[slot] = target
 
-        intents = _resolve_collisions(active_slots, positions, intents, flag, events, turn)
+        intents = _resolve_collisions(active_slots, positions, intents, flag, events, turn, collision_rng)
         positions = intents
         turns = turn + 1
 
@@ -510,31 +510,30 @@ def _resolve_collisions(
     flag: dict[str, object],
     events: list[dict[str, object]],
     turn: int,
+    rng: random.Random,
 ) -> dict[str, tuple[int, int]]:
-    blocked: set[str] = set()
-    counts = Counter(intents.values())
+    result = dict(intents)
     flag_pos = _flag_position(flag) if flag.get("carrier") is None else None
-    processed_targets: set[tuple[int, int]] = set()
-    for slot in active_slots:
-        if counts[intents[slot]] > 1:
-            if intents[slot] in processed_targets:
-                continue
-            processed_targets.add(intents[slot])
-            contenders = [candidate for candidate in active_slots if intents[candidate] == intents[slot]]
-            if flag_pos is not None and intents[slot] == flag_pos:
-                winner = contenders[0]
-                blocked.update(candidate for candidate in contenders if candidate != winner)
-                events.append({"type": "flag_race", "tick": turn + 1, "winner": winner, "blocked": [candidate for candidate in contenders if candidate != winner]})
-            else:
-                blocked.add(slot)
+    by_target: dict[tuple[int, int], list[str]] = {}
+    for slot, target in intents.items():
+        by_target.setdefault(target, []).append(slot)
+    for target, contenders in by_target.items():
+        if len(contenders) <= 1:
+            continue
+        incumbents = [slot for slot in contenders if positions[slot] == target]
+        winner = rng.choice(incumbents or contenders)
+        blocked = [candidate for candidate in contenders if candidate != winner]
+        for slot in blocked:
+            result[slot] = positions[slot]
+        event_type = "flag_race" if flag_pos is not None and target == flag_pos else "collision_bounce"
+        events.append({"type": event_type, "tick": turn + 1, "slots": contenders, "winner": winner, "blocked": blocked, "x": target[0], "y": target[1]})
     for i, first in enumerate(active_slots):
         for second in active_slots[i + 1 :]:
             if intents[first] == positions[second] and intents[second] == positions[first]:
-                blocked.add(first)
-                blocked.add(second)
-    if blocked:
-        events.append({"type": "collision_bounce", "tick": turn + 1, "slots": sorted(blocked)})
-    return {slot: positions[slot] if slot in blocked else intents[slot] for slot in active_slots}
+                result[first] = positions[first]
+                result[second] = positions[second]
+                events.append({"type": "swap_blocked", "tick": turn + 1, "slots": [first, second]})
+    return result
 
 
 def _move(position: tuple[int, int], action: str) -> tuple[int, int]:

@@ -3,12 +3,12 @@ title: Яблочный рынок
 game_mode: multiplayer
 min_players_per_match: 2
 max_players_per_match: 4
-semver: 1.3.2
+semver: 1.4.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
-player_instruction: Определите функцию make_move(x, y, board, carrying), возвращающую up/down/left/right/stay или throw_up/throw_down/throw_left/throw_right. Собирайте яблоки за ограниченное число ходов, относите их на базу и замораживайте соперников бросками.
-description: От 2 до 4 команд собирают яблоки на большой случайной карте. В центре стоит яблоня, рядом с ней периодически падают новые яблоки, а на базах видно число доставленных яблок.
+player_instruction: Определите функцию make_move(x, y, board, carrying, players, bases), возвращающую up/down/left/right/stay или throw_up/throw_down/throw_left/throw_right. Носите до 3 яблок, складывайте их на свою базу, превращайте 4 яблока в литр сока и набирайте 3 литра для победы. В players видно, сколько яблок несет каждый игрок, а в bases - сколько яблок и сока лежит на каждой базе.
+description: От 2 до 4 команд собирают яблоки на большой случайной карте. В центре стоит активная яблоня, рядом с ней часто падают новые яблоки. Яблоки на базе можно украсть, но готовый сок уже безопасен.
 difficulty: medium
 learning_section: Соревновательные стратегии
 topics:
@@ -17,6 +17,8 @@ topics:
 - BFS
 - ресурсы
 - заморозка
+- базы
+- сок
 slots:
 - key: player
   title: Игрок

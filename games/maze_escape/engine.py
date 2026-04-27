@@ -12,7 +12,7 @@ _DIRECTIONS = {
     "left": (-1, 0),
     "right": (1, 0),
 }
-_MAX_STEPS = 500
+_MAX_STEPS = 1200
 _WIDTH = 21
 _HEIGHT = 21
 

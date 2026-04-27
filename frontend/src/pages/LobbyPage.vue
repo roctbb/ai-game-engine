@@ -1804,7 +1804,8 @@ function lobbyId(): string {
 }
 
 function scoreLabel(value: number | null): string {
-  return value === null ? 'нет данных' : value.toFixed(1);
+  if (value === null) return 'нет данных';
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function averageScoreLabel(value: number | null | undefined): string {
@@ -2370,6 +2371,13 @@ function dedupeCurrentGameStats(rows: CurrentGameStatRow[]): CurrentGameStatRow[
     .map((row) => normalizeGameStatName(row.display_name))
     .filter(Boolean);
   const result = new Map<string, CurrentGameStatRow>();
+  const duplicateKeyByName = (normalizedName: string): string | null => {
+    if (!normalizedName) return null;
+    for (const [key, existing] of result.entries()) {
+      if (normalizeGameStatName(existing.display_name) === normalizedName) return key;
+    }
+    return null;
+  };
 
   const put = (row: CurrentGameStatRow): void => {
     const normalizedName = normalizeGameStatName(row.display_name);
@@ -2381,7 +2389,8 @@ function dedupeCurrentGameStats(rows: CurrentGameStatRow[]): CurrentGameStatRow[
       return;
     }
 
-    const key = isSyntheticFrameTeamId(row.team_id) ? normalizedName || row.team_id : row.team_id;
+    const key = duplicateKeyByName(normalizedName)
+      ?? (isSyntheticFrameTeamId(row.team_id) ? normalizedName || row.team_id : row.team_id);
     const previous = result.get(key);
     if (!previous) {
       result.set(key, row);
@@ -2418,7 +2427,8 @@ function percentFrameValue(value: number | null, max: number): number {
 
 function framePlayerScoreLabel(player: Record<string, unknown>): string {
   const parts: string[] = [];
-  const score = numericFrameValue(player.score ?? player.points);
+  const scoreSource = player.score !== undefined && player.score !== null ? 'score' : 'points';
+  const score = numericFrameValue(scoreSource === 'score' ? player.score : player.points);
   if (score !== null) {
     parts.push(scoreLabel(score));
   }
@@ -2441,6 +2451,7 @@ function framePlayerScoreLabel(player: Record<string, unknown>): string {
   ];
   for (const [label, key] of details) {
     const value = numericFrameValue(player[key]);
+    if (key === 'points' && score !== null && (scoreSource === 'points' || value === score)) continue;
     if (value !== null) {
       parts.push(`${label} ${scoreLabel(value)}`);
     }
@@ -4585,12 +4596,13 @@ onUnmounted(() => {
 }
 
 .lobby-game-layout .lobby-stat-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.35rem 0.65rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.3rem;
   border-color: rgba(34, 211, 238, 0.18);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.68);
   color: #dbeafe;
+  min-width: 0;
 }
 
 .lobby-game-layout .lobby-stat-row--self {
@@ -4607,18 +4619,19 @@ onUnmounted(() => {
 .lobby-stat-title strong {
   overflow: hidden;
   color: #e5f3ff;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
 }
 
 .lobby-stat-score {
   color: #fef3c7;
-  font-weight: 850;
-  text-align: right;
+  font-weight: 800;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .lobby-stat-bars {
-  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.3rem;
@@ -4646,8 +4659,8 @@ onUnmounted(() => {
 }
 
 .lobby-game-layout .lobby-stat-row small {
-  grid-column: 1 / -1;
   color: #8ea7c1;
+  overflow-wrap: anywhere;
 }
 
 .lobby-game-empty-stat {

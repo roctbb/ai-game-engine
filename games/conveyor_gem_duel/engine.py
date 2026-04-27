@@ -35,6 +35,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     conveyors = game_map["conveyors"]
     gems = game_map["gems"]
     assert isinstance(walls, set) and isinstance(conveyors, dict) and isinstance(gems, set)
+    collision_rng = random.Random(_map_seed(ctx, "conveyor_gem_duel_offline") + ":collisions")
 
     positions = dict(_STARTS)
     collected = {slot: 0 for slot in _SLOTS}
@@ -66,14 +67,11 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             intents[slot] = target
             pushed_by_slot[slot] = pushed
 
-        if intents["orange"] == intents["violet"]:
-            intents = {slot: positions[slot] for slot in _SLOTS}
-            pushed_by_slot = {slot: 0 for slot in _SLOTS}
-            events.append({"type": "collision_bounce", "tick": turn + 1})
-        elif intents["orange"] == positions["violet"] and intents["violet"] == positions["orange"]:
-            intents = {slot: positions[slot] for slot in _SLOTS}
-            pushed_by_slot = {slot: 0 for slot in _SLOTS}
-            events.append({"type": "swap_blocked", "tick": turn + 1})
+        resolved_intents = _resolve_random_cell_collisions(_SLOTS, positions, intents, events, turn, collision_rng)
+        for slot in _SLOTS:
+            if resolved_intents[slot] != intents[slot]:
+                pushed_by_slot[slot] = 0
+        intents = resolved_intents
 
         positions = intents
         for slot in _SLOTS:
@@ -302,6 +300,29 @@ def _transition(
 def _move(position: tuple[int, int], action: str) -> tuple[int, int]:
     dx, dy = _DELTAS[action]
     return position[0] + dx, position[1] + dy
+
+
+def _resolve_random_cell_collisions(slots: tuple[str, ...], positions: dict[str, tuple[int, int]], intents: dict[str, tuple[int, int]], events: list[dict[str, object]], turn: int, rng: random.Random) -> dict[str, tuple[int, int]]:
+    result = dict(intents)
+    by_target: dict[tuple[int, int], list[str]] = {}
+    for slot, target in intents.items():
+        by_target.setdefault(target, []).append(slot)
+    for target, contenders in by_target.items():
+        if len(contenders) <= 1:
+            continue
+        incumbents = [slot for slot in contenders if positions[slot] == target]
+        winner = rng.choice(incumbents or contenders)
+        blocked = [slot for slot in contenders if slot != winner]
+        for slot in blocked:
+            result[slot] = positions[slot]
+        events.append({"type": "collision_bounce", "tick": turn + 1, "slots": contenders, "winner": winner, "blocked": blocked, "x": target[0], "y": target[1]})
+    for index, first in enumerate(slots):
+        for second in slots[index + 1:]:
+            if intents[first] == positions[second] and intents[second] == positions[first]:
+                result[first] = positions[first]
+                result[second] = positions[second]
+                events.append({"type": "swap_blocked", "tick": turn + 1, "slots": [first, second]})
+    return result
 
 
 def _inside(position: tuple[int, int]) -> bool:

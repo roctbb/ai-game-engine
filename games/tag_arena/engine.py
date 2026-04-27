@@ -47,6 +47,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     walls = game_map["walls"]
     stars = game_map["stars"]
     assert isinstance(walls, set) and isinstance(stars, set)
+    collision_rng = random.Random(_map_seed(ctx, "tag_arena_offline") + ":collisions")
 
     positions = {(team, role): _STARTS[team][role] for team in teams for role in _ROLES}
     collected = {team: 0 for team in teams}
@@ -85,7 +86,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                     events.append({"type": "blocked_move", "message": "Ход заблокирован стеной.", "tick": turn, "slot": key})
                 intents[(team, role)] = target
 
-        positions = _resolve_collisions(teams, positions, intents, events, turn)
+        positions = _resolve_collisions(teams, positions, intents, events, turn, collision_rng)
         caught_events = _apply_catches(teams, positions, frozen, catches, events, turn)
         for caught in caught_events:
             caught_team = str(caught["runner_team"])
@@ -290,18 +291,38 @@ def _resolve_collisions(
     intents: dict[tuple[str, str], tuple[int, int]],
     events: list[dict[str, object]],
     turn: int,
+    rng: random.Random,
 ) -> dict[tuple[str, str], tuple[int, int]]:
     result = dict(intents)
     entities = [(team, role) for team in teams for role in _ROLES]
+    by_target: dict[tuple[int, int], list[tuple[str, str]]] = {}
+    for entity, target in intents.items():
+        by_target.setdefault(target, []).append(entity)
+    for target, contenders in by_target.items():
+        if len(contenders) <= 1:
+            continue
+        has_cross_team_collision = any(first[0] != second[0] for index, first in enumerate(contenders) for second in contenders[index + 1:])
+        if not has_cross_team_collision:
+            continue
+        if len(contenders) == 2 and contenders[0][0] != contenders[1][0] and _is_hunter_runner_pair(contenders[0], contenders[1]):
+            continue
+        incumbents = [entity for entity in contenders if positions[entity] == target]
+        winner = rng.choice(incumbents or contenders)
+        blocked = [entity for entity in contenders if entity != winner]
+        for entity in blocked:
+            result[entity] = positions[entity]
+        events.append({
+            "type": "collision_bounce",
+            "tick": turn + 1,
+            "slots": [f"{team}_{role}" for team, role in contenders],
+            "winner": f"{winner[0]}_{winner[1]}",
+            "blocked": [f"{team}_{role}" for team, role in blocked],
+            "x": target[0],
+            "y": target[1],
+        })
     for index, first in enumerate(entities):
         for second in entities[index + 1 :]:
-            if first[0] != second[0] and intents[first] == intents[second]:
-                if _is_hunter_runner_pair(first, second):
-                    continue
-                result[first] = positions[first]
-                result[second] = positions[second]
-                events.append({"type": "collision_bounce", "tick": turn + 1, "slots": [f"{first[0]}_{first[1]}", f"{second[0]}_{second[1]}"]})
-            elif first[0] != second[0] and intents[first] == positions[second] and intents[second] == positions[first]:
+            if first[0] != second[0] and intents[first] == positions[second] and intents[second] == positions[first]:
                 if _is_hunter_runner_pair(first, second):
                     result[first] = intents[first]
                     result[second] = intents[second]

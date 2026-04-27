@@ -167,7 +167,7 @@ def test_repository_renderers_have_initial_preview_frames() -> None:
 
 
 def test_repository_game_turn_limits_do_not_exceed_platform_cap() -> None:
-    max_allowed_turns = 500
+    max_allowed_turns = 1200
     limit_names = {"_MAX_TURNS", "_MAX_STEPS", "_MAX_TICKS"}
 
     for engine_path in sorted((_repo_root() / "games").glob("*/engine.py")):

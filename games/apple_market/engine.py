@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 import os
 import random
+import inspect
 from typing import Any, Callable
 
 
 _WIDTH = 15
 _HEIGHT = 15
 _MAX_TURNS = 150
-_CAPACITY = 2
+_CAPACITY = 3
+_APPLES_PER_JUICE = 4
+_JUICE_TO_WIN = 3
 _SLOTS = ("north_west", "north_east", "south_west", "south_east")
 _BASES = {
     "north_west": (1, 1),
@@ -20,10 +23,10 @@ _BASES = {
 _STARTS = dict(_BASES)
 _TREE = (7, 7)
 _RANDOM_WALLS = 28
-_INITIAL_APPLES = 8
-_SPAWN_INTERVAL = 10
-_SPAWN_BATCH = 2
-_MAX_APPLES_ON_BOARD = 12
+_INITIAL_APPLES = 12
+_SPAWN_INTERVAL = 5
+_SPAWN_BATCH = 3
+_MAX_APPLES_ON_BOARD = 18
 _FREEZE_TURNS = 3
 _DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0), "stay": (0, 0)}
 _THROWS = {"throw_up": "up", "throw_down": "down", "throw_left": "left", "throw_right": "right"}
@@ -45,16 +48,20 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     spawn_cells = game_map["spawn_cells"]
     assert isinstance(walls, set) and isinstance(apples, set) and isinstance(spawn_cells, list)
     spawn_rng = random.Random(_map_seed(ctx, "apple_market_offline") + ":spawns")
+    collision_rng = random.Random(_map_seed(ctx, "apple_market_offline") + ":collisions")
 
     positions = {slot: _STARTS[slot] for slot in active_slots}
     carrying = {slot: 0 for slot in active_slots}
     delivered = {slot: 0 for slot in active_slots}
+    base_apples = {slot: 0 for slot in active_slots}
+    juice = {slot: 0 for slot in active_slots}
     invalid = {slot: 0 for slot in active_slots}
     frozen = {slot: 0 for slot in active_slots}
     throws = {slot: 0 for slot in active_slots}
     turns = 0
+    winner_slot: str | None = None
     apples_spawned_total = len(apples)
-    frames = [_frame(0, "running", active_slots, positions, walls, apples, carrying, delivered, invalid, frozen, throws, apples_spawned_total, labels=role_name)]
+    frames = [_frame(0, "running", active_slots, positions, walls, apples, carrying, delivered, base_apples, juice, invalid, frozen, throws, apples_spawned_total, labels=role_name)]
 
     for turn in range(_MAX_TURNS):
         print_context["tick"] = turn
@@ -69,7 +76,16 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 continue
             fn, _compile_error = bots[slot]
             x, y = positions[slot]
-            action = _safe_call(fn, x, y, _board(walls, apples, positions, active_slots, slot), carrying[slot], slot)
+            action = _safe_call(
+                fn,
+                x,
+                y,
+                _board(walls, apples, positions, active_slots, slot),
+                carrying[slot],
+                slot,
+                _players(active_slots, positions, carrying, frozen, delivered, role_name, slot),
+                _bases(active_slots, base_apples, juice, role_name, slot),
+            )
             if action in _THROWS:
                 if carrying[slot] <= 0:
                     invalid[slot] += 1
@@ -106,23 +122,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 target = (x, y)
             intents[slot] = target
 
-        blocked_slots: set[str] = set()
-        by_target: dict[tuple[int, int], list[str]] = {}
-        for slot, target in intents.items():
-            by_target.setdefault(target, []).append(slot)
-        for target, slots in by_target.items():
-            if len(slots) > 1:
-                blocked_slots.update(slots)
-                events.append({"type": "collision_bounce", "tick": turn + 1, "slots": slots, "x": target[0], "y": target[1]})
-        for a in active_slots:
-            for b in active_slots:
-                if a >= b:
-                    continue
-                if intents[a] == positions[b] and intents[b] == positions[a]:
-                    blocked_slots.update([a, b])
-                    events.append({"type": "swap_blocked", "tick": turn + 1, "slots": [a, b]})
-        for slot in blocked_slots:
-            intents[slot] = positions[slot]
+        intents = _resolve_random_cell_collisions(active_slots, positions, intents, events, turn, collision_rng)
 
         positions = intents
         for slot in active_slots:
@@ -131,9 +131,25 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 carrying[slot] += 1
                 events.append({"type": "apple", "tick": turn + 1, "slot": slot})
             if positions[slot] == _BASES[slot] and carrying[slot]:
+                amount = carrying[slot]
+                base_apples[slot] += amount
                 delivered[slot] += carrying[slot]
                 carrying[slot] = 0
-                events.append({"type": "delivered", "tick": turn + 1, "slot": slot})
+                events.append({"type": "delivered", "tick": turn + 1, "slot": slot, "amount": amount, "base_apples": base_apples[slot]})
+                made = base_apples[slot] // _APPLES_PER_JUICE
+                if made:
+                    base_apples[slot] %= _APPLES_PER_JUICE
+                    juice[slot] += made
+                    events.append({"type": "juice_made", "tick": turn + 1, "slot": slot, "liters": made, "juice": juice[slot], "base_apples": base_apples[slot]})
+                    if juice[slot] >= _JUICE_TO_WIN and winner_slot is None:
+                        winner_slot = slot
+                        events.append({"type": "juice_win", "tick": turn + 1, "slot": slot, "juice": juice[slot]})
+            robbed_base = _base_owner_at(positions[slot], active_slots)
+            if robbed_base is not None and robbed_base != slot and carrying[slot] < _CAPACITY and base_apples[robbed_base] > 0:
+                stolen = min(_CAPACITY - carrying[slot], base_apples[robbed_base])
+                base_apples[robbed_base] -= stolen
+                carrying[slot] += stolen
+                events.append({"type": "stolen", "tick": turn + 1, "slot": slot, "from": robbed_base, "amount": stolen, "base_apples": base_apples[robbed_base]})
         for slot, turns_to_freeze in pending_freezes.items():
             frozen[slot] = max(frozen.get(slot, 0), turns_to_freeze)
         spawned_apples: list[tuple[int, int]] = []
@@ -147,19 +163,25 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                     "cells": [{"x": x, "y": y} for x, y in spawned_apples],
                 })
         turns = turn + 1
-        frames.append(_frame(turns, "running", active_slots, positions, walls, apples, carrying, delivered, invalid, frozen, throws, apples_spawned_total, labels=role_name, projectiles=throw_events, spawned_apples=spawned_apples))
+        frames.append(_frame(turns, "finished" if winner_slot else "running", active_slots, positions, walls, apples, carrying, delivered, base_apples, juice, invalid, frozen, throws, apples_spawned_total, labels=role_name, projectiles=throw_events, spawned_apples=spawned_apples, winner_slot=winner_slot))
+        if winner_slot is not None:
+            break
 
     compile_errors = {slot: err for slot, (_fn, err) in bots.items() if err}
-    slot_scores = {slot: delivered[slot] * 120 + carrying[slot] * 30 + throws[slot] * 5 - invalid[slot] * 10 for slot in active_slots}
+    slot_scores = {slot: juice[slot] * 1000 + base_apples[slot] * 120 + delivered[slot] * 10 + carrying[slot] * 30 + throws[slot] * 5 - invalid[slot] * 10 for slot in active_slots}
     scores = {role_team[slot]: max(0, slot_scores[slot]) for slot in active_slots}
     placements = _placements(active_slots, role_team, slot_scores)
+    best_slot = winner_slot or max(active_slots, key=lambda slot: (slot_scores[slot], juice[slot], base_apples[slot], delivered[slot]))
     metrics: dict[str, object] = {
         "turns": turns,
-        "winner_slot": max(active_slots, key=lambda slot: (slot_scores[slot], delivered[slot])),
-        "winner_slots": _winner_slots(active_slots, slot_scores),
-        "is_tie": _is_tie(slot_scores),
+        "winner_slot": best_slot,
+        "winner_slots": [winner_slot] if winner_slot else _winner_slots(active_slots, slot_scores),
+        "is_tie": False if winner_slot else _is_tie(slot_scores),
+        "won_by_juice": winner_slot is not None,
         "delivered": delivered,
         "carrying": carrying,
+        "base_apples": base_apples,
+        "juice": juice,
         "apples_left": len(apples),
         "initial_apples": _INITIAL_APPLES,
         "apples_total": apples_spawned_total,
@@ -170,6 +192,8 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "max_apples_on_board": _MAX_APPLES_ON_BOARD,
         "tree": {"x": _TREE[0], "y": _TREE[1]},
         "capacity": _CAPACITY,
+        "apples_per_juice": _APPLES_PER_JUICE,
+        "juice_to_win": _JUICE_TO_WIN,
         "walls_total": len(walls) - len(_BORDER_WALLS),
         "invalid_moves": invalid,
         "frozen": frozen,
@@ -181,7 +205,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         metrics["compile_errors"] = compile_errors
         for slot, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": slot, "message": message})
-    frames.append(_frame(len(frames), "finished", active_slots, positions, walls, apples, carrying, delivered, invalid, frozen, throws, apples_spawned_total, slot_scores, labels=role_name))
+    frames.append(_frame(len(frames), "finished", active_slots, positions, walls, apples, carrying, delivered, base_apples, juice, invalid, frozen, throws, apples_spawned_total, slot_scores, labels=role_name, winner_slot=winner_slot))
     payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
     payload["placements"] = placements
     return payload
@@ -320,10 +344,43 @@ def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[st
     return {"abs": abs, "all": all, "any": any, "bool": bool, "dict": dict, "enumerate": enumerate, "float": float, "int": int, "len": len, "list": list, "max": max, "min": min, "print": bot_print, "range": range, "set": set, "str": str, "sum": sum, "tuple": tuple, "zip": zip}
 
 
-def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]], carrying: int, slot: str) -> object:
+def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]], carrying: int, slot: str, players: list[dict[str, object]], bases: list[dict[str, object]]) -> object:
     try:
-        return fn(x, y, board, carrying, slot)
+        return fn(x, y, board, carrying, players, bases, slot)
     except TypeError:
+        sixth_arg = slot if _prefers_slot_arg(fn, 5) else bases
+        fallback_sixth_arg = bases if sixth_arg == slot else slot
+        try:
+            return fn(x, y, board, carrying, players, sixth_arg)
+        except TypeError:
+            try:
+                return fn(x, y, board, carrying, players, fallback_sixth_arg)
+            except TypeError:
+                pass
+            except Exception:
+                return None
+        except Exception:
+            return None
+        if _prefers_bases_as_fifth_arg(fn):
+            fifth_arg = bases
+        elif _prefers_slot_arg(fn, 4):
+            fifth_arg = slot
+        else:
+            fifth_arg = players
+        fallback_fifth_args = [arg for arg in (players, bases, slot) if arg is not fifth_arg]
+        try:
+            return fn(x, y, board, carrying, fifth_arg)
+        except TypeError:
+            pass
+        except Exception:
+            return None
+        for arg in fallback_fifth_args:
+            try:
+                return fn(x, y, board, carrying, arg)
+            except TypeError:
+                continue
+            except Exception:
+                return None
         try:
             return fn(x, y, board, carrying)
         except TypeError:
@@ -337,7 +394,27 @@ def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]]
         return None
 
 
-def _fallback_move(_x: int, _y: int, _board_value: list[list[int]], _carrying: int = 0, _slot: str = "") -> str:
+def _prefers_slot_arg(fn: Callable[..., object], index: int) -> bool:
+    try:
+        parameters = list(inspect.signature(fn).parameters.values())
+    except (TypeError, ValueError):
+        return False
+    if len(parameters) <= index:
+        return False
+    return parameters[index].name in {"slot", "role", "player_slot"}
+
+
+def _prefers_bases_as_fifth_arg(fn: Callable[..., object]) -> bool:
+    try:
+        parameters = list(inspect.signature(fn).parameters.values())
+    except (TypeError, ValueError):
+        return False
+    if len(parameters) < 5:
+        return False
+    return parameters[4].name in {"base", "bases", "base_info"}
+
+
+def _fallback_move(_x: int, _y: int, _board_value: list[list[int]], _carrying: int = 0, *_args: object) -> str:
     return "stay"
 
 
@@ -357,6 +434,50 @@ def _board(walls: set[tuple[int, int]], apples: set[tuple[int, int]], positions:
         ox, oy = positions[slot]
         board[ox][oy] = -2
     return board
+
+
+def _base_owner_at(position: tuple[int, int], active_slots: list[str]) -> str | None:
+    for slot in active_slots:
+        if position == _BASES[slot]:
+            return slot
+    return None
+
+
+def _bases(active_slots: list[str], base_apples: dict[str, int], juice: dict[str, int], labels: dict[str, str], viewer: str) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for slot in active_slots:
+        x, y = _BASES[slot]
+        result.append(
+            {
+                "slot": slot,
+                "name": labels.get(slot, slot),
+                "x": x,
+                "y": y,
+                "apples": int(base_apples.get(slot, 0)),
+                "juice": int(juice.get(slot, 0)),
+                "is_me": slot == viewer,
+            }
+        )
+    return result
+
+
+def _players(active_slots: list[str], positions: dict[str, tuple[int, int]], carrying: dict[str, int], frozen: dict[str, int], delivered: dict[str, int], labels: dict[str, str], viewer: str) -> list[dict[str, object]]:
+    players: list[dict[str, object]] = []
+    for slot in active_slots:
+        x, y = positions[slot]
+        players.append(
+            {
+                "slot": slot,
+                "name": labels.get(slot, slot),
+                "x": x,
+                "y": y,
+                "carrying": int(carrying.get(slot, 0)),
+                "frozen": int(frozen.get(slot, 0)),
+                "delivered": int(delivered.get(slot, 0)),
+                "is_me": slot == viewer,
+            }
+        )
+    return players
 
 
 def _throw_apple(slot: str, positions: dict[str, tuple[int, int]], active_slots: list[str], walls: set[tuple[int, int]], direction: str) -> tuple[str | None, list[dict[str, int]]]:
@@ -398,6 +519,29 @@ def _move(position: tuple[int, int], action: str) -> tuple[int, int]:
     return position[0] + dx, position[1] + dy
 
 
+def _resolve_random_cell_collisions(slots: list[str], positions: dict[str, tuple[int, int]], intents: dict[str, tuple[int, int]], events: list[dict[str, object]], turn: int, rng: random.Random) -> dict[str, tuple[int, int]]:
+    result = dict(intents)
+    by_target: dict[tuple[int, int], list[str]] = {}
+    for slot, target in intents.items():
+        by_target.setdefault(target, []).append(slot)
+    for target, contenders in by_target.items():
+        if len(contenders) <= 1:
+            continue
+        incumbents = [slot for slot in contenders if positions[slot] == target]
+        winner = rng.choice(incumbents or contenders)
+        blocked = [slot for slot in contenders if slot != winner]
+        for slot in blocked:
+            result[slot] = positions[slot]
+        events.append({"type": "collision_bounce", "tick": turn + 1, "slots": contenders, "winner": winner, "blocked": blocked, "x": target[0], "y": target[1]})
+    for index, first in enumerate(slots):
+        for second in slots[index + 1:]:
+            if intents[first] == positions[second] and intents[second] == positions[first]:
+                result[first] = positions[first]
+                result[second] = positions[second]
+                events.append({"type": "swap_blocked", "tick": turn + 1, "slots": [first, second]})
+    return result
+
+
 def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set[tuple[int, int]]:
     queue = [start]
     seen = {start}
@@ -412,8 +556,6 @@ def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set
             seen.add(nxt)
             queue.append(nxt)
     return seen
-
-
 
 
 def _winner_slots(active_slots: list[str], slot_scores: dict[str, int]) -> list[str]:
@@ -438,8 +580,9 @@ def _placements(active_slots: list[str], role_team: dict[str, str], slot_scores:
     return result
 
 
-def _frame(tick: int, phase: str, active_slots: list[str], positions: dict[str, tuple[int, int]], walls: set[tuple[int, int]], apples: set[tuple[int, int]], carrying: dict[str, int], delivered: dict[str, int], invalid: dict[str, int], frozen: dict[str, int], throws: dict[str, int], apples_spawned_total: int, slot_scores: dict[str, int] | None = None, labels: dict[str, str] | None = None, projectiles: list[dict[str, object]] | None = None, spawned_apples: list[tuple[int, int]] | None = None) -> dict[str, object]:
+def _frame(tick: int, phase: str, active_slots: list[str], positions: dict[str, tuple[int, int]], walls: set[tuple[int, int]], apples: set[tuple[int, int]], carrying: dict[str, int], delivered: dict[str, int], base_apples: dict[str, int], juice: dict[str, int], invalid: dict[str, int], frozen: dict[str, int], throws: dict[str, int], apples_spawned_total: int, slot_scores: dict[str, int] | None = None, labels: dict[str, str] | None = None, projectiles: list[dict[str, object]] | None = None, spawned_apples: list[tuple[int, int]] | None = None, winner_slot: str | None = None) -> dict[str, object]:
     slots_snapshot = list(active_slots)
+    label_snapshot = labels or {}
     frame: dict[str, object] = {
         "board": _board(walls, apples, positions, slots_snapshot, slots_snapshot[0]),
         "boards": {slot: _board(walls, apples, positions, slots_snapshot, slot) for slot in slots_snapshot},
@@ -451,14 +594,29 @@ def _frame(tick: int, phase: str, active_slots: list[str], positions: dict[str, 
         "spawn_interval": _SPAWN_INTERVAL,
         "next_spawn_in": 0 if tick >= _MAX_TURNS else (_SPAWN_INTERVAL - tick % _SPAWN_INTERVAL),
         "active_slots": slots_snapshot,
-        "labels": {slot: (labels or {}).get(slot, slot) for slot in slots_snapshot},
-        "bases": {slot: {"x": _BASES[slot][0], "y": _BASES[slot][1]} for slot in slots_snapshot},
+        "labels": {slot: label_snapshot.get(slot, slot) for slot in slots_snapshot},
+        "bases": {
+            slot: {
+                "x": _BASES[slot][0],
+                "y": _BASES[slot][1],
+                "apples": int(base_apples.get(slot, 0)),
+                "juice": int(juice.get(slot, 0)),
+            }
+            for slot in slots_snapshot
+        },
+        "base_info": _bases(slots_snapshot, base_apples, juice, label_snapshot, ""),
         "tree": {"x": _TREE[0], "y": _TREE[1]},
         "positions": {slot: {"x": pos[0], "y": pos[1]} for slot, pos in positions.items()},
         "carrying": {slot: int(carrying.get(slot, 0)) for slot in slots_snapshot},
         "delivered": {slot: int(delivered.get(slot, 0)) for slot in slots_snapshot},
+        "base_apples": {slot: int(base_apples.get(slot, 0)) for slot in slots_snapshot},
+        "juice": {slot: int(juice.get(slot, 0)) for slot in slots_snapshot},
+        "players": _players(slots_snapshot, positions, carrying, frozen, delivered, label_snapshot, ""),
         "apples_left": len(apples),
         "apples_spawned_total": apples_spawned_total,
+        "apples_per_juice": _APPLES_PER_JUICE,
+        "juice_to_win": _JUICE_TO_WIN,
+        "winner_slot": winner_slot,
         "spawned_apples": [{"x": x, "y": y} for x, y in spawned_apples or []],
         "invalid_moves": {slot: int(invalid.get(slot, 0)) for slot in slots_snapshot},
         "frozen": {slot: int(frozen.get(slot, 0)) for slot in slots_snapshot},

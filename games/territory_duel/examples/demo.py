@@ -26,7 +26,7 @@ def make_move(x, y, board):
                 nxt = (nx, ny)
                 if nx < 0 or nx >= len(board) or ny < 0 or ny >= len(board[nx]):
                     continue
-                if board[nx][ny] in (-1, -2) or nxt in came_from:
+                if board[nx][ny] in (-1, -2, 2) or nxt in came_from:
                     continue
                 came_from[nxt] = (action, current)
                 queue.append(nxt)
@@ -41,4 +41,4 @@ def make_move(x, y, board):
     move = first_step_to({0})
     if move != "stay":
         return move
-    return first_step_to({2})
+    return "stay"

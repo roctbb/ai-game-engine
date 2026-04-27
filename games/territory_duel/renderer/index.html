@@ -25,7 +25,7 @@ function text(x,y,s,size,fill="#0f172a",weight=800){const t=add("text",{x,y,"tex
 function badge(cx,cy,C,label,fill){const r=Math.max(5,C*.18),bx=cx+C*.28,by=cy-C*.28;add("circle",{cx:bx,cy:by,r,fill,stroke:"#fff","stroke-width":Math.max(1,C*.045)});text(bx,by,String(label ?? 0).slice(0,3),Math.max(8,C*.23),"#fff",800)}
 function labelOf(frame,slot){return (frame.labels&&frame.labels[slot])||slot}
 function draw(frame){
-  const grid=Array.isArray(frame.board)?frame.board:[], w=frame.width||grid.length||12, h=frame.height||(Array.isArray(grid[0])?grid[0].length:12), C=32;
+  const grid=Array.isArray(frame.board)?frame.board:[], w=frame.width||grid.length||16, h=frame.height||(Array.isArray(grid[0])?grid[0].length:16), C=32;
   boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const v=grid[x]?.[y]??0;
@@ -52,10 +52,11 @@ function draw(frame){
     }
   }
   const area=frame.area||{}, scores=frame.slot_scores||{};
-  hudEl.innerHTML=active.map(slot=>`<span><b style="color:${COLORS[slot]||"#fff"}">${labelOf(frame,slot)}</b> area=${area[slot]||0} score=${scores[slot]??"-"}</span>`).join("");
+  const neutral=Number(frame.neutral_left||0);
+  hudEl.innerHTML=`<span><b>нейтральных</b> ${neutral}</span>`+active.map(slot=>`<span><b style="color:${COLORS[slot]||"#fff"}">${labelOf(frame,slot)}</b> area=${area[slot]||0} score=${scores[slot]??"-"}</span>`).join("");
 }
 window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.init"){window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"territory-duel-4p"}}, "*");return}if(m.type==="agp.renderer.state")draw(m.payload?.frame||m.frame||{});});
-draw({width:12,height:12,board:Array.from({length:12},(_,x)=>Array.from({length:12},(_,y)=>x===0||y===0||x===11||y===11?-1:0)),active_slots:["green","purple","orange","blue"],positions:{green:{x:1,y:1},purple:{x:10,y:10},orange:{x:10,y:1},blue:{x:1,y:10}},area:{green:1,purple:1,orange:1,blue:1},boards:{}});
+draw({width:16,height:16,board:Array.from({length:16},(_,x)=>Array.from({length:16},(_,y)=>x===0||y===0||x===15||y===15?-1:0)),active_slots:["green","purple","orange","blue"],positions:{green:{x:1,y:1},purple:{x:14,y:14},orange:{x:14,y:1},blue:{x:1,y:14}},area:{green:1,purple:1,orange:1,blue:1},neutral_left:192,boards:{}});
 window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"territory-duel-4p"}},"*");
 </script>
 </body>

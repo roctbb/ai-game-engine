@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Protocol
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import Lock
@@ -11,6 +12,7 @@ from game_catalog.domain.model import CatalogMetadataStatus
 from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
+from shared.config.settings import settings
 from shared.kernel import ExternalServiceError, InvariantViolationError, NotFoundError, utc_now
 
 
@@ -27,10 +29,29 @@ class CreateLobbyInput:
 
 _ACTIVE_RUN_STATUSES = {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}
 _TERMINAL_RUN_STATUSES = {RunStatus.FINISHED, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}
+_REPLAYABLE_RUN_STATUSES = {RunStatus.FINISHED}
 _LOBBY_REPLAY_FRAME_MS = 500
 _LOBBY_RESULT_SECONDS = 5
 _LOBBY_ONLINE_VIEWER_TTL_SECONDS = 20
 _UNSET_RETENTION = object()
+
+
+class _DistributedLock(Protocol):
+    def acquire(self, blocking: bool = True) -> bool:
+        ...
+
+    def release(self) -> None:
+        ...
+
+
+class _DistributedLockClient(Protocol):
+    def lock(
+        self,
+        name: str,
+        timeout: float | None = None,
+        blocking_timeout: float | None = None,
+    ) -> _DistributedLock:
+        ...
 
 
 def _can_change_participation(lobby: Lobby) -> bool:
@@ -170,11 +191,13 @@ class TrainingLobbyService:
         game_catalog: GameCatalogService,
         team_workspace: TeamWorkspaceService,
         execution: ExecutionService,
+        matchmaking_lock_client: _DistributedLockClient | None = None,
     ) -> None:
         self._repository = repository
         self._game_catalog = game_catalog
         self._team_workspace = team_workspace
         self._execution = execution
+        self._matchmaking_lock_client = matchmaking_lock_client
         self._matchmaking_locks: dict[str, Lock] = {}
         self._participant_stats_cache: dict[
             str,
@@ -340,7 +363,7 @@ class TrainingLobbyService:
         finished_runs = [
             run
             for run in runs
-            if run.status in _TERMINAL_RUN_STATUSES
+            if run.status in _REPLAYABLE_RUN_STATUSES
         ]
         finished_runs.sort(key=lambda item: item.created_at, reverse=True)
         archived_run_ids = tuple(run.run_id for run in finished_runs if run.run_id not in current_group_run_ids)[:100]
@@ -606,7 +629,29 @@ class TrainingLobbyService:
     def run_matchmaking_cycle(self, lobby_id: str, requested_by: str) -> Lobby:
         lock = self._matchmaking_locks.setdefault(lobby_id, Lock())
         with lock:
+            if self._matchmaking_lock_client is not None:
+                return self._run_matchmaking_cycle_with_distributed_lock(
+                    lobby_id=lobby_id,
+                    requested_by=requested_by,
+                )
             return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
+
+    def _run_matchmaking_cycle_with_distributed_lock(self, lobby_id: str, requested_by: str) -> Lobby:
+        distributed_lock = self._matchmaking_lock_client.lock(
+            f"ai-game:training-lobby:{lobby_id}:matchmaking",
+            timeout=max(settings.matchmaking_lock_ttl_seconds, 1.0),
+            blocking_timeout=max(settings.matchmaking_lock_blocking_timeout_seconds, 0.1),
+        )
+        acquired = distributed_lock.acquire(blocking=True)
+        if not acquired:
+            raise InvariantViolationError("Matchmaking уже выполняется для этого лобби")
+        try:
+            return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
+        finally:
+            try:
+                distributed_lock.release()
+            except Exception:
+                pass
 
     def run_due_matchmaking_cycles(self, requested_by: str = "system") -> tuple[Lobby, ...]:
         advanced: list[Lobby] = []
@@ -838,7 +883,7 @@ class TrainingLobbyService:
                 current_match_groups=current_match_groups,
             )
 
-        if current_runs and all(run.status in _TERMINAL_RUN_STATUSES for run in current_runs):
+        if current_runs and all(run.status in _REPLAYABLE_RUN_STATUSES for run in current_runs):
             terminal_runs = [self._ensure_payload(run) for run in current_runs]
             replay_started_at = max(
                 (_datetime_or_none(run.finished_at) for run in terminal_runs),
@@ -1132,13 +1177,13 @@ class TrainingLobbyService:
         replay_frame_index: int,
     ) -> LobbyMatchGroupView:
         runs = [runs_by_id[run_id] for run_id in run_ids if run_id in runs_by_id]
-        payload_runs = [self._ensure_payload(run) if run.status in _TERMINAL_RUN_STATUSES else run for run in runs]
+        payload_runs = [self._ensure_payload(run) if run.status in _REPLAYABLE_RUN_STATUSES else run for run in runs]
         statuses = {run.status for run in runs}
         if statuses & _ACTIVE_RUN_STATUSES:
             status = "simulation"
         elif archived:
             status = "finished"
-        elif statuses and statuses <= _TERMINAL_RUN_STATUSES:
+        elif statuses and statuses <= _REPLAYABLE_RUN_STATUSES:
             status = "replay" if replay_started_at is not None else "result"
         else:
             status = "pending"

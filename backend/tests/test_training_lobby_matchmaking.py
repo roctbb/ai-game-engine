@@ -14,6 +14,35 @@ class _FailingSchedulerGateway(SchedulerGateway):
         raise ExternalServiceError("scheduler unavailable")
 
 
+class _FakeDistributedLock:
+    def __init__(self, *, acquired: bool = True) -> None:
+        self.acquired = acquired
+        self.acquire_calls = 0
+        self.release_calls = 0
+
+    def acquire(self, blocking: bool = True) -> bool:
+        self.acquire_calls += 1
+        return self.acquired
+
+    def release(self) -> None:
+        self.release_calls += 1
+
+
+class _FakeDistributedLockClient:
+    def __init__(self, lock: _FakeDistributedLock) -> None:
+        self.lock_instance = lock
+        self.lock_names: list[str] = []
+
+    def lock(
+        self,
+        name: str,
+        timeout: float | None = None,
+        blocking_timeout: float | None = None,
+    ) -> _FakeDistributedLock:
+        self.lock_names.append(name)
+        return self.lock_instance
+
+
 def test_multiplayer_partition_starts_parallel_games_and_leaves_only_incomplete_tail() -> None:
     teams = [f"team-{index}" for index in range(10)]
 
@@ -129,6 +158,62 @@ def test_multiplayer_matchmaking_schedules_only_full_pairs(client, teacher_heade
         headers=teacher_headers,
     ).json()
     assert set(tick_again["last_scheduled_run_ids"]) == set(auto_tick["last_scheduled_run_ids"])
+
+
+def test_matchmaking_cycle_uses_distributed_lock(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="multiplayer_mm_distributed_lock",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="lock-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="lock-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Lock", headers=teacher_headers)
+    for team in (team_a, team_b):
+        client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        container.training_lobby.set_ready(lobby_id=lobby["lobby_id"], team_id=team["team_id"], ready=True)
+
+    lock = _FakeDistributedLock(acquired=True)
+    container.training_lobby._matchmaking_lock_client = _FakeDistributedLockClient(lock)
+
+    result = container.training_lobby.run_matchmaking_cycle(
+        lobby_id=lobby["lobby_id"],
+        requested_by="teacher-mm",
+    )
+
+    assert result.last_scheduled_run_ids
+    assert lock.acquire_calls == 1
+    assert lock.release_calls == 1
+    assert container.training_lobby._matchmaking_lock_client.lock_names == [
+        f"ai-game:training-lobby:{lobby['lobby_id']}:matchmaking"
+    ]
+
+
+def test_matchmaking_cycle_stops_when_distributed_lock_is_busy(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="multiplayer_mm_distributed_lock_busy",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Lock Busy", headers=teacher_headers)
+    lock = _FakeDistributedLock(acquired=False)
+    container.training_lobby._matchmaking_lock_client = _FakeDistributedLockClient(lock)
+
+    with pytest.raises(InvariantViolationError):
+        container.training_lobby.run_matchmaking_cycle(lobby_id=lobby["lobby_id"], requested_by="teacher-mm")
+
+    assert lock.acquire_calls == 1
+    assert lock.release_calls == 0
 
 
 def test_multiplayer_matchmaking_continues_after_finished_match(client, teacher_headers, container) -> None:
@@ -928,6 +1013,17 @@ def test_matchmaking_queue_failure_clears_batch_and_does_not_leave_created_runs(
     assert runs
     assert all(item.status is not RunStatus.CREATED for item in runs)
     assert {item.status for item in runs} <= {RunStatus.FAILED, RunStatus.CANCELED}
+
+    replays = client.get(f"/api/v1/replays?game_id={game['game_id']}&run_kind=training_match", headers=teacher_headers)
+    assert replays.status_code == 200
+    assert replays.json() == []
+
+    lobby_view = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=teacher_headers)
+    assert lobby_view.status_code == 200
+    payload = lobby_view.json()
+    assert payload["current_run_ids"] == []
+    assert payload["archived_match_groups"] == []
+    assert all(item["matches_total"] == 0 for item in payload["participant_stats"])
 
 
 def test_stopped_lobby_is_not_matchmade_by_due_tick(client, teacher_headers) -> None:

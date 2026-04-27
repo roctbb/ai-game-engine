@@ -192,7 +192,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             choice = _choose_action(program, tank, field, events, print_context)
             actions[key] = choice
 
-        _apply_moves(arena, actions)
+        _apply_moves(arena, actions, events, tick + 1)
         explosions = _apply_attacks_and_explosions(arena, actions, events, tick + 1)
         _record_actions(arena, actions, events, tick + 1)
         _remove_dead(arena, events, tick + 1, explosions)
@@ -519,25 +519,53 @@ def _bot_field(arena: Arena) -> list[list[object]]:
     return field_value
 
 
-def _apply_moves(arena: Arena, actions: dict[str, str]) -> None:
-    occupied = {(tank.x, tank.y): key for key, tank in arena.tanks.items() if key in arena.active_order}
+def _apply_moves(arena: Arena, actions: dict[str, str], events: list[dict[str, object]], tick: int) -> None:
+    intents: dict[str, tuple[int, int]] = {}
     for key in list(arena.active_order):
         tank = arena.tanks[key]
         action = actions.get(key, "")
         if action not in _MOVE_DELTAS:
+            intents[key] = (tank.x, tank.y)
             continue
         tank.steps += 1
         dx, dy = _MOVE_DELTAS[action]
         nx, ny = tank.x + dx, tank.y + dy
-        if not _inside(arena, nx, ny) or arena.base[nx][ny] == "#" or (nx, ny) in occupied:
-            continue
-        del occupied[(tank.x, tank.y)]
-        tank.x = nx
-        tank.y = ny
-        occupied[(tank.x, tank.y)] = key
-        if (nx, ny) in arena.coins:
+        if not _inside(arena, nx, ny) or arena.base[nx][ny] == "#":
+            intents[key] = (tank.x, tank.y)
+        else:
+            intents[key] = (nx, ny)
+
+    positions = {key: (arena.tanks[key].x, arena.tanks[key].y) for key in arena.active_order}
+    resolved = _resolve_random_cell_collisions(list(arena.active_order), positions, intents, events, tick, arena.rng)
+    for key, target in resolved.items():
+        tank = arena.tanks[key]
+        tank.x, tank.y = target
+        if target in arena.coins:
             tank.coins += 1
-            arena.coins.remove((nx, ny))
+            arena.coins.remove(target)
+
+
+def _resolve_random_cell_collisions(slots: list[str], positions: dict[str, tuple[int, int]], intents: dict[str, tuple[int, int]], events: list[dict[str, object]], tick: int, rng: random.Random) -> dict[str, tuple[int, int]]:
+    result = dict(intents)
+    by_target: dict[tuple[int, int], list[str]] = {}
+    for slot, target in intents.items():
+        by_target.setdefault(target, []).append(slot)
+    for target, contenders in by_target.items():
+        if len(contenders) <= 1:
+            continue
+        incumbents = [slot for slot in contenders if positions[slot] == target]
+        winner = rng.choice(incumbents or contenders)
+        blocked = [slot for slot in contenders if slot != winner]
+        for slot in blocked:
+            result[slot] = positions[slot]
+        events.append({"type": "collision_bounce", "tick": tick, "slots": contenders, "winner": winner, "blocked": blocked, "x": target[0], "y": target[1]})
+    for index, first in enumerate(slots):
+        for second in slots[index + 1:]:
+            if intents[first] == positions[second] and intents[second] == positions[first]:
+                result[first] = positions[first]
+                result[second] = positions[second]
+                events.append({"type": "swap_blocked", "tick": tick, "slots": [first, second]})
+    return result
 
 
 def _apply_attacks_and_explosions(

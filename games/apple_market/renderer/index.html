@@ -119,13 +119,23 @@ function drawTree(tree,C,spawned){
   }
 }
 
-function base(slot,b,C,delivered,label){
+function base(slot,b,C,label,winner,juiceTarget=3,applesPerJuice=4){
   const color=COLORS[slot]||"#64748b";
   const x=b.x*C,y=b.y*C,cx=x+C/2,cy=y+C/2;
-  add("rect",{x:x+C*.06,y:y+C*.06,width:C*.88,height:C*.88,rx:C*.1,fill:"#fff7ed",stroke:color,"stroke-width":C*.07});
+  const apples=Number(b.apples||0),juice=Number(b.juice||0);
+  add("rect",{x:x+C*.06,y:y+C*.06,width:C*.88,height:C*.88,rx:C*.1,fill:winner?"#dcfce7":"#fff7ed",stroke:winner?"#22c55e":color,"stroke-width":winner?C*.1:C*.07});
   add("path",{d:`M ${x+C*.16} ${y+C*.48} L ${cx} ${y+C*.18} L ${x+C*.84} ${y+C*.48} V ${y+C*.84} H ${x+C*.16} Z`,fill:"#fde68a",stroke:color,"stroke-width":C*.035});
-  add("circle",{cx:x+C*.72,cy:y+C*.28,r:C*.22,fill:color,opacity:.96});
-  txt(x+C*.72,y+C*.28,delivered||0,C*.24,"#fff",900);
+  add("circle",{cx:x+C*.26,cy:y+C*.3,r:C*.2,fill:"#ef4444",stroke:"#fff7ed","stroke-width":C*.035});
+  txt(x+C*.26,y+C*.3,apples,C*.18,"#fff",900);
+  txt(x+C*.26,y+C*.58,`${apples}/${applesPerJuice}`,C*.105,"#7f1d1d",900);
+  const bw=C*.2,bh=C*.5,bx=x+C*.62,by=y+C*.24;
+  add("rect",{x:bx+C*.045,y:by-C*.1,width:bw-C*.09,height:C*.11,rx:C*.025,fill:"#e2e8f0",stroke:color,"stroke-width":C*.018});
+  add("rect",{x:bx,y:by,width:bw,height:bh,rx:C*.05,fill:"#f8fafc",stroke:color,"stroke-width":C*.03});
+  const fillH=Math.max(0,Math.min(1,juice/Math.max(1,juiceTarget)))*bh;
+  add("rect",{x:bx+C*.025,y:by+bh-fillH,width:bw-C*.05,height:fillH,rx:C*.035,fill:"#fbbf24",opacity:.95});
+  add("line",{x1:bx+C*.025,y1:by+bh*.333,x2:bx+bw-C*.025,y2:by+bh*.333,stroke:"#94a3b8","stroke-width":C*.012,opacity:.65});
+  add("line",{x1:bx+C*.025,y1:by+bh*.666,x2:bx+bw-C*.025,y2:by+bh*.666,stroke:"#94a3b8","stroke-width":C*.012,opacity:.65});
+  txt(bx+bw/2,by+bh+C*.13,`${juice}/${juiceTarget}`,C*.12,color,900);
   txt(cx,y-C*.16,label,C*.15,color,900);
   txt(cx,y+C*.88,NAMES[slot]||slot,C*.13,color,900);
 }
@@ -139,7 +149,9 @@ function player(slot,p,C,carrying,delivered,frozen,label){
   txt(cx,cy-C*.56,label,C*.14,color,900);
   txt(cx,cy+C*.14,NAMES[slot]||slot,C*.13,"#fff",900);
   if(carrying>0){
-    for(let i=0;i<Math.min(2,carrying);i++)apple(p.x-.14+i*.28,p.y-.5,C,.42,false);
+    for(let i=0;i<Math.min(3,carrying);i++)apple(p.x-.2+i*.2,p.y-.5,C,.36,false);
+    add("circle",{cx:cx+C*.3,cy:cy-C*.42,r:C*.16,fill:"#ef4444",stroke:"#fff7ed","stroke-width":C*.035});
+    txt(cx+C*.3,cy-C*.42,carrying,C*.14,"#fff",900);
   }
   if(frozen>0){
     add("circle",{cx,cy,r:C*.43,fill:"#7dd3fc",opacity:.2,stroke:"#38bdf8","stroke-width":C*.045});
@@ -166,7 +178,7 @@ function drawBoard(frame){
     }
   }
 
-  Object.entries(frame.bases||{}).forEach(([slot,b])=>base(slot,b,C,(frame.delivered||{})[slot]||0,labelOf(frame,slot)));
+  Object.entries(frame.bases||{}).forEach(([slot,b])=>base(slot,b,C,labelOf(frame,slot),frame.winner_slot===slot,Number(frame.juice_to_win||3),Number(frame.apples_per_juice||4)));
   drawTree(frame.tree,C,frame.spawned_apples);
 
   const spawned=new Set((frame.spawned_apples||[]).map(p=>`${p.x},${p.y}`));
@@ -191,12 +203,13 @@ function drawBoard(frame){
   timer.className="pill";
   timer.innerHTML=`<span><b>${turn}/${limit}</b><br>до конца ${left}</span><span class="meter"><span class="fill" style="width:${percent*100}%"></span></span><span>яблок: ${frame.apples_left||0}<br>новые через ${frame.next_spawn_in||0}</span>`;
   hudEl.appendChild(timer);
-  const scores=frame.slot_scores||{},throws=frame.throws||{};
+  const scores=frame.slot_scores||{},throws=frame.throws||{},bases=frame.bases||{},juiceTarget=Number(frame.juice_to_win||3);
   Object.keys(frame.positions||{}).forEach(slot=>{
+    const base=bases[slot]||{};
     const item=document.createElement("div");
     item.className="pill";
     item.style.borderColor=COLORS[slot]||"#fff";
-    item.innerHTML=`<span><b style="color:${COLORS[slot]||"#fff"}">${labelOf(frame,slot)}</b><br>база ${d[slot]||0}, несет ${c[slot]||0}</span><span>freeze ${f[slot]||0}<br>throw ${throws[slot]||0}<br>${scores[slot]??""}</span>`;
+    item.innerHTML=`<span><b style="color:${COLORS[slot]||"#fff"}">${labelOf(frame,slot)}</b><br>несет ${c[slot]||0} · база ${base.apples||0} ябл.<br>сок ${base.juice||0}/${juiceTarget}</span><span>freeze ${f[slot]||0}<br>throw ${throws[slot]||0}<br>${scores[slot]??""}</span>`;
     hudEl.appendChild(item);
   });
 }
@@ -205,7 +218,7 @@ window.addEventListener("message",event=>{
   const message=event.data;
   if(!message||typeof message!=="object")return;
   if(message.type==="agp.renderer.init"){
-    window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-throw-animation"}}, "*");
+    window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-juice-bases"}}, "*");
     return;
   }
   if(message.type==="agp.renderer.state")drawBoard(message.payload?.frame||message.frame||{});
@@ -216,11 +229,11 @@ drawBoard({
   height:15,
   board:Array.from({length:15},(_,x)=>Array.from({length:15},(_,y)=>(x===0||y===0||x===14||y===14)?-1:0)),
   tree:{x:7,y:7},
-  bases:{north_west:{x:1,y:1},north_east:{x:13,y:1},south_west:{x:1,y:13},south_east:{x:13,y:13}},
+  bases:{north_west:{x:1,y:1,apples:0,juice:0},north_east:{x:13,y:1,apples:0,juice:0},south_west:{x:1,y:13,apples:0,juice:0},south_east:{x:13,y:13,apples:0,juice:0}},
   positions:{north_west:{x:1,y:1},north_east:{x:13,y:1},south_west:{x:1,y:13},south_east:{x:13,y:13}},
-  carrying:{},delivered:{},frozen:{},throws:{},turn:0,turn_limit:150,turns_left:150,next_spawn_in:10,apples_left:0
+  carrying:{},delivered:{},frozen:{},throws:{},turn:0,turn_limit:150,turns_left:150,next_spawn_in:5,apples_left:0,juice_to_win:3,apples_per_juice:4
 });
-window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-throw-animation"}},"*");
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"apple-market-juice-bases"}},"*");
 </script>
 </body>
 </html>

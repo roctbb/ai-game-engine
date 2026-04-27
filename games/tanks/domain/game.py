@@ -105,6 +105,7 @@ class Game:
             if decision in Decision.attacks():
                 attackers.append((player, Point(x, y), decision))
 
+        random.shuffle(runners)
         for player, point, decision in runners:
             es = self.apply_move(player, point, decision)
             if es:

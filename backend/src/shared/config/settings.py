@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     database_url_override: str | None = None
 
     redis_url: str = "redis://localhost:6379/0"
+    matchmaking_lock_ttl_seconds: float = 30.0
+    matchmaking_lock_blocking_timeout_seconds: float = 5.0
     scheduler_service_url: str | None = None
     builder_service_url: str | None = None
     enable_dev_login: bool = True
