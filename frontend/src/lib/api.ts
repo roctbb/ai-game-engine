@@ -232,7 +232,6 @@ export interface LobbyDto {
   access: LobbyAccess;
   status: LobbyStatus;
   max_teams: number;
-  auto_delete_training_runs_days: number | null;
   teams: LobbyTeamStateDto[];
   last_scheduled_run_ids: string[];
   my_team_id: string | null;
@@ -926,7 +925,6 @@ export function createLobby(payload: {
   access: LobbyAccess;
   access_code?: string | null;
   max_teams: number;
-  auto_delete_training_runs_days?: number | null;
 }): Promise<LobbyDto> {
   return request<LobbyDto>('/lobbies', {
     method: 'POST',
@@ -940,7 +938,6 @@ export function updateLobby(payload: {
   access?: LobbyAccess | null;
   access_code?: string | null;
   max_teams?: number | null;
-  auto_delete_training_runs_days?: number | null;
 }): Promise<LobbyDto> {
   const { lobby_id, ...body } = payload;
   return request<LobbyDto>(`/lobbies/${encodeURIComponent(lobby_id)}`, {

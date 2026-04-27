@@ -15,7 +15,6 @@ class CreateLobbyRequest(BaseModel):
     access: LobbyAccess
     access_code: str | None = None
     max_teams: int = Field(default=32, ge=1, le=512)
-    auto_delete_training_runs_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class PatchLobbyRequest(BaseModel):
@@ -23,7 +22,6 @@ class PatchLobbyRequest(BaseModel):
     access: LobbyAccess | None = None
     access_code: str | None = Field(default=None, max_length=120)
     max_teams: int | None = Field(default=None, ge=1, le=512)
-    auto_delete_training_runs_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class JoinLobbyRequest(BaseModel):
@@ -97,7 +95,6 @@ class LobbyResponse(BaseModel):
     access: LobbyAccess
     status: LobbyStatus
     max_teams: int
-    auto_delete_training_runs_days: int | None = None
     teams: list[LobbyTeamStateResponse]
     last_scheduled_run_ids: list[str]
     my_team_id: str | None = None

@@ -213,7 +213,6 @@ def test_teacher_can_patch_lobby_settings(client, teacher_headers) -> None:
             "access": "code",
             "access_code": "CLASS-42",
             "max_teams": 12,
-            "auto_delete_training_runs_days": 7,
         },
         headers=teacher_headers,
     )
@@ -222,15 +221,6 @@ def test_teacher_can_patch_lobby_settings(client, teacher_headers) -> None:
     assert payload["title"] == "Updated Lobby"
     assert payload["access"] == "code"
     assert payload["max_teams"] == 12
-    assert payload["auto_delete_training_runs_days"] == 7
-
-    cleared_retention = client.patch(
-        f"/api/v1/lobbies/{lobby['lobby_id']}",
-        json={"auto_delete_training_runs_days": None},
-        headers=teacher_headers,
-    )
-    assert cleared_retention.status_code == 200, cleared_retention.json()
-    assert cleared_retention.json()["auto_delete_training_runs_days"] is None
 
 
 def test_teacher_stop_lobby_cancels_active_runs_and_clears_queue(client, teacher_headers) -> None:

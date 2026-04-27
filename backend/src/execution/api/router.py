@@ -933,6 +933,8 @@ def mark_run_finished(
     run = container.execution.finish_run(run_id=run_id, payload=payload)
     container.training_lobby.finish_shadow_match_runs(primary_run=run, payload=payload)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
+    if run.run_kind is RunKind.TRAINING_MATCH and run.lobby_id is not None:
+        container.training_lobby.cleanup_training_match_archive(lobby_id=run.lobby_id)
     _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)
 
@@ -947,6 +949,8 @@ def mark_run_failed(
     run = container.execution.fail_run(run_id=run_id, message=request.message)
     container.training_lobby.fail_shadow_match_runs(primary_run=run, message=request.message)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
+    if run.run_kind is RunKind.TRAINING_MATCH and run.lobby_id is not None:
+        container.training_lobby.cleanup_training_match_archive(lobby_id=run.lobby_id)
     _advance_competition_for_terminal_run(container=container, run=run)
     return _run_response(run)
 

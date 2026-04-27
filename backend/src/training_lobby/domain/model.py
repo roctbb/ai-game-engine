@@ -5,8 +5,6 @@ from enum import StrEnum
 
 from shared.kernel import InvariantViolationError, NotFoundError, new_id, utc_now
 
-_UNSET = object()
-
 
 class LobbyKind(StrEnum):
     TRAINING = "training"
@@ -49,7 +47,7 @@ class Lobby:
     teams: dict[str, LobbyTeamState] = field(default_factory=dict)
     last_scheduled_run_ids: tuple[str, ...] = ()
     last_scheduled_match_groups: tuple[tuple[str, ...], ...] = ()
-    auto_delete_training_runs_days: int | None = None
+    cumulative_stats_by_team: dict[str, dict[str, float | int]] = field(default_factory=dict)
     created_at: object = field(default_factory=utc_now)
 
     @staticmethod
@@ -189,7 +187,6 @@ class Lobby:
         access: LobbyAccess | None = None,
         access_code: str | None = None,
         max_teams: int | None = None,
-        auto_delete_training_runs_days: int | None | object = _UNSET,
     ) -> None:
         if title is not None:
             normalized_title = title.strip()
@@ -208,12 +205,6 @@ class Lobby:
             raise InvariantViolationError("Для закрытого лобби нужен код доступа")
         if self.access == LobbyAccess.PUBLIC:
             self.access_code = None
-        if auto_delete_training_runs_days is not _UNSET:
-            if not isinstance(auto_delete_training_runs_days, int) and auto_delete_training_runs_days is not None:
-                raise InvariantViolationError("Срок хранения матчей должен быть числом дней")
-            if isinstance(auto_delete_training_runs_days, int) and not 1 <= auto_delete_training_runs_days <= 3650:
-                raise InvariantViolationError("Срок хранения матчей должен быть от 1 до 3650 дней")
-            self.auto_delete_training_runs_days = auto_delete_training_runs_days
 
     def revalidate_ready_states(self, compatibility_by_team: dict[str, tuple[bool, str | None]]) -> None:
         for team_id, state in self.teams.items():

@@ -116,18 +116,6 @@
               <div class="form-text">{{ playerLimitHint }}</div>
             </div>
 
-            <div class="lc-field">
-              <label class="form-label small fw-bold">Удалять матчи старше, дней</label>
-              <input
-                v-model.trim="form.auto_delete_training_runs_days"
-                type="number"
-                min="1"
-                max="3650"
-                class="form-control mono"
-                :disabled="!canManage || isCreating"
-              />
-              <div class="form-text">Оставьте пустым, если архив тренировок нужно хранить без автоочистки.</div>
-            </div>
           </div>
 
           <div v-if="form.access === 'code'" class="lc-field">
@@ -211,7 +199,6 @@ const form = reactive({
   access: 'public' as LobbyAccess,
   access_code: '',
   max_teams: 16,
-  auto_delete_training_runs_days: '',
 });
 
 const lobbyGames = computed(() =>
@@ -241,14 +228,6 @@ const canCreate = computed(() => {
   if (!canManage.value || isCreating.value) return false;
   if (!form.game_id || !form.title.trim()) return false;
   if (!Number.isFinite(form.max_teams) || form.max_teams < 2 || form.max_teams > 512) return false;
-  if (
-    form.auto_delete_training_runs_days &&
-    (!Number.isFinite(Number(form.auto_delete_training_runs_days)) ||
-      Number(form.auto_delete_training_runs_days) < 1 ||
-      Number(form.auto_delete_training_runs_days) > 3650)
-  ) {
-    return false;
-  }
   if (form.access === 'code' && !form.access_code.trim()) return false;
   return true;
 });
@@ -259,14 +238,6 @@ const createHint = computed(() => {
   if (!form.game_id) return 'Выберите игру для лобби.';
   if (!form.title.trim()) return 'Добавьте понятное название для учеников.';
   if (!Number.isFinite(form.max_teams) || form.max_teams < 2 || form.max_teams > 512) return 'Укажите от 2 до 512 игроков.';
-  if (
-    form.auto_delete_training_runs_days &&
-    (!Number.isFinite(Number(form.auto_delete_training_runs_days)) ||
-      Number(form.auto_delete_training_runs_days) < 1 ||
-      Number(form.auto_delete_training_runs_days) > 3650)
-  ) {
-    return 'Срок хранения матчей должен быть от 1 до 3650 дней.';
-  }
   if (form.access === 'code' && !form.access_code.trim()) return 'Для закрытого лобби нужен код входа.';
   return form.access === 'code' ? 'Ученики смогут войти только по коду.' : 'Лобби будет видно всем ученикам.';
 });
@@ -359,7 +330,6 @@ async function createNewLobby(): Promise<void> {
       access: form.access,
       access_code: form.access === 'code' ? form.access_code.trim() : null,
       max_teams: form.max_teams,
-      auto_delete_training_runs_days: form.auto_delete_training_runs_days ? Number(form.auto_delete_training_runs_days) : null,
     });
     await router.push(`/lobbies/${created.lobby_id}`);
   } catch (error) {

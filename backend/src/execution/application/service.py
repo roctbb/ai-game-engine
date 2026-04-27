@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from execution.application.replay_recorder import NoopRunReplayRecorder, RunReplayRecorder
 from execution.application.repositories import BuildRepository, MatchExecutionRepository, RunRepository, WorkerRepository
@@ -337,24 +336,6 @@ class ExecutionService:
         run_ids = [run.run_id for run in runs]
         self.delete_runs(run_ids)
         return run_ids
-
-    def delete_lobby_training_runs_older_than(self, *, lobby_id: str, cutoff: datetime, exclude_run_ids: set[str]) -> list[str]:
-        runs = self.list_runs(
-            lobby_id=lobby_id,
-            run_kind=RunKind.TRAINING_MATCH,
-            include_result_payload=False,
-        )
-        deleted_run_ids: list[str] = []
-        for run in runs:
-            if run.run_id in exclude_run_ids:
-                continue
-            if run.status not in {RunStatus.FINISHED, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}:
-                continue
-            completed_at = run.finished_at if isinstance(run.finished_at, datetime) else run.created_at
-            if isinstance(completed_at, datetime) and completed_at < cutoff:
-                deleted_run_ids.append(run.run_id)
-        self.delete_runs(deleted_run_ids)
-        return deleted_run_ids
 
     def register_worker(self, data: RegisterWorkerInput) -> WorkerNode:
         existing = self._worker_repository.get(data.worker_id)

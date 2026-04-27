@@ -24,7 +24,6 @@ class CreateLobbyInput:
     access: LobbyAccess
     access_code: str | None
     max_teams: int
-    auto_delete_training_runs_days: int | None = None
 
 
 _ACTIVE_RUN_STATUSES = {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}
@@ -34,8 +33,8 @@ _LOBBY_REPLAY_FRAME_MS = 500
 _LOBBY_RESULT_SECONDS = 5
 _LOBBY_ONLINE_VIEWER_TTL_SECONDS = 20
 _LOBBY_LIVE_CACHE_TTL_SECONDS = 0.75
+_TRAINING_LOBBY_ARCHIVED_MATCH_LIMIT = 30
 _LOBBY_VIEWER_PRESENCE_KEY_PREFIX = "ai-game:training-lobby:viewer-presence:"
-_UNSET_RETENTION = object()
 
 
 class _DistributedLock(Protocol):
@@ -237,7 +236,6 @@ class TrainingLobbyService:
             access_code=data.access_code,
             max_teams=data.max_teams,
         )
-        lobby.auto_delete_training_runs_days = data.auto_delete_training_runs_days
         self._repository.save(lobby)
         return lobby
 
@@ -374,7 +372,9 @@ class TrainingLobbyService:
             if run.status in _REPLAYABLE_RUN_STATUSES
         ]
         finished_runs.sort(key=lambda item: item.created_at, reverse=True)
-        archived_run_ids = tuple(run.run_id for run in finished_runs if run.run_id not in current_group_run_ids)[:100]
+        archived_run_ids = tuple(run.run_id for run in finished_runs if run.run_id not in current_group_run_ids)[
+            : _TRAINING_LOBBY_ARCHIVED_MATCH_LIMIT * 8
+        ]
         current_run_ids = tuple(
             run_id
             for group in cycle.current_match_groups
@@ -384,7 +384,7 @@ class TrainingLobbyService:
         archived_match_groups = self._build_archived_match_group_views_cached(
             lobby=lobby,
             runs=[run for run in finished_runs if run.run_id not in current_group_run_ids],
-            limit=100,
+            limit=_TRAINING_LOBBY_ARCHIVED_MATCH_LIMIT,
         )
 
         return LobbyLiveView(
@@ -548,20 +548,16 @@ class TrainingLobbyService:
         access: LobbyAccess | None = None,
         access_code: str | None = None,
         max_teams: int | None = None,
-        auto_delete_training_runs_days: int | None | object = _UNSET_RETENTION,
     ) -> Lobby:
         lobby = self.get_lobby(lobby_id)
-        settings: dict[str, object] = {
-            "title": title,
-            "access": access,
-            "access_code": access_code,
-            "max_teams": max_teams,
-        }
-        if auto_delete_training_runs_days is not _UNSET_RETENTION:
-            settings["auto_delete_training_runs_days"] = auto_delete_training_runs_days
-        lobby.update_settings(**settings)
+        lobby.update_settings(
+            title=title,
+            access=access,
+            access_code=access_code,
+            max_teams=max_teams,
+        )
         self._repository.save(lobby)
-        self.cleanup_old_training_runs(lobby_id=lobby_id)
+        self.cleanup_training_match_archive(lobby_id=lobby_id)
         return lobby
 
     def delete_lobby(self, lobby_id: str) -> None:
@@ -572,17 +568,36 @@ class TrainingLobbyService:
         self._clear_lobby_derived_caches(lobby_id)
         self._repository.delete(lobby_id)
 
-    def cleanup_old_training_runs(self, lobby_id: str) -> list[str]:
-        lobby = self.get_lobby(lobby_id)
-        if lobby.auto_delete_training_runs_days is None:
+    def cleanup_training_match_archive(self, lobby_id: str) -> list[str]:
+        try:
+            lobby = self.get_lobby(lobby_id)
+        except NotFoundError:
             return []
-        cutoff = utc_now() - timedelta(days=lobby.auto_delete_training_runs_days)
-        excluded_run_ids = set(lobby.last_scheduled_run_ids)
-        deleted = self._execution.delete_lobby_training_runs_older_than(
+        runs = self._execution.list_runs(
             lobby_id=lobby_id,
-            cutoff=cutoff,
-            exclude_run_ids=excluded_run_ids,
+            run_kind=RunKind.TRAINING_MATCH,
+            include_result_payload=False,
         )
+        current_run_ids = {run_id for group in self._current_match_groups(lobby) for run_id in group}
+        finished_runs = [
+            run
+            for run in runs
+            if run.status in _REPLAYABLE_RUN_STATUSES and run.run_id not in current_run_ids
+        ]
+        if len(finished_runs) <= _TRAINING_LOBBY_ARCHIVED_MATCH_LIMIT:
+            return []
+
+        finished_runs_with_payload = self._finished_runs_with_payload_cached(lobby=lobby, runs=finished_runs)
+        groups = self._archived_match_run_id_groups(lobby=lobby, runs=finished_runs_with_payload)
+        groups_to_delete = groups[_TRAINING_LOBBY_ARCHIVED_MATCH_LIMIT:]
+        if not groups_to_delete:
+            return []
+
+        runs_by_id = {run.run_id: run for run in finished_runs_with_payload}
+        self._add_cumulative_stats_for_match_groups(lobby=lobby, groups=groups_to_delete, runs_by_id=runs_by_id)
+        deleted = sorted({run_id for group in groups_to_delete for run_id in group})
+        self._execution.delete_runs(deleted)
+        self._repository.save(lobby)
         if deleted:
             self._clear_lobby_derived_caches(lobby_id)
         return deleted
@@ -700,6 +715,10 @@ class TrainingLobbyService:
             if lobby.kind is not LobbyKind.TRAINING:
                 continue
             if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+                continue
+            if not lobby.last_scheduled_run_ids and not any(state.ready for state in lobby.teams.values()):
+                continue
+            if not lobby.last_scheduled_run_ids and not self._has_online_ready_viewer(lobby):
                 continue
             try:
                 advanced.append(self.run_matchmaking_cycle(lobby_id=lobby.lobby_id, requested_by=requested_by))
@@ -1603,10 +1622,7 @@ class TrainingLobbyService:
         )
 
     def _collect_participant_stats(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
-        wins_by_team: dict[str, int] = {}
-        matches_by_team: dict[str, int] = {}
-        score_sum_by_team: dict[str, float] = {}
-        score_count_by_team: dict[str, int] = {}
+        wins_by_team, matches_by_team, score_sum_by_team, score_count_by_team = self._cumulative_stats_maps(lobby)
 
         runs_by_id = {run.run_id: run for run in runs if run.team_id in lobby.teams}
         for group in self._archived_match_run_id_groups(lobby=lobby, runs=list(runs_by_id.values())):
@@ -1642,6 +1658,51 @@ class TrainingLobbyService:
                 )
             )
         return tuple(items)
+
+    @staticmethod
+    def _cumulative_stats_maps(
+        lobby: Lobby,
+    ) -> tuple[dict[str, int], dict[str, int], dict[str, float], dict[str, int]]:
+        wins_by_team: dict[str, int] = {}
+        matches_by_team: dict[str, int] = {}
+        score_sum_by_team: dict[str, float] = {}
+        score_count_by_team: dict[str, int] = {}
+        for team_id, stats in lobby.cumulative_stats_by_team.items():
+            wins_by_team[team_id] = int(stats.get("wins", 0) or 0)
+            matches_by_team[team_id] = int(stats.get("matches_total", 0) or 0)
+            score_sum_by_team[team_id] = float(stats.get("score_sum", 0.0) or 0.0)
+            score_count_by_team[team_id] = int(stats.get("score_count", 0) or 0)
+        return wins_by_team, matches_by_team, score_sum_by_team, score_count_by_team
+
+    def _add_cumulative_stats_for_match_groups(
+        self,
+        *,
+        lobby: Lobby,
+        groups: list[list[str]],
+        runs_by_id: dict[str, Run],
+    ) -> None:
+        for group in groups:
+            group_runs = [
+                runs_by_id[run_id]
+                for run_id in group
+                if run_id in runs_by_id and runs_by_id[run_id].team_id in lobby.teams
+            ]
+            if not group_runs:
+                continue
+            winner_team_id = self._single_winner_team_id(group_runs)
+            group_scores = self._scores_by_team(group_runs)
+            for run in group_runs:
+                stats = lobby.cumulative_stats_by_team.setdefault(
+                    run.team_id,
+                    {"matches_total": 0, "wins": 0, "score_sum": 0.0, "score_count": 0},
+                )
+                stats["matches_total"] = int(stats.get("matches_total", 0) or 0) + 1
+                if winner_team_id == run.team_id:
+                    stats["wins"] = int(stats.get("wins", 0) or 0) + 1
+                score = group_scores.get(run.team_id)
+                if score is not None:
+                    stats["score_sum"] = float(stats.get("score_sum", 0.0) or 0.0) + score
+                    stats["score_count"] = int(stats.get("score_count", 0) or 0) + 1
 
     @staticmethod
     def _extract_score(

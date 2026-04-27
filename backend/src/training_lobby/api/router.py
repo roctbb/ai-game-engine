@@ -83,7 +83,6 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
         access=typed.access,
         status=typed.status,
         max_teams=typed.max_teams,
-        auto_delete_training_runs_days=typed.auto_delete_training_runs_days,
         teams=[
             {
                 "team_id": team_state.team_id,
@@ -169,7 +168,6 @@ def _to_summary_response(
         access=lobby.access,
         status=lobby.status,
         max_teams=lobby.max_teams,
-        auto_delete_training_runs_days=None if redact_private else lobby.auto_delete_training_runs_days,
         teams=[
             {
                 "team_id": team_state.team_id,
@@ -286,9 +284,9 @@ def _demo_bot_code_by_slot(container: ServiceContainer, lobby: Lobby) -> dict[st
     return codes
 
 
-def _cleanup_old_training_runs_if_possible(container: ServiceContainer, lobby_id: str) -> None:
+def _cleanup_training_match_archive_if_possible(container: ServiceContainer, lobby_id: str) -> None:
     try:
-        container.training_lobby.cleanup_old_training_runs(lobby_id=lobby_id)
+        container.training_lobby.cleanup_training_match_archive(lobby_id=lobby_id)
     except InvariantViolationError:
         return
 
@@ -466,7 +464,6 @@ def create_lobby(
             access=request.access,
             access_code=request.access_code,
             max_teams=request.max_teams,
-            auto_delete_training_runs_days=request.auto_delete_training_runs_days,
         )
     )
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
@@ -492,6 +489,7 @@ def get_lobby(
 ) -> LobbyResponse:
     _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
     _reopen_lobby_after_finished_competition_if_needed(container=container, lobby_id=lobby_id)
+    _cleanup_training_match_archive_if_possible(container=container, lobby_id=lobby_id)
     container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
     live_view = container.training_lobby.get_live_view(lobby_id=lobby_id, user_id=session.nickname)
     live_view = _kick_training_matchmaking_from_live_view_if_needed(
@@ -510,16 +508,13 @@ def patch_lobby(
     session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyResponse:
-    retention = request.auto_delete_training_runs_days if "auto_delete_training_runs_days" in request.model_fields_set else ...
-    kwargs = {
-        "title": request.title,
-        "access": request.access,
-        "access_code": request.access_code,
-        "max_teams": request.max_teams,
-    }
-    if retention is not ...:
-        kwargs["auto_delete_training_runs_days"] = retention
-    lobby = container.training_lobby.update_lobby_settings(lobby_id=lobby_id, **kwargs)
+    lobby = container.training_lobby.update_lobby_settings(
+        lobby_id=lobby_id,
+        title=request.title,
+        access=request.access,
+        access_code=request.access_code,
+        max_teams=request.max_teams,
+    )
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
 
 

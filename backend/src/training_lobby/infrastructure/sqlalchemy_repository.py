@@ -53,7 +53,10 @@ def _map_lobby_to_orm(lobby: Lobby) -> LobbyOrm:
         teams_json=teams_json,
         last_scheduled_run_ids_json=list(lobby.last_scheduled_run_ids),
         last_scheduled_match_groups_json=[list(group) for group in lobby.last_scheduled_match_groups],
-        auto_delete_training_runs_days=lobby.auto_delete_training_runs_days,
+        cumulative_stats_by_team_json={
+            str(team_id): dict(stats)
+            for team_id, stats in lobby.cumulative_stats_by_team.items()
+        },
         created_at=lobby.created_at,
     )
 
@@ -89,6 +92,20 @@ def _map_lobby_from_orm(row: LobbyOrm) -> Lobby:
         teams=teams,
         last_scheduled_run_ids=tuple(str(item) for item in (row.last_scheduled_run_ids_json or [])),
         last_scheduled_match_groups=tuple(match_groups),
-        auto_delete_training_runs_days=row.auto_delete_training_runs_days,
+        cumulative_stats_by_team=_normalize_cumulative_stats(row.cumulative_stats_by_team_json or {}),
         created_at=row.created_at,
     )
+
+
+def _normalize_cumulative_stats(raw: dict[str, dict[str, object]]) -> dict[str, dict[str, float | int]]:
+    result: dict[str, dict[str, float | int]] = {}
+    for team_id, stats in raw.items():
+        if not isinstance(stats, dict):
+            continue
+        result[str(team_id)] = {
+            "matches_total": int(stats.get("matches_total", 0) or 0),
+            "wins": int(stats.get("wins", 0) or 0),
+            "score_sum": float(stats.get("score_sum", 0.0) or 0.0),
+            "score_count": int(stats.get("score_count", 0) or 0),
+        }
+    return result
