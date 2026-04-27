@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -22,9 +23,10 @@ RUN apt-get update \
 
 COPY services/worker/pyproject.toml /app/pyproject.toml
 COPY services/worker/src /app/src
-COPY games /app/games
 
-RUN pip install --no-cache-dir .
+RUN --mount=type=cache,target=/root/.cache/pip pip install .
+
+COPY games /app/games
 
 EXPOSE 8020
 CMD ["uvicorn", "worker_service.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8020", "--no-access-log"]

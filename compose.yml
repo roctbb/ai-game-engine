@@ -5,6 +5,7 @@ x-default-logging: &default-logging
     max-file: "3"
 
 x-worker-common: &worker-common
+  image: ai-game-engine-worker-service
   build:
     context: .
     dockerfile: services/worker/Dockerfile

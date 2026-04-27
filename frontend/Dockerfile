@@ -1,9 +1,10 @@
+# syntax=docker/dockerfile:1.7
 FROM node:22-alpine AS build
 
 WORKDIR /app
 
 COPY frontend/package.json frontend/package-lock.json /app/
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline
 
 COPY frontend/tsconfig.json /app/tsconfig.json
 COPY frontend/tsconfig.node.json /app/tsconfig.node.json
