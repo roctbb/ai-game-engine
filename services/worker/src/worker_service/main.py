@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _auto_poll_task: asyncio.Task[None] | None = None
 _auto_poll_stop_event: asyncio.Event | None = None
 _worker_registration_expires_at: float = 0.0
+_worker_heartbeat_expires_at: float = 0.0
 
 SUPPORTED_RUN_KINDS: set[str] = {"single_task", "training_match", "competition_match"}
 SUPPORTED_CODE_API_MODES: set[str] = {"script_based", "turn_based"}
@@ -136,6 +137,7 @@ def _pull_and_execute_once() -> dict[str, object]:
         _best_effort_send_worker_heartbeat(
             client=client,
             capacity_available=max(settings.max_slots - 1, 0),
+            force=True,
         )
         try:
             execution_context = _get_execution_context(client=client, run_id=run_id)
@@ -195,6 +197,7 @@ def _pull_and_execute_once() -> dict[str, object]:
             _best_effort_send_worker_heartbeat(
                 client=client,
                 capacity_available=settings.max_slots,
+                force=True,
             )
 
         return {
@@ -437,7 +440,16 @@ def _best_effort_ack_scheduler(client: httpx.Client, run_id: str) -> bool:
         return False
 
 
-def _best_effort_send_worker_heartbeat(client: httpx.Client, capacity_available: int) -> str | None:
+def _best_effort_send_worker_heartbeat(
+    client: httpx.Client,
+    capacity_available: int,
+    *,
+    force: bool = False,
+) -> str | None:
+    global _worker_heartbeat_expires_at
+    now = time.monotonic()
+    if not force and now < _worker_heartbeat_expires_at:
+        return None
     try:
         response = _request_with_retry(
             client=client,
@@ -447,6 +459,7 @@ def _best_effort_send_worker_heartbeat(client: httpx.Client, capacity_available:
         )
         payload = response.json()
         status = payload.get("status")
+        _worker_heartbeat_expires_at = now + max(settings.worker_heartbeat_interval_seconds, 0.1)
         return status if isinstance(status, str) else None
     except httpx.HTTPError:
         return None

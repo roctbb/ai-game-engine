@@ -124,6 +124,7 @@ class ScriptedHttpxClient:
 
 def _set_test_settings() -> None:
     worker_main._worker_registration_expires_at = 0.0
+    worker_main._worker_heartbeat_expires_at = 0.0
     settings.backend_api_url = "http://backend"
     settings.scheduler_url = "http://scheduler"
     settings.internal_api_token = "dev-internal-token"
@@ -139,6 +140,7 @@ def _set_test_settings() -> None:
     settings.retry_base_delay_ms = 1
     settings.retry_max_delay_ms = 2
     settings.worker_registration_ttl_seconds = 30.0
+    settings.worker_heartbeat_interval_seconds = 5.0
 
 
 def test_pull_and_execute_idle(monkeypatch: Any) -> None:

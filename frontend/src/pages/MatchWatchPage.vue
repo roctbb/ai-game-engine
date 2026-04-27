@@ -97,11 +97,11 @@
             <strong>Идет первый показ</strong>
             <span>Перемотка откроется после реплея.</span>
           </div>
-          <div v-if="watchContext.renderer_url" class="agp-viewer-frame">
+          <div v-if="safeRendererUrl" class="agp-viewer-frame">
             <iframe
               ref="rendererFrameRef"
               :key="rendererKey"
-              :src="watchContext.renderer_url"
+              :src="safeRendererUrl"
               title="Визуализация игры"
               sandbox="allow-scripts allow-same-origin"
               @load="onRendererLoad"
@@ -342,7 +342,11 @@ let isPollingRun = false;
 let pendingRunPoll = false;
 let runPollingToken = 0;
 
-const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(watchContext.value?.renderer_url));
+const safeRendererUrl = computed(() => {
+  const url = watchContext.value?.renderer_url?.trim() ?? '';
+  return url.startsWith('/api/v1/renderers/') ? url : '';
+});
+const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(safeRendererUrl.value));
 const runStatusLabel = computed(() => {
   const status = run.value?.status ?? 'created';
   const labels: Record<RunDto['status'], string> = {
@@ -379,7 +383,7 @@ const backLabel = computed(() => {
   return 'К лобби';
 });
 const rendererStatusLabel = computed(() => {
-  if (!watchContext.value?.renderer_url) return 'без визуализации';
+  if (!safeRendererUrl.value) return watchContext.value?.renderer_url ? 'ошибка renderer url' : 'без визуализации';
   return rendererReady.value ? 'готова' : 'загружается';
 });
 const replayFrames = computed<ReplayFrameView[]>(() => {
