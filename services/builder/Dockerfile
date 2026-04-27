@@ -15,4 +15,4 @@ COPY services/builder/src /app/src
 RUN pip install --no-cache-dir .
 
 EXPOSE 8030
-CMD ["uvicorn", "builder_service.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8030", "--workers", "2", "--no-access-log"]
+CMD ["uvicorn", "builder_service.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8030", "--no-access-log"]
