@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from administration.application.service import AdministrationService
 from administration.infrastructure.http_builder_gateway import HttpBuilderGateway
@@ -78,6 +79,24 @@ REMOVED_MANIFEST_GAME_SLUGS = {
     "relic_delivery_duel_v1",
     "template_v1",
 }
+
+
+class _DistributedLock(Protocol):
+    def acquire(self, blocking: bool = True) -> bool:
+        ...
+
+    def release(self) -> None:
+        ...
+
+
+class _DistributedLockClient(Protocol):
+    def lock(
+        self,
+        name: str,
+        timeout: float | None = None,
+        blocking_timeout: float | None = None,
+    ) -> _DistributedLock:
+        ...
 
 
 @dataclass(slots=True)
@@ -247,7 +266,7 @@ def _build_container() -> ServiceContainer:
     )
     identity = IdentityService(sessions=session_repo)
 
-    _seed_manifest_games(game_catalog)
+    _seed_manifest_games(game_catalog, lock_client=matchmaking_lock_client)
 
     return ServiceContainer(
         administration=administration,
@@ -262,7 +281,32 @@ def _build_container() -> ServiceContainer:
     )
 
 
-def _seed_manifest_games(game_catalog: GameCatalogService) -> None:
+def _seed_manifest_games(
+    game_catalog: GameCatalogService,
+    *,
+    lock_client: _DistributedLockClient | None = None,
+) -> None:
+    if lock_client is not None:
+        lock = lock_client.lock(
+            "ai-game:catalog:manifest-seed",
+            timeout=120.0,
+            blocking_timeout=60.0,
+        )
+        if not lock.acquire(blocking=True):
+            return
+        try:
+            _seed_manifest_games_unlocked(game_catalog)
+        finally:
+            try:
+                lock.release()
+            except Exception:
+                pass
+        return
+
+    _seed_manifest_games_unlocked(game_catalog)
+
+
+def _seed_manifest_games_unlocked(game_catalog: GameCatalogService) -> None:
     games_root = get_games_root()
     for manifest in load_game_manifests(games_root):
         try:
@@ -285,11 +329,17 @@ def _update_existing_game(game_catalog: GameCatalogService, manifest: GameManife
     if game is None:
         return
     reg = manifest.to_register_input()
-    game_catalog.sync_metadata_from_manifest(game.game_id, reg)
+    game = game_catalog.sync_metadata_from_manifest(game.game_id, reg)
 
-    active = game.versions.get(game.active_version_id or "")
-    if active and active.semver == manifest.semver:
+    existing_version = next(
+        (version for version in game.versions.values() if version.semver == manifest.semver),
+        None,
+    )
+    if existing_version is not None:
+        if game.active_version_id != existing_version.version_id:
+            game_catalog.activate_game_version(game.game_id, existing_version.version_id)
         return
+
     try:
         version = game_catalog.add_game_version(
             game_id=game.game_id,
@@ -297,9 +347,16 @@ def _update_existing_game(game_catalog: GameCatalogService, manifest: GameManife
             required_slots=reg.required_slots,
             required_worker_labels=dict(reg.required_worker_labels),
         )
-        game_catalog.activate_game_version(game.game_id, version.version_id)
     except ConflictError:
-        pass
+        refreshed = game_catalog.get_game(game.game_id)
+        existing_version = next(
+            (version for version in refreshed.versions.values() if version.semver == manifest.semver),
+            None,
+        )
+        if existing_version is None:
+            return
+        version = existing_version
+    game_catalog.activate_game_version(game.game_id, version.version_id)
 
 
 def get_games_root() -> Path:
