@@ -6,7 +6,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0008_spectator_replay_list_indexes"
+revision = "0008_replay_list_indexes"
 down_revision = "0007_execution_run_lobby_indexes"
 branch_labels = None
 depends_on = None

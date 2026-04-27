@@ -70,3 +70,6 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
         "ix_execution_runs_lobby_id",
         "ix_execution_runs_lobby_kind_created_at",
     }.issubset(run_indexes)
+
+    replay_indexes = {item["name"] for item in inspector.get_indexes("spectator_replays")}
+    assert "ix_spectator_replays_game_kind_updated_at" in replay_indexes
