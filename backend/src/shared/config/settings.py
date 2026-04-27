@@ -43,15 +43,15 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         if self.database_url_override:
             return self.database_url_override
-        return str(
-            URL.create(
-                "postgresql+psycopg",
-                username=self.db_user,
-                password=self.db_password,
-                host=self.db_host,
-                port=self.db_port,
-                database=self.db_name,
-            )
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.db_user,
+            password=self.db_password,
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+        ).render_as_string(
+            hide_password=False
         )
 
 
