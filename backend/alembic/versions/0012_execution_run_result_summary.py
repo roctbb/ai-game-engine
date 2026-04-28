@@ -6,7 +6,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0012_execution_run_result_summary"
+revision = "0012_run_result_summary"
 down_revision = "0011_run_active_lease_id"
 branch_labels = None
 depends_on = None
