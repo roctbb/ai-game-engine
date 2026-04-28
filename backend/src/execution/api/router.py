@@ -462,7 +462,7 @@ def get_run_watch_context(
     renderer_entrypoint = manifest.renderer_entrypoint
     renderer_url = None
     if renderer_entrypoint:
-        renderer_url = f"/api/v1/renderers/{game.slug}/{renderer_entrypoint}"
+        renderer_url = f"/api/v1/renderers/{game.slug}/{renderer_entrypoint}?v={manifest.semver}"
 
     return RunWatchContextResponse(
         run_id=run.run_id,
@@ -709,7 +709,10 @@ def stream_run(
 
 @router.get("/renderers/{game_slug}/{asset_path:path}")
 def get_renderer_asset(game_slug: str, asset_path: str) -> FileResponse:
-    return FileResponse(_resolve_renderer_asset_path(game_slug=game_slug, asset_path=asset_path))
+    return FileResponse(
+        _resolve_renderer_asset_path(game_slug=game_slug, asset_path=asset_path),
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @router.get("/internal/runs/{run_id}/execution-context", response_model=RunExecutionContextResponse)

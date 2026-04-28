@@ -31,7 +31,7 @@ def test_run_watch_context_returns_renderer_metadata(client, teacher_headers) ->
     assert payload["game_slug"] == "maze_escape_v1"
     assert payload["game_title"] == game["title"]
     assert payload["renderer_entrypoint"] == "renderer/index.html"
-    assert payload["renderer_url"] == "/api/v1/renderers/maze_escape_v1/renderer/index.html"
+    assert payload["renderer_url"].startswith("/api/v1/renderers/maze_escape_v1/renderer/index.html?v=")
     assert payload["renderer_protocol"] == "v1"
     assert payload["participants"] == [
         {
@@ -55,6 +55,7 @@ def test_renderer_asset_endpoint_serves_renderer_files(client) -> None:
     html_response = client.get("/api/v1/renderers/maze_escape_v1/renderer/index.html")
     assert html_response.status_code == 200
     assert "text/html" in html_response.headers.get("content-type", "")
+    assert html_response.headers.get("cache-control") == "no-store, max-age=0"
     assert "Maze Escape Renderer" in html_response.text
 
     svg_response = client.get("/api/v1/renderers/maze_escape_v1/renderer/maze.svg")
