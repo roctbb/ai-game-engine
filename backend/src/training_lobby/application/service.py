@@ -668,6 +668,12 @@ class TrainingLobbyService:
             run_kind=RunKind.TRAINING_MATCH,
             include_result_payload=False,
         )
+        if self._reconcile_terminal_shadow_runs(lobby_id=lobby_id, runs=runs):
+            runs = self._execution.list_runs(
+                lobby_id=lobby_id,
+                run_kind=RunKind.TRAINING_MATCH,
+                include_result_payload=False,
+            )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
         if active_runs:
@@ -741,6 +747,12 @@ class TrainingLobbyService:
             run_kind=RunKind.TRAINING_MATCH,
             include_result_payload=False,
         )
+        if self._reconcile_terminal_shadow_runs(lobby_id=lobby.lobby_id, runs=runs):
+            runs = self._execution.list_runs(
+                lobby_id=lobby.lobby_id,
+                run_kind=RunKind.TRAINING_MATCH,
+                include_result_payload=False,
+            )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
         busy_team_ids = {run.team_id for run in active_runs}
@@ -905,15 +917,20 @@ class TrainingLobbyService:
     def _shadow_match_runs(self, primary_run: Run) -> list[Run]:
         if primary_run.lobby_id is None:
             return []
-        try:
-            lobby = self.get_lobby(primary_run.lobby_id)
-        except NotFoundError:
-            return []
         group_run_ids: list[str] = []
-        for group in lobby.last_scheduled_match_groups:
-            if primary_run.run_id in group:
-                group_run_ids = list(group)
-                break
+        match = self._execution.get_match_execution_for_run(primary_run, include_result_payload=False)
+        if match is not None and primary_run.run_id in match.run_ids:
+            group_run_ids = list(match.run_ids)
+        if len(group_run_ids) <= 1:
+            try:
+                lobby = self.get_lobby(primary_run.lobby_id)
+            except NotFoundError:
+                return []
+            group_run_ids = []
+            for group in lobby.last_scheduled_match_groups:
+                if primary_run.run_id in group:
+                    group_run_ids = list(group)
+                    break
         if len(group_run_ids) <= 1:
             return []
         runs: list[Run] = []
@@ -925,6 +942,45 @@ class TrainingLobbyService:
             except NotFoundError:
                 continue
         return runs
+
+    def _reconcile_terminal_shadow_runs(self, *, lobby_id: str, runs: list[Run]) -> bool:
+        runs_by_id = {run.run_id: run for run in runs}
+        changed = False
+        for shadow_run in runs:
+            if shadow_run.status not in _ACTIVE_RUN_STATUSES:
+                continue
+            primary_run_id = self._execution.primary_run_id_for_shadow(shadow_run)
+            if primary_run_id is None or primary_run_id == shadow_run.run_id:
+                continue
+            primary_run = runs_by_id.get(primary_run_id)
+            if primary_run is None:
+                try:
+                    primary_run = self._execution.get_run(primary_run_id, include_result_payload=False)
+                except NotFoundError:
+                    continue
+            try:
+                if primary_run.status is RunStatus.FINISHED:
+                    primary_with_payload = (
+                        primary_run
+                        if primary_run.result_payload is not None
+                        else self._execution.get_run(primary_run.run_id)
+                    )
+                    payload = primary_with_payload.result_payload if isinstance(primary_with_payload.result_payload, dict) else {}
+                    if not payload:
+                        continue
+                    self._execution.finish_run(shadow_run.run_id, _compact_shadow_payload(payload))
+                    changed = True
+                elif primary_run.status in {RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}:
+                    self._execution.cancel_run(
+                        shadow_run.run_id,
+                        message=f"primary_run_{primary_run.status.value}",
+                    )
+                    changed = True
+            except (InvariantViolationError, NotFoundError):
+                continue
+        if changed:
+            self._clear_lobby_derived_caches(lobby_id)
+        return changed
 
     def _cancel_unqueued_batch_runs(self, *, run_ids: list[str], message: str) -> None:
         for run_id in run_ids:
@@ -1548,12 +1604,18 @@ class TrainingLobbyService:
         if cached is not None and cached[0] == signature:
             return cached[1]
 
-        runs_with_payload = [
-            run
-            if run.result_payload is not None or run.status is not RunStatus.FINISHED
-            else self._execution.get_run(run.run_id)
-            for run in runs
-        ]
+        runs_with_payload: list[Run] = []
+        for run in runs:
+            if run.result_payload is not None or run.status is not RunStatus.FINISHED:
+                runs_with_payload.append(run)
+                continue
+            try:
+                runs_with_payload.append(self._execution.get_run(run.run_id))
+            except NotFoundError:
+                # Archive cleanup can delete old runs while a lobby stream is
+                # building its live view. Treat that race as a stale archive row
+                # instead of crashing the SSE response and retrying every tick.
+                continue
         self._finished_runs_payload_cache[lobby.lobby_id] = (signature, runs_with_payload)
         return runs_with_payload
 
