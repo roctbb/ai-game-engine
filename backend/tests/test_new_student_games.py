@@ -1812,6 +1812,8 @@ def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:
             "participants": [
                 {"team_id": "team-alpha", "codes_by_slot": {"player": demo_code}},
                 {"team_id": "team-beta", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-gamma", "codes_by_slot": {"player": demo_code}},
+                {"team_id": "team-delta", "codes_by_slot": {"player": demo_code}},
             ],
         }
     )
@@ -1820,9 +1822,88 @@ def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:
     first_frame = payload["frames"][0]["frame"]
 
     assert payload["status"] == "finished"
-    assert set(payload["scores"]) == {"team-alpha", "team-beta"}
+    assert set(payload["scores"]) == {"team-alpha", "team-beta", "team-gamma", "team-delta"}
     assert set(payload["placements"]) == set(payload["scores"])
-    assert set(metrics["winner_slots"]).issubset({"snake_1", "snake_2"})
-    assert set(metrics["food_eaten"]) == {"snake_1", "snake_2"}
+    assert set(metrics["winner_slots"]).issubset({"snake_1", "snake_2", "snake_3", "snake_4"})
+    assert set(metrics["food_eaten"]) == {"snake_1", "snake_2", "snake_3", "snake_4"}
+    assert set(metrics["deaths"]) == set(metrics["food_eaten"])
+    assert first_frame["width"] == 26
+    assert first_frame["height"] == 26
+    assert len(first_frame["foods"]) >= 4
+    assert set(first_frame["holes"]) == set(metrics["food_eaten"])
     assert first_frame["board"][0][0] == -1
     assert "compile_errors" not in metrics
+
+
+def test_multiplayer_snake_death_drops_food_and_respawns(monkeypatch) -> None:
+    engine = _load_module(
+        _repo_root() / "games" / "multiplayer_snake" / "engine.py",
+        "multiplayer_snake_respawn_test",
+    )
+    monkeypatch.setattr(engine, "_MAX_TURNS", 4)
+    crash_code = "def make_move(x, y, board):\n    return 'up'\n"
+
+    payload = engine.run(
+        {
+            "run_kind": "competition_match",
+            "run_id": "multi-snake-respawn-test",
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": crash_code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": crash_code}},
+                {"team_id": "team-gamma", "codes_by_slot": {"player": crash_code}},
+                {"team_id": "team-delta", "codes_by_slot": {"player": crash_code}},
+            ],
+        }
+    )
+
+    metrics = payload["metrics"]
+    running_frames = [frame["frame"] for frame in payload["frames"] if frame["phase"] == "running"]
+
+    assert payload["status"] == "finished"
+    assert sum(metrics["deaths"].values()) > 0
+    assert sum(metrics["respawns"].values()) > 0
+    assert any(frame.get("death_events") for frame in running_frames)
+    assert any(event["type"] == "crash" and event["drops"] > 0 for event in payload["events"])
+
+
+def test_multiplayer_snake_head_swap_kills_both(monkeypatch) -> None:
+    engine = _load_module(
+        _repo_root() / "games" / "multiplayer_snake" / "engine.py",
+        "multiplayer_snake_head_swap_test",
+    )
+    monkeypatch.setattr(engine, "_MAX_TURNS", 1)
+    monkeypatch.setattr(
+        engine,
+        "_STARTS",
+        {
+            "snake_1": [(5, 5), (4, 5)],
+            "snake_2": [(6, 5), (7, 5)],
+            "snake_3": [(2, 20), (1, 20)],
+            "snake_4": [(23, 20), (24, 20)],
+        },
+    )
+    monkeypatch.setattr(
+        engine,
+        "_INIT_DIR",
+        {"snake_1": "right", "snake_2": "left", "snake_3": "right", "snake_4": "left"},
+    )
+    swap_code = (
+        "def make_move(x, y, board, role=''):\n"
+        "    return {'snake_1': 'right', 'snake_2': 'left', 'snake_3': 'right', 'snake_4': 'left'}.get(role, 'right')\n"
+    )
+
+    payload = engine.run(
+        {
+            "run_kind": "competition_match",
+            "run_id": "multi-snake-head-swap-test",
+            "participants": [
+                {"team_id": "team-alpha", "codes_by_slot": {"player": swap_code}},
+                {"team_id": "team-beta", "codes_by_slot": {"player": swap_code}},
+                {"team_id": "team-gamma", "codes_by_slot": {"player": swap_code}},
+                {"team_id": "team-delta", "codes_by_slot": {"player": swap_code}},
+            ],
+        }
+    )
+
+    assert payload["metrics"]["deaths"]["snake_1"] == 1
+    assert payload["metrics"]["deaths"]["snake_2"] == 1

@@ -3,38 +3,47 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Snake Renderer</title>
+  <title>Multiplayer Snake Renderer</title>
   <style>
-    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#0c1220;color:#dbeafe;font-family:Arial,sans-serif}
-    .wrap{width:min(92vmin,780px)}
-    svg{width:100%;aspect-ratio:1/1;background:#0f172a;border:1px solid #29415e}
-    .hud{margin-top:8px;font:12px ui-monospace,monospace;color:#b6c7da}
+    body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#090f1d;color:#dbeafe;font-family:Inter,Arial,sans-serif}
+    .wrap{width:min(96vmin,880px)}
+    svg{width:100%;aspect-ratio:1/1;background:#0f172a;border:1px solid #29415e;border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+    .hud{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px;font:12px ui-monospace,monospace;color:#b6c7da}
+    .line{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.18);border-radius:8px;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .death-puff{animation:puff .7s ease-out both;transform-box:fill-box;transform-origin:center}
+    .death-ring{animation:ring .7s ease-out both;transform-box:fill-box;transform-origin:center}
+    @keyframes puff{from{opacity:.45;transform:scale(.4)}to{opacity:0;transform:scale(1.8)}}
+    @keyframes ring{from{opacity:.95;transform:scale(.35)}to{opacity:0;transform:scale(2.2)}}
+    @media(max-width:620px){.hud{grid-template-columns:1fr;font-size:11px}.wrap{width:96vw}}
   </style>
 </head>
 <body>
 <div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
 <script>
 const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
-const colors={snake_1:"#22c55e",snake_2:"#38bdf8"};
+const colors={snake_1:"#22c55e",snake_2:"#38bdf8",snake_3:"#f59e0b",snake_4:"#e879f9"};
 function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
-function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
+function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*.18),g=el("g",{}),bx=cx+C*.28,by=cy-C*.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#fff","stroke-width":Math.max(1,C*.045)}));const t=el("text",{x:bx,y:by+C*.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*.23),"font-weight":800,fill:"#fff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
+function drawDeath(body,C,color){for(const p of body||[]){const cx=p.x*C+C/2,cy=p.y*C+C/2;boardEl.appendChild(el("circle",{class:"death-puff",cx,cy,r:C*.44,fill:color,opacity:.35}));boardEl.appendChild(el("circle",{class:"death-ring",cx,cy,r:C*.24,fill:"none",stroke:"#fff","stroke-width":Math.max(1,C*.06),opacity:.9}))}}
 function draw(frame){
-  const w=frame.width||14,h=frame.height||14,C=30; boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
-  boardEl.appendChild(el("rect",{x:0,y:0,width:w*C,height:h*C,fill:"#0f172a"}));
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++)boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:"#17233a"}));
-  const food=frame.food;if(food)boardEl.appendChild(el("circle",{cx:food.x*C+C/2,cy:food.y*C+C/2,r:C*0.28,fill:"#ef4444"}));
+  const w=frame.width||26,h=frame.height||26,C=28; boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
+  boardEl.appendChild(el("rect",{x:0,y:0,width:w*C,height:h*C,fill:"#0b1222"}));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const edge=x===0||y===0||x===w-1||y===h-1;boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,rx:edge?0:3,fill:edge?"#1e293b":"#111c33"}))}
+  for(const [slot,hole] of Object.entries(frame.holes||{})){const color=colors[slot]||"#94a3b8";boardEl.appendChild(el("circle",{cx:hole.x*C+C/2,cy:hole.y*C+C/2,r:C*.38,fill:"#020617",stroke:color,"stroke-width":Math.max(2,C*.08),opacity:.95}))}
+  const foods=Array.isArray(frame.foods)?frame.foods:(frame.food?[frame.food]:[]);for(const food of foods)boardEl.appendChild(el("circle",{cx:food.x*C+C/2,cy:food.y*C+C/2,r:C*.27,fill:"#ef4444",stroke:"#fecaca","stroke-width":Math.max(1,C*.04)}));
+  for(const ev of frame.death_events||[])drawDeath(ev.body,C,colors[ev.slot]||"#fff");
   const snakes=frame.snakes||{};
   for(const [slot,snake] of Object.entries(snakes)){
-    const color=colors[slot]||"#ddd", body=Array.isArray(snake.body)?snake.body:[];
-    for(let i=body.length-1;i>=0;i--){const p=body[i];boardEl.appendChild(el(i===0?"circle":"rect",i===0?{cx:p.x*C+C/2,cy:p.y*C+C/2,r:C*0.32,fill:color,opacity:snake.alive?1:0.35}:{x:p.x*C+4,y:p.y*C+4,width:C-8,height:C-8,rx:5,fill:color,opacity:snake.alive?0.8:0.25}));if(i===0)drawMiniBadge(p.x*C+C/2,p.y*C+C/2,C,snake.food_eaten||0,color)}
-    if(body.length>0){const head=body[0],label=snake.name||snake.team_id||slot,tx=head.x*C+C/2,ty=head.y*C-C*0.2,t=el("text",{x:tx,y:ty,"text-anchor":"middle","dominant-baseline":"auto","font-size":Math.max(9,C*0.38),"font-weight":700,fill:color,stroke:"#0f172a","stroke-width":2,"paint-order":"stroke"});t.textContent=label;boardEl.appendChild(t)}
+    const color=colors[slot]||"#ddd",body=Array.isArray(snake.body)?snake.body:[],alive=snake.alive!==false;
+    for(let i=body.length-1;i>=0;i--){const p=body[i],cx=p.x*C+C/2,cy=p.y*C+C/2,common={fill:color,opacity:alive?1:.22};boardEl.appendChild(el(i===0?"circle":"rect",i===0?{cx,cy,r:C*.31,...common}:{x:p.x*C+4,y:p.y*C+4,width:C-8,height:C-8,rx:6,...common,opacity:alive?.82:.18}));if(i===0)drawMiniBadge(cx,cy,C,snake.food_eaten||0,color)}
+    if(body.length>0){const head=body[0],label=snake.name||snake.team_id||slot,t=el("text",{x:head.x*C+C/2,y:head.y*C-C*.2,"text-anchor":"middle","font-size":Math.max(8,C*.33),"font-weight":800,fill:color,stroke:"#020617","stroke-width":2,"paint-order":"stroke"});t.textContent=label.slice(0,12);boardEl.appendChild(t)}
   }
-  const scores=frame.slot_scores||{};
-  hudEl.textContent=Object.entries(snakes).map(([slot,s])=>{const name=s.name||s.team_id||slot;return`${name}: еда=${s.food_eaten||0} ${s.alive!==false?"жив":"выбыл"} очки=${scores[slot]??"-"}`}).join(" | ");
+  const scores=frame.slot_scores||{};hudEl.replaceChildren();
+  for(const [slot,s] of Object.entries(snakes)){const div=document.createElement("div"),name=s.name||s.team_id||slot,status=s.alive!==false?"жив":(s.respawn_in?`респавн ${s.respawn_in}`:"погиб"),score=scores[slot]??s.score??0;div.className="line";div.style.borderColor=(colors[slot]||"#64748b")+"66";div.textContent=`${name}: ${status} еда=${s.food_eaten||0} смерти=${s.deaths||0} очки=${score}`;hudEl.appendChild(div)}
 }
 window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
-draw({width:14,height:14,snakes:{},food:{x:6,y:6}});
-window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
+draw({width:26,height:26,holes:{snake_1:{x:1,y:1},snake_2:{x:24,y:1},snake_3:{x:1,y:24},snake_4:{x:24,y:24}},foods:[{x:13,y:13}],snakes:{}});
+window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"2.0.0"}},"*");
 </script>
 </body>
 </html>

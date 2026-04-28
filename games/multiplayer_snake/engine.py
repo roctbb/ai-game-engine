@@ -6,18 +6,31 @@ import random
 from typing import Any, Callable
 
 
-_WIDTH = 14
-_HEIGHT = 14
-_MAX_TURNS = 120
-_ROLES = ("snake_1", "snake_2")
+_WIDTH = 26
+_HEIGHT = 26
+_MAX_TURNS = 400
+_TOTAL_AREA_LIMIT = 220
+_ROLES = ("snake_1", "snake_2", "snake_3", "snake_4")
 _DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
-_STARTS = {
-    "snake_1": [(2, 2), (1, 2)],
-    "snake_2": [(11, 11), (12, 11)],
-}
-_INIT_DIR = {"snake_1": "right", "snake_2": "left"}
 _OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
-_FOOD_LIMIT = 15
+_HOLES = {
+    "snake_1": {"x": 1, "y": 1, "direction": "right"},
+    "snake_2": {"x": _WIDTH - 2, "y": 1, "direction": "left"},
+    "snake_3": {"x": 1, "y": _HEIGHT - 2, "direction": "right"},
+    "snake_4": {"x": _WIDTH - 2, "y": _HEIGHT - 2, "direction": "left"},
+}
+_STARTS = {
+    "snake_1": [(2, 1), (1, 1)],
+    "snake_2": [(_WIDTH - 3, 1), (_WIDTH - 2, 1)],
+    "snake_3": [(2, _HEIGHT - 2), (1, _HEIGHT - 2)],
+    "snake_4": [(_WIDTH - 3, _HEIGHT - 2), (_WIDTH - 2, _HEIGHT - 2)],
+}
+_INIT_DIR = {role: str(hole["direction"]) for role, hole in _HOLES.items()}
+_INITIAL_FOOD = 8
+_MIN_FOOD = 8
+_MAX_FOOD = 36
+_MAX_DROPPED_FOOD = 8
+_RESPAWN_DELAY = 1
 
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
@@ -26,28 +39,38 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     print_context = {"tick": 0}
 
     role_code, role_team, role_name = _resolve_participants(ctx)
-    bots = {
-        role: _build_fn(role_code.get(role, ""), role, events, print_context)
-        for role in _ROLES
-    }
+    bots = {role: _build_fn(role_code.get(role, ""), role, events, print_context) for role in _ROLES}
 
     rng = _rng(ctx)
     snakes = {role: body[:] for role, body in _STARTS.items()}
     alive = {role: True for role in _ROLES}
+    respawn_in = {role: 0 for role in _ROLES}
     eaten = {role: 0 for role in _ROLES}
+    deaths = {role: 0 for role in _ROLES}
+    respawns = {role: 0 for role in _ROLES}
+    max_length = {role: len(_STARTS[role]) for role in _ROLES}
     invalid = {role: 0 for role in _ROLES}
     directions = dict(_INIT_DIR)
-    food = _next_food(rng, snakes, alive)
-    food_spawned = 1 if food is not None else 0
-    turns = 0
-    frames = [_frame(0, "running", snakes, alive, eaten, invalid, food, directions, role_team, role_name)]
+    foods: set[tuple[int, int]] = set()
+    _ensure_food(rng, foods, snakes, alive, _INITIAL_FOOD)
 
+    turns = 0
+    frames = [_frame(0, "running", snakes, alive, eaten, invalid, foods, directions, role_team, role_name, deaths, respawn_in)]
+
+    finish_reason = "turn_limit"
     for turn in range(_MAX_TURNS):
-        if sum(1 for v in alive.values() if v) <= 1 or food is None:
-            break
         print_context["tick"] = turn
-        board = _board(snakes, alive, food)
+        spawn_events = _try_respawns(rng, snakes, alive, respawn_in, directions, respawns, foods)
+        for event in spawn_events:
+            events.append({"type": "respawn", "tick": turn, **event})
+
+        if _total_area(snakes, alive) >= _TOTAL_AREA_LIMIT:
+            finish_reason = "area_limit"
+            break
+
+        board = _board(snakes, alive, foods)
         intents: dict[str, tuple[int, int]] = {}
+        grows_by_role: dict[str, bool] = {}
         for role in _ROLES:
             if not alive[role]:
                 continue
@@ -64,66 +87,82 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 events.append({"type": "reverse_blocked", "message": "Змейка не может развернуться в собственную шею.", "tick": turn, "slot": role})
             directions[role] = str(action)
             dx, dy = _DELTAS[str(action)]
-            intents[role] = (x + dx, y + dy)
+            target = (x + dx, y + dy)
+            intents[role] = target
+            grows_by_role[role] = target in foods
 
-        occupied_now = set()
-        for role, body in snakes.items():
-            if alive[role]:
-                occupied_now.update(body)
+        occupied_now = _occupied(snakes, alive)
+        vacated_tails = {snakes[role][-1] for role in _ROLES if alive[role] and not grows_by_role.get(role, False)}
+        occupied_after_tails = occupied_now - vacated_tails
         target_counts: dict[tuple[int, int], int] = {}
         for target in intents.values():
             target_counts[target] = target_counts.get(target, 0) + 1
 
         crashed: set[str] = set()
         for role, target in intents.items():
-            own_tail = snakes[role][-1]
-            grows = target == food
-            occupied = occupied_now if grows else occupied_now - {own_tail}
-            if not _inside(target) or target in occupied or target_counts[target] > 1:
+            if not _inside(target) or target in occupied_after_tails or target_counts[target] > 1:
                 crashed.add(role)
+        for role, target in intents.items():
+            head = snakes[role][0]
+            for other, other_target in intents.items():
+                if role < other and target == snakes[other][0] and other_target == head:
+                    crashed.add(role)
+                    crashed.add(other)
 
-        for role in crashed:
+        death_events: list[dict[str, object]] = []
+        dropped_food: list[dict[str, int | str]] = []
+        for role in sorted(crashed):
             alive[role] = False
-            events.append({"type": "crash", "message": "Столкновение: змейка врезалась в стену, препятствие или себя.", "tick": turn + 1, "slot": role})
+            deaths[role] += 1
+            respawn_in[role] = _RESPAWN_DELAY
+            drops = _drop_food(rng, foods, snakes[role], occupied_now - set(snakes[role]))
+            dropped_food.extend({"slot": role, "x": x, "y": y} for x, y in drops)
+            death_events.append({"slot": role, "body": _points(snakes[role]), "dropped_food": _points(drops)})
+            events.append({"type": "crash", "message": "Столкновение: змейка погибла, но матч продолжается.", "tick": turn + 1, "slot": role, "drops": len(drops)})
 
-        food_taken = False
+        claimed_food: set[tuple[int, int]] = set()
         for role, target in intents.items():
             if not alive[role]:
                 continue
-            grows = target == food and not food_taken
+            grows = target in foods and target not in claimed_food
             snakes[role].insert(0, target)
             if grows:
                 eaten[role] += 1
-                food_taken = True
+                claimed_food.add(target)
                 events.append({"type": "food", "tick": turn + 1, "slot": role, "x": target[0], "y": target[1]})
             else:
                 snakes[role].pop()
-
-        if food_taken:
-            if food_spawned >= _FOOD_LIMIT:
-                food = None
-            else:
-                food = _next_food(rng, snakes, alive)
-                food_spawned += 1 if food is not None else 0
+            max_length[role] = max(max_length[role], len(snakes[role]))
+        foods.difference_update(claimed_food)
+        _ensure_food(rng, foods, snakes, alive, _MIN_FOOD)
 
         turns = turn + 1
-        frames.append(_frame(turns, "running", snakes, alive, eaten, invalid, food, directions, role_team, role_name))
+        frames.append(_frame(turns, "running", snakes, alive, eaten, invalid, foods, directions, role_team, role_name, deaths, respawn_in, death_events=death_events, dropped_food=dropped_food))
+    else:
+        finish_reason = "turn_limit"
 
-    compile_errors = {role: err for role, (_fn, err) in bots.items() if err}
     role_scores = {
-        role: eaten[role] * 100 + len(snakes[role]) * 5 + (30 if alive[role] else 0) - invalid[role] * 10
+        role: eaten[role] * 100 + len(snakes[role]) * 5 + max_length[role] * 3 - deaths[role] * 25 - invalid[role] * 10
         for role in _ROLES
     }
     scores = {role_team[role]: max(0, role_scores[role]) for role in _ROLES}
     placements = _placements(role_team, role_scores)
-    winner_role = max(_ROLES, key=lambda r: (role_scores[r], eaten[r], int(alive[r])))
-    winner_roles = [r for r in _ROLES if role_scores[r] == max(role_scores.values())]
+    best_score = max(role_scores.values())
+    winner_roles = [role for role in _ROLES if role_scores[role] == best_score]
+    winner_role = winner_roles[0]
+    compile_errors = {role: err for role, (_fn, err) in bots.items() if err}
     metrics: dict[str, object] = {
         "turns": turns,
+        "max_turns": _MAX_TURNS,
+        "finish_reason": finish_reason,
+        "area_limit": _TOTAL_AREA_LIMIT,
+        "total_area": _total_area(snakes, alive),
         "winner_slot": winner_role,
         "winner_slots": winner_roles,
         "is_tie": len(winner_roles) > 1,
         "food_eaten": eaten,
+        "deaths": deaths,
+        "respawns": respawns,
         "alive": alive,
         "invalid_moves": invalid,
         "slot_scores": role_scores,
@@ -134,25 +173,18 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         for role, message in compile_errors.items():
             events.append({"type": "compile_error", "slot": role, "message": message})
 
-    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, food, directions, role_team, role_name, role_scores))
-    payload: dict[str, object] = {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores}
-    payload["placements"] = placements
-    return payload
+    frames.append(_frame(len(frames), "finished", snakes, alive, eaten, invalid, foods, directions, role_team, role_name, deaths, respawn_in, role_scores, finish_reason=finish_reason))
+    return {"status": "finished", "metrics": metrics, "frames": frames, "events": events, "scores": scores, "placements": placements}
 
-
-# ---------------------------------------------------------------------------
-# Participant resolution: map each role to a player's code and team_id
-# ---------------------------------------------------------------------------
 
 def _resolve_participants(ctx: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    """Return (role->code, role->team_id, role->display_name)."""
     participants = ctx.get("participants")
-    if isinstance(participants, list) and len(participants) >= 2:
+    if isinstance(participants, list) and participants:
         role_code: dict[str, str] = {}
         role_team: dict[str, str] = {}
         role_name: dict[str, str] = {}
         for i, role in enumerate(_ROLES):
-            p = participants[i]
+            p = participants[i] if i < len(participants) and isinstance(participants[i], dict) else {}
             codes = p.get("codes_by_slot") if isinstance(p, dict) else {}
             code = codes.get("player", "") if isinstance(codes, dict) else ""
             role_code[role] = str(code) if code else ""
@@ -170,10 +202,6 @@ def _resolve_participants(ctx: dict[str, Any]) -> tuple[dict[str, str], dict[str
     return {r: "" for r in _ROLES}, {r: r for r in _ROLES}, {r: r for r in _ROLES}
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _load_context() -> dict[str, Any]:
     raw = os.getenv("AGP_RUN_CONTEXT")
     if not raw:
@@ -186,9 +214,8 @@ def _load_context() -> dict[str, Any]:
 
 
 def _rng(context: dict[str, Any]) -> random.Random:
-    # Both runs in a pair see the same participants list, so min(run_id) is stable
     participants = context.get("participants")
-    if isinstance(participants, list) and len(participants) >= 2:
+    if isinstance(participants, list) and participants:
         run_ids = [str(p.get("run_id", "")) for p in participants if isinstance(p, dict) and p.get("run_id")]
         seed = min(run_ids) if run_ids else context.get("run_id", "multiplayer_snake_offline")
     else:
@@ -198,12 +225,7 @@ def _rng(context: dict[str, Any]) -> random.Random:
     return random.Random(seed)
 
 
-def _build_fn(
-    code: str,
-    role: str,
-    events: list[dict[str, object]],
-    print_context: dict[str, int],
-) -> tuple[Callable[..., object], str | None]:
+def _build_fn(code: str, role: str, events: list[dict[str, object]], print_context: dict[str, int]) -> tuple[Callable[..., object], str | None]:
     namespace = {"__builtins__": _builtins(role, events, print_context)}
     compile_error: str | None = None
     if code.strip():
@@ -256,7 +278,7 @@ def _fallback_move(x: int, y: int, board: list[list[int]], _role: str = "") -> s
     return "right"
 
 
-def _board(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], food: tuple[int, int] | None) -> list[list[int]]:
+def _board(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], foods: set[tuple[int, int]]) -> list[list[int]]:
     board = [[0 for _ in range(_HEIGHT)] for _ in range(_WIDTH)]
     for x in range(_WIDTH):
         board[x][0] = -1
@@ -268,31 +290,111 @@ def _board(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], foo
         if alive[role]:
             for x, y in body:
                 board[x][y] = -1
-    if food is not None:
-        board[food[0]][food[1]] = 1
+    for x, y in foods:
+        board[x][y] = 1
     return board
 
 
 def _find_food(board: list[list[int]]) -> tuple[int, int] | None:
-    for y, row in enumerate(board):
-        for x, value in enumerate(row):
+    for x, column in enumerate(board):
+        for y, value in enumerate(column):
             if value == 1:
                 return x, y
     return None
 
 
-def _next_food(rng: random.Random, snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool]) -> tuple[int, int] | None:
-    occupied: set[tuple[int, int]] = set()
-    for role, body in snakes.items():
-        if alive[role]:
-            occupied.update(body)
+def _ensure_food(rng: random.Random, foods: set[tuple[int, int]], snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], target: int) -> None:
+    while len(foods) < min(target, _MAX_FOOD):
+        food = _next_food(rng, snakes, alive, foods)
+        if food is None:
+            return
+        foods.add(food)
+
+
+def _next_food(rng: random.Random, snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], foods: set[tuple[int, int]]) -> tuple[int, int] | None:
+    occupied = _occupied(snakes, alive) | foods
     candidates = [(x, y) for y in range(1, _HEIGHT - 1) for x in range(1, _WIDTH - 1) if (x, y) not in occupied]
     return rng.choice(candidates) if candidates else None
+
+
+def _drop_food(rng: random.Random, foods: set[tuple[int, int]], body: list[tuple[int, int]], blocked: set[tuple[int, int]]) -> list[tuple[int, int]]:
+    candidates = [cell for cell in body if _inside(cell) and cell not in blocked]
+    rng.shuffle(candidates)
+    free_slots = max(0, _MAX_FOOD - len(foods))
+    drops = candidates[: min(_MAX_DROPPED_FOOD, free_slots)]
+    foods.update(drops)
+    return drops
+
+
+def _try_respawns(
+    rng: random.Random,
+    snakes: dict[str, list[tuple[int, int]]],
+    alive: dict[str, bool],
+    respawn_in: dict[str, int],
+    directions: dict[str, str],
+    respawns: dict[str, int],
+    foods: set[tuple[int, int]],
+) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for role in _ROLES:
+        if alive[role] or respawn_in[role] <= 0:
+            continue
+        respawn_in[role] -= 1
+        if respawn_in[role] > 0:
+            continue
+        body = _find_spawn_body(rng, role, snakes, alive, foods)
+        if body is None:
+            respawn_in[role] = 1
+            continue
+        snakes[role] = body
+        alive[role] = True
+        directions[role] = _spawn_direction(body)
+        respawns[role] += 1
+        events.append({"slot": role, "body": _points(body)})
+    return events
+
+
+def _find_spawn_body(rng: random.Random, role: str, snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], foods: set[tuple[int, int]]) -> list[tuple[int, int]] | None:
+    occupied = _occupied(snakes, alive) | foods
+    preferred = _STARTS[role]
+    if all(cell not in occupied and _inside(cell) for cell in preferred):
+        return preferred[:]
+    candidates = [(x, y) for y in range(2, _HEIGHT - 2) for x in range(2, _WIDTH - 2) if (x, y) not in occupied]
+    rng.shuffle(candidates)
+    for head in candidates:
+        for direction, (dx, dy) in _DELTAS.items():
+            tail = (head[0] - dx, head[1] - dy)
+            if _inside(tail) and tail not in occupied:
+                return [head, tail]
+    return None
+
+
+def _spawn_direction(body: list[tuple[int, int]]) -> str:
+    if len(body) < 2:
+        return "right"
+    head, neck = body[0], body[1]
+    dx, dy = head[0] - neck[0], head[1] - neck[1]
+    for direction, delta in _DELTAS.items():
+        if delta == (dx, dy):
+            return direction
+    return "right"
 
 
 def _inside(cell: tuple[int, int]) -> bool:
     x, y = cell
     return 1 <= x < _WIDTH - 1 and 1 <= y < _HEIGHT - 1
+
+
+def _occupied(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool]) -> set[tuple[int, int]]:
+    occupied: set[tuple[int, int]] = set()
+    for role, body in snakes.items():
+        if alive[role]:
+            occupied.update(body)
+    return occupied
+
+
+def _total_area(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool]) -> int:
+    return sum(len(body) for role, body in snakes.items() if alive[role])
 
 
 def _placements(role_team: dict[str, str], role_scores: dict[str, int]) -> dict[str, int]:
@@ -301,33 +403,48 @@ def _placements(role_team: dict[str, str], role_scores: dict[str, int]) -> dict[
     last_score: int | None = None
     last_place = 0
     for i, role in enumerate(ordered, start=1):
-        s = role_scores[role]
-        if s != last_score:
+        score = role_scores[role]
+        if score != last_score:
             last_place = i
-            last_score = s
+            last_score = score
         result[role_team[role]] = last_place
     return result
 
 
 def _frame(
-    tick: int, phase: str,
-    snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool],
-    eaten: dict[str, int], invalid: dict[str, int],
-    food: tuple[int, int] | None, directions: dict[str, str],
+    tick: int,
+    phase: str,
+    snakes: dict[str, list[tuple[int, int]]],
+    alive: dict[str, bool],
+    eaten: dict[str, int],
+    invalid: dict[str, int],
+    foods: set[tuple[int, int]],
+    directions: dict[str, str],
     role_team: dict[str, str] | None = None,
     role_name: dict[str, str] | None = None,
+    deaths: dict[str, int] | None = None,
+    respawn_in: dict[str, int] | None = None,
     slot_scores: dict[str, int] | None = None,
+    finish_reason: str | None = None,
+    death_events: list[dict[str, object]] | None = None,
+    dropped_food: list[dict[str, int | str]] | None = None,
 ) -> dict[str, object]:
     frame: dict[str, object] = {
-        "board": _board(snakes, alive, food),
+        "board": _board(snakes, alive, foods),
         "width": _WIDTH,
         "height": _HEIGHT,
-        "food": {"x": food[0], "y": food[1]} if food else None,
+        "foods": _points(sorted(foods)),
+        "food": _point(next(iter(foods))) if foods else None,
+        "holes": {role: dict(hole) for role, hole in _HOLES.items()},
+        "total_area": _total_area(snakes, alive),
+        "area_limit": _TOTAL_AREA_LIMIT,
         "snakes": {
             role: {
-                "body": [{"x": x, "y": y} for x, y in body],
+                "body": _points(body),
                 "alive": alive[role],
                 "food_eaten": eaten[role],
+                "deaths": (deaths or {}).get(role, 0),
+                "respawn_in": (respawn_in or {}).get(role, 0),
                 "invalid_moves": invalid[role],
                 "direction": directions[role],
                 "team_id": (role_team or {}).get(role, role),
@@ -339,7 +456,21 @@ def _frame(
     }
     if slot_scores is not None:
         frame["slot_scores"] = slot_scores
+    if finish_reason is not None:
+        frame["finish_reason"] = finish_reason
+    if death_events:
+        frame["death_events"] = death_events
+    if dropped_food:
+        frame["dropped_food"] = dropped_food
     return {"tick": tick, "phase": phase, "frame": frame}
+
+
+def _point(cell: tuple[int, int]) -> dict[str, int]:
+    return {"x": cell[0], "y": cell[1]}
+
+
+def _points(cells: list[tuple[int, int]] | tuple[tuple[int, int], ...]) -> list[dict[str, int]]:
+    return [_point(cell) for cell in cells]
 
 
 def _copy_grid(grid: list[list[int]]) -> list[list[int]]:

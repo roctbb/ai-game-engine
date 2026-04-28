@@ -1,280 +1,30 @@
 {
   "frame": {
-    "board": [
-      [
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1
-      ],
-      [
-        -1,
-        0,
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1,
-        0,
-        -1
-      ],
-      [
-        -1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1,
-        0,
-        -1
-      ],
-      [
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1
-      ]
+    "width": 26,
+    "height": 26,
+    "foods": [
+      {"x": 12, "y": 12},
+      {"x": 14, "y": 13},
+      {"x": 8, "y": 18}
     ],
-    "food": {
-      "x": 7,
-      "y": 3
+    "food": {"x": 12, "y": 12},
+    "holes": {
+      "snake_1": {"x": 1, "y": 1, "direction": "right"},
+      "snake_2": {"x": 24, "y": 1, "direction": "left"},
+      "snake_3": {"x": 1, "y": 24, "direction": "right"},
+      "snake_4": {"x": 24, "y": 24, "direction": "left"}
     },
-    "height": 14,
-    "kind": "multiplayer_snake",
     "snakes": {
-      "snake_1": {
-        "alive": true,
-        "body": [
-          {
-            "x": 2,
-            "y": 2
-          },
-          {
-            "x": 1,
-            "y": 2
-          }
-        ],
-        "direction": "right",
-        "food_eaten": 0,
-        "invalid_moves": 0,
-        "name": "Левый",
-        "score": 0,
-        "team_id": "left"
-      },
-      "snake_2": {
-        "alive": true,
-        "body": [
-          {
-            "x": 11,
-            "y": 11
-          },
-          {
-            "x": 12,
-            "y": 11
-          }
-        ],
-        "direction": "left",
-        "food_eaten": 0,
-        "invalid_moves": 0,
-        "name": "Правый",
-        "score": 0,
-        "team_id": "right"
-      }
+      "snake_1": {"body": [{"x": 2, "y": 1}, {"x": 1, "y": 1}], "alive": true, "food_eaten": 0, "deaths": 0, "respawn_in": 0, "team_id": "team-alpha", "name": "Alpha", "score": 0},
+      "snake_2": {"body": [{"x": 23, "y": 1}, {"x": 24, "y": 1}], "alive": true, "food_eaten": 0, "deaths": 0, "respawn_in": 0, "team_id": "team-beta", "name": "Beta", "score": 0},
+      "snake_3": {"body": [{"x": 2, "y": 24}, {"x": 1, "y": 24}], "alive": false, "food_eaten": 2, "deaths": 1, "respawn_in": 1, "team_id": "team-gamma", "name": "Gamma", "score": 200},
+      "snake_4": {"body": [{"x": 23, "y": 24}, {"x": 24, "y": 24}], "alive": true, "food_eaten": 1, "deaths": 0, "respawn_in": 0, "team_id": "team-delta", "name": "Delta", "score": 100}
     },
-    "title": "Змейка мультиплеер",
-    "width": 14
-  },
-  "phase": "running",
-  "tick": 0
+    "death_events": [
+      {"slot": "snake_3", "body": [{"x": 2, "y": 24}, {"x": 1, "y": 24}], "dropped_food": [{"x": 2, "y": 24}]}
+    ],
+    "slot_scores": {"snake_1": 0, "snake_2": 0, "snake_3": 200, "snake_4": 100},
+    "total_area": 6,
+    "area_limit": 220
+  }
 }

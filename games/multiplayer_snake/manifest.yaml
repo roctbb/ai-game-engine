@@ -1,14 +1,14 @@
 id: multiplayer_snake_v1
 title: Змейка мультиплеер
 game_mode: multiplayer
-min_players_per_match: 2
-max_players_per_match: 2
-semver: 1.2.0
+min_players_per_match: 4
+max_players_per_match: 4
+semver: 2.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
 player_instruction: Определите функцию make_move(x, y, board), возвращающую up/down/left/right.
-description: Дуэль двух змеек на общей карте. Каждый игрок управляет одной змейкой. Собирайте еду, избегайте столкновений и переживите соперника.
+description: Матч четырех змеек на большой общей карте. После смерти змейка роняет яблоки, возрождается из свободной норки и сохраняет набранные очки.
 difficulty: medium
 learning_section: Соревновательные стратегии
 topics:
