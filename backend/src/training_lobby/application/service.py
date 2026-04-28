@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Protocol
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from threading import Lock
 
@@ -1303,7 +1303,7 @@ class TrainingLobbyService:
 
     @staticmethod
     def _payload_team_signature(run: Run) -> tuple[str, ...] | None:
-        payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+        payload = _run_result_metadata(run)
         metrics = payload.get("metrics")
         metrics_dict = metrics if isinstance(metrics, dict) else {}
         team_ids: set[str] = set()
@@ -1435,6 +1435,8 @@ class TrainingLobbyService:
     def _ensure_payload(self, run: Run) -> Run:
         if run.result_payload is not None:
             return run
+        if run.result_summary is not None:
+            return replace(run, result_payload=dict(run.result_summary))
         if run.status not in _TERMINAL_RUN_STATUSES:
             return run
         return self._execution.get_run(run.run_id)
@@ -1499,7 +1501,7 @@ class TrainingLobbyService:
         scores: dict[str, float] = {}
         group_team_ids = {run.team_id for run in runs}
         for run in runs:
-            payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+            payload = _run_result_metadata(run)
             metrics = payload.get("metrics")
             metrics_dict = metrics if isinstance(metrics, dict) else {}
             payload_scores = payload.get("scores")
@@ -1529,7 +1531,7 @@ class TrainingLobbyService:
         placements_by_team: dict[str, int] = {}
         scored: dict[str, float] = {}
         for run in runs:
-            payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+            payload = _run_result_metadata(run)
             metrics = payload.get("metrics")
             metrics_dict = metrics if isinstance(metrics, dict) else {}
             placements = payload.get("placements")
@@ -1582,6 +1584,9 @@ class TrainingLobbyService:
     @staticmethod
     def _replay_frames_count(run: Run) -> int:
         payload = run.result_payload if isinstance(run.result_payload, dict) else {}
+        replay_frame_count = payload.get("replay_frame_count")
+        if isinstance(replay_frame_count, int) and replay_frame_count > 0:
+            return replay_frame_count
         frames = payload.get("frames")
         if isinstance(frames, list) and frames:
             return len(frames)
@@ -1608,6 +1613,9 @@ class TrainingLobbyService:
         for run in runs:
             if run.result_payload is not None or run.status is not RunStatus.FINISHED:
                 runs_with_payload.append(run)
+                continue
+            if run.result_summary is not None:
+                runs_with_payload.append(replace(run, result_payload=dict(run.result_summary)))
                 continue
             try:
                 runs_with_payload.append(self._execution.get_run(run.run_id))
@@ -1800,3 +1808,11 @@ def _compact_shadow_payload(payload: dict[str, object]) -> dict[str, object]:
     }
     compact["shadow_result"] = True
     return compact
+
+
+def _run_result_metadata(run: Run) -> dict[str, object]:
+    if isinstance(run.result_payload, dict):
+        return run.result_payload
+    if isinstance(run.result_summary, dict):
+        return run.result_summary
+    return {}

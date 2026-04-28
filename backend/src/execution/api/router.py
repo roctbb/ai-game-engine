@@ -49,6 +49,9 @@ _TERMINAL_RUN_STATUSES = {
 }
 
 def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunResponse:
+    result_payload = run.result_payload
+    if compact_result_payload:
+        result_payload = compact_run_result_payload(run.result_payload)
     return RunResponse(
         run_id=run.run_id,
         team_id=run.team_id,
@@ -64,7 +67,7 @@ def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunRespo
         snapshot_version_id=run.snapshot_version_id,
         worker_id=run.worker_id,
         revisions_by_slot=run.revisions_by_slot,
-        result_payload=compact_run_result_payload(run.result_payload) if compact_result_payload else run.result_payload,
+        result_payload=result_payload,
         error_message=run.error_message,
         created_at=run.created_at,
         queued_at=run.queued_at,
@@ -80,6 +83,8 @@ def _attach_replay_summary_payload_if_available(
 ) -> Run:
     if run.result_payload is not None or run.status not in _TERMINAL_RUN_STATUSES:
         return run
+    if run.result_summary is not None:
+        return replace(run, result_payload=dict(run.result_summary))
     try:
         replay = container.spectator_replay.get_by_run_id(
             run.run_id,

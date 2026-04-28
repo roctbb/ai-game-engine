@@ -40,6 +40,7 @@ class RunOrm(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     result_payload: Mapped[dict[str, object] | None] = mapped_column(SqlJson, nullable=True)
+    result_summary: Mapped[dict[str, object] | None] = mapped_column(SqlJson, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

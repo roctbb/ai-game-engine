@@ -67,6 +67,7 @@ class Run:
     started_at: object | None = None
     finished_at: object | None = None
     result_payload: dict[str, object] | None = None
+    result_summary: dict[str, object] | None = None
     error_message: str | None = None
 
     @staticmethod

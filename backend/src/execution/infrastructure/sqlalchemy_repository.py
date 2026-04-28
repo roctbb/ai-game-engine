@@ -54,6 +54,7 @@ class SqlAlchemyRunRepository:
                             RunOrm.queued_at,
                             RunOrm.started_at,
                             RunOrm.finished_at,
+                            RunOrm.result_summary,
                             RunOrm.error_message,
                         )
                     )
@@ -113,6 +114,7 @@ class SqlAlchemyRunRepository:
                     RunOrm.queued_at,
                     RunOrm.started_at,
                     RunOrm.finished_at,
+                    RunOrm.result_summary,
                     RunOrm.error_message,
                 )
             )
@@ -272,6 +274,7 @@ def _map_run_to_orm(run: Run) -> RunOrm:
         started_at=run.started_at,
         finished_at=run.finished_at,
         result_payload=run.result_payload,
+        result_summary=run.result_summary,
         error_message=run.error_message,
     )
 
@@ -298,6 +301,7 @@ def _map_run_from_orm(row: RunOrm, *, include_result_payload: bool = True) -> Ru
         started_at=row.started_at,
         finished_at=row.finished_at,
         result_payload=row.result_payload if include_result_payload else None,
+        result_summary=row.result_summary,
         error_message=row.error_message,
     )
 

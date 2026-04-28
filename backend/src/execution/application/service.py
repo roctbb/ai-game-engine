@@ -20,6 +20,7 @@ from execution.domain.model import (
     require_worker,
 )
 from execution.domain.result_contract import validate_result_payload
+from execution.domain.result_payload import result_summary_from_payload
 from game_catalog.application.service import GameCatalogService
 from shared.kernel import ConflictError, ExternalServiceError, InvariantViolationError
 from team_workspace.application.service import TeamWorkspaceService
@@ -259,6 +260,7 @@ class ExecutionService:
             merged_payload = _merge_finished_payload(run.result_payload, payload)
             if merged_payload != run.result_payload:
                 run.result_payload = merged_payload
+                run.result_summary = result_summary_from_payload(merged_payload)
                 self._run_repository.save(run)
                 self._merge_primary_match_payload(run=run, payload=payload)
                 self._run_replay_recorder.record_run(run)
@@ -266,6 +268,7 @@ class ExecutionService:
         run.require_active_lease(worker_id=None, lease_id=lease_id)
         validate_result_payload(run_kind=run.run_kind, payload=payload)
         run.mark_finished(payload=payload)
+        run.result_summary = result_summary_from_payload(payload)
         self._run_repository.save(run)
         self._mark_primary_match_finished(run=run, payload=payload)
         self._run_replay_recorder.record_run(run)

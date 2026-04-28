@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -1065,14 +1066,24 @@ def test_lobby_live_view_skips_runs_deleted_during_archive_cleanup(client, teach
     assert runs_without_payload
     assert runs_without_payload[0].result_payload is None
 
+    runs_with_summary = container.training_lobby._finished_runs_with_payload_cached(
+        lobby=lobby_model,
+        runs=runs_without_payload,
+    )
+    assert runs_with_summary
+    assert runs_with_summary[0].result_payload == runs_without_payload[0].result_summary
+
     def missing_run(_run_id: str):
         raise NotFoundError("Run was deleted by archive cleanup")
 
     monkeypatch.setattr(container.execution, "get_run", missing_run)
 
+    legacy_runs_without_summary = [replace(runs_without_payload[0], result_summary=None)]
+    container.training_lobby._clear_lobby_derived_caches(lobby["lobby_id"])
+
     assert container.training_lobby._finished_runs_with_payload_cached(
         lobby=lobby_model,
-        runs=runs_without_payload,
+        runs=legacy_runs_without_summary,
     ) == []
 
 
