@@ -1863,7 +1863,7 @@ def test_multiplayer_snake_death_drops_food_and_respawns(monkeypatch) -> None:
     assert sum(metrics["deaths"].values()) > 0
     assert sum(metrics["respawns"].values()) > 0
     assert any(frame.get("death_events") for frame in running_frames)
-    assert any(event["type"] == "crash" and event["drops"] > 0 for event in payload["events"])
+    assert any(event["type"] == "crash" and event["drops"] >= 4 for event in payload["events"])
 
 
 def test_multiplayer_snake_head_swap_kills_both(monkeypatch) -> None:

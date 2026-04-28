@@ -29,7 +29,7 @@ _INIT_DIR = {role: str(hole["direction"]) for role, hole in _HOLES.items()}
 _INITIAL_FOOD = 8
 _MIN_FOOD = 8
 _MAX_FOOD = 36
-_MAX_DROPPED_FOOD = 8
+_MAX_DROPPED_FOOD = 18
 _RESPAWN_DELAY = 1
 
 
@@ -318,10 +318,17 @@ def _next_food(rng: random.Random, snakes: dict[str, list[tuple[int, int]]], ali
 
 
 def _drop_food(rng: random.Random, foods: set[tuple[int, int]], body: list[tuple[int, int]], blocked: set[tuple[int, int]]) -> list[tuple[int, int]]:
-    candidates = [cell for cell in body if _inside(cell) and cell not in blocked]
-    rng.shuffle(candidates)
-    free_slots = max(0, _MAX_FOOD - len(foods))
-    drops = candidates[: min(_MAX_DROPPED_FOOD, free_slots)]
+    drops = [cell for cell in body if _inside(cell) and cell not in blocked]
+    nearby: list[tuple[int, int]] = []
+    occupied = blocked | foods | set(drops)
+    for x, y in body:
+        for dx, dy in _DELTAS.values():
+            cell = (x + dx, y + dy)
+            if _inside(cell) and cell not in occupied and cell not in nearby:
+                nearby.append(cell)
+    rng.shuffle(nearby)
+    drops.extend(nearby[: max(0, min(_MAX_DROPPED_FOOD, len(body) + 6) - len(drops))])
+    drops = drops[:_MAX_DROPPED_FOOD]
     foods.update(drops)
     return drops
 
