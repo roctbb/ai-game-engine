@@ -39,6 +39,7 @@ def upgrade() -> None:
             )::json
             WHERE result_payload IS NOT NULL
               AND result_summary IS NULL
+              AND jsonb_typeof(result_payload::jsonb) = 'object'
             """
         )
 
