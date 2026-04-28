@@ -32,6 +32,7 @@ class RunOrm(Base):
     snapshot_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     revisions_by_slot: Mapped[dict[str, int]] = mapped_column(SqlJson, default=dict)
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    active_lease_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

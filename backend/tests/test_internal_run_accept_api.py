@@ -52,7 +52,7 @@ def test_internal_run_accepted_assigns_worker_without_start(client) -> None:
 
     accepted = client.post(
         f"/api/v1/internal/runs/{queued['run_id']}/accepted",
-        json={"worker_id": "worker-accept-1"},
+        json={"worker_id": "worker-accept-1", "lease_id": "lease-accept-1"},
     )
 
     assert accepted.status_code == 200, accepted.json()
@@ -67,7 +67,7 @@ def test_internal_lifecycle_requires_internal_token(client) -> None:
 
     response = client.post(
         f"/api/v1/internal/runs/{queued['run_id']}/accepted",
-        json={"worker_id": "worker-accept-token"},
+        json={"worker_id": "worker-accept-token", "lease_id": "lease-token"},
         headers={"X-Test-No-Internal-Token": "1"},
     )
 
@@ -75,23 +75,30 @@ def test_internal_lifecycle_requires_internal_token(client) -> None:
     assert response.json()["error"]["code"] == "unauthorized"
 
 
-def test_internal_run_accepted_rejects_conflicting_worker(client) -> None:
+def test_internal_run_accepted_reassigns_queued_run_to_new_lease(client) -> None:
     queued = _create_queued_single_task_run(client, requested_by="captain-accept-2")
     _register_worker(client, "worker-accept-2a")
     _register_worker(client, "worker-accept-2b")
 
     first = client.post(
         f"/api/v1/internal/runs/{queued['run_id']}/accepted",
-        json={"worker_id": "worker-accept-2a"},
+        json={"worker_id": "worker-accept-2a", "lease_id": "lease-2a"},
     )
     assert first.status_code == 200, first.json()
 
     second = client.post(
         f"/api/v1/internal/runs/{queued['run_id']}/accepted",
-        json={"worker_id": "worker-accept-2b"},
+        json={"worker_id": "worker-accept-2b", "lease_id": "lease-2b"},
     )
-    assert second.status_code == 422
-    assert second.json()["error"]["code"] == "invariant_violation"
+    assert second.status_code == 200
+    assert second.json()["worker_id"] == "worker-accept-2b"
+
+    stale_start = client.post(
+        f"/api/v1/internal/runs/{queued['run_id']}/started",
+        json={"worker_id": "worker-accept-2a", "lease_id": "lease-2a"},
+    )
+    assert stale_start.status_code == 422
+    assert stale_start.json()["error"]["code"] == "invariant_violation"
 
 
 def test_internal_run_started_is_idempotent_for_same_worker(client) -> None:
@@ -100,20 +107,20 @@ def test_internal_run_started_is_idempotent_for_same_worker(client) -> None:
 
     accepted = client.post(
         f"/api/v1/internal/runs/{queued['run_id']}/accepted",
-        json={"worker_id": "worker-accept-3"},
+        json={"worker_id": "worker-accept-3", "lease_id": "lease-3"},
     )
     assert accepted.status_code == 200, accepted.json()
 
     started_once = client.post(
         f"/api/v1/internal/runs/{queued['run_id']}/started",
-        json={"worker_id": "worker-accept-3"},
+        json={"worker_id": "worker-accept-3", "lease_id": "lease-3"},
     )
     assert started_once.status_code == 200, started_once.json()
     assert started_once.json()["status"] == "running"
 
     started_twice = client.post(
         f"/api/v1/internal/runs/{queued['run_id']}/started",
-        json={"worker_id": "worker-accept-3"},
+        json={"worker_id": "worker-accept-3", "lease_id": "lease-3"},
     )
     assert started_twice.status_code == 200, started_twice.json()
     assert started_twice.json()["status"] == "running"
@@ -145,7 +152,7 @@ def test_internal_run_accepted_rejects_non_queued_run(client) -> None:
 
     response = client.post(
         f"/api/v1/internal/runs/{run['run_id']}/accepted",
-        json={"worker_id": "worker-accept-4"},
+        json={"worker_id": "worker-accept-4", "lease_id": "lease-4"},
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invariant_violation"

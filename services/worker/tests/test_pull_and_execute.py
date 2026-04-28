@@ -305,7 +305,7 @@ def test_pull_and_execute_reports_failed_when_execution_context_missing(monkeypa
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-123"},
+            payload={"status": "assigned", "run_id": "run-123", "lease_id": "lease-123"},
         ),
         ExpectedCall(
             method="GET",
@@ -316,12 +316,12 @@ def test_pull_and_execute_reports_failed_when_execution_context_missing(monkeypa
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-123/failed",
-            json={"message": "Execution context is not available for run run-123"},
+            json={"message": "Execution context is not available for run run-123", "lease_id": "lease-123"},
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-123"},
+            json={"worker_id": "worker-test-1", "run_id": "run-123", "lease_id": "lease-123"},
         ),
     ]
 
@@ -379,7 +379,7 @@ def test_pull_and_execute_runs_manifest_game(monkeypatch: Any) -> None:
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-manifest"},
+            payload={"status": "assigned", "run_id": "run-manifest", "lease_id": "lease-manifest"},
         ),
         ExpectedCall(
             method="GET",
@@ -390,24 +390,25 @@ def test_pull_and_execute_runs_manifest_game(monkeypatch: Any) -> None:
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-manifest/accepted",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-manifest"},
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-manifest/started",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-manifest"},
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-manifest/finished",
             json={
-                "payload": _expected_maze_escape_payload(execution_context)
+                "payload": _expected_maze_escape_payload(execution_context),
+                "lease_id": "lease-manifest",
             },
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-manifest"},
+            json={"worker_id": "worker-test-1", "run_id": "run-manifest", "lease_id": "lease-manifest"},
         ),
     ]
 
@@ -469,7 +470,7 @@ def test_pull_and_execute_runs_turn_based_manifest_game(monkeypatch: Any) -> Non
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-turn-based"},
+            payload={"status": "assigned", "run_id": "run-turn-based", "lease_id": "lease-turn-based"},
         ),
         ExpectedCall(
             method="GET",
@@ -480,22 +481,22 @@ def test_pull_and_execute_runs_turn_based_manifest_game(monkeypatch: Any) -> Non
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-turn-based/accepted",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-turn-based"},
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-turn-based/started",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-turn-based"},
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-turn-based/finished",
-            json={"payload": expected_payload},
+            json={"payload": expected_payload, "lease_id": "lease-turn-based"},
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-turn-based"},
+            json={"worker_id": "worker-test-1", "run_id": "run-turn-based", "lease_id": "lease-turn-based"},
         ),
     ]
 
@@ -532,7 +533,7 @@ def test_pull_and_execute_reports_failed_for_unsupported_code_api_mode(monkeypat
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-turn"},
+            payload={"status": "assigned", "run_id": "run-turn", "lease_id": "lease-turn"},
         ),
         ExpectedCall(
             method="GET",
@@ -556,12 +557,12 @@ def test_pull_and_execute_reports_failed_for_unsupported_code_api_mode(monkeypat
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-turn/failed",
-            json={"message": "Unsupported code_api_mode=legacy_sdk"},
+            json={"message": "Unsupported code_api_mode=legacy_sdk", "lease_id": "lease-turn"},
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-turn"},
+            json={"worker_id": "worker-test-1", "run_id": "run-turn", "lease_id": "lease-turn"},
         ),
     ]
 
@@ -594,7 +595,7 @@ def test_pull_and_execute_reports_failed_for_missing_run_kind(monkeypatch: Any) 
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-mismatch"},
+            payload={"status": "assigned", "run_id": "run-mismatch", "lease_id": "lease-mismatch"},
         ),
         ExpectedCall(
             method="GET",
@@ -617,12 +618,12 @@ def test_pull_and_execute_reports_failed_for_missing_run_kind(monkeypatch: Any) 
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-mismatch/failed",
-            json={"message": "Execution context is missing run_kind"},
+            json={"message": "Execution context is missing run_kind", "lease_id": "lease-mismatch"},
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-mismatch"},
+            json={"worker_id": "worker-test-1", "run_id": "run-mismatch", "lease_id": "lease-mismatch"},
         ),
     ]
 
@@ -655,7 +656,7 @@ def test_pull_and_execute_reports_failed_for_unsupported_run_kind(monkeypatch: A
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-unknown-kind"},
+            payload={"status": "assigned", "run_id": "run-unknown-kind", "lease_id": "lease-unknown-kind"},
         ),
         ExpectedCall(
             method="GET",
@@ -679,12 +680,12 @@ def test_pull_and_execute_reports_failed_for_unsupported_run_kind(monkeypatch: A
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-unknown-kind/failed",
-            json={"message": "Unsupported run_kind=sandbox_probe"},
+            json={"message": "Unsupported run_kind=sandbox_probe", "lease_id": "lease-unknown-kind"},
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-unknown-kind"},
+            json={"worker_id": "worker-test-1", "run_id": "run-unknown-kind", "lease_id": "lease-unknown-kind"},
         ),
     ]
 
@@ -717,7 +718,7 @@ def test_pull_and_execute_reports_failed_on_http_error(monkeypatch: Any) -> None
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-err"},
+            payload={"status": "assigned", "run_id": "run-err", "lease_id": "lease-err"},
         ),
         ExpectedCall(
             method="GET",
@@ -741,23 +742,23 @@ def test_pull_and_execute_reports_failed_on_http_error(monkeypatch: Any) -> None
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-err/accepted",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-err"},
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-err/started",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-err"},
             status_code=404,
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-err/failed",
-            json={"message": "HTTP 404"},
+            json={"message": "HTTP 404", "lease_id": "lease-err"},
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-err"},
+            json={"worker_id": "worker-test-1", "run_id": "run-err", "lease_id": "lease-err"},
         ),
     ]
 
@@ -790,7 +791,7 @@ def test_pull_and_execute_acks_stale_backend_run(monkeypatch: Any) -> None:
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-stale"},
+            payload={"status": "assigned", "run_id": "run-stale", "lease_id": "lease-stale"},
         ),
         ExpectedCall(
             method="GET",
@@ -814,19 +815,19 @@ def test_pull_and_execute_acks_stale_backend_run(monkeypatch: Any) -> None:
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-stale/accepted",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-stale"},
             status_code=422,
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-stale/failed",
-            json={"message": "HTTP 422"},
+            json={"message": "HTTP 422", "lease_id": "lease-stale"},
             status_code=422,
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-stale"},
+            json={"worker_id": "worker-test-1", "run_id": "run-stale", "lease_id": "lease-stale"},
         ),
     ]
 
@@ -866,7 +867,7 @@ def test_pull_and_execute_reports_failed_on_engine_error(monkeypatch: Any, tmp_p
             method="POST",
             url="http://scheduler/internal/workers/pull-next",
             json={"worker_id": "worker-test-1", "worker_labels": settings.worker_labels},
-            payload={"status": "assigned", "run_id": "run-broken"},
+            payload={"status": "assigned", "run_id": "run-broken", "lease_id": "lease-broken"},
         ),
         ExpectedCall(
             method="GET",
@@ -890,22 +891,22 @@ def test_pull_and_execute_reports_failed_on_engine_error(monkeypatch: Any, tmp_p
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-broken/accepted",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-broken"},
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-broken/started",
-            json={"worker_id": "worker-test-1"},
+            json={"worker_id": "worker-test-1", "lease_id": "lease-broken"},
         ),
         ExpectedCall(
             method="POST",
             url="http://backend/internal/runs/run-broken/failed",
-            json={"message": "Game engine exited with 2: boom"},
+            json={"message": "Game engine exited with 2: boom", "lease_id": "lease-broken"},
         ),
         ExpectedCall(
             method="POST",
             url="http://scheduler/internal/runs/ack-finished",
-            json={"worker_id": "worker-test-1", "run_id": "run-broken"},
+            json={"worker_id": "worker-test-1", "run_id": "run-broken", "lease_id": "lease-broken"},
         ),
     ]
 

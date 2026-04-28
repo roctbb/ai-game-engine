@@ -117,18 +117,22 @@ class WorkerResponse(BaseModel):
 
 class FinishRunRequest(BaseModel):
     payload: dict[str, object]
+    lease_id: str | None = None
 
 
 class FailRunRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+    lease_id: str | None = None
 
 
 class StartRunRequest(BaseModel):
     worker_id: str
+    lease_id: str | None = None
 
 
 class AcceptRunRequest(BaseModel):
     worker_id: str
+    lease_id: str
 
 
 class StartBuildRequest(BaseModel):

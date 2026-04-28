@@ -6,19 +6,20 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from scheduler_service.main import app
+from scheduler_service.queue import Lease
 
 
 @dataclass
 class FakeQueue:
     enqueue_result: bool = True
-    pull_result: str | None = None
+    pull_result: Lease | None = None
     ack_result: bool = True
     stats_payload: dict[str, object] = field(
         default_factory=lambda: {"queue_depth": 0, "known_count": 0, "worker_leases": {}}
     )
     enqueue_calls: list[tuple[str, dict[str, str] | None]] = field(default_factory=list)
     pull_calls: list[tuple[str, int, dict[str, str] | None]] = field(default_factory=list)
-    ack_calls: list[tuple[str, str]] = field(default_factory=list)
+    ack_calls: list[tuple[str, str, str]] = field(default_factory=list)
 
     def enqueue(self, run_id: str, required_worker_labels: dict[str, str] | None = None) -> bool:
         self.enqueue_calls.append((run_id, required_worker_labels))
@@ -29,12 +30,12 @@ class FakeQueue:
         worker_id: str,
         leased_at_epoch: int,
         worker_labels: dict[str, str] | None = None,
-    ) -> str | None:
+    ) -> Lease | None:
         self.pull_calls.append((worker_id, leased_at_epoch, worker_labels))
         return self.pull_result
 
-    def ack_finished(self, worker_id: str, run_id: str) -> bool:
-        self.ack_calls.append((worker_id, run_id))
+    def ack_finished(self, worker_id: str, run_id: str, lease_id: str) -> bool:
+        self.ack_calls.append((worker_id, run_id, lease_id))
         return self.ack_result
 
     def stats(self) -> dict[str, object]:
@@ -89,7 +90,9 @@ def test_schedule_run_with_required_worker_labels(monkeypatch: Any) -> None:
 
 
 def test_pull_next_assigned(monkeypatch: Any) -> None:
-    fake_queue = FakeQueue(pull_result="run-7")
+    fake_queue = FakeQueue(
+        pull_result=Lease(worker_id="w-1", run_id="run-7", lease_id="lease-7", leased_at=123)
+    )
     monkeypatch.setattr("scheduler_service.main.queue", fake_queue)
     client = TestClient(app)
 
@@ -101,6 +104,7 @@ def test_pull_next_assigned(monkeypatch: Any) -> None:
     assert response.status_code == 200
     assert response.json()["worker_id"] == "w-1"
     assert response.json()["run_id"] == "run-7"
+    assert response.json()["lease_id"] == "lease-7"
     assert response.json()["status"] == "assigned"
     assert len(fake_queue.pull_calls) == 1
     assert fake_queue.pull_calls[0][0] == "w-1"
@@ -116,7 +120,7 @@ def test_pull_next_empty(monkeypatch: Any) -> None:
     response = client.post("/internal/workers/pull-next", json={"worker_id": "w-2"})
 
     assert response.status_code == 200
-    assert response.json() == {"worker_id": "w-2", "run_id": None, "status": "empty"}
+    assert response.json() == {"worker_id": "w-2", "run_id": None, "lease_id": None, "status": "empty"}
 
 
 def test_ack_finished(monkeypatch: Any) -> None:
@@ -126,12 +130,12 @@ def test_ack_finished(monkeypatch: Any) -> None:
 
     response = client.post(
         "/internal/runs/ack-finished",
-        json={"worker_id": "w-1", "run_id": "run-1"},
+        json={"worker_id": "w-1", "run_id": "run-1", "lease_id": "lease-1"},
     )
 
     assert response.status_code == 200
     assert response.json() == {"status": "acknowledged"}
-    assert fake_queue.ack_calls == [("w-1", "run-1")]
+    assert fake_queue.ack_calls == [("w-1", "run-1", "lease-1")]
 
 
 def test_ack_finished_stale(monkeypatch: Any) -> None:
@@ -141,19 +145,19 @@ def test_ack_finished_stale(monkeypatch: Any) -> None:
 
     response = client.post(
         "/internal/runs/ack-finished",
-        json={"worker_id": "w-1", "run_id": "run-1"},
+        json={"worker_id": "w-1", "run_id": "run-1", "lease_id": "lease-1"},
     )
 
     assert response.status_code == 200
     assert response.json() == {"status": "stale_lease_ignored"}
-    assert fake_queue.ack_calls == [("w-1", "run-1")]
+    assert fake_queue.ack_calls == [("w-1", "run-1", "lease-1")]
 
 
 def test_queue_stats(monkeypatch: Any) -> None:
     stats_payload = {
         "queue_depth": 3,
         "known_count": 4,
-        "worker_leases": {"w-1": [{"worker_id": "w-1", "run_id": "run-1", "leased_at": 10}]},
+        "worker_leases": {"w-1": [{"worker_id": "w-1", "run_id": "run-1", "lease_id": "lease-1", "leased_at": 10}]},
     }
     fake_queue = FakeQueue(stats_payload=stats_payload)
     monkeypatch.setattr("scheduler_service.main.queue", fake_queue)

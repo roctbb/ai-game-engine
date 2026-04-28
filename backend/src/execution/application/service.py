@@ -231,29 +231,30 @@ class ExecutionService:
             return primary_run_id or None
         return None
 
-    def start_run(self, run_id: str, worker_id: str) -> Run:
+    def start_run(self, run_id: str, worker_id: str, lease_id: str | None = None) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         require_worker(self._worker_repository.get(worker_id), worker_id)
-        if run.status is RunStatus.RUNNING and run.worker_id == worker_id:
+        if run.status is RunStatus.RUNNING and run.worker_id == worker_id and run.active_lease_id == lease_id:
             return run
-        run.mark_started(worker_id=worker_id)
+        run.mark_started(worker_id=worker_id, lease_id=lease_id)
         self._run_repository.save(run)
         self._mark_primary_match_started(run=run, worker_id=worker_id)
         return run
 
-    def accept_run(self, run_id: str, worker_id: str) -> Run:
+    def accept_run(self, run_id: str, worker_id: str, lease_id: str) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         require_worker(self._worker_repository.get(worker_id), worker_id)
-        if run.status is RunStatus.RUNNING and run.worker_id == worker_id:
+        if run.status is RunStatus.RUNNING and run.worker_id == worker_id and run.active_lease_id == lease_id:
             return run
-        run.mark_accepted(worker_id=worker_id)
+        run.mark_accepted(worker_id=worker_id, lease_id=lease_id)
         self._run_repository.save(run)
         self._mark_primary_match_accepted(run=run, worker_id=worker_id)
         return run
 
-    def finish_run(self, run_id: str, payload: dict[str, object]) -> Run:
+    def finish_run(self, run_id: str, payload: dict[str, object], lease_id: str | None = None) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         if run.status is RunStatus.FINISHED:
+            run.require_active_lease(worker_id=None, lease_id=lease_id)
             validate_result_payload(run_kind=run.run_kind, payload=payload)
             merged_payload = _merge_finished_payload(run.result_payload, payload)
             if merged_payload != run.result_payload:
@@ -262,6 +263,7 @@ class ExecutionService:
                 self._merge_primary_match_payload(run=run, payload=payload)
                 self._run_replay_recorder.record_run(run)
             return run
+        run.require_active_lease(worker_id=None, lease_id=lease_id)
         validate_result_payload(run_kind=run.run_kind, payload=payload)
         run.mark_finished(payload=payload)
         self._run_repository.save(run)
@@ -269,10 +271,12 @@ class ExecutionService:
         self._run_replay_recorder.record_run(run)
         return run
 
-    def fail_run(self, run_id: str, message: str) -> Run:
+    def fail_run(self, run_id: str, message: str, lease_id: str | None = None) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         if run.status is RunStatus.FAILED:
+            run.require_active_lease(worker_id=None, lease_id=lease_id)
             return run
+        run.require_active_lease(worker_id=None, lease_id=lease_id)
         run.mark_failed(message=message)
         self._run_repository.save(run)
         self._mark_primary_match_failed(run=run, message=message)

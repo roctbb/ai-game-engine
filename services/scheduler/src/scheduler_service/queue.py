@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from uuid import uuid4
 
 from redis import Redis
 
@@ -12,6 +13,7 @@ from scheduler_service.settings import settings
 class Lease:
     worker_id: str
     run_id: str
+    lease_id: str
     leased_at: int
 
 
@@ -44,7 +46,7 @@ class SchedulerQueue:
         worker_id: str,
         leased_at_epoch: int,
         worker_labels: dict[str, str] | None = None,
-    ) -> str | None:
+    ) -> Lease | None:
         self._requeue_expired_leases_if_due(now_epoch=leased_at_epoch)
         normalized_worker_labels = self._normalize_label_map(worker_labels)
         queue_depth = int(self._redis.llen(settings.queue_key))
@@ -64,25 +66,38 @@ class SchedulerQueue:
             if self._labels_match(required_worker_labels, normalized_worker_labels):
                 self._redis.srem(settings.queued_set_key, run_id)
                 lease_key = self._lease_key(worker_id)
-                self._redis.hset(lease_key, run_id, leased_at_epoch)
+                lease_id = f"lease_{uuid4().hex}"
+                lease_payload = json.dumps(
+                    {
+                        "worker_id": worker_id,
+                        "lease_id": lease_id,
+                        "leased_at": leased_at_epoch,
+                    }
+                )
+                self._redis.hset(lease_key, run_id, lease_payload)
                 self._redis.hset(
                     settings.run_lease_hash_key,
                     run_id,
-                    json.dumps({"worker_id": worker_id, "leased_at": leased_at_epoch}),
+                    lease_payload,
                 )
-                return run_id
+                return Lease(
+                    worker_id=worker_id,
+                    run_id=run_id,
+                    lease_id=lease_id,
+                    leased_at=leased_at_epoch,
+                )
 
             self._redis.rpush(settings.queue_key, run_id)
 
         return None
 
-    def ack_finished(self, worker_id: str, run_id: str) -> bool:
+    def ack_finished(self, worker_id: str, run_id: str, lease_id: str) -> bool:
         raw_payload = self._redis.hget(settings.run_lease_hash_key, run_id)
         if raw_payload is None:
             return False
 
         lease = self._lease_from_payload(run_id=run_id, raw_payload=raw_payload)
-        if lease is None or lease.worker_id != worker_id:
+        if lease is None or lease.worker_id != worker_id or lease.lease_id != lease_id:
             return False
 
         pipe = self._redis.pipeline()
@@ -103,14 +118,12 @@ class SchedulerQueue:
             key = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
             worker_id = key.split(":")[2]
             leases_raw = self._redis.hgetall(key)
-            worker_leases[worker_id] = [
-                Lease(
-                    worker_id=worker_id,
-                    run_id=(run_id.decode("utf-8") if isinstance(run_id, bytes) else str(run_id)),
-                    leased_at=int(ts),
-                )
-                for run_id, ts in leases_raw.items()
-            ]
+            worker_leases[worker_id] = []
+            for raw_run_id, raw_payload in leases_raw.items():
+                run_id = raw_run_id.decode("utf-8") if isinstance(raw_run_id, bytes) else str(raw_run_id)
+                lease = self._lease_from_payload(run_id=run_id, raw_payload=raw_payload)
+                if lease is not None:
+                    worker_leases[worker_id].append(lease)
 
         return {
             "queue_depth": queue_depth,
@@ -120,6 +133,7 @@ class SchedulerQueue:
                     {
                         "worker_id": lease.worker_id,
                         "run_id": lease.run_id,
+                        "lease_id": lease.lease_id,
                         "leased_at": lease.leased_at,
                     }
                     for lease in leases
@@ -173,13 +187,16 @@ class SchedulerQueue:
             return None
 
         worker_id = data.get("worker_id")
+        lease_id = data.get("lease_id")
         leased_at = data.get("leased_at")
         if not isinstance(worker_id, str):
+            return None
+        if not isinstance(lease_id, str) or not lease_id:
             return None
         if not isinstance(leased_at, int):
             return None
 
-        return Lease(worker_id=worker_id, run_id=run_id, leased_at=leased_at)
+        return Lease(worker_id=worker_id, run_id=run_id, lease_id=lease_id, leased_at=leased_at)
 
     @staticmethod
     def _lease_key(worker_id: str) -> str:

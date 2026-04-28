@@ -61,6 +61,7 @@ class Run:
     snapshot_version_id: str | None = None
     revisions_by_slot: dict[str, int] = field(default_factory=dict)
     worker_id: str | None = None
+    active_lease_id: str | None = None
     created_at: object = field(default_factory=utc_now)
     queued_at: object | None = None
     started_at: object | None = None
@@ -98,20 +99,22 @@ class Run:
         self.status = RunStatus.QUEUED
         self.queued_at = utc_now()
 
-    def mark_accepted(self, worker_id: str) -> None:
+    def mark_accepted(self, worker_id: str, lease_id: str) -> None:
         if self.status != RunStatus.QUEUED:
             raise InvariantViolationError("Запуск можно принять только из queued")
-        if self.worker_id is not None and self.worker_id != worker_id:
-            raise InvariantViolationError("Запуск уже принят другим worker")
+        if not lease_id:
+            raise InvariantViolationError("lease_id обязателен для принятия запуска")
         self.worker_id = worker_id
+        self.active_lease_id = lease_id
 
-    def mark_started(self, worker_id: str) -> None:
+    def mark_started(self, worker_id: str, lease_id: str | None = None) -> None:
         if self.status != RunStatus.QUEUED:
             raise InvariantViolationError("Запуск можно стартовать только из queued")
-        if self.worker_id is not None and self.worker_id != worker_id:
-            raise InvariantViolationError("Запуск уже закреплен за другим worker")
+        self.require_active_lease(worker_id=worker_id, lease_id=lease_id)
         self.status = RunStatus.RUNNING
         self.worker_id = worker_id
+        if lease_id:
+            self.active_lease_id = lease_id
         self.started_at = utc_now()
 
     def mark_finished(self, payload: dict[str, object]) -> None:
@@ -134,6 +137,14 @@ class Run:
         self.status = RunStatus.CANCELED
         self.error_message = message
         self.finished_at = utc_now()
+
+    def require_active_lease(self, worker_id: str | None, lease_id: str | None) -> None:
+        if self.active_lease_id is None:
+            return
+        if not lease_id or lease_id != self.active_lease_id:
+            raise InvariantViolationError("Устаревший или некорректный lease_id запуска")
+        if self.worker_id is not None and worker_id is not None and self.worker_id != worker_id:
+            raise InvariantViolationError("Запуск закреплен за другим worker")
 
 
 @dataclass(slots=True)

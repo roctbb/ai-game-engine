@@ -144,6 +144,9 @@ def _pull_and_execute_once() -> dict[str, object]:
                 "worker_id": settings.worker_id,
                 "status": "idle",
             }
+        lease_id = data.get("lease_id")
+        if not isinstance(lease_id, str) or not lease_id:
+            raise RuntimeError(f"Scheduler did not return lease_id for run {run_id}")
 
         _best_effort_send_worker_heartbeat(
             client=client,
@@ -167,14 +170,14 @@ def _pull_and_execute_once() -> dict[str, object]:
                 client=client,
                 method="POST",
                 url=f"{settings.backend_api_url}/internal/runs/{run_id}/accepted",
-                json_payload={"worker_id": settings.worker_id},
+                json_payload={"worker_id": settings.worker_id, "lease_id": lease_id},
             )
 
             _request_with_retry(
                 client=client,
                 method="POST",
                 url=f"{settings.backend_api_url}/internal/runs/{run_id}/started",
-                json_payload={"worker_id": settings.worker_id},
+                json_payload={"worker_id": settings.worker_id, "lease_id": lease_id},
             )
 
             payload = _execute_manifest_game(resolved_context)
@@ -183,7 +186,7 @@ def _pull_and_execute_once() -> dict[str, object]:
                 client=client,
                 method="POST",
                 url=f"{settings.backend_api_url}/internal/runs/{run_id}/finished",
-                json_payload={"payload": payload},
+                json_payload={"payload": payload, "lease_id": lease_id},
             )
 
             _request_with_retry(
@@ -193,16 +196,22 @@ def _pull_and_execute_once() -> dict[str, object]:
                 json_payload={
                     "worker_id": settings.worker_id,
                     "run_id": run_id,
+                    "lease_id": lease_id,
                 },
             )
         except httpx.HTTPError as exc:
-            reported_terminal = _best_effort_report_failed(client=client, run_id=run_id, error=str(exc))
+            reported_terminal = _best_effort_report_failed(
+                client=client,
+                run_id=run_id,
+                lease_id=lease_id,
+                error=str(exc),
+            )
             if reported_terminal or _is_stale_backend_run_error(exc):
-                _best_effort_ack_scheduler(client=client, run_id=run_id)
+                _best_effort_ack_scheduler(client=client, run_id=run_id, lease_id=lease_id)
             raise HTTPException(status_code=502, detail=f"Worker execution failed for run {run_id}") from exc
         except Exception as exc:
-            if _best_effort_report_failed(client=client, run_id=run_id, error=str(exc)):
-                _best_effort_ack_scheduler(client=client, run_id=run_id)
+            if _best_effort_report_failed(client=client, run_id=run_id, lease_id=lease_id, error=str(exc)):
+                _best_effort_ack_scheduler(client=client, run_id=run_id, lease_id=lease_id)
             raise HTTPException(status_code=500, detail=f"Worker execution failed for run {run_id}") from exc
         finally:
             _best_effort_send_worker_heartbeat(
@@ -530,20 +539,20 @@ def _events_with_turn_limit(raw_events: object, *, max_turns: int, dropped_frame
     return events
 
 
-def _best_effort_report_failed(client: httpx.Client, run_id: str, error: str) -> bool:
+def _best_effort_report_failed(client: httpx.Client, run_id: str, lease_id: str, error: str) -> bool:
     try:
         _request_with_retry(
             client=client,
             method="POST",
             url=f"{settings.backend_api_url}/internal/runs/{run_id}/failed",
-            json_payload={"message": error[:3000]},
+            json_payload={"message": error[:3000], "lease_id": lease_id},
         )
         return True
     except httpx.HTTPError:
         return False
 
 
-def _best_effort_ack_scheduler(client: httpx.Client, run_id: str) -> bool:
+def _best_effort_ack_scheduler(client: httpx.Client, run_id: str, lease_id: str) -> bool:
     try:
         _request_with_retry(
             client=client,
@@ -552,6 +561,7 @@ def _best_effort_ack_scheduler(client: httpx.Client, run_id: str) -> bool:
             json_payload={
                 "worker_id": settings.worker_id,
                 "run_id": run_id,
+                "lease_id": lease_id,
             },
         )
         return True

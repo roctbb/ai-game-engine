@@ -907,7 +907,11 @@ def mark_run_started(
     _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
-    run = container.execution.start_run(run_id=run_id, worker_id=request.worker_id)
+    run = container.execution.start_run(
+        run_id=run_id,
+        worker_id=request.worker_id,
+        lease_id=request.lease_id,
+    )
     return _run_response(run)
 
 
@@ -918,7 +922,11 @@ def mark_run_accepted(
     _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
-    run = container.execution.accept_run(run_id=run_id, worker_id=request.worker_id)
+    run = container.execution.accept_run(
+        run_id=run_id,
+        worker_id=request.worker_id,
+        lease_id=request.lease_id,
+    )
     return _run_response(run)
 
 
@@ -930,7 +938,7 @@ def mark_run_finished(
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     payload = _payload_with_training_match_context(container=container, run_id=run_id, payload=request.payload)
-    run = container.execution.finish_run(run_id=run_id, payload=payload)
+    run = container.execution.finish_run(run_id=run_id, payload=payload, lease_id=request.lease_id)
     container.training_lobby.finish_shadow_match_runs(primary_run=run, payload=payload)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     if run.run_kind is RunKind.TRAINING_MATCH and run.lobby_id is not None:
@@ -946,7 +954,11 @@ def mark_run_failed(
     _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
-    run = container.execution.fail_run(run_id=run_id, message=request.message)
+    run = container.execution.fail_run(
+        run_id=run_id,
+        message=request.message,
+        lease_id=request.lease_id,
+    )
     container.training_lobby.fail_shadow_match_runs(primary_run=run, message=request.message)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
     if run.run_kind is RunKind.TRAINING_MATCH and run.lobby_id is not None:

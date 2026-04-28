@@ -59,6 +59,12 @@ class FakeRedis:
         self.hgetall_calls[key] += 1
         return dict(self._hashes[key])
 
+    def pipeline(self) -> FakeRedis:
+        return self
+
+    def execute(self) -> None:
+        return None
+
 
 def test_enqueue_deduplicates_run() -> None:
     queue = SchedulerQueue(redis_client=FakeRedis())
@@ -79,20 +85,23 @@ def test_pull_next_creates_worker_lease() -> None:
     run_id = queue.pull_next(worker_id="w-1", leased_at_epoch=123)
     stats = queue.stats()
 
-    assert run_id == "run-1"
+    assert run_id is not None
+    assert run_id.run_id == "run-1"
+    assert run_id.lease_id.startswith("lease_")
     assert stats["queue_depth"] == 0
     assert stats["known_count"] == 1
     assert stats["worker_leases"] == {
-        "w-1": [{"worker_id": "w-1", "run_id": "run-1", "leased_at": 123}]
+        "w-1": [{"worker_id": "w-1", "run_id": "run-1", "lease_id": run_id.lease_id, "leased_at": 123}]
     }
 
 
 def test_ack_finished_clears_known_and_lease() -> None:
     queue = SchedulerQueue(redis_client=FakeRedis())
     queue.enqueue(run_id="run-1")
-    queue.pull_next(worker_id="w-1", leased_at_epoch=123)
+    lease = queue.pull_next(worker_id="w-1", leased_at_epoch=123)
+    assert lease is not None
 
-    acknowledged = queue.ack_finished(worker_id="w-1", run_id="run-1")
+    acknowledged = queue.ack_finished(worker_id="w-1", run_id="run-1", lease_id=lease.lease_id)
     stats = queue.stats()
 
     assert acknowledged is True
@@ -104,15 +113,16 @@ def test_ack_finished_clears_known_and_lease() -> None:
 def test_stale_ack_does_not_remove_known_run() -> None:
     queue = SchedulerQueue(redis_client=FakeRedis())
     queue.enqueue(run_id="run-1")
-    queue.pull_next(worker_id="w-1", leased_at_epoch=123)
+    lease = queue.pull_next(worker_id="w-1", leased_at_epoch=123)
+    assert lease is not None
 
-    acknowledged = queue.ack_finished(worker_id="w-2", run_id="run-1")
+    acknowledged = queue.ack_finished(worker_id="w-2", run_id="run-1", lease_id=lease.lease_id)
     stats = queue.stats()
 
     assert acknowledged is False
     assert stats["known_count"] == 1
     assert stats["worker_leases"] == {
-        "w-1": [{"worker_id": "w-1", "run_id": "run-1", "leased_at": 123}]
+        "w-1": [{"worker_id": "w-1", "run_id": "run-1", "lease_id": lease.lease_id, "leased_at": 123}]
     }
 
 
@@ -126,13 +136,15 @@ def test_expired_lease_requeued_on_next_pull() -> None:
         second_pull = queue.pull_next(worker_id="w-2", leased_at_epoch=111)
 
         stats = queue.stats()
-        assert first_pull == "run-1"
-        assert second_pull == "run-1"
+        assert first_pull is not None
+        assert second_pull is not None
+        assert first_pull.run_id == "run-1"
+        assert second_pull.run_id == "run-1"
         assert stats["queue_depth"] == 0
         assert stats["known_count"] == 1
         assert stats["worker_leases"] == {
             "w-1": [],
-            "w-2": [{"worker_id": "w-2", "run_id": "run-1", "leased_at": 111}],
+            "w-2": [{"worker_id": "w-2", "run_id": "run-1", "lease_id": second_pull.lease_id, "leased_at": 111}],
         }
     finally:
         settings.lease_ttl_seconds = old_ttl
@@ -150,7 +162,8 @@ def test_pull_next_throttles_expired_lease_scan() -> None:
         second_pull = queue.pull_next(worker_id="w-2", leased_at_epoch=101)
         third_pull = queue.pull_next(worker_id="w-3", leased_at_epoch=105)
 
-        assert first_pull == "run-1"
+        assert first_pull is not None
+        assert first_pull.run_id == "run-1"
         assert second_pull is None
         assert third_pull is None
         assert redis.hgetall_calls[settings.run_lease_hash_key] == 2
@@ -166,8 +179,10 @@ def test_pull_next_respects_required_worker_labels() -> None:
     first = queue.pull_next(worker_id="w-gpu", leased_at_epoch=100, worker_labels={"pool": "gpu"})
     second = queue.pull_next(worker_id="w-cpu", leased_at_epoch=101, worker_labels={"pool": "cpu"})
 
-    assert first == "run-gpu"
-    assert second == "run-cpu"
+    assert first is not None
+    assert second is not None
+    assert first.run_id == "run-gpu"
+    assert second.run_id == "run-cpu"
 
 
 def test_pull_next_keeps_unmatched_runs_in_queue() -> None:
@@ -178,4 +193,5 @@ def test_pull_next_keeps_unmatched_runs_in_queue() -> None:
     second = queue.pull_next(worker_id="w-gpu", leased_at_epoch=101, worker_labels={"pool": "gpu"})
 
     assert first is None
-    assert second == "run-gpu"
+    assert second is not None
+    assert second.run_id == "run-gpu"

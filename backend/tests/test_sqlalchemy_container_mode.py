@@ -92,7 +92,7 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
 
             accepted = client.post(
                 f"/api/v1/internal/runs/{run['run_id']}/accepted",
-                json={'worker_id': 'sql-worker-1'},
+                json={'worker_id': 'sql-worker-1', 'lease_id': 'lease-sql-1'},
                 headers=internal_headers,
             )
             assert accepted.status_code == 200
@@ -101,7 +101,7 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
 
             started = client.post(
                 f"/api/v1/internal/runs/{run['run_id']}/started",
-                json={'worker_id': 'sql-worker-1'},
+                json={'worker_id': 'sql-worker-1', 'lease_id': 'lease-sql-1'},
                 headers=internal_headers,
             )
             assert started.status_code == 200
@@ -113,7 +113,8 @@ def test_sqlalchemy_container_mode_smoke(tmp_path: Path) -> None:
                     'payload': {
                         'status': 'finished',
                         'metrics': {'duration_ms': 123},
-                    }
+                    },
+                    'lease_id': 'lease-sql-1',
                 },
                 headers=internal_headers,
             )
