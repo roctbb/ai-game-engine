@@ -66,6 +66,7 @@ def _partition_match_groups(
     ready_team_ids: list[str],
     min_players: int,
     max_players: int,
+    recent_pair_counts: dict[tuple[str, str], int] | None = None,
 ) -> list[list[str]]:
     team_count = len(ready_team_ids)
     if team_count < min_players:
@@ -82,6 +83,13 @@ def _partition_match_groups(
                     min_players=min_players,
                     max_players=max_players,
                 )
+                if recent_pair_counts:
+                    return _mix_match_groups_by_recent_opponents(
+                        ready_team_ids=ready_team_ids,
+                        sizes=sizes,
+                        recent_pair_counts=recent_pair_counts,
+                    )
+
                 groups: list[list[str]] = []
                 cursor = 0
                 for size in sizes:
@@ -89,6 +97,49 @@ def _partition_match_groups(
                     cursor += size
                 return groups
     return []
+
+
+def _mix_match_groups_by_recent_opponents(
+    *,
+    ready_team_ids: list[str],
+    sizes: list[int],
+    recent_pair_counts: dict[tuple[str, str], int],
+) -> list[list[str]]:
+    scheduled_count = sum(sizes)
+    original_index = {team_id: index for index, team_id in enumerate(ready_team_ids)}
+    remaining = list(ready_team_ids)
+    groups: list[list[str]] = []
+
+    def pair_count(left: str, right: str) -> int:
+        return recent_pair_counts.get(_team_pair_key(left, right), 0)
+
+    def total_recent_pairs(team_id: str) -> int:
+        return sum(pair_count(team_id, other_id) for other_id in ready_team_ids if other_id != team_id)
+
+    if len(remaining) > scheduled_count:
+        remaining.sort(key=lambda team_id: (total_recent_pairs(team_id), original_index[team_id]))
+        unscheduled_count = len(remaining) - scheduled_count
+        remaining = remaining[unscheduled_count:]
+
+    for size in sizes:
+        group: list[str] = []
+        while remaining and len(group) < size:
+            if not group:
+                chosen = min(remaining, key=lambda team_id: (total_recent_pairs(team_id), original_index[team_id]))
+            else:
+                chosen = min(
+                    remaining,
+                    key=lambda team_id: (
+                        sum(pair_count(team_id, grouped_id) for grouped_id in group),
+                        total_recent_pairs(team_id),
+                        original_index[team_id],
+                    ),
+                )
+            remaining.remove(chosen)
+            group.append(chosen)
+        if group:
+            groups.append(group)
+    return groups
 
 
 def _distribute_match_sizes(
@@ -108,6 +159,10 @@ def _distribute_match_sizes(
         remaining -= delta
         index = (index + 1) % group_count
     return sizes
+
+
+def _team_pair_key(left: str, right: str) -> tuple[str, str]:
+    return (left, right) if left <= right else (right, left)
 
 
 def _datetime_or_none(value: object | None) -> datetime | None:
@@ -780,6 +835,7 @@ class TrainingLobbyService:
                 ready_team_ids=ready_team_ids,
                 min_players=min_players,
                 max_players=max_players,
+                recent_pair_counts=self._recent_training_match_pair_counts(runs=runs),
             )
         else:
             # single_task не должен работать через lobby matchmaking.
@@ -1205,6 +1261,31 @@ class TrainingLobbyService:
         if lobby.last_scheduled_run_ids:
             return [list(lobby.last_scheduled_run_ids)]
         return []
+
+    @staticmethod
+    def _recent_training_match_pair_counts(*, runs: list[Run], limit: int = 60) -> dict[tuple[str, str], int]:
+        runs_by_match: dict[str, list[Run]] = {}
+        for run in runs:
+            if run.run_kind is not RunKind.TRAINING_MATCH:
+                continue
+            match_id = run.match_primary_run_id or run.run_id
+            runs_by_match.setdefault(match_id, []).append(run)
+
+        def match_started_at(items: list[Run]) -> datetime:
+            values = [_datetime_or_none(run.created_at) for run in items]
+            fallback = datetime.min.replace(tzinfo=utc_now().tzinfo)
+            return min((value for value in values if value is not None), default=fallback)
+
+        recent_matches = sorted(runs_by_match.values(), key=match_started_at, reverse=True)[:limit]
+        pair_counts: dict[tuple[str, str], int] = {}
+        for recency_index, match_runs in enumerate(recent_matches):
+            team_ids = sorted({run.team_id for run in match_runs})
+            weight = max(1, limit - recency_index)
+            for index, left in enumerate(team_ids):
+                for right in team_ids[index + 1 :]:
+                    key = _team_pair_key(left, right)
+                    pair_counts[key] = pair_counts.get(key, 0) + weight
+        return pair_counts
 
     def _archived_match_run_id_groups(self, *, lobby: Lobby, runs: list[Run]) -> list[list[str]]:
         if not runs:

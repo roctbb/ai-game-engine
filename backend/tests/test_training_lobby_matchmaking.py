@@ -69,6 +69,28 @@ def test_multiplayer_partition_starts_parallel_games_and_leaves_only_incomplete_
     ]
 
 
+def test_multiplayer_partition_mixes_recent_opponents() -> None:
+    teams = [f"team-{index}" for index in range(8)]
+    stale_groups = [teams[:4], teams[4:]]
+    recent_pair_counts: dict[tuple[str, str], int] = {}
+    for group in stale_groups:
+        for index, left in enumerate(group):
+            for right in group[index + 1 :]:
+                recent_pair_counts[(left, right)] = 10
+
+    groups = _partition_match_groups(
+        ready_team_ids=teams,
+        min_players=4,
+        max_players=4,
+        recent_pair_counts=recent_pair_counts,
+    )
+
+    assert len(groups) == 2
+    assert sorted(team_id for group in groups for team_id in group) == teams
+    assert {frozenset(group) for group in groups} != {frozenset(group) for group in stale_groups}
+    assert all(len(set(group).intersection(stale_groups[0])) == 2 for group in groups)
+
+
 def _create_game(
     client,
     slug: str,
