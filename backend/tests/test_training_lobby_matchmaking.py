@@ -91,6 +91,25 @@ def test_multiplayer_partition_mixes_recent_opponents() -> None:
     assert all(len(set(group).intersection(stale_groups[0])) == 2 for group in groups)
 
 
+def test_multiplayer_partition_schedules_less_recently_matched_tail() -> None:
+    teams = [f"team-{index}" for index in range(5)]
+    recent_pair_counts = {
+        ("team-4", "team-0"): 10,
+        ("team-4", "team-1"): 10,
+        ("team-4", "team-2"): 10,
+        ("team-4", "team-3"): 10,
+    }
+
+    groups = _partition_match_groups(
+        ready_team_ids=teams,
+        min_players=4,
+        max_players=4,
+        recent_pair_counts=recent_pair_counts,
+    )
+
+    assert groups == [["team-0", "team-1", "team-2", "team-3"]]
+
+
 def _create_game(
     client,
     slug: str,

@@ -118,8 +118,7 @@ def _mix_match_groups_by_recent_opponents(
 
     if len(remaining) > scheduled_count:
         remaining.sort(key=lambda team_id: (total_recent_pairs(team_id), original_index[team_id]))
-        unscheduled_count = len(remaining) - scheduled_count
-        remaining = remaining[unscheduled_count:]
+        remaining = remaining[:scheduled_count]
 
     for size in sizes:
         group: list[str] = []
