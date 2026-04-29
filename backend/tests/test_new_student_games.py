@@ -1832,6 +1832,8 @@ def test_multiplayer_snake_demo_returns_scores_for_all_slots() -> None:
     assert len(first_frame["foods"]) >= 4
     assert set(first_frame["holes"]) == set(metrics["food_eaten"])
     assert first_frame["board"][0][0] == -1
+    assert first_frame["board"][2][1] == -2
+    assert first_frame["board"][1][1] == -3
     assert "compile_errors" not in metrics
 
 

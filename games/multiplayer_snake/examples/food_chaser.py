@@ -40,4 +40,4 @@ def make_move(x, y, board):
 
 
 def _is_open(x, y, board):
-    return 0 <= x < len(board) and 0 <= y < len(board[x]) and board[x][y] != -1
+    return 0 <= x < len(board) and 0 <= y < len(board[x]) and board[x][y] >= 0

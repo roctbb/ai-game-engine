@@ -273,7 +273,7 @@ def _fallback_move(x: int, y: int, board: list[list[int]], _role: str = "") -> s
         moves.sort(key=lambda m: abs(x + m[1] - food[0]) + abs(y + m[2] - food[1]))
     for action, dx, dy in moves:
         nx, ny = x + dx, y + dy
-        if 0 <= nx < len(board) and 0 <= ny < len(board[nx]) and board[nx][ny] != -1:
+        if 0 <= nx < len(board) and 0 <= ny < len(board[nx]) and board[nx][ny] >= 0:
             return action
     return "right"
 
@@ -288,8 +288,13 @@ def _board(snakes: dict[str, list[tuple[int, int]]], alive: dict[str, bool], foo
         board[_WIDTH - 1][y] = -1
     for role, body in snakes.items():
         if alive[role]:
-            for x, y in body:
-                board[x][y] = -1
+            for index, (x, y) in enumerate(body):
+                if index == 0:
+                    board[x][y] = -2
+                elif index == len(body) - 1:
+                    board[x][y] = -3
+                else:
+                    board[x][y] = -1
     for x, y in foods:
         board[x][y] = 1
     return board
