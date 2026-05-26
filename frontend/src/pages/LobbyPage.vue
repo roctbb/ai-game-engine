@@ -611,7 +611,7 @@
                     </span>
                   </header>
                   <span class="lobby-leaderboard-meta">
-                    побед {{ stat.wins }} · игр {{ stat.matches_total }} · средний счет {{ averageScoreLabel(stat.average_score) }}
+                    винрейт {{ winRateLabel(stat) }} · побед {{ stat.wins }} · игр {{ stat.matches_total }} · средний счет {{ averageScoreLabel(stat.average_score) }}
                   </span>
                 </div>
                 <div class="lobby-leaderboard-actions">
@@ -1686,13 +1686,13 @@ const statsByTeam = computed(() => {
 });
 const lobbyLeaderboard = computed(() =>
   [...(lobby.value?.participant_stats ?? [])].sort((left, right) => {
-    const rightPoints = totalScore(right);
-    const leftPoints = totalScore(left);
-    if (rightPoints !== leftPoints) return rightPoints - leftPoints;
+    const rightWinRate = winRate(right);
+    const leftWinRate = winRate(left);
+    if (rightWinRate !== leftWinRate) return rightWinRate - leftWinRate;
+    if (right.wins !== left.wins) return right.wins - left.wins;
     const rightAverage = right.average_score ?? Number.NEGATIVE_INFINITY;
     const leftAverage = left.average_score ?? Number.NEGATIVE_INFINITY;
     if (rightAverage !== leftAverage) return rightAverage - leftAverage;
-    if (right.wins !== left.wins) return right.wins - left.wins;
     return right.matches_total - left.matches_total;
   }),
 );
@@ -1784,9 +1784,14 @@ function averageScoreLabel(value: number | null | undefined): string {
   return value === null || value === undefined ? 'нет данных' : value.toFixed(1);
 }
 
-function totalScore(stat: LobbyParticipantStatsDto): number {
-  if (stat.average_score === null || stat.average_score === undefined) return Number.NEGATIVE_INFINITY;
-  return stat.average_score * stat.matches_total;
+function winRate(stat: LobbyParticipantStatsDto): number {
+  if (stat.matches_total <= 0) return Number.NEGATIVE_INFINITY;
+  return stat.wins / stat.matches_total;
+}
+
+function winRateLabel(stat: LobbyParticipantStatsDto): string {
+  if (stat.matches_total <= 0) return 'нет данных';
+  return `${(winRate(stat) * 100).toFixed(1)}%`;
 }
 
 function sortCurrentGameStats(rows: CurrentGameStatRow[]): CurrentGameStatRow[] {

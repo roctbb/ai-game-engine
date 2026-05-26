@@ -5,7 +5,7 @@ import pytest
 
 from execution.application.scheduler_gateway import SchedulerGateway
 from execution.domain.model import RunKind, RunStatus
-from shared.kernel import ExternalServiceError, InvariantViolationError, NotFoundError
+from shared.kernel import ExternalServiceError, InvariantViolationError, NotFoundError, utc_now
 from training_lobby.application.service import _partition_match_groups
 from training_lobby.domain.model import LobbyStatus
 
@@ -1334,6 +1334,118 @@ def test_matchmaking_queue_failure_clears_batch_and_does_not_leave_created_runs(
     assert payload["current_run_ids"] == []
     assert payload["archived_match_groups"] == []
     assert all(item["matches_total"] == 0 for item in payload["participant_stats"])
+
+
+def test_matchmaking_cycle_recovers_stale_queued_batch_when_workers_are_idle(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="multiplayer_mm_stale_recovery_idle",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="stale-idle-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="stale-idle-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Stale Idle", headers=teacher_headers)
+    for team in (team_a, team_b):
+        client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
+            json={"ready": True},
+            headers=teacher_headers,
+        )
+
+    registered = client.post(
+        "/api/v1/internal/workers/register",
+        json={
+            "worker_id": "worker-mm-stale-idle",
+            "hostname": "worker-mm-stale-idle",
+            "capacity_total": 2,
+            "labels": {},
+        },
+    )
+    assert registered.status_code == 200
+
+    scheduled = container.training_lobby.run_matchmaking_cycle(lobby_id=lobby["lobby_id"], requested_by="teacher-mm")
+    stale_run_ids = list(scheduled.last_scheduled_run_ids)
+    assert len(stale_run_ids) == 2
+
+    stale_time = utc_now() - timedelta(minutes=5)
+    for run_id in stale_run_ids:
+        run = container.execution.get_run(run_id)
+        run.queued_at = stale_time
+        container.execution._run_repository.save(run)
+
+    recovered = container.training_lobby.run_matchmaking_cycle(lobby_id=lobby["lobby_id"], requested_by="teacher-mm")
+    assert recovered.last_scheduled_run_ids
+    assert set(recovered.last_scheduled_run_ids) != set(stale_run_ids)
+
+    for run_id in stale_run_ids:
+        run = container.execution.get_run(run_id)
+        assert run.status is RunStatus.CANCELED
+        assert run.error_message == "stale_after_backend_restart"
+
+
+def test_matchmaking_cycle_does_not_recover_stale_queued_batch_when_worker_is_busy(client, teacher_headers, container) -> None:
+    game = _create_game(
+        client,
+        slug="multiplayer_mm_stale_recovery_busy",
+        mode="multiplayer",
+        min_players_per_match=2,
+        max_players_per_match=2,
+        headers=teacher_headers,
+    )
+    team_a = _create_ready_team(client, game_id=game["game_id"], captain="stale-busy-a", name="Alpha")
+    team_b = _create_ready_team(client, game_id=game["game_id"], captain="stale-busy-b", name="Bravo")
+    lobby = _create_training_lobby(client, game_id=game["game_id"], title="MM Stale Busy", headers=teacher_headers)
+    for team in (team_a, team_b):
+        client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/join",
+            json={},
+            headers=teacher_headers,
+        )
+        client.post(
+            f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
+            json={"ready": True},
+            headers=teacher_headers,
+        )
+
+    registered = client.post(
+        "/api/v1/internal/workers/register",
+        json={
+            "worker_id": "worker-mm-stale-busy",
+            "hostname": "worker-mm-stale-busy",
+            "capacity_total": 2,
+            "labels": {},
+        },
+    )
+    assert registered.status_code == 200
+    heartbeat = client.post(
+        "/api/v1/internal/workers/worker-mm-stale-busy/heartbeat",
+        json={"capacity_available": 0},
+    )
+    assert heartbeat.status_code == 200
+
+    scheduled = container.training_lobby.run_matchmaking_cycle(lobby_id=lobby["lobby_id"], requested_by="teacher-mm")
+    stale_run_ids = list(scheduled.last_scheduled_run_ids)
+    assert len(stale_run_ids) == 2
+
+    stale_time = utc_now() - timedelta(minutes=5)
+    for run_id in stale_run_ids:
+        run = container.execution.get_run(run_id)
+        run.queued_at = stale_time
+        container.execution._run_repository.save(run)
+
+    recovered = container.training_lobby.run_matchmaking_cycle(lobby_id=lobby["lobby_id"], requested_by="teacher-mm")
+    assert set(recovered.last_scheduled_run_ids) == set(stale_run_ids)
+    for run_id in stale_run_ids:
+        run = container.execution.get_run(run_id)
+        assert run.status is RunStatus.QUEUED
 
 
 def test_stopped_lobby_is_not_matchmade_by_due_tick(client, teacher_headers) -> None:

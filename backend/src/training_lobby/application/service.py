@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from threading import Lock
 
 from execution.application.service import CreateRunInput, ExecutionService
-from execution.domain.model import Run, RunKind, RunStatus
+from execution.domain.model import Run, RunKind, RunStatus, WorkerStatus
 from game_catalog.application.service import GameCatalogService
 from game_catalog.domain.model import CatalogMetadataStatus
 from team_workspace.application.service import TeamWorkspaceService
@@ -34,6 +34,8 @@ _LOBBY_RESULT_SECONDS = 5
 _LOBBY_ONLINE_VIEWER_TTL_SECONDS = 20
 _LOBBY_LIVE_CACHE_TTL_SECONDS = 0.75
 _TRAINING_LOBBY_ARCHIVED_MATCH_LIMIT = 30
+_TRAINING_LOBBY_STALE_ACTIVE_RUN_TIMEOUT = timedelta(seconds=90)
+_TRAINING_LOBBY_STALE_WORKER_HEARTBEAT_TIMEOUT = timedelta(seconds=30)
 _LOBBY_VIEWER_PRESENCE_KEY_PREFIX = "ai-game:training-lobby:viewer-presence:"
 
 
@@ -808,6 +810,13 @@ class TrainingLobbyService:
                 include_result_payload=False,
             )
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
+        if active_runs and self._recover_stale_active_batch_runs(lobby=lobby, active_runs=active_runs):
+            runs = self._execution.list_runs(
+                lobby_id=lobby.lobby_id,
+                run_kind=RunKind.TRAINING_MATCH,
+                include_result_payload=False,
+            )
+            active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
         busy_team_ids = {run.team_id for run in active_runs}
         if active_runs or cycle.phase in {"replay", "result"}:
@@ -914,6 +923,61 @@ class TrainingLobbyService:
             lobby=lobby,
             match_groups=[group for group in match_groups if group],
         )
+
+    def _recover_stale_active_batch_runs(self, *, lobby: Lobby, active_runs: list[Run]) -> bool:
+        current_run_ids = set(lobby.last_scheduled_run_ids)
+        if not current_run_ids:
+            return False
+        current_active_runs = [run for run in active_runs if run.run_id in current_run_ids]
+        if not current_active_runs:
+            return False
+        if any(run.status is RunStatus.CREATED for run in current_active_runs):
+            return False
+
+        now = utc_now()
+        stale_before = now - _TRAINING_LOBBY_STALE_ACTIVE_RUN_TIMEOUT
+        for run in current_active_runs:
+            activity_at = (
+                _datetime_or_none(run.started_at)
+                or _datetime_or_none(run.queued_at)
+                or _datetime_or_none(run.created_at)
+            )
+            if activity_at is None or activity_at >= stale_before:
+                return False
+
+        online_workers = [worker for worker in self._execution.list_workers() if worker.status is WorkerStatus.ONLINE]
+        if not online_workers:
+            return False
+        if any(worker.capacity_available < worker.capacity_total for worker in online_workers):
+            return False
+
+        online_workers_by_id = {worker.worker_id: worker for worker in online_workers}
+        stale_worker_before = now - _TRAINING_LOBBY_STALE_WORKER_HEARTBEAT_TIMEOUT
+        for run in current_active_runs:
+            if run.status is not RunStatus.RUNNING:
+                continue
+            if not run.worker_id:
+                return False
+            worker = online_workers_by_id.get(run.worker_id)
+            if worker is None:
+                continue
+            last_heartbeat = _datetime_or_none(worker.last_heartbeat_at)
+            if last_heartbeat is None or last_heartbeat >= stale_worker_before:
+                return False
+
+        canceled_run_ids = set()
+        for run in current_active_runs:
+            try:
+                self._execution.cancel_run(run.run_id, message="stale_after_backend_restart")
+            except InvariantViolationError:
+                continue
+            canceled_run_ids.add(run.run_id)
+        if not canceled_run_ids:
+            return False
+        self._remove_canceled_groups_from_lobby(lobby=lobby, canceled_run_ids=canceled_run_ids)
+        self._repository.save(lobby)
+        self._clear_lobby_derived_caches(lobby.lobby_id)
+        return True
 
     def finish_shadow_match_runs(self, primary_run: Run, payload: dict[str, object]) -> list[Run]:
         if primary_run.run_kind is not RunKind.TRAINING_MATCH or primary_run.lobby_id is None:
