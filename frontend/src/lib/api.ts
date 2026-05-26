@@ -22,6 +22,7 @@ export interface GameDto {
   min_players_per_match: number | null;
   max_players_per_match: number | null;
   catalog_metadata_status: CatalogMetadataStatus;
+  is_hidden: boolean;
   active_version_id: string;
   versions: GameVersionDto[];
 }
@@ -77,6 +78,7 @@ export interface SingleTaskCatalogItemDto {
   learning_section: string | null;
   topics: string[];
   catalog_metadata_status: CatalogMetadataStatus;
+  is_hidden: boolean;
   attempts_finished: number;
   solved_users: number;
   has_score_model: boolean;
@@ -637,6 +639,7 @@ export function patchGame(payload: {
   learning_section?: string | null;
   topics?: string[] | null;
   catalog_metadata_status?: CatalogMetadataStatus | null;
+  is_hidden?: boolean | null;
 }): Promise<GameDto> {
   const body: Record<string, unknown> = {};
   if (payload.title !== undefined) body.title = payload.title;
@@ -645,6 +648,7 @@ export function patchGame(payload: {
   if (payload.learning_section !== undefined) body.learning_section = payload.learning_section;
   if (payload.topics !== undefined) body.topics = payload.topics;
   if (payload.catalog_metadata_status !== undefined) body.catalog_metadata_status = payload.catalog_metadata_status;
+  if (payload.is_hidden !== undefined) body.is_hidden = payload.is_hidden;
   return request<GameDto>(`/games/${encodeURIComponent(payload.game_id)}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
@@ -682,6 +686,7 @@ export function updateGameCatalogMetadata(payload: {
   learning_section: string | null;
   topics: string[];
   catalog_metadata_status: CatalogMetadataStatus;
+  is_hidden?: boolean | null;
 }): Promise<GameDto> {
   return request<GameDto>(`/games/${encodeURIComponent(payload.game_id)}/catalog-metadata`, {
     method: 'PATCH',
@@ -691,6 +696,7 @@ export function updateGameCatalogMetadata(payload: {
       learning_section: payload.learning_section,
       topics: payload.topics,
       catalog_metadata_status: payload.catalog_metadata_status,
+      is_hidden: payload.is_hidden,
     }),
   });
 }

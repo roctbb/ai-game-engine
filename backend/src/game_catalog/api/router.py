@@ -27,18 +27,16 @@ from game_catalog.api.schemas import (
 )
 from game_catalog.application.single_task_progress import SingleTaskProgressService
 from game_catalog.application.service import RegisterGameInput
-from game_catalog.domain.model import SlotDefinition
+from game_catalog.domain.model import Game, SlotDefinition
 from game_catalog.infrastructure.manifest_loader import find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
-from shared.kernel import ConflictError, InvariantViolationError
+from shared.kernel import ConflictError, InvariantViolationError, NotFoundError
 
 router = APIRouter(prefix="/games", tags=["game_catalog"], dependencies=[Depends(get_current_session)])
 progress_router = APIRouter(tags=["game_catalog"], dependencies=[Depends(get_current_session)])
 
 
 def _map_game(game: object) -> GameResponse:
-    from game_catalog.domain.model import Game
-
     typed = game if isinstance(game, Game) else None
     assert typed is not None
     return GameResponse(
@@ -53,6 +51,7 @@ def _map_game(game: object) -> GameResponse:
         min_players_per_match=typed.min_players_per_match,
         max_players_per_match=typed.max_players_per_match,
         catalog_metadata_status=typed.catalog_metadata_status,
+        is_hidden=typed.is_hidden,
         active_version_id=typed.active_version.version_id,
         versions=[
             GameVersionResponse(
@@ -70,9 +69,30 @@ def _progress(container: ServiceContainer) -> SingleTaskProgressService:
     return SingleTaskProgressService(game_catalog=container.game_catalog, execution=container.execution)
 
 
+def _can_manage_catalog(session: AppSession) -> bool:
+    return session.role in {UserRole.TEACHER, UserRole.ADMIN}
+
+
+def _is_visible_catalog_game(game: Game) -> bool:
+    return not game.is_hidden
+
+
+def _ensure_game_visible_to_session(game: Game, session: AppSession) -> None:
+    if _can_manage_catalog(session):
+        return
+    if not _is_visible_catalog_game(game):
+        raise NotFoundError(f"Игра {game.game_id} не найдена")
+
+
 @router.get("", response_model=list[GameResponse])
-def list_games(container: ServiceContainer = Depends(get_container)) -> list[GameResponse]:
-    return [_map_game(item) for item in container.game_catalog.list_games()]
+def list_games(
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> list[GameResponse]:
+    games = container.game_catalog.list_games()
+    if not _can_manage_catalog(session):
+        games = [game for game in games if _is_visible_catalog_game(game)]
+    return [_map_game(item) for item in games]
 
 
 @router.post("", response_model=GameResponse)
@@ -95,6 +115,7 @@ def register_game(
             max_players_per_match=request.max_players_per_match,
             required_worker_labels=dict(request.required_worker_labels),
             catalog_metadata_status=request.catalog_metadata_status,
+            is_hidden=request.is_hidden,
             required_slots=tuple(
                 SlotDefinition(key=slot.key, title=slot.title, required=slot.required)
                 for slot in request.required_slots
@@ -105,8 +126,14 @@ def register_game(
 
 
 @router.get("/{game_id}", response_model=GameResponse)
-def get_game(game_id: str, container: ServiceContainer = Depends(get_container)) -> GameResponse:
-    return _map_game(container.game_catalog.get_game(game_id))
+def get_game(
+    game_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> GameResponse:
+    game = container.game_catalog.get_game(game_id)
+    _ensure_game_visible_to_session(game, session)
+    return _map_game(game)
 
 
 @router.patch("/{game_id}", response_model=GameResponse)
@@ -126,13 +153,19 @@ def patch_game(
         min_players_per_match=request.min_players_per_match,
         max_players_per_match=request.max_players_per_match,
         catalog_metadata_status=request.catalog_metadata_status,
+        is_hidden=request.is_hidden,
     )
     return _map_game(game)
 
 
 @router.get("/{game_id}/versions", response_model=list[GameVersionResponse])
-def list_game_versions(game_id: str, container: ServiceContainer = Depends(get_container)) -> list[GameVersionResponse]:
+def list_game_versions(
+    game_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> list[GameVersionResponse]:
     game = container.game_catalog.get_game(game_id)
+    _ensure_game_visible_to_session(game, session)
     return [
         GameVersionResponse(
             version_id=version.version_id,
@@ -148,8 +181,11 @@ def list_game_versions(game_id: str, container: ServiceContainer = Depends(get_c
 def get_game_version(
     game_id: str,
     version_id: str,
+    session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> GameVersionResponse:
+    game = container.game_catalog.get_game(game_id)
+    _ensure_game_visible_to_session(game, session)
     version = container.game_catalog.get_version(game_id=game_id, version_id=version_id)
     return GameVersionResponse(
         version_id=version.version_id,
@@ -160,8 +196,13 @@ def get_game_version(
 
 
 @router.get("/{game_id}/topics", response_model=GameTopicsResponse)
-def get_game_topics(game_id: str, container: ServiceContainer = Depends(get_container)) -> GameTopicsResponse:
+def get_game_topics(
+    game_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> GameTopicsResponse:
     game = container.game_catalog.get_game(game_id)
+    _ensure_game_visible_to_session(game, session)
     return GameTopicsResponse(game_id=game.game_id, topics=list(game.topics))
 
 
@@ -172,6 +213,7 @@ def get_game_templates(
     container: ServiceContainer = Depends(get_container),
 ) -> GameTemplatesResponse:
     game = container.game_catalog.get_game(game_id)
+    _ensure_game_visible_to_session(game, session)
     code_api_mode: str = "script_based" if game.mode.value == "single_task" else "turn_based"
     player_instruction: str | None = None
     try:
@@ -225,8 +267,13 @@ def get_game_templates(
 
 
 @router.get("/{game_id}/docs", response_model=GameDocumentationResponse)
-def get_game_docs(game_id: str, container: ServiceContainer = Depends(get_container)) -> GameDocumentationResponse:
+def get_game_docs(
+    game_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> GameDocumentationResponse:
     game = container.game_catalog.get_game(game_id)
+    _ensure_game_visible_to_session(game, session)
     links: list[GameDocumentationLinkResponse] = []
     player_instruction: str | None = None
     try:
@@ -311,6 +358,7 @@ def update_catalog_metadata(
         learning_section=request.learning_section,
         topics=tuple(request.topics),
         catalog_metadata_status=request.catalog_metadata_status,
+        is_hidden=request.is_hidden,
     )
     return _map_game(game)
 
@@ -328,6 +376,7 @@ def list_single_task_catalog(container: ServiceContainer = Depends(get_container
             learning_section=item.learning_section,
             topics=list(item.topics),
             catalog_metadata_status=item.catalog_metadata_status,
+            is_hidden=item.is_hidden,
             attempts_finished=item.attempts_finished,
             solved_users=item.solved_users,
             has_score_model=item.has_score_model,

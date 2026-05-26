@@ -57,6 +57,7 @@ class Game:
     min_players_per_match: int | None = None
     max_players_per_match: int | None = None
     catalog_metadata_status: CatalogMetadataStatus = CatalogMetadataStatus.READY
+    is_hidden: bool = False
     versions: dict[str, GameVersion] = field(default_factory=dict)
     active_version_id: str | None = None
 
@@ -72,6 +73,7 @@ class Game:
         min_players_per_match: int | None = None,
         max_players_per_match: int | None = None,
         catalog_metadata_status: CatalogMetadataStatus | None = None,
+        is_hidden: bool = False,
     ) -> "Game":
         normalized_topics = tuple(topic.strip() for topic in topics if topic.strip())
         normalized_description = description.strip() if description is not None else None
@@ -109,6 +111,7 @@ class Game:
             min_players_per_match=resolved_min_players,
             max_players_per_match=resolved_max_players,
             catalog_metadata_status=resolved_status,
+            is_hidden=is_hidden,
         )
 
     @property

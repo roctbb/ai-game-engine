@@ -65,6 +65,7 @@ class SingleTaskCatalogItem:
     learning_section: str | None
     topics: tuple[str, ...]
     catalog_metadata_status: CatalogMetadataStatus
+    is_hidden: bool
     attempts_finished: int
     solved_users: int
     has_score_model: bool
@@ -109,7 +110,11 @@ class SingleTaskProgressService:
         games = [game for game in self._game_catalog.list_games() if game.mode is GameMode.SINGLE_TASK]
         if include_non_ready:
             return games
-        return [game for game in games if game.catalog_metadata_status is CatalogMetadataStatus.READY]
+        return [
+            game
+            for game in games
+            if game.catalog_metadata_status is CatalogMetadataStatus.READY and not game.is_hidden
+        ]
 
     def build_single_task_catalog_items(self) -> tuple[SingleTaskCatalogItem, ...]:
         games = sorted(self.list_single_tasks(include_non_ready=False), key=lambda game: (game.title.lower(), game.slug))
@@ -135,6 +140,7 @@ class SingleTaskProgressService:
                 learning_section=game.learning_section,
                 topics=game.topics,
                 catalog_metadata_status=game.catalog_metadata_status,
+                is_hidden=game.is_hidden,
                 attempts_finished=attempts_count_by_game.get(game.game_id, 0),
                 solved_users=len(solved_users_by_game.get(game.game_id, set())),
                 has_score_model=has_score_model_by_game.get(game.game_id, False),

@@ -27,6 +27,7 @@ class SqlAlchemyGameRepository:
                     min_players_per_match=game.min_players_per_match,
                     max_players_per_match=game.max_players_per_match,
                     catalog_metadata_status=game.catalog_metadata_status.value,
+                    is_hidden=game.is_hidden,
                     active_version_id=game.active_version_id,
                 )
                 session.add(existing_game)
@@ -41,6 +42,7 @@ class SqlAlchemyGameRepository:
                 existing_game.min_players_per_match = game.min_players_per_match
                 existing_game.max_players_per_match = game.max_players_per_match
                 existing_game.catalog_metadata_status = game.catalog_metadata_status.value
+                existing_game.is_hidden = game.is_hidden
                 existing_game.active_version_id = game.active_version_id
 
             existing_versions = session.scalars(
@@ -145,6 +147,7 @@ def _map_game_from_rows(
         min_players_per_match=getattr(game_row, "min_players_per_match", None),
         max_players_per_match=getattr(game_row, "max_players_per_match", None),
         catalog_metadata_status=CatalogMetadataStatus(game_row.catalog_metadata_status or "ready"),
+        is_hidden=bool(getattr(game_row, "is_hidden", False)),
         versions=versions,
         active_version_id=game_row.active_version_id,
     )

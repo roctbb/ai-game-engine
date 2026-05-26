@@ -34,6 +34,10 @@
         <span>Архив</span>
         <strong class="mono">{{ archivedCount }}</strong>
       </div>
+      <div class="agp-card-soft p-3 admin-catalog-metric admin-catalog-metric--hidden">
+        <span>Скрыто</span>
+        <strong class="mono">{{ hiddenCount }}</strong>
+      </div>
     </article>
 
     <article class="agp-card p-3 admin-catalog-filter-panel">
@@ -49,6 +53,14 @@
             <option value="draft">Черновики</option>
             <option value="ready">Опубликованные</option>
             <option value="archived">Архив</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label small">Видимость</label>
+          <select v-model="visibilityFilter" class="form-select mono">
+            <option value="">Все</option>
+            <option value="visible">Видимые</option>
+            <option value="hidden">Скрытые</option>
           </select>
         </div>
         <div>
@@ -69,6 +81,39 @@
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
+    <article v-if="canManage && sectionVisibilityRows.length > 0" class="agp-card p-3 admin-section-visibility-panel">
+      <div class="admin-catalog-filter-copy">
+        <div class="small text-muted text-uppercase fw-semibold">Разделы</div>
+        <div class="fw-semibold">Быстро скрывайте или возвращайте целые учебные разделы</div>
+      </div>
+      <div class="admin-section-visibility-list">
+        <div v-for="section in sectionVisibilityRows" :key="section.name" class="admin-section-visibility-row">
+          <div>
+            <strong>{{ section.name }}</strong>
+            <span class="small text-muted">
+              {{ section.visibleCount }}/{{ section.total }} видимых · {{ section.hiddenCount }} скрытых
+            </span>
+          </div>
+          <div class="d-flex gap-2 flex-wrap justify-content-end">
+            <button
+              class="btn btn-sm btn-outline-secondary"
+              :disabled="section.isSaving || section.allHidden"
+              @click="setSectionHidden(section.name, true)"
+            >
+              {{ section.isSaving ? 'Сохранение...' : 'Скрыть раздел' }}
+            </button>
+            <button
+              class="btn btn-sm btn-outline-success"
+              :disabled="section.isSaving || section.hiddenCount === 0"
+              @click="setSectionHidden(section.name, false)"
+            >
+              Показать раздел
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+
     <article class="agp-card p-3 admin-catalog-table-card">
       <div v-if="isLoading" class="agp-loading-state agp-loading-state--compact">Загрузка задач...</div>
       <div v-else-if="rows.length === 0" class="agp-empty-state agp-empty-state--compact">Задачи не найдены.</div>
@@ -80,6 +125,7 @@
               <th>Статус</th>
               <th>Сложность</th>
               <th>Раздел</th>
+              <th>Видимость</th>
               <th>Темы</th>
               <th>Действия</th>
             </tr>
@@ -94,6 +140,7 @@
                 <td><span class="admin-catalog-status" :class="statusBadgeClass(game.catalog_metadata_status)">{{ statusLabel(game.catalog_metadata_status) }}</span></td>
                 <td class="small">{{ difficultyLabel(game.difficulty) }}</td>
                 <td class="small">{{ game.learning_section || '—' }}</td>
+                <td><span class="admin-catalog-status" :class="visibilityBadgeClass(game.is_hidden)">{{ visibilityLabel(game.is_hidden) }}</span></td>
                 <td class="small">{{ game.topics.join(', ') || '—' }}</td>
                 <td>
                   <div class="d-flex gap-2">
@@ -106,7 +153,7 @@
               </tr>
 
               <tr v-if="isExpanded(game.game_id)">
-                <td colspan="6">
+                <td colspan="7">
                   <div class="admin-catalog-editor p-3 d-flex flex-column gap-2">
                     <div class="row g-2">
                       <div class="col-md-8">
@@ -150,6 +197,14 @@
                       <input v-model="editorByGameId[game.game_id].topicsCsv" class="form-control" placeholder="графы, bfs, симуляция" />
                     </div>
 
+                    <label class="admin-catalog-visibility-toggle">
+                      <input v-model="editorByGameId[game.game_id].isHidden" class="form-check-input" type="checkbox" />
+                      <span>
+                        <strong>Скрыть задачу из ученического каталога</strong>
+                        <small>Статус и метаданные сохранятся, но ученики не увидят задачу и раздел, если скрыты все задачи в нем.</small>
+                      </span>
+                    </label>
+
                     <div class="d-flex gap-2 flex-wrap align-items-center">
                       <button
                         class="btn btn-sm btn-outline-secondary"
@@ -178,6 +233,13 @@
                         @click="archiveGame(game.game_id)"
                       >
                         Архивировать
+                      </button>
+                      <button
+                        class="btn btn-sm btn-outline-secondary"
+                        :disabled="editorByGameId[game.game_id].isSaving || !canManage"
+                        @click="setTaskHidden(game.game_id, !game.is_hidden)"
+                      >
+                        {{ game.is_hidden ? 'Показать' : 'Скрыть' }}
                       </button>
                       <span class="small text-muted">{{ editorHint(game.game_id) }}</span>
                     </div>
@@ -215,6 +277,7 @@ interface CatalogEditorState {
   learningSection: string;
   topicsCsv: string;
   status: CatalogMetadataStatus;
+  isHidden: boolean;
   isSaving: boolean;
   error: string;
 }
@@ -227,8 +290,10 @@ const errorMessage = ref('');
 const games = ref<GameDto[]>([]);
 const expandedGameIds = ref<Set<string>>(new Set());
 const editorByGameId = ref<Record<string, CatalogEditorState>>({});
+const sectionSavingByName = ref<Record<string, boolean>>({});
 
 const statusFilter = ref<'' | CatalogMetadataStatus>('');
+const visibilityFilter = ref<'' | 'visible' | 'hidden'>('');
 const searchQuery = ref('');
 
 const rows = computed(() => {
@@ -236,6 +301,11 @@ const rows = computed(() => {
   return games.value
     .filter((game) => game.mode === 'single_task')
     .filter((game) => (statusFilter.value ? game.catalog_metadata_status === statusFilter.value : true))
+    .filter((game) => {
+      if (visibilityFilter.value === 'visible') return !game.is_hidden;
+      if (visibilityFilter.value === 'hidden') return game.is_hidden;
+      return true;
+    })
     .filter((game) => {
       if (!query) return true;
       return game.title.toLowerCase().includes(query) || game.slug.toLowerCase().includes(query);
@@ -247,16 +317,46 @@ const totalTaskCount = computed(() => games.value.filter((game) => game.mode ===
 const draftCount = computed(() => rows.value.filter((game) => game.catalog_metadata_status === 'draft').length);
 const readyCount = computed(() => rows.value.filter((game) => game.catalog_metadata_status === 'ready').length);
 const archivedCount = computed(() => rows.value.filter((game) => game.catalog_metadata_status === 'archived').length);
-const hasActiveFilters = computed(() => Boolean(statusFilter.value || searchQuery.value));
+const hiddenCount = computed(() => rows.value.filter((game) => game.is_hidden).length);
+const hasActiveFilters = computed(() => Boolean(statusFilter.value || visibilityFilter.value || searchQuery.value));
 const activeFilterSummary = computed(() => {
   const parts: string[] = [];
   if (statusFilter.value) {
     parts.push(`статус: ${statusLabel(statusFilter.value)}`);
   }
+  if (visibilityFilter.value) {
+    parts.push(`видимость: ${visibilityFilter.value === 'hidden' ? 'скрытые' : 'видимые'}`);
+  }
   if (searchQuery.value) {
     parts.push(`поиск: ${searchQuery.value}`);
   }
   return parts.join(' · ');
+});
+
+const sectionVisibilityRows = computed(() => {
+  const groups = new Map<string, GameDto[]>();
+  for (const game of games.value) {
+    if (game.mode !== 'single_task') continue;
+    const section = game.learning_section || 'Другое';
+    const items = groups.get(section) ?? [];
+    items.push(game);
+    groups.set(section, items);
+  }
+
+  return Array.from(groups.entries())
+    .map(([name, items]) => {
+      const hiddenCount = items.filter((game) => game.is_hidden).length;
+      const total = items.length;
+      return {
+        name,
+        total,
+        hiddenCount,
+        visibleCount: total - hiddenCount,
+        allHidden: total > 0 && hiddenCount === total,
+        isSaving: Boolean(sectionSavingByName.value[name]),
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name, 'ru'));
 });
 
 function statusBadgeClass(status: CatalogMetadataStatus): string {
@@ -272,6 +372,14 @@ function statusLabel(status: CatalogMetadataStatus): string {
     archived: 'архив',
   };
   return labels[status];
+}
+
+function visibilityBadgeClass(isHidden: boolean): string {
+  return isHidden ? 'admin-catalog-status--hidden' : 'admin-catalog-status--visible';
+}
+
+function visibilityLabel(isHidden: boolean): string {
+  return isHidden ? 'скрыто' : 'видно';
 }
 
 function difficultyLabel(difficulty: GameDto['difficulty']): string {
@@ -304,6 +412,7 @@ function ensureEditor(gameId: string): CatalogEditorState {
     learningSection: game?.learning_section ?? '',
     topicsCsv: (game?.topics ?? []).join(', '),
     status: game?.catalog_metadata_status ?? 'draft',
+    isHidden: game?.is_hidden ?? false,
     isSaving: false,
     error: '',
   };
@@ -342,6 +451,7 @@ function canPublishReady(gameId: string): boolean {
 function editorHint(gameId: string): string {
   const editor = ensureEditor(gameId);
   if (editor.isSaving) return 'Сохраняем изменения...';
+  if (editor.isHidden) return 'Скрытая задача не видна ученикам и не учитывается в прогрессе.';
   const validationError = publishValidationError(gameId);
   if (editor.status === 'ready' && validationError) return `Нельзя опубликовать: ${validationError}.`;
   if (editor.status === 'ready') return 'Задача появится в каталоге учеников.';
@@ -368,6 +478,7 @@ async function loadGames(): Promise<void> {
         learningSection: existing?.learningSection ?? game.learning_section ?? '',
         topicsCsv: existing?.topicsCsv ?? game.topics.join(', '),
         status: existing?.status ?? game.catalog_metadata_status,
+        isHidden: existing?.isHidden ?? game.is_hidden,
         isSaving: false,
         error: '',
       };
@@ -400,6 +511,7 @@ async function saveCatalogMetadata(gameId: string): Promise<void> {
       learning_section: editor.learningSection.trim() ? editor.learningSection.trim() : null,
       topics: parseTopics(editor.topicsCsv),
       catalog_metadata_status: editor.status,
+      is_hidden: editor.isHidden,
     };
 
     const updated = await updateGameCatalogMetadata(payload);
@@ -412,6 +524,7 @@ async function saveCatalogMetadata(gameId: string): Promise<void> {
     editor.learningSection = updated.learning_section ?? '';
     editor.topicsCsv = updated.topics.join(', ');
     editor.status = updated.catalog_metadata_status;
+    editor.isHidden = updated.is_hidden;
   } catch (error) {
     editor.error = error instanceof Error ? error.message : 'Не удалось сохранить метаданные';
   } finally {
@@ -440,6 +553,75 @@ async function archiveGame(gameId: string): Promise<void> {
   const editor = ensureEditor(gameId);
   editor.status = 'archived';
   await saveCatalogMetadata(gameId);
+}
+
+async function setTaskHidden(gameId: string, isHidden: boolean): Promise<void> {
+  if (!canManage.value) return;
+  const game = games.value.find((item) => item.game_id === gameId);
+  if (!game) return;
+  const editor = editorByGameId.value[gameId];
+  if (editor) {
+    editor.error = '';
+    editor.isSaving = true;
+  }
+  errorMessage.value = '';
+  try {
+    const updated = await updateGameCatalogMetadata({
+      game_id: gameId,
+      description: game.description,
+      difficulty: game.difficulty,
+      learning_section: game.learning_section,
+      topics: game.topics,
+      catalog_metadata_status: game.catalog_metadata_status,
+      is_hidden: isHidden,
+    });
+    applyUpdatedGame(updated);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Не удалось обновить видимость';
+    if (editor) {
+      editor.error = message;
+    } else {
+      errorMessage.value = message;
+    }
+  } finally {
+    if (editor) {
+      editor.isSaving = false;
+    }
+  }
+}
+
+async function setSectionHidden(sectionName: string, isHidden: boolean): Promise<void> {
+  if (!canManage.value) return;
+  const targets = games.value.filter(
+    (game) => game.mode === 'single_task' && (game.learning_section || 'Другое') === sectionName && game.is_hidden !== isHidden
+  );
+  if (targets.length === 0) return;
+  sectionSavingByName.value = { ...sectionSavingByName.value, [sectionName]: true };
+  errorMessage.value = '';
+  try {
+    for (const game of targets) {
+      await setTaskHidden(game.game_id, isHidden);
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Не удалось обновить раздел';
+  } finally {
+    sectionSavingByName.value = { ...sectionSavingByName.value, [sectionName]: false };
+  }
+}
+
+function applyUpdatedGame(updated: GameDto): void {
+  const index = games.value.findIndex((game) => game.game_id === updated.game_id);
+  if (index >= 0) {
+    games.value[index] = updated;
+  }
+  const editor = editorByGameId.value[updated.game_id];
+  if (!editor) return;
+  editor.description = updated.description ?? '';
+  editor.difficulty = ((updated.difficulty ?? '') as CatalogEditorState['difficulty']);
+  editor.learningSection = updated.learning_section ?? '';
+  editor.topicsCsv = updated.topics.join(', ');
+  editor.status = updated.catalog_metadata_status;
+  editor.isHidden = updated.is_hidden;
 }
 
 onMounted(async () => {
@@ -500,7 +682,7 @@ watch(
 
 .admin-catalog-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
@@ -537,6 +719,10 @@ watch(
   background: rgba(100, 116, 139, 0.12);
 }
 
+.admin-catalog-metric--hidden::after {
+  background: rgba(59, 130, 246, 0.13);
+}
+
 .admin-catalog-metric span {
   color: var(--agp-text-muted);
   font-size: 0.78rem;
@@ -557,7 +743,7 @@ watch(
 
 .admin-catalog-filter-grid {
   display: grid;
-  grid-template-columns: minmax(9rem, 0.7fr) minmax(12rem, 1fr) auto;
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(9rem, 0.7fr) minmax(12rem, 1fr) auto;
   gap: 0.75rem;
   align-items: end;
 }
@@ -579,6 +765,35 @@ watch(
 
 .admin-catalog-filter-result strong {
   color: var(--agp-text);
+}
+
+.admin-section-visibility-panel {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.8fr) minmax(0, 1.6fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-section-visibility-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-section-visibility-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.75rem;
+  background: #ffffff;
+  padding: 0.65rem 0.75rem;
+}
+
+.admin-section-visibility-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 0.05rem;
 }
 
 .admin-catalog-table-card,
@@ -643,12 +858,43 @@ watch(
   color: #475569;
 }
 
+.admin-catalog-status--visible {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.admin-catalog-status--hidden {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #334155;
+}
+
 .admin-catalog-editor {
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 0.85rem;
   background:
     radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 10rem),
     #f8fafc;
+}
+
+.admin-catalog-visibility-toggle {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.8rem;
+  background: #ffffff;
+  padding: 0.7rem 0.8rem;
+}
+
+.admin-catalog-visibility-toggle span {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.admin-catalog-visibility-toggle small {
+  color: var(--agp-text-muted);
 }
 
 .catalog-active-filter-line {
@@ -665,7 +911,8 @@ watch(
 }
 
 @media (max-width: 1100px) {
-  .admin-catalog-filter-panel {
+  .admin-catalog-filter-panel,
+  .admin-section-visibility-panel {
     grid-template-columns: 1fr;
   }
 
@@ -682,6 +929,10 @@ watch(
 
   .admin-catalog-metrics,
   .admin-catalog-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-section-visibility-row {
     grid-template-columns: 1fr;
   }
 }

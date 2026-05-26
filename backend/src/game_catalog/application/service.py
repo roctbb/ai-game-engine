@@ -29,6 +29,7 @@ class RegisterGameInput:
     min_players_per_match: int | None = None
     max_players_per_match: int | None = None
     catalog_metadata_status: CatalogMetadataStatus | None = None
+    is_hidden: bool = False
 
 
 class GameCatalogService:
@@ -50,6 +51,7 @@ class GameCatalogService:
             min_players_per_match=data.min_players_per_match,
             max_players_per_match=data.max_players_per_match,
             catalog_metadata_status=data.catalog_metadata_status,
+            is_hidden=data.is_hidden,
         )
         game.add_version(
             semver=data.semver,
@@ -68,6 +70,7 @@ class GameCatalogService:
         learning_section: str | None,
         topics: tuple[str, ...],
         catalog_metadata_status: CatalogMetadataStatus | None = None,
+        is_hidden: bool | None = None,
     ) -> Game:
         game = self._get_game(game_id)
         game.description = description.strip() if description is not None and description.strip() else None
@@ -76,6 +79,8 @@ class GameCatalogService:
         game.topics = tuple(topic.strip() for topic in topics if topic.strip())
         if catalog_metadata_status is not None:
             game.catalog_metadata_status = catalog_metadata_status
+        if is_hidden is not None:
+            game.is_hidden = is_hidden
         if game.mode is GameMode.SINGLE_TASK:
             if (
                 game.catalog_metadata_status is CatalogMetadataStatus.READY
@@ -99,6 +104,7 @@ class GameCatalogService:
         min_players_per_match: int | None = None,
         max_players_per_match: int | None = None,
         catalog_metadata_status: CatalogMetadataStatus | None = None,
+        is_hidden: bool | None = None,
     ) -> Game:
         game = self._get_game(game_id)
         if title is not None:
@@ -130,6 +136,8 @@ class GameCatalogService:
             )
         if catalog_metadata_status is not None:
             game.catalog_metadata_status = catalog_metadata_status
+        if is_hidden is not None:
+            game.is_hidden = is_hidden
 
         if (
             game.mode is GameMode.SINGLE_TASK

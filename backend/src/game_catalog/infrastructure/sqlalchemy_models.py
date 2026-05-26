@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy import Integer
 from sqlalchemy import JSON as SqlJson
 from sqlalchemy.orm import Mapped, mapped_column
@@ -24,6 +24,7 @@ class CatalogGameOrm(Base):
     min_players_per_match: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_players_per_match: Mapped[int | None] = mapped_column(Integer, nullable=True)
     catalog_metadata_status: Mapped[str] = mapped_column(String(32), default="ready", index=True)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     active_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 

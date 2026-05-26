@@ -35,6 +35,7 @@ from execution.api.schemas import (
 from execution.api.access import ensure_can_view_run
 from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 from execution.domain.result_payload import compact_result_payload as compact_run_result_payload
+from game_catalog.domain.model import GameMode
 from game_catalog.infrastructure.manifest_loader import GameManifest, find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
@@ -161,6 +162,16 @@ def _ensure_can_manage_run(container: ServiceContainer, session: AppSession, run
         raise ForbiddenError("Управлять этим запуском может только его автор, преподаватель или админ")
 
 
+def _ensure_single_task_available(container: ServiceContainer, session: AppSession, game_id: str) -> None:
+    game = container.game_catalog.get_game(game_id)
+    if game.mode is not GameMode.SINGLE_TASK:
+        raise InvariantViolationError("Запуск single_task доступен только для single_task игры")
+    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
+        return
+    if game.is_hidden:
+        raise NotFoundError(f"Игра {game_id} не найдена")
+
+
 def _reconcile_training_lobby_for_terminal_run(container: ServiceContainer, run: Run) -> None:
     if run.run_kind is not RunKind.TRAINING_MATCH or run.lobby_id is None:
         return
@@ -219,6 +230,7 @@ def start_single_task_run(
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
+    _ensure_single_task_available(container=container, session=session, game_id=game_id)
     _ensure_can_use_team(container=container, session=session, team_id=request.team_id)
     requested_by = request.requested_by if session.role in {UserRole.TEACHER, UserRole.ADMIN} else session.nickname
     run = container.execution.create_run(
