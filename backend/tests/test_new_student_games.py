@@ -1503,6 +1503,18 @@ def test_knight_coins_demo_collects_coins_and_escapes_random_map() -> None:
     assert any(cell == 2 for row in frame["board"] for cell in row)
 
 
+def test_knight_coins_accepts_delta_return_contract() -> None:
+    engine = _load_module(
+        _repo_root() / "games" / "knight_coins" / "engine.py",
+        "knight_coins_delta_contract_test",
+    )
+
+    assert engine._normalize_move((2, 1)) == (2, 1)
+    assert engine._normalize_move([2, 1]) == (2, 1)
+    assert engine._normalize_move("right_down") == (2, 1)
+    assert engine._normalize_move((1, 1)) is None
+
+
 def test_knight_duel_demo_returns_competitive_scores_on_random_map() -> None:
     engine = _load_module(_repo_root() / "games" / "knight_duel" / "engine.py", "knight_duel_engine_test")
     payload = engine.run(

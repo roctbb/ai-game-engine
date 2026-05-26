@@ -23,6 +23,8 @@ _MOVES = {
     "left_up": (-2, -1),
     "stay": (0, 0),
 }
+_KNIGHT_DELTAS = tuple(delta for delta in _MOVES.values() if delta != (0, 0))
+_ALLOWED_DELTAS = set(_MOVES.values())
 _BORDER_WALLS = {
     *{(x, 0) for x in range(_WIDTH)},
     *{(x, _HEIGHT - 1) for x in range(_WIDTH)},
@@ -54,17 +56,25 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         if escaped:
             break
         print_context["tick"] = turn
-        action = _safe_call(move_fn, position[0], position[1], _board(walls, coins, exit_cell))
-        if action not in _MOVES:
+        raw_action = _safe_call(move_fn, position[0], position[1], _board(walls, coins, exit_cell))
+        delta = _normalize_move(raw_action)
+        if delta is None:
             invalid_moves += 1
-            action = "stay"
-            events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": turn, "action": repr(action)})
+            delta = (0, 0)
+            events.append(
+                {
+                    "type": "invalid_action",
+                    "message": "Недопустимое действие: верните сдвиг коня, например (2, 1).",
+                    "tick": turn,
+                    "action": repr(raw_action),
+                }
+            )
 
-        target = _move(position, str(action))
+        target = _move(position, delta)
         if not _inside(target) or target in walls:
             invalid_moves += 1
             target = position
-            events.append({"type": "blocked_jump", "tick": turn, "action": action})
+            events.append({"type": "blocked_jump", "tick": turn, "action": _action_label(delta)})
 
         position = target
         turns = turn + 1
@@ -172,8 +182,8 @@ def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]]
         return None
 
 
-def _fallback_move(_x: int, _y: int, _board_value: list[list[int]]) -> str:
-    return "right_down"
+def _fallback_move(_x: int, _y: int, _board_value: list[list[int]]) -> tuple[int, int]:
+    return (2, 1)
 
 
 def _board(walls: set[tuple[int, int]], coins: set[tuple[int, int]], exit_cell: tuple[int, int]) -> list[list[int]]:
@@ -186,8 +196,25 @@ def _board(walls: set[tuple[int, int]], coins: set[tuple[int, int]], exit_cell: 
     return board
 
 
-def _move(position: tuple[int, int], action: str) -> tuple[int, int]:
-    dx, dy = _MOVES[action]
+def _normalize_move(action: object) -> tuple[int, int] | None:
+    if isinstance(action, str):
+        return _MOVES.get(action)
+    if isinstance(action, (list, tuple)) and len(action) == 2:
+        dx, dy = action
+        if isinstance(dx, int) and isinstance(dy, int) and (dx, dy) in _ALLOWED_DELTAS:
+            return dx, dy
+    return None
+
+
+def _action_label(delta: tuple[int, int]) -> str:
+    for action, candidate in _MOVES.items():
+        if candidate == delta:
+            return action
+    return repr(delta)
+
+
+def _move(position: tuple[int, int], delta: tuple[int, int]) -> tuple[int, int]:
+    dx, dy = delta
     return position[0] + dx, position[1] + dy
 
 
@@ -203,10 +230,8 @@ def _reachable_cells(start: tuple[int, int], walls: set[tuple[int, int]]) -> set
     while head < len(queue):
         current = queue[head]
         head += 1
-        for action in _MOVES:
-            if action == "stay":
-                continue
-            nxt = _move(current, action)
+        for delta in _KNIGHT_DELTAS:
+            nxt = _move(current, delta)
             if not _inside(nxt) or nxt in walls or nxt in seen:
                 continue
             seen.add(nxt)
