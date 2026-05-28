@@ -12,6 +12,7 @@ from execution.domain.model import (
     Run,
     RunKind,
     RunStatus,
+    RunSummaryRecord,
     WorkerStatus,
     WorkerNode,
     require_build,
@@ -322,6 +323,21 @@ class ExecutionService:
             include_result_payload=include_result_payload,
             limit=limit,
             offset=offset,
+        )
+
+    def list_run_summary_records(
+        self,
+        *,
+        game_id: str | None = None,
+        run_kind: RunKind | None = None,
+        status: RunStatus | None = None,
+        requested_by: str | None = None,
+    ) -> list[RunSummaryRecord]:
+        return self._run_repository.list_summary_records(
+            game_id=game_id,
+            run_kind=run_kind,
+            status=status,
+            requested_by=requested_by,
         )
 
     def delete_runs(self, run_ids: list[str]) -> None:

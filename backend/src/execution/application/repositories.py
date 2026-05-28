@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from execution.domain.model import BuildJob, MatchExecution, Run, RunKind, RunStatus, WorkerNode
+from execution.domain.model import BuildJob, MatchExecution, Run, RunKind, RunStatus, RunSummaryRecord, WorkerNode
 
 
 class RunRepository(Protocol):
@@ -33,6 +33,16 @@ class RunRepository(Protocol):
     def list_active_by_requested_by_and_kind(
         self, requested_by: str, run_kind: RunKind
     ) -> list[Run]:
+        ...
+
+    def list_summary_records(
+        self,
+        *,
+        game_id: str | None = None,
+        run_kind: RunKind | None = None,
+        status: RunStatus | None = None,
+        requested_by: str | None = None,
+    ) -> list[RunSummaryRecord]:
         ...
 
     def delete_many(self, run_ids: list[str]) -> None:

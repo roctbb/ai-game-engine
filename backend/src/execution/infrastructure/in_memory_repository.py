@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from execution.domain.model import BuildJob, MatchExecution, Run, RunKind, RunStatus, WorkerNode
+from execution.domain.model import BuildJob, MatchExecution, Run, RunKind, RunStatus, RunSummaryRecord, WorkerNode
 
 
 class InMemoryRunRepository:
@@ -66,6 +66,32 @@ class InMemoryRunRepository:
             if run.requested_by == requested_by
             and run.run_kind is run_kind
             and run.status in active_statuses
+        ]
+
+    def list_summary_records(
+        self,
+        *,
+        game_id: str | None = None,
+        run_kind: RunKind | None = None,
+        status: RunStatus | None = None,
+        requested_by: str | None = None,
+    ) -> list[RunSummaryRecord]:
+        runs = self.list_filtered(
+            game_id=game_id,
+            run_kind=run_kind,
+            status=status,
+            requested_by=requested_by,
+            include_result_payload=False,
+        )
+        return [
+            RunSummaryRecord(
+                run_id=run.run_id,
+                game_id=run.game_id,
+                requested_by=run.requested_by,
+                finished_at=run.finished_at,
+                result_summary=run.result_summary,
+            )
+            for run in runs
         ]
 
     def delete_many(self, run_ids: list[str]) -> None:

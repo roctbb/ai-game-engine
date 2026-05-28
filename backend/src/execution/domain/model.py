@@ -148,6 +148,15 @@ class Run:
             raise InvariantViolationError("Запуск закреплен за другим worker")
 
 
+@dataclass(frozen=True, slots=True)
+class RunSummaryRecord:
+    run_id: str
+    game_id: str
+    requested_by: str
+    finished_at: object | None
+    result_summary: dict[str, object] | None
+
+
 @dataclass(slots=True)
 class MatchExecution:
     match_execution_id: str

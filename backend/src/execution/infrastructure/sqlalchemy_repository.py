@@ -11,6 +11,7 @@ from execution.domain.model import (
     Run,
     RunKind,
     RunStatus,
+    RunSummaryRecord,
     WorkerNode,
     WorkerStatus,
 )
@@ -149,6 +150,42 @@ class SqlAlchemyRunRepository:
                 .order_by(desc(RunOrm.created_at))
             ).all()
             return [_map_run_from_orm(row) for row in rows]
+
+    def list_summary_records(
+        self,
+        *,
+        game_id: str | None = None,
+        run_kind: RunKind | None = None,
+        status: RunStatus | None = None,
+        requested_by: str | None = None,
+    ) -> list[RunSummaryRecord]:
+        statement = select(
+            RunOrm.run_id,
+            RunOrm.game_id,
+            RunOrm.requested_by,
+            RunOrm.finished_at,
+            RunOrm.result_summary,
+        ).order_by(desc(RunOrm.created_at))
+        if game_id is not None:
+            statement = statement.where(RunOrm.game_id == game_id)
+        if run_kind is not None:
+            statement = statement.where(RunOrm.run_kind == run_kind.value)
+        if status is not None:
+            statement = statement.where(RunOrm.status == status.value)
+        if requested_by is not None:
+            statement = statement.where(RunOrm.requested_by == requested_by)
+        with self._session_factory() as session:
+            rows = session.execute(statement).all()
+            return [
+                RunSummaryRecord(
+                    run_id=row.run_id,
+                    game_id=row.game_id,
+                    requested_by=row.requested_by,
+                    finished_at=row.finished_at,
+                    result_summary=row.result_summary,
+                )
+                for row in rows
+            ]
 
     def delete_many(self, run_ids: list[str]) -> None:
         if not run_ids:
