@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tarfile
 from io import BytesIO
 from pathlib import Path
@@ -81,6 +82,13 @@ def test_execute_manifest_game_uses_docker_runner_with_limits(monkeypatch: Any, 
 
     command = captured["command"]
     assert command[0] == "docker"
+    assert "--name" in command
+    container_name = command[command.index("--name") + 1]
+    assert container_name.startswith(f"agp-{settings.worker_id}-unknown-")
+    assert "--label" in command
+    assert "ai-game-engine.managed=true" in command
+    assert "ai-game-engine.run_id=unknown" in command
+    assert f"ai-game-engine.worker_id={settings.worker_id}" in command
     assert "--rm" in command
     assert "-i" in command
     assert "--read-only" in command
@@ -128,6 +136,53 @@ def test_execute_manifest_game_reports_missing_docker_binary(monkeypatch: Any, t
                 "engine_entrypoint": "engine.py",
             }
         )
+
+
+def test_execute_manifest_game_removes_docker_container_on_timeout(monkeypatch: Any, tmp_path: Path) -> None:
+    games_root = tmp_path / "games"
+    package_dir = games_root / "sample_game"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "engine.py").write_text("print('unused-local')\n", encoding="utf-8")
+
+    settings.games_root = str(games_root)
+    settings.execution_mode = "docker"
+    settings.docker_binary = "docker"
+    settings.docker_image = "python:3.12-slim"
+    settings.execution_timeout_seconds = 3.0
+    settings.engine_timeout_cap_seconds = 60.0
+    settings.worker_id = "worker-test-1"
+
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> Any:
+        calls.append((command, kwargs))
+        if command[:3] == ["docker", "rm", "-f"]:
+            class _Completed:
+                returncode = 0
+
+            return _Completed()
+        raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("worker_service.main.subprocess.run", fake_run)
+
+    with pytest.raises(RuntimeError, match="timed out after 3.0s"):
+        _execute_manifest_game(
+            {
+                "game_package_dir": "sample_game",
+                "engine_entrypoint": "engine.py",
+                "run_id": "run-timeout-1",
+                "run_kind": "single_task",
+                "snapshot_id": "snap-1",
+            }
+        )
+
+    docker_run_command = calls[0][0]
+    container_name = docker_run_command[docker_run_command.index("--name") + 1]
+    assert container_name.startswith("agp-worker-test-1-run-timeout-1-")
+    assert calls[1][0] == ["docker", "rm", "-f", container_name]
+    assert calls[1][1]["timeout"] == 10
+    assert calls[1][1]["capture_output"] is True
+    assert calls[1][1]["check"] is False
 
 
 def test_parse_engine_payload_enforces_result_turn_limit() -> None:

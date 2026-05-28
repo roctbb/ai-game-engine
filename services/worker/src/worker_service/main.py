@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import uuid
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -350,10 +351,20 @@ def _execute_manifest_game_in_docker(
 ) -> dict[str, object]:
     package_archive = _build_package_archive(package_dir)
     context_json = json.dumps(context, ensure_ascii=False)
+    container_name = _docker_container_name(context)
+    timeout_seconds = _engine_timeout_seconds()
 
     command = [
         settings.docker_binary,
         "run",
+        "--name",
+        container_name,
+        "--label",
+        "ai-game-engine.managed=true",
+        "--label",
+        f"ai-game-engine.run_id={_docker_label_value(context.get('run_id'))}",
+        "--label",
+        f"ai-game-engine.worker_id={_docker_label_value(settings.worker_id)}",
         "--rm",
         "-i",
         "--log-driver",
@@ -395,11 +406,14 @@ def _execute_manifest_game_in_docker(
             command,
             input=package_archive,
             capture_output=True,
-            timeout=_engine_timeout_seconds(),
+            timeout=timeout_seconds,
             check=False,
         )
     except FileNotFoundError as exc:
         raise RuntimeError(f"Docker binary not found: {settings.docker_binary}") from exc
+    except subprocess.TimeoutExpired as exc:
+        _force_remove_docker_container(container_name)
+        raise RuntimeError(f"Game engine timed out after {timeout_seconds:.1f}s") from exc
 
     stdout_text = completed.stdout.decode("utf-8", errors="replace")
     stderr_text = completed.stderr.decode("utf-8", errors="replace").strip()
@@ -415,6 +429,43 @@ def _engine_timeout_seconds() -> float:
     configured_timeout = float(settings.execution_timeout_seconds)
     hard_cap = float(settings.engine_timeout_cap_seconds)
     return max(0.1, min(configured_timeout, hard_cap))
+
+
+def _docker_container_name(context: dict[str, object]) -> str:
+    run_fragment = _docker_name_fragment(context.get("run_id"))
+    worker_fragment = _docker_name_fragment(settings.worker_id)
+    suffix = uuid.uuid4().hex[:12]
+    return f"agp-{worker_fragment}-{run_fragment}-{suffix}"[:128]
+
+
+def _docker_name_fragment(value: object) -> str:
+    text = str(value) if isinstance(value, str) and value.strip() else "unknown"
+    cleaned = "".join(
+        char
+        if ("a" <= char <= "z")
+        or ("A" <= char <= "Z")
+        or ("0" <= char <= "9")
+        or char in "_.-"
+        else "-"
+        for char in text
+    ).strip("-.")
+    return cleaned or "unknown"
+
+
+def _docker_label_value(value: object) -> str:
+    return str(value) if isinstance(value, str) and value else "unknown"
+
+
+def _force_remove_docker_container(container_name: str) -> None:
+    try:
+        subprocess.run(
+            [settings.docker_binary, "rm", "-f", container_name],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        logger.exception("Failed to remove timed-out docker container %s", container_name)
 
 
 def _build_package_archive(package_dir: Path) -> bytes:
