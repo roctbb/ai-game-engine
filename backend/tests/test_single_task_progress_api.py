@@ -188,6 +188,29 @@ def test_catalog_single_tasks_includes_attempt_stats(client) -> None:
     assert maze['catalog_metadata_status'] == 'ready'
 
 
+def test_catalog_single_tasks_uses_result_summary_without_loading_payloads(client, container, monkeypatch) -> None:
+    game_id = _find_game_id(client, 'maze_escape_v1')
+    team_id = _prepare_team(client, game_id=game_id, user_id='summary-stats')
+    _finish_single_task_attempt(
+        client,
+        game_id=game_id,
+        team_id=team_id,
+        user_id='summary-stats',
+        metrics={'score': 35, 'solved': True, 'reached_exit': True},
+    )
+
+    def fail_get_run(*_args, **_kwargs):
+        raise AssertionError('catalog stats should use result_summary instead of loading full payloads')
+
+    monkeypatch.setattr(container.execution, 'get_run', fail_get_run)
+
+    response = client.get('/api/v1/catalog/single-tasks')
+    assert response.status_code == 200
+    maze = next(item for item in response.json() if item['game_id'] == game_id)
+    assert maze['solved_users'] == 1
+    assert maze['has_score_model'] is True
+
+
 def test_catalog_single_tasks_hides_draft_single_task_games(client, teacher_headers) -> None:
     created = client.post(
         '/api/v1/games',

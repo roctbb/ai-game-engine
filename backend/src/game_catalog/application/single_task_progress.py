@@ -251,9 +251,10 @@ class SingleTaskProgressService:
 
         attempts: list[SingleTaskAttemptRecord] = []
         for run in finished_runs:
-            if run.result_payload is None:
+            payload = run.result_summary if isinstance(run.result_summary, dict) else run.result_payload
+            if payload is None:
                 run = self._execution.get_run(run.run_id)
-            payload = run.result_payload
+                payload = run.result_payload
             if not isinstance(payload, dict):
                 continue
             metrics_raw = payload.get("metrics")
