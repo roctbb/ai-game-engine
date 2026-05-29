@@ -1366,6 +1366,15 @@ pre,
   min-height: 1.35rem;
 }
 
+.agp-bot-console-line--error .agp-bot-console-role {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+
+.agp-bot-console-line--error .agp-bot-console-message {
+  color: #fecaca;
+}
+
 .agp-bot-console-role {
   max-width: 8rem;
   overflow: hidden;

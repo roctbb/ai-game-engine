@@ -231,16 +231,21 @@
           <div v-else-if="replayError" class="agp-viewer-overlay agp-viewer-overlay--message agp-viewer-overlay--danger">{{ replayError }}</div>
           <section class="agp-bot-console" aria-label="Вывод бота">
             <div class="agp-bot-console-head">
-              <strong>Вывод print</strong>
+              <strong>Вывод запуска</strong>
               <span v-if="replayFrames.length > 0" class="text-muted">
                 кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}
               </span>
             </div>
             <div class="agp-bot-console-body">
               <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
-                print появится здесь
+                print и ошибки появятся здесь
               </div>
-              <div v-for="line in currentConsoleLines" :key="line.id" class="agp-bot-console-line">
+              <div
+                v-for="line in currentConsoleLines"
+                :key="line.id"
+                class="agp-bot-console-line"
+                :class="{ 'agp-bot-console-line--error': line.tone === 'error' }"
+              >
                 <span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span>
                 <span class="mono agp-bot-console-message">{{ line.message }}</span>
               </div>
@@ -444,6 +449,7 @@ interface BotConsoleLine {
   tick: number;
   role: string;
   message: string;
+  tone?: 'error';
 }
 type WorkspaceViewMode = 'viewer' | 'split' | 'code';
 
@@ -572,6 +578,7 @@ const botConsoleLines = computed<BotConsoleLine[]>(() => {
     appendConsoleCollection(lines, currentRun.value.result_payload.logs, 0, '', 'result-logs');
     appendConsoleCollection(lines, currentRun.value.result_payload.stdout, 0, '', 'result-stdout');
   }
+  appendRunDiagnosticLines(lines, currentRun.value, replay.value);
   return lines.sort((left, right) => left.tick - right.tick || left.id.localeCompare(right.id));
 });
 const currentConsoleLines = computed(() => {
@@ -643,6 +650,10 @@ function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fa
     type === 'stdout' ||
     type === 'bot_stdout' ||
     type === 'console' ||
+    type === 'compile_error' ||
+    type === 'runtime_error' ||
+    type === 'run_error' ||
+    type === 'timeout' ||
     'stdout' in raw;
   if (!hasConsoleShape) return;
 
@@ -651,8 +662,8 @@ function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fa
   if (!message) return;
   const tick = normalizeTick(raw.tick ?? raw.turn ?? raw.step ?? raw.frame, fallbackTick);
   const roleRaw = raw.role ?? raw.slot ?? raw.slot_key ?? raw.team_id ?? raw.bot;
-  const role = typeof roleRaw === 'string' || typeof roleRaw === 'number' ? String(roleRaw) : '';
-  appendConsoleMessage(lines, message, tick, role, id);
+  const role = typeof roleRaw === 'string' || typeof roleRaw === 'number' ? String(roleRaw) : diagnosticRoleForEvent(type);
+  appendConsoleMessage(lines, message, tick, role, id, isDiagnosticConsoleEvent(type) ? 'error' : undefined);
 }
 
 function appendConsoleCollection(
@@ -680,6 +691,7 @@ function appendConsoleMessage(
   tick: number,
   role: string,
   idPrefix: string,
+  tone?: BotConsoleLine['tone'],
 ): void {
   const chunks = message.split(/\r?\n/);
   chunks.forEach((chunk, index) => {
@@ -689,8 +701,67 @@ function appendConsoleMessage(
       tick,
       role,
       message: chunk,
+      tone,
     });
   });
+}
+
+function appendRunDiagnosticLines(lines: BotConsoleLine[], run: RunDto | null, currentReplay: ReplayDto | null): void {
+  if (!run || isRunActive.value) return;
+  const diagnostics: string[] = [];
+  if (run.error_message) {
+    diagnostics.push(run.error_message);
+  }
+  appendResultPayloadDiagnostics(diagnostics, run.result_payload);
+  const summaryError = currentReplay?.summary?.error_message;
+  if (typeof summaryError === 'string' && summaryError.trim() && !diagnostics.includes(summaryError)) {
+    diagnostics.push(summaryError);
+  }
+  if (run.status === 'timeout' && diagnostics.length === 0) {
+    diagnostics.push('Решение работало слишком долго и было остановлено.');
+  } else if (run.status === 'failed' && diagnostics.length === 0) {
+    diagnostics.push('Код не запустился.');
+  }
+  diagnostics
+    .filter((message) => !lines.some((line) => line.message === message))
+    .forEach((message, index) => {
+      appendConsoleMessage(lines, message, 0, diagnosticRoleForStatus(run.status, message), `run-diagnostic-${index}`, 'error');
+    });
+}
+
+function appendResultPayloadDiagnostics(diagnostics: string[], payload: Record<string, unknown> | null): void {
+  const error = payload?.error;
+  if (typeof error === 'string' && error.trim()) diagnostics.push(error);
+  const metrics = isRecord(payload?.metrics) ? payload.metrics : {};
+  const compileError = metrics.compile_error;
+  if (typeof compileError === 'string' && compileError.trim()) diagnostics.push(compileError);
+  const compileErrors = metrics.compile_errors;
+  if (isRecord(compileErrors)) {
+    Object.entries(compileErrors).forEach(([slot, message]) => {
+      if (typeof message === 'string' && message.trim()) {
+        diagnostics.push(`${slot}: ${message}`);
+      }
+    });
+  }
+}
+
+function diagnosticRoleForStatus(status: RunDto['status'], message = ''): string {
+  const normalized = message.toLowerCase();
+  if (status === 'timeout' || normalized.includes('timed out') || normalized.includes('timeout')) return 'таймаут';
+  if (status === 'canceled') return 'остановлено';
+  return 'ошибка запуска';
+}
+
+function diagnosticRoleForEvent(type: string): string {
+  if (type === 'timeout') return 'таймаут';
+  if (type === 'compile_error') return 'ошибка кода';
+  if (type === 'runtime_error') return 'ошибка выполнения';
+  if (type === 'run_error') return 'ошибка запуска';
+  return '';
+}
+
+function isDiagnosticConsoleEvent(type: string): boolean {
+  return ['compile_error', 'runtime_error', 'run_error', 'timeout'].includes(type);
 }
 
 function isActiveRun(run: RunDto | null): run is RunDto {
