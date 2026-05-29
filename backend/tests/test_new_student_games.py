@@ -22,6 +22,64 @@ def _read_game_example(game: str, example: str) -> str:
     return (_repo_root() / "games" / game / "examples" / example).read_text(encoding="utf-8")
 
 
+def _manifest_has_bfs_topic(path: Path) -> bool:
+    return any(line.strip() == "- BFS" for line in path.read_text(encoding="utf-8").splitlines())
+
+
+def _manifest_slot_keys(path: Path) -> list[str]:
+    slot_keys: list[str] = []
+    in_slots = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("slots:"):
+            in_slots = True
+            continue
+        if in_slots and line and not line.startswith((" ", "-")):
+            break
+        if not in_slots:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("key:"):
+            slot_keys.append(stripped.split(":", 1)[1].strip().strip("'\""))
+        elif stripped.startswith("- key:"):
+            slot_keys.append(stripped.split(":", 1)[1].strip().strip("'\""))
+    return slot_keys
+
+
+def test_bfs_games_allow_students_to_import_copy_module() -> None:
+    code = (
+        "import copy\n"
+        "assert copy.deepcopy([[1]]) == [[1]]\n"
+        "\n"
+        "def make_move(*args):\n"
+        "    return 'stay'\n"
+        "\n"
+        "def choose_move(*args):\n"
+        "    return 'stay'\n"
+        "\n"
+        "def choose_action(*args):\n"
+        "    return 'stay'\n"
+    )
+
+    for manifest_path in sorted((_repo_root() / "games").glob("*/manifest.yaml")):
+        if not _manifest_has_bfs_topic(manifest_path):
+            continue
+        engine = _load_module(manifest_path.parent / "engine.py", f"{manifest_path.parent.name}_copy_import_test")
+        payload = engine.run(
+            {
+                "run_id": f"copy-import-{manifest_path.parent.name}",
+                "run_kind": "single_task",
+                "team_id": "copy-import-test",
+                "codes_by_slot": {slot_key: code for slot_key in _manifest_slot_keys(manifest_path)},
+            }
+        )
+        errors = {
+            key: value
+            for key, value in payload["metrics"].items()
+            if str(key).startswith(("compile_error", "compile_errors"))
+        }
+        assert errors == {}, manifest_path.parent.name
+
+
 def test_minesweeper_demo_uses_matrix_contract_and_opens_cells() -> None:
     engine = _load_module(_repo_root() / "games" / "minesweeper" / "engine.py", "minesweeper_engine_test")
     payload = engine.run(

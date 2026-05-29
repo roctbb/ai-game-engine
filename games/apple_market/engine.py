@@ -341,7 +341,13 @@ def _builtins(slot: str, events: list[dict[str, object]], print_context: dict[st
             message += end
         for line in message.splitlines() or [""]:
             events.append({"type": "bot_print", "tick": int(print_context.get("tick", 0)), "role": slot, "message": line})
-    return {"abs": abs, "all": all, "any": any, "bool": bool, "dict": dict, "enumerate": enumerate, "float": float, "int": int, "len": len, "list": list, "max": max, "min": min, "print": bot_print, "range": range, "set": set, "str": str, "sum": sum, "tuple": tuple, "zip": zip}
+
+    def safe_import(name: str, globals_value: object = None, locals_value: object = None, fromlist: tuple[str, ...] = (), level: int = 0) -> object:
+        if level != 0 or name.split(".", 1)[0] != "copy":
+            raise ImportError(f"Importing module {name!r} is forbidden")
+        return __import__(name, globals_value, locals_value, fromlist, level)
+    return {
+        "__import__": safe_import, "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict, "enumerate": enumerate, "float": float, "int": int, "len": len, "list": list, "max": max, "min": min, "print": bot_print, "range": range, "set": set, "str": str, "sum": sum, "tuple": tuple, "zip": zip}
 
 
 def _safe_call(fn: Callable[..., object], x: int, y: int, board: list[list[int]], carrying: int, slot: str, players: list[dict[str, object]], bases: list[dict[str, object]]) -> object:
