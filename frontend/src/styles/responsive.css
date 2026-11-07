@@ -1,0 +1,77 @@
+@media (max-width: 1200px) {
+  .agp-topbar { padding-inline: 1.25rem; gap: 1rem; }
+  .agp-brand-copy small { display: none; }
+  .agp-nav-link { font-size: .8rem; padding-inline: .6rem; }
+  .agp-column-size-control { display: none; }
+}
+
+@media (max-width: 1000px) {
+  .agp-brand-copy { display: none; }
+  .agp-user-trigger { max-width: 10rem; }
+  .agp-run-layout, .agp-lobby-layout, .agp-lobbies-page, .agp-grid--2, .agp-grid--3 { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 900px) {
+  .agp-task-header { padding: .65rem .75rem; gap: .5rem; }
+  .agp-task-header-actions { flex-wrap: nowrap; gap: .5rem; }
+  .agp-task-header-actions .agp-view-mode-toggle { display: none; }
+  .agp-task-header-actions .agp-run-status { display: none; }
+  .agp-task-header-main h1 { font-size: .85rem; }
+  .agp-launch-button { padding: .55rem .7rem; min-height: 2.5rem; }
+  .agp-task-header-player { display: flex; flex-wrap: wrap; gap: .4rem; padding: 0; border: 0; background: transparent; border-radius: 0; }
+  .agp-replay-transport { order: 0; }
+  .agp-replay-position { order: 1; }
+  .agp-replay-player .agp-speed-control { order: 2; }
+  .agp-replay-player .agp-player-side-buttons { order: 4; }
+  .agp-replay-player .agp-player-range { order: 5; flex-basis: 100%; height: 1.1rem; }
+  .agp-replay-position { min-width: 4rem; margin-right: auto; }
+  .agp-player-side-buttons { gap: .4rem; }
+  .agp-player-side-buttons .agp-panel-toggle { padding: .4rem .5rem; font-size: .75rem; }
+  .agp-task-workspace .agp-main-columns { grid-template-columns: minmax(0, 1fr); min-height: 0; height: auto; }
+  .agp-main-splitter { display: none !important; }
+  .agp-workspace-tabs { display: flex; flex: 0 0 auto; padding: .4rem .75rem; gap: .3rem; background: var(--agp-surface); border-bottom: 1px solid var(--agp-border); }
+  .agp-workspace-tabs button { display: flex; flex: 1; align-items: center; justify-content: center; gap: .5rem; min-height: 2.75rem; border: 0; border-radius: .5rem; background: transparent; color: var(--agp-text-muted); font-size: .8rem; }
+  .agp-workspace-tabs button.active { color: var(--agp-primary); background: var(--agp-primary-soft); }
+  .agp-main-columns--mobile-code .agp-viewer-card, .agp-main-columns--mobile-viewer .agp-code-card, .agp-main-columns--mobile-console .agp-code-card { display: none !important; }
+  .agp-main-columns--mobile-viewer .agp-bot-console { display: none; }
+  .agp-main-columns--mobile-viewer .agp-viewer-card { grid-template-rows: minmax(0, 1fr); }
+  .agp-main-columns--mobile-console .agp-viewer-frame, .agp-main-columns--mobile-console .agp-viewer-overlay { display: none; }
+  .agp-main-columns--mobile-console .agp-viewer-card { grid-template-rows: minmax(0, 1fr); }
+  .agp-main-columns--mobile-console .agp-bot-console { display: flex; flex-direction: column; min-height: 0; }
+  .agp-main-columns--mobile-console .agp-bot-console-body { max-height: none; flex: 1; }
+  .agp-task-workspace .agp-code-card, .agp-task-workspace .agp-code-card .agp-code-editor :is(.cm-editor) { min-height: 0 !important; }
+  .agp-task-workspace .agp-viewer-card .agp-viewer-frame { height: 100%; min-height: 0; aspect-ratio: auto; }
+  .agp-skeleton-region--workspace { grid-template-columns: 1fr; }
+  .agp-skeleton-region--workspace .agp-skeleton-card + .agp-skeleton-card { display: none; }
+  :is(.agp-task-workspace--mobile-code, .agp-task-workspace--mobile-console) .agp-replay-player > :not(.agp-player-side-buttons) { display: none; }
+  :is(.agp-task-workspace--mobile-code, .agp-task-workspace--mobile-console) .agp-player-side-buttons { width: 100%; }
+  :is(.agp-task-workspace--mobile-code, .agp-task-workspace--mobile-console) .agp-player-side-buttons .agp-panel-toggle { flex: 1; }
+  .agp-task-step { padding: .5rem; font-size: .8rem; }
+}
+
+@media (max-width: 760px) {
+  .agp-topbar { grid-template-columns: 1fr auto; padding: .65rem 1rem; }
+  .agp-brand-copy { display: grid; }
+  .agp-brand-copy small { display: block; }
+  .agp-primary-nav { display: none; }
+  .agp-user-trigger-copy { display: none; }
+  .agp-user-trigger { grid-template-columns: auto auto; }
+  .agp-main { padding: 1.25rem 1rem calc(6rem + env(safe-area-inset-bottom)); }
+  .agp-main--workspace { padding: 0; }
+  .agp-mobile-nav { position: fixed; inset: auto 0 0; z-index: 200; display: flex; align-items: center; justify-content: space-around; gap: .25rem; padding: .45rem .5rem calc(.45rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--agp-border); background: var(--agp-surface); }
+  .agp-mobile-nav a { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; min-height: 3rem; border-radius: .55rem; color: var(--agp-text-muted); font-size: .67rem; font-weight: 500; text-decoration: none; }
+  .agp-mobile-nav a.router-link-active { color: var(--agp-primary); background: var(--agp-primary-soft); }
+  .agp-mobile-nav .agp-icon { width: 1.25rem; height: 1.25rem; }
+  .agp-task-header-main h1 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .agp-task-header .agp-back-link { width: 2rem; height: 2rem; }
+  .agp-replay-transport .agp-icon-button { width: 2.5rem; height: 2.5rem; }
+  .agp-replay-player .agp-speed-select { min-height: 2.5rem; }
+  .agp-task-header-player .agp-player-side-buttons { width: 100%; }
+  .agp-player-side-buttons .agp-panel-toggle { flex: 1; min-height: 2.5rem; }
+  .agp-task-header-player .agp-player-range { order: 3; flex-basis: 100%; }
+  .agp-task-workspace .agp-panel-toggle { min-height: 2.5rem; }
+  .agp-competition-drawer { width: 100vw; height: 100dvh; }
+  .agp-cockpit-modal { max-height: calc(100dvh - 2rem); }
+  .agp-score-grid { grid-template-columns: 1fr; }
+  .agp-task-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

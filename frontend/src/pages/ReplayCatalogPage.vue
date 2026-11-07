@@ -70,7 +70,7 @@
           <span v-if="lastUpdatedAt" class="small text-muted">обновлено: {{ formatIso(lastUpdatedAt) }}</span>
         </div>
       </div>
-      <div v-if="isLoading" class="agp-loading-state agp-loading-state--compact">Загрузка повторов...</div>
+      <LoadingSkeleton v-if="isLoading" :count="3" layout="list" label="Загрузка повторов…" />
       <div v-else class="table-responsive">
         <table class="table align-middle mb-0 replay-table">
           <thead>
@@ -126,6 +126,8 @@
 </template>
 
 <script setup lang="ts">
+import { statusPillClass } from '../lib/statusTone';
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
@@ -239,10 +241,7 @@ function statusLabel(status: ReplayDto['status']): string {
 }
 
 function statusToneClass(status: ReplayDto['status']): string {
-  if (status === 'finished') return 'agp-pill--success';
-  if (status === 'queued' || status === 'running') return 'agp-pill--warning';
-  if (status === 'failed' || status === 'timeout' || status === 'canceled') return 'agp-pill--danger';
-  return 'agp-pill--neutral';
+  return statusPillClass(status);
 }
 
 function formatIso(value: string): string {
@@ -333,9 +332,7 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem;
-  background:
-    url("data:image/svg+xml,%3Csvg width='160' height='96' viewBox='0 0 160 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.32' stroke-width='2'%3E%3Cpath d='M18 18h26v26H18zM116 18h26v26h-26zM67 52h26v26H67z'/%3E%3Cpath d='M44 31h23M93 65h23M80 0v26M80 70v26'/%3E%3C/g%3E%3C/svg%3E") right 1rem center / 13rem auto no-repeat,
-    linear-gradient(135deg, #0f766e 0%, #2563eb 58%, #f59e0b 100%);
+  background: var(--agp-surface);
   color: #f8fbff;
 }
 
@@ -352,7 +349,7 @@ onUnmounted(() => {
 .replay-catalog-kicker {
   color: rgba(204, 251, 241, 0.9) !important;
   font-size: 0.76rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -374,12 +371,7 @@ onUnmounted(() => {
 
 .replay-filter-card::before,
 .replay-results-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.18rem;
-  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
-  opacity: 0.72;
+  content: none;
 }
 
 .replay-active-filter-line {
@@ -412,7 +404,7 @@ onUnmounted(() => {
 .replay-table thead th {
   color: var(--agp-text-muted);
   font-size: 0.76rem;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -449,7 +441,7 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.76);
   color: var(--agp-text-muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
   padding: 0.28rem 0.58rem;
 }

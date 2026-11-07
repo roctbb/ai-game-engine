@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { statusPillClass } from '../lib/statusTone';
 
 const props = defineProps<{
   slotState: 'filled' | 'empty' | 'dirty' | 'locked' | 'incompatible';
@@ -20,10 +21,5 @@ const stateLabel = computed(() => {
   return labels[props.slotState];
 });
 
-const toneClass = computed(() => {
-  if (props.slotState === 'empty') return 'agp-pill--warning';
-  if (props.slotState === 'incompatible') return 'agp-pill--danger';
-  if (props.slotState === 'locked') return 'agp-pill--neutral';
-  return 'agp-pill--primary';
-});
+const toneClass = computed(() => statusPillClass(props.slotState));
 </script>

@@ -1,0 +1,143 @@
+{
+  "tick": 0,
+  "phase": "running",
+  "frame": {
+    "kind": "defender_duel",
+    "active_slots": [
+      "red",
+      "blue"
+    ],
+    "players": {
+      "red": {
+        "hp": 50,
+        "money": 70,
+        "income": 12,
+        "income_upgrades": 0,
+        "towers": []
+      },
+      "blue": {
+        "hp": 50,
+        "money": 70,
+        "income": 12,
+        "income_upgrades": 0,
+        "towers": []
+      }
+    },
+    "enemies": [],
+    "path": [
+      [
+        0,
+        2
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        3,
+        6
+      ],
+      [
+        8,
+        6
+      ],
+      [
+        8,
+        2
+      ],
+      [
+        12,
+        2
+      ]
+    ],
+    "pads": [
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        3
+      ],
+      [
+        2,
+        5
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        5
+      ],
+      [
+        7,
+        3
+      ],
+      [
+        9,
+        3
+      ],
+      [
+        10,
+        1
+      ]
+    ],
+    "tower_types": {
+      "arrow": {
+        "cost": 30,
+        "damage": 6,
+        "range": 3.2
+      },
+      "blast": {
+        "cost": 45,
+        "damage": 4,
+        "range": 2.8,
+        "splash": 1.4
+      },
+      "slow": {
+        "cost": 35,
+        "damage": 1,
+        "range": 3.0
+      }
+    },
+    "unit_types": {
+      "scout": {
+        "cost": 16,
+        "count": 2,
+        "hp": 9,
+        "speed": 1.1,
+        "armor": 0,
+        "damage": 1
+      },
+      "swarm": {
+        "cost": 26,
+        "count": 6,
+        "hp": 5,
+        "speed": 0.7,
+        "armor": 0,
+        "damage": 1
+      },
+      "armored": {
+        "cost": 42,
+        "count": 1,
+        "hp": 65,
+        "speed": 0.45,
+        "armor": 2,
+        "damage": 5
+      }
+    },
+    "next_wave": 20,
+    "wave_interval": 20,
+    "next_wave_type": "swarm",
+    "income_interval": 5,
+    "max_turns": 300,
+    "turns_left": 300,
+    "tick": 0,
+    "labels": {
+      "red": "Команда 1",
+      "blue": "Команда 2"
+    }
+  }
+}

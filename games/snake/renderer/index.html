@@ -12,27 +12,42 @@
   </style>
 </head>
 <body>
-<div class="wrap"><svg id="board"></svg><div id="hud" class="hud"></div></div>
+<div class="wrap"><svg id="board" role="img" aria-label="Игровое поле змейки"></svg><div id="hud" class="hud"></div></div>
 <script>
 const SVG="http://www.w3.org/2000/svg", boardEl=document.getElementById("board"), hudEl=document.getElementById("hud");
 function el(t,a){const e=document.createElementNS(SVG,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,String(v));return e}
 function drawMiniBadge(cx,cy,C,text,fill="#0f172a"){if(text===undefined||text===null||text===""||text===false)return;const label=String(text).slice(0,3),r=Math.max(5,C*0.18),g=el("g",{}),bx=cx+C*0.28,by=cy-C*0.28;g.appendChild(el("circle",{cx:bx,cy:by,r,fill,stroke:"#ffffff","stroke-width":Math.max(1,C*0.045)}));const t=el("text",{x:bx,y:by+C*0.045,"text-anchor":"middle","dominant-baseline":"middle","font-size":Math.max(8,C*0.23),"font-weight":800,fill:"#ffffff"});t.textContent=label;g.appendChild(t);boardEl.appendChild(g)}
 function drawMiniBar(cx,cy,C,value,max,fill="#22c55e"){const m=Number(max),v=Number(value);if(!Number.isFinite(m)||m<=0||!Number.isFinite(v))return;const pct=Math.max(0,Math.min(1,v/m)),w=C*0.7,h=Math.max(3,C*0.09),x=cx-w/2,y=cy+C*0.36;boardEl.appendChild(el("rect",{x,y,width:w,height:h,rx:h/2,fill:"rgba(15,23,42,.62)"}));boardEl.appendChild(el("rect",{x,y,width:w*pct,height:h,rx:h/2,fill:pct<.25?"#ef4444":fill}))}
+let sceneKey="", dynamicLayer=null, headLayer=null, headBadge=null;
+const cells=new Map();
 function draw(frame){
-  const grid=Array.isArray(frame.board)?frame.board:[], w=grid.length||12, h=Array.isArray(grid[0])?grid[0].length:12, C=32;
-  boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`); boardEl.replaceChildren();
-  boardEl.appendChild(el("rect",{x:0,y:0,width:w*C,height:h*C,fill:"#0f172a"}));
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    boardEl.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:"#17233a"}));
-    const v=grid[x]?.[y]??0;
-    if(v===-1)boardEl.appendChild(el("rect",{x:x*C+4,y:y*C+4,width:C-8,height:C-8,rx:5,fill:"#22c55e"}));
-    if(v===1)boardEl.appendChild(el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*0.28,fill:"#ef4444"}));
+  const grid=Array.isArray(frame.board)?frame.board:[],w=grid.length||12,h=grid[0]?.length||12,C=32;
+  const key=w+":"+h;
+  if(sceneKey!==key){
+    sceneKey=key;cells.clear();boardEl.replaceChildren();boardEl.setAttribute("viewBox",`0 0 ${w*C} ${h*C}`);
+    const tiles=el("g",{"data-layer":"tiles"});
+    tiles.appendChild(el("rect",{width:w*C,height:h*C,fill:"#0f172a"}));
+    for(let x=0;x<w;x++)for(let y=0;y<h;y++)tiles.appendChild(el("rect",{x:x*C,y:y*C,width:C-1,height:C-1,fill:"#17233a"}));
+    dynamicLayer=el("g",{});headLayer=el("g",{});
+    headLayer.appendChild(el("circle",{cx:C/2,cy:C/2,r:C*.24,fill:"#bbf7d0"}));
+    headBadge=el("text",{x:C*.8,y:C*.24,"text-anchor":"middle","font-size":9,fill:"#bbf7d0"});
+    headLayer.appendChild(headBadge);boardEl.append(tiles,dynamicLayer,headLayer);
   }
+  const active=new Set();
+  for(let x=0;x<w;x++)for(let y=0;y<h;y++){
+    const value=grid[x]?.[y]??0;if(value!==-1&&value!==1)continue;
+    const id=x+":"+y+":"+value;active.add(id);
+    if(cells.has(id))continue;
+    const node=value===-1?el("rect",{x:x*C+4,y:y*C+4,width:C-8,height:C-8,rx:5,fill:"#22c55e"}):el("circle",{cx:x*C+C/2,cy:y*C+C/2,r:C*.28,fill:"#ef4444"});
+    cells.set(id,node);dynamicLayer.appendChild(node);
+  }
+  for(const[id,node]of cells)if(!active.has(id)){node.remove();cells.delete(id)}
   const head=frame.head||{};
-  if(Number.isFinite(head.x)&&Number.isFinite(head.y)){const cx=head.x*C+C/2,cy=head.y*C+C/2;boardEl.appendChild(el("circle",{cx,cy,r:C*0.24,fill:"#bbf7d0"}));drawMiniBadge(cx,cy,C,frame.food_eaten||0,"#15803d")}
-  const status=frame.alive===false?"CRASH":frame.phase==="finished"?(frame.won?"WIN":"FINISHED"):"RUNNING";
-  const reason=frame.finish_reason?` reason=${frame.finish_reason}`:"";
-  hudEl.textContent=`${status}${reason} food=${frame.food_eaten||0} points=${frame.food_eaten||0}×${frame.points_per_food||100} alive=${frame.alive!==false} invalid=${frame.invalid_moves||0} score=${frame.score??0}`;
+  headLayer.style.display=Number.isFinite(head.x)&&Number.isFinite(head.y)?"":"none";
+  headLayer.setAttribute("transform",`translate(${(head.x||0)*C} ${(head.y||0)*C})`);
+  headBadge.textContent=String(frame.food_eaten||0);
+  const status=frame.alive===false?"Столкновение":frame.phase==="finished"?(frame.won?"Победа":"Завершено"):"Игра идёт";
+  hudEl.textContent=`${status} · Еда: ${frame.food_eaten||0} · Счёт: ${frame.score??0}`;
 }
 window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
 draw({board:Array.from({length:12},()=>Array(12).fill(0)),head:{x:3,y:3},food_eaten:0,alive:true});

@@ -1,13 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router';
-
-type AppRouteRole = 'student' | 'teacher' | 'admin';
-
-const teacherAdmin: AppRouteRole[] = ['teacher', 'admin'];
+import { ROUTE_ROLES } from '../lib/roleNavigation';
 
 export const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, from, savedPosition) {
+    if (!savedPosition && to.path === from.path) return false;
+    return savedPosition ?? { top: 0 };
+  },
   routes: [
-    { path: '/', redirect: '/tasks' },
+    { path: '/', name: 'home', component: () => import('../pages/TasksCatalogPage.vue') },
     {
       path: '/login',
       name: 'login',
@@ -17,9 +18,9 @@ export const router = createRouter({
     { path: '/tasks', name: 'tasks', component: () => import('../pages/TasksCatalogPage.vue') },
     { path: '/tasks/sections/:section', name: 'tasks-section', component: () => import('../pages/TasksSectionPage.vue') },
     { path: '/lobbies', name: 'lobbies', component: () => import('../pages/LobbiesPage.vue') },
-    { path: '/games', name: 'games', component: () => import('../pages/GamesPage.vue') },
+    { path: '/games', name: 'games', meta: { roles: ROUTE_ROLES.games }, component: () => import('../pages/GamesPage.vue') },
     { path: '/games/:gameId/docs', name: 'game-docs', component: () => import('../pages/GameDocsPage.vue') },
-    { path: '/lobbies/new', name: 'lobby-create', meta: { roles: teacherAdmin }, component: () => import('../pages/LobbyCreatePage.vue') },
+    { path: '/lobbies/new', name: 'lobby-create', meta: { roles: ROUTE_ROLES['lobby-create'] }, component: () => import('../pages/LobbyCreatePage.vue') },
     { path: '/competitions', redirect: '/lobbies' },
     { path: '/workspace/:teamId', redirect: (to) => ({ name: 'player-code', params: to.params }) },
     { path: '/players/:teamId/code', name: 'player-code', component: () => import('../pages/TeamWorkspacePage.vue') },
@@ -31,10 +32,10 @@ export const router = createRouter({
       component: () => import('../pages/MatchWatchPage.vue'),
     },
     { path: '/runs/:runId', redirect: (to) => ({ name: 'run-watch', params: to.params }) },
-    { path: '/replays', name: 'replays', meta: { roles: teacherAdmin }, component: () => import('../pages/ReplayCatalogPage.vue') },
+    { path: '/replays', name: 'replays', meta: { roles: ROUTE_ROLES.replays }, component: () => import('../pages/ReplayCatalogPage.vue') },
     { path: '/lobbies/:lobbyId', name: 'lobby', component: () => import('../pages/LobbyPage.vue') },
     { path: '/competitions/:competitionId', name: 'competition', component: () => import('../pages/CompetitionPage.vue') },
-    { path: '/admin/catalog', name: 'admin-catalog', meta: { roles: teacherAdmin }, component: () => import('../pages/AdminCatalogPage.vue') },
-    { path: '/admin/game-sources', name: 'admin-game-sources', meta: { roles: teacherAdmin }, component: () => import('../pages/AdminGameSourcesPage.vue') },
+    { path: '/admin/catalog', name: 'admin-catalog', meta: { roles: ROUTE_ROLES['admin-catalog'] }, component: () => import('../pages/AdminCatalogPage.vue') },
+    { path: '/admin/game-sources', name: 'admin-game-sources', meta: { roles: ROUTE_ROLES['admin-game-sources'] }, component: () => import('../pages/AdminGameSourcesPage.vue') },
   ],
 });

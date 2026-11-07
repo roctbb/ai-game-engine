@@ -2,7 +2,7 @@
   <div class="agp-shell" :class="{ 'agp-shell--workspace': isChromeHiddenRoute }">
     <nav v-if="!isChromeHiddenRoute" class="agp-navbar">
       <div class="agp-topbar">
-        <RouterLink class="agp-brand" to="/tasks">
+        <RouterLink class="agp-brand" :to="homePath">
           <span class="agp-brand-mark" aria-hidden="true"></span>
           <span class="agp-brand-copy">
             <strong>Игровая платформа</strong>
@@ -11,12 +11,7 @@
         </RouterLink>
 
         <div class="agp-primary-nav" aria-label="Главная навигация">
-          <RouterLink class="agp-nav-link" to="/tasks">Задачи</RouterLink>
-          <RouterLink class="agp-nav-link" to="/lobbies">Лобби и соревнования</RouterLink>
-          <RouterLink class="agp-nav-link" to="/games">Игры</RouterLink>
-          <RouterLink v-if="canManage" class="agp-nav-link" to="/admin/game-sources">
-            {{ systemNavLabel }}
-          </RouterLink>
+          <RouterLink v-for="item in navigation" :key="item.path" class="agp-nav-link" :to="item.path"><AppIcon :name="item.icon" /> {{ item.label }}</RouterLink>
         </div>
 
         <div
@@ -27,6 +22,7 @@
             class="agp-user-trigger"
             type="button"
             :aria-expanded="isUserMenuOpen"
+            :aria-label="sessionStore.isAuthenticated ? `Меню пользователя: ${sessionStore.nickname}` : 'Войти'"
             aria-controls="agp-user-popover"
             @click.stop="toggleUserMenu"
           >
@@ -38,7 +34,8 @@
             </span>
             <span class="agp-user-caret" aria-hidden="true"></span>
           </button>
-          <div v-if="isUserMenuOpen" id="agp-user-popover" class="agp-user-popover">
+          <Transition name="agp-popover">
+            <div v-if="isUserMenuOpen" id="agp-user-popover" class="agp-user-popover">
             <div class="agp-user-card" v-if="sessionStore.isAuthenticated">
               <div>
                 <div class="small text-muted">Пользователь</div>
@@ -48,12 +45,7 @@
               <div class="small text-muted">{{ providerLabel }}</div>
             </div>
 
-            <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/admin/catalog" @click="closeUserMenu">
-              Каталог задач
-            </RouterLink>
-            <RouterLink v-if="canManage" class="btn btn-sm btn-outline-secondary w-100" to="/replays" @click="closeUserMenu">
-              Повторы
-            </RouterLink>
+            <RouterLink v-for="item in profileActions" :key="item.path" class="agp-profile-link" :to="item.path" @click="closeUserMenu"><AppIcon :name="item.icon" /> {{ item.label }}</RouterLink>
 
             <RouterLink
               v-if="!sessionStore.isAuthenticated"
@@ -72,19 +64,30 @@
               Выйти
             </button>
           </div>
+          </Transition>
         </div>
       </div>
     </nav>
 
     <main class="agp-main" :class="{ 'agp-main--workspace': isWorkspaceRoute }">
-      <RouterView />
+      <RouterView v-slot="{ Component, route: currentRoute }">
+        <Transition name="agp-page">
+          <component :is="Component" :key="currentRoute.path" />
+        </Transition>
+      </RouterView>
     </main>
+
+    <nav v-if="!isChromeHiddenRoute" class="agp-mobile-nav" aria-label="Главная навигация на мобильном устройстве">
+      <RouterLink v-for="item in navigation" :key="item.path" :to="item.path"><AppIcon :name="item.icon" /><span>{{ item.shortLabel || item.label }}</span></RouterLink>
+    </nav>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
+import AppIcon from '../components/AppIcon.vue';
+import { primaryNavigation, profileNavigation, roleLandingPath } from '../lib/roleNavigation';
 
 import { useSessionStore } from '../stores/session';
 
@@ -93,10 +96,9 @@ const router = useRouter();
 const sessionStore = useSessionStore();
 const userMenuRef = ref<HTMLDivElement | null>(null);
 const isUserMenuOpen = ref(false);
-const canManage = computed(
-  () => sessionStore.role === 'teacher' || sessionStore.role === 'admin'
-);
-const systemNavLabel = computed(() => (sessionStore.role === 'admin' ? 'Статус системы' : 'Источники игр'));
+const navigation = computed(() => primaryNavigation(sessionStore.role));
+const profileActions = computed(() => profileNavigation(sessionStore.role));
+const homePath = computed(() => roleLandingPath(sessionStore.role));
 const roleLabel = computed(() => {
   if (sessionStore.role === 'admin') return 'администратор';
   if (sessionStore.role === 'teacher') return 'преподаватель';

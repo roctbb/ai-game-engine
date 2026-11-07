@@ -1,0 +1,172 @@
+{
+  "tick": 0,
+  "phase": "running",
+  "frame": {
+    "kind": "planet_wars",
+    "planets": [
+      {
+        "id": 0,
+        "x": 21.72,
+        "y": 21.72,
+        "owner": "red",
+        "ships": 45,
+        "production": 3
+      },
+      {
+        "id": 1,
+        "x": 78.28,
+        "y": 21.72,
+        "owner": "blue",
+        "ships": 45,
+        "production": 3
+      },
+      {
+        "id": 2,
+        "x": 78.28,
+        "y": 78.28,
+        "owner": "green",
+        "ships": 45,
+        "production": 3
+      },
+      {
+        "id": 3,
+        "x": 21.72,
+        "y": 78.28,
+        "owner": "yellow",
+        "ships": 45,
+        "production": 3
+      },
+      {
+        "id": 4,
+        "x": 23.75,
+        "y": 35.48,
+        "owner": null,
+        "ships": 20,
+        "production": 3
+      },
+      {
+        "id": 5,
+        "x": 64.52,
+        "y": 23.75,
+        "owner": null,
+        "ships": 20,
+        "production": 3
+      },
+      {
+        "id": 6,
+        "x": 76.25,
+        "y": 64.52,
+        "owner": null,
+        "ships": 20,
+        "production": 3
+      },
+      {
+        "id": 7,
+        "x": 35.48,
+        "y": 76.25,
+        "owner": null,
+        "ships": 20,
+        "production": 3
+      },
+      {
+        "id": 8,
+        "x": 35.48,
+        "y": 23.75,
+        "owner": null,
+        "ships": 14,
+        "production": 2
+      },
+      {
+        "id": 9,
+        "x": 76.25,
+        "y": 35.48,
+        "owner": null,
+        "ships": 14,
+        "production": 2
+      },
+      {
+        "id": 10,
+        "x": 64.52,
+        "y": 76.25,
+        "owner": null,
+        "ships": 14,
+        "production": 2
+      },
+      {
+        "id": 11,
+        "x": 23.75,
+        "y": 64.52,
+        "owner": null,
+        "ships": 14,
+        "production": 2
+      },
+      {
+        "id": 12,
+        "x": 37.98,
+        "y": 37.98,
+        "owner": null,
+        "ships": 19,
+        "production": 2
+      },
+      {
+        "id": 13,
+        "x": 62.02,
+        "y": 37.98,
+        "owner": null,
+        "ships": 19,
+        "production": 2
+      },
+      {
+        "id": 14,
+        "x": 62.02,
+        "y": 62.02,
+        "owner": null,
+        "ships": 19,
+        "production": 2
+      },
+      {
+        "id": 15,
+        "x": 37.98,
+        "y": 62.02,
+        "owner": null,
+        "ships": 19,
+        "production": 2
+      }
+    ],
+    "fleets": [],
+    "active_slots": [
+      "red",
+      "blue",
+      "green",
+      "yellow"
+    ],
+    "alive": [
+      "red",
+      "blue",
+      "green",
+      "yellow"
+    ],
+    "production": {
+      "red": 3,
+      "blue": 3,
+      "green": 3,
+      "yellow": 3
+    },
+    "ships": {
+      "red": 45,
+      "blue": 45,
+      "green": 45,
+      "yellow": 45
+    },
+    "max_turns": 300,
+    "turns_left": 300,
+    "speed": 6,
+    "tick": 0,
+    "labels": {
+      "red": "Команда 1",
+      "blue": "Команда 2",
+      "green": "Команда 3",
+      "yellow": "Команда 4"
+    }
+  }
+}

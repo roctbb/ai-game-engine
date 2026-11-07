@@ -16,9 +16,7 @@
       </div>
     </header>
 
-    <article v-if="isLoading" class="agp-card p-4">
-      <div class="agp-loading-state agp-loading-state--compact">Загрузка соревнования...</div>
-    </article>
+    <LoadingSkeleton v-if="isLoading" :count="4" label="Загрузка соревнования…" />
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="competition">
@@ -499,6 +497,8 @@
 </template>
 
 <script setup lang="ts">
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
+import { statusPillClass } from '../lib/statusTone';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
@@ -682,12 +682,7 @@ const competitionStatusLabel = computed(() => {
   return 'не загружено';
 });
 const competitionStatusToneClass = computed(() => {
-  const status = competition.value?.status;
-  if (status === 'running') return 'agp-pill--primary';
-  if (status === 'completed') return 'agp-pill--success';
-  if (status === 'paused' || status === 'draft') return 'agp-pill--warning';
-  if (status === 'finished') return 'agp-pill--neutral';
-  return 'agp-pill--neutral';
+  return statusPillClass(competition.value?.status ?? 'draft');
 });
 const competitionLiveLabel = computed(() => {
   if (competitionLiveMode.value === 'sse') return 'обновляется в реальном времени';
@@ -1201,11 +1196,7 @@ onUnmounted(() => {
 .competition-hero {
   position: relative;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 12% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
-    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.16), transparent 14rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.9)),
-    url("data:image/svg+xml,%3Csvg width='184' height='112' viewBox='0 0 184 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M20 20h32v24H20zM76 20h32v24H76zM132 20h32v24h-32zM48 70h32v24H48zM104 70h32v24h-32z'/%3E%3Cpath d='M52 32h24M108 32h24M92 44v26M80 82h24'/%3E%3C/g%3E%3C/svg%3E");
+  background: var(--agp-surface);
   background-position: center, center, center, right 1rem center;
   background-repeat: no-repeat;
 }
@@ -1215,11 +1206,7 @@ onUnmounted(() => {
 }
 
 .competition-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.25rem;
-  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
+  content: none;
 }
 
 .competition-hero > * {
@@ -1229,7 +1216,7 @@ onUnmounted(() => {
 .competition-kicker {
   color: #0f766e;
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1240,7 +1227,7 @@ onUnmounted(() => {
 
 .competition-view-toggle .btn {
   border-radius: 999px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .competition-view-toggle .btn.active {
@@ -1258,20 +1245,14 @@ onUnmounted(() => {
 }
 
 .competition-command-center {
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 14rem),
-    linear-gradient(180deg, #ffffff, #f8fafc);
+  background: var(--agp-surface);
   align-items: center;
 }
 
 .competition-section-card::before,
 .competition-settings-card::before,
 .competition-leaderboard::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.18rem;
-  background: linear-gradient(90deg, rgba(20, 184, 166, 0.72), rgba(37, 99, 235, 0.5), transparent);
+  content: none;
 }
 
 .competition-section-card > *,
@@ -1314,7 +1295,7 @@ onUnmounted(() => {
   background: #fff;
   padding: 0.45rem 0.8rem;
   color: var(--agp-text);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .competition-actions[open] summary {
@@ -1397,9 +1378,7 @@ onUnmounted(() => {
 
 .competition-match-player.advanced {
   border-color: rgba(20, 184, 166, 0.45);
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.14), transparent 7rem),
-    rgba(240, 253, 250, 0.9);
+  background: var(--agp-surface);
 }
 
 .competition-advanced-badge {
@@ -1407,7 +1386,7 @@ onUnmounted(() => {
   background: var(--agp-primary-soft);
   color: var(--agp-primary);
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   padding: 0.2rem 0.55rem;
 }
 
@@ -1422,9 +1401,7 @@ onUnmounted(() => {
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 1rem;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 6rem),
-    rgba(248, 250, 252, 0.88);
+  background: var(--agp-surface);
   padding: 0.75rem;
 }
 
@@ -1432,7 +1409,7 @@ onUnmounted(() => {
   display: block;
   color: var(--agp-muted);
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -1476,7 +1453,7 @@ onUnmounted(() => {
 .competition-winner-callout span {
   color: var(--agp-text-muted);
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1493,9 +1470,7 @@ onUnmounted(() => {
 .competition-leaderboard-row {
   border: 1px solid var(--agp-border);
   border-radius: 0.75rem;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(37, 99, 235, 0.06), transparent 6rem),
-    #fff;
+  background: var(--agp-surface);
   padding: 0.55rem 0.65rem;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1505,9 +1480,7 @@ onUnmounted(() => {
 
 .competition-leaderboard-row.winner {
   border-color: rgba(20, 184, 166, 0.42);
-  background:
-    radial-gradient(circle at 100% 0%, rgba(245, 158, 11, 0.14), transparent 6rem),
-    rgba(240, 253, 250, 0.9);
+  background: var(--agp-surface);
 }
 
 .competition-leaderboard-row > div {
@@ -1529,16 +1502,14 @@ onUnmounted(() => {
   place-items: center;
   background: var(--agp-primary-soft);
   color: var(--agp-primary);
-  font-weight: 850;
+  font-weight: 700;
   font-size: 0.78rem;
 }
 
 .competition-replay-summary {
   border: 1px solid var(--agp-border);
   border-radius: 8px;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 10rem),
-    var(--agp-surface-soft);
+  background: var(--agp-surface);
   padding: 0.85rem;
 }
 
@@ -1557,7 +1528,7 @@ onUnmounted(() => {
 .competition-table thead th {
   color: var(--agp-text-muted);
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1571,9 +1542,7 @@ onUnmounted(() => {
 .competition-bracket-node-inner {
   border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: 0.85rem;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(37, 99, 235, 0.07), transparent 7rem),
-    #ffffff;
+  background: var(--agp-surface);
 }
 
 .competition-match-card {
@@ -1582,9 +1551,7 @@ onUnmounted(() => {
 }
 
 .competition-admin-details {
-  background:
-    radial-gradient(circle at 100% 0%, rgba(15, 23, 42, 0.05), transparent 13rem),
-    #fff;
+  background: #131e2f;
 }
 
 .competition-admin-details > summary {
@@ -1592,7 +1559,7 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .competition-admin-details > summary small {
@@ -1620,9 +1587,7 @@ onUnmounted(() => {
   min-width: 18rem;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 1rem;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 8rem),
-    #f8fafc;
+  background: var(--agp-surface);
 }
 
 .competition-bracket-node {

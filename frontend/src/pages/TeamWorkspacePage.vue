@@ -29,9 +29,7 @@
       </div>
     </header>
 
-    <div v-if="isLoading" class="agp-card p-4">
-      <div class="agp-loading-state agp-loading-state--compact">Загрузка кода игрока...</div>
-    </div>
+    <LoadingSkeleton v-if="isLoading" :count="2" layout="workspace" label="Загрузка кода игрока…" />
     <div v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</div>
 
     <div v-else class="workspace-layout">
@@ -202,6 +200,7 @@
 </template>
 
 <script setup lang="ts">
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
@@ -436,21 +435,13 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
-  background:
-    radial-gradient(circle at 14% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
-    radial-gradient(circle at 88% 12%, rgba(37, 99, 235, 0.14), transparent 14rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 250, 0.9)),
-    url("data:image/svg+xml,%3Csvg width='176' height='112' viewBox='0 0 176 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M24 24h34v34H24zM78 18h28v28H78zM130 34h26v26h-26zM50 72h28v20H50zM108 68h30v28h-30z'/%3E%3Cpath d='M58 41h20M106 32h24M78 82h30M92 46v22'/%3E%3C/g%3E%3C/svg%3E");
+  background: var(--agp-surface);
   background-position: center, center, center, right 1rem center;
   background-repeat: no-repeat;
 }
 
 .workspace-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.25rem;
-  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+  content: none;
 }
 
 .workspace-hero > * {
@@ -460,7 +451,7 @@ onMounted(async () => {
 .workspace-kicker {
   color: #0f766e;
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -485,7 +476,7 @@ onMounted(async () => {
 .workspace-hero-stats span {
   color: var(--agp-text-muted);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .workspace-hero-stats strong {
@@ -527,9 +518,7 @@ onMounted(async () => {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 0.75rem;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 6rem),
-    #ffffff;
+  background: var(--agp-surface);
   color: inherit;
   padding: 0.7rem;
   text-align: left;
@@ -581,9 +570,7 @@ onMounted(async () => {
 .slot-selected {
   border-color: rgba(15, 118, 110, 0.6);
   outline: 2px solid rgba(20, 184, 166, 0.18);
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.17), transparent 6rem),
-    #f0fdfa;
+  background: var(--agp-surface);
 }
 
 .demo-select {
@@ -621,7 +608,7 @@ onMounted(async () => {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2563eb, #14b8a6, #f59e0b);
+  background: var(--agp-primary);
   transition: width 0.2s ease;
 }
 

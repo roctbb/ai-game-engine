@@ -352,18 +352,11 @@ onMounted(async () => {
 .lc-head {
   position: relative;
   overflow: hidden;
-  background:
-    url("data:image/svg+xml,%3Csvg width='176' height='104' viewBox='0 0 176 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.12' stroke-width='2'%3E%3Cpath d='M18 18h28v28H18zM130 18h28v28h-28zM74 58h28v28H74z'/%3E%3Cpath d='M46 32h28M102 72h28M88 0v24M88 80v24'/%3E%3C/g%3E%3C/svg%3E") right 1rem top 0.8rem / 14rem auto no-repeat,
-    linear-gradient(135deg, rgba(255, 255, 255, 0.97), rgba(240, 253, 250, 0.94)),
-    url("data:image/svg+xml,%3Csvg width='96' height='48' viewBox='0 0 96 48' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.07'%3E%3Cpath d='M0 24h96M24 0v48M72 0v48'/%3E%3C/g%3E%3C/svg%3E");
+  background: var(--agp-surface);
 }
 
 .lc-head::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.22rem;
-  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+  content: none;
 }
 
 .lc-head-stats {
@@ -399,7 +392,7 @@ onMounted(async () => {
   margin: 0 0 0.25rem;
   color: var(--agp-primary);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
@@ -436,11 +429,7 @@ onMounted(async () => {
 }
 
 .lc-form-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.18rem;
-  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+  content: none;
 }
 
 .lc-steps {
@@ -502,9 +491,7 @@ onMounted(async () => {
 
 .lc-access-toggle button.active {
   border-color: rgba(20, 184, 166, 0.62);
-  background:
-    url("data:image/svg+xml,%3Csvg width='58' height='40' viewBox='0 0 58 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2314b8a6' stroke-opacity='.2'%3E%3Cpath d='M8 8h12v12H8zM38 8h12v12H38zM23 20h12v12H23z'/%3E%3C/g%3E%3C/svg%3E") right 0.35rem center / 3.6rem auto no-repeat,
-    linear-gradient(135deg, #dff7f4, #dbeafe);
+  background: var(--agp-surface);
   box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
 }
 
@@ -526,17 +513,11 @@ onMounted(async () => {
   top: 4.5rem;
   overflow: hidden;
   border-left: 0;
-  background:
-    url("data:image/svg+xml,%3Csvg width='120' height='90' viewBox='0 0 120 90' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%232563eb' stroke-opacity='.12'%3E%3Cpath d='M16 16h24v24H16zM80 16h24v24H80zM48 50h24v24H48z'/%3E%3C/g%3E%3C/svg%3E") right 0.7rem bottom 0.7rem / 8rem auto no-repeat,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.94));
+  background: var(--agp-surface);
 }
 
 .lc-preview::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.22rem;
-  background: linear-gradient(90deg, #2563eb, #14b8a6);
+  content: none;
 }
 
 .lc-preview-pills {
@@ -554,7 +535,7 @@ onMounted(async () => {
 .lc-role-preview > span {
   color: var(--agp-text-muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .lc-role-preview > div {

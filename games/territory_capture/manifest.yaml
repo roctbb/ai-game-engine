@@ -1,0 +1,28 @@
+id: territory_capture_v1
+title: Захват территории
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 4
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: 'Напишите make_move(state): верните up, down, left, right или stay. Выйдите со своей территории и вернитесь, чтобы захватить область. Берегите незамкнутый след.'
+description: Команды замыкают маршруты, захватывают области и перерезают следы соперников на общей арене.
+difficulty: hard
+learning_section: Соревновательные стратегии
+topics:
+  - стратегия
+  - матрицы
+  - поиск пути
+slots:
+  - key: player
+    title: Код команды
+    required: true
+demo_strategies:
+  - id: rectangles
+    slot_key: player
+    title: 'Демо: небольшие прямоугольники'
+    language: python
+    path: examples/rectangles.py
+    description: Замыкает небольшие области и перемещается к границе своей территории для следующей вылазки.

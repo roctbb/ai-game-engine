@@ -1,0 +1,28 @@
+id: defender_duel_v1
+title: Дуэль защитников
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 2
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: 'Напишите make_move(state): одна покупка за ход — build, upgrade, income или send. Верните None, чтобы копить деньги.'
+description: Стройте башни, развивайте доход и отправляйте отряды сопернику. Побеждает команда, сохранившая свою базу.
+difficulty: hard
+learning_section: Соревновательные стратегии
+topics:
+  - стратегия
+  - симуляция
+  - экономика
+slots:
+  - key: player
+    title: Код команды
+    required: true
+demo_strategies:
+  - id: balanced
+    slot_key: player
+    title: 'Демо: защита и экономика'
+    language: python
+    path: examples/balanced.py
+    description: Строит разные башни, увеличивает доход и проверяет оборону соперника атаками.

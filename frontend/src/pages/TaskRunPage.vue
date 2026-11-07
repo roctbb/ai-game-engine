@@ -1,60 +1,24 @@
 <template>
-  <section class="agp-grid agp-task-workspace">
+  <section class="agp-grid agp-task-workspace" :class="`agp-task-workspace--mobile-${mobilePanel}`">
     <header class="agp-task-header" :class="{ 'agp-task-header--condensed': isHeaderCondensed }">
       <div class="agp-task-header-main">
-        <RouterLink to="/tasks" class="agp-back-link" title="К задачам" aria-label="К задачам">←</RouterLink>
+        <RouterLink :to="taskBackTarget" class="agp-back-link" title="К задачам" aria-label="К задачам"><AppIcon name="back" /></RouterLink>
         <h1>{{ game?.title || 'Задача' }}</h1>
       </div>
-      <div v-if="!isBootstrapping" class="agp-task-header-player">
-        <button
-          class="agp-icon-button agp-icon-button--replay"
-          :disabled="replayFrames.length <= 1"
-          :title="replayIsPlaying ? 'Пауза (Space)' : 'Воспроизвести (Space)'"
-          :aria-label="replayIsPlaying ? 'Пауза' : 'Воспроизвести'"
-          @click="toggleReplay"
-        >
-          {{ replayIsPlaying ? '❚❚' : '▶' }}
-        </button>
-        <button
-          class="agp-icon-button agp-icon-button--ghost"
-          :disabled="replayFrames.length <= 1"
-          title="Предыдущий кадр (←)"
-          aria-label="Предыдущий кадр"
-          @click="stepReplay(-1)"
-        >
-          ‹
-        </button>
-        <button
-          class="agp-icon-button agp-icon-button--ghost"
-          :disabled="replayFrames.length <= 1"
-          title="Следующий кадр (→)"
-          aria-label="Следующий кадр"
-          @click="stepReplay(1)"
-        >
-          ›
-        </button>
-        <span class="small text-muted agp-player-frame-label">
-          <template v-if="replayFrames.length">кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</template>
-          <template v-else>повтор после запуска</template>
-        </span>
-        <input
-          v-model.number="replayFrameIndex"
-          class="form-range agp-player-range"
-          type="range"
-          min="0"
-          :max="Math.max(0, replayFrames.length - 1)"
-          :disabled="replayFrames.length <= 1"
-        />
-        <label class="agp-speed-control small text-muted">
-          <span class="agp-speed-label">скорость</span>
-          <select v-model.number="replayPlaybackDelayMs" class="form-select form-select-sm agp-speed-select">
-            <option :value="1800">очень медленно</option>
-            <option :value="1200">медленно</option>
-            <option :value="700">обычно</option>
-            <option :value="350">быстро</option>
-          </select>
-        </label>
-        <div class="agp-player-side-buttons">
+      <ReplayControls
+        v-if="!isBootstrapping"
+        v-model:frame-index="replayFrameIndex"
+        v-model:delay="replayPlaybackDelayMs"
+        class="agp-task-header-player"
+        :frame-count="replayFrames.length"
+        :playing="replayIsPlaying"
+        :can-play="replayFrames.length > 1"
+        :can-step-backward="replayFrameIndex > 0"
+        :can-step-forward="replayFrameIndex < replayFrames.length - 1"
+        @toggle="toggleReplay"
+        @step="stepReplay"
+      >
+
           <button
             class="agp-panel-toggle"
             :class="{ 'agp-panel-toggle--active': conditionPanelOpen }"
@@ -71,36 +35,38 @@
           >
             {{ competitionButtonLabel }}
           </button>
-        </div>
-      </div>
+      </ReplayControls>
       <div class="agp-task-header-actions">
         <div class="agp-view-mode-toggle" role="group" aria-label="Режим экрана">
           <button
             class="agp-icon-button agp-icon-button--ghost"
             :class="{ 'agp-icon-button--active': viewMode === 'viewer' }"
+            :aria-pressed="viewMode === 'viewer'"
             title="Только просмотр (1)"
             aria-label="Только просмотр"
             @click="setViewMode('viewer')"
           >
-            ◧
+            <AppIcon name="viewer" /><span>Игра</span>
           </button>
           <button
             class="agp-icon-button agp-icon-button--ghost"
             :class="{ 'agp-icon-button--active': viewMode === 'split' }"
+            :aria-pressed="viewMode === 'split'"
             title="Две колонки (2)"
             aria-label="Две колонки"
             @click="setViewMode('split')"
           >
-            ◫
+            <AppIcon name="split" /><span>Вместе</span>
           </button>
           <button
             class="agp-icon-button agp-icon-button--ghost"
             :class="{ 'agp-icon-button--active': viewMode === 'code' }"
+            :aria-pressed="viewMode === 'code'"
             title="Только код (3)"
             aria-label="Только код"
             @click="setViewMode('code')"
           >
-            ≡
+            <AppIcon name="code" /><span>Код</span>
           </button>
         </div>
         <label
@@ -130,13 +96,13 @@
         </div>
         <div class="agp-run-action-cluster" :class="{ 'agp-run-action-cluster--active': isRunActive }">
           <button
-            class="agp-icon-button agp-icon-button--play"
+            class="agp-launch-button"
             :disabled="isRunActive || !canLaunch || isLaunching || isRestarting || isSaving"
             title="Запустить код"
             aria-label="Запустить код"
             @click="launchRun"
           >
-            ▶
+            <AppIcon name="play" /> <span>{{ isLaunching || isSaving ? 'Запускаем…' : 'Запустить' }}</span>
           </button>
           <button
             v-if="isRunActive"
@@ -146,7 +112,7 @@
             aria-label="Остановить запуск"
             @click="stopRun"
           >
-            ■
+            <AppIcon name="stop" />
           </button>
           <button
             v-if="isRunActive"
@@ -156,27 +122,35 @@
             aria-label="Перезапустить запуск"
             @click="restartRun"
           >
-            ↻
+            <AppIcon name="refresh" />
           </button>
         </div>
       </div>
     </header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
-    <article v-if="isBootstrapping" class="agp-card p-4 text-muted">Готовим рабочее место...</article>
+    <LoadingSkeleton v-if="isBootstrapping" :count="2" layout="workspace" label="Готовим рабочее место…" />
 
     <transition name="agp-victory-pop">
       <div v-if="victoryCelebrationVisible" class="agp-victory-celebration" aria-live="polite">
-        <div class="agp-victory-burst" aria-hidden="true">
-          <span v-for="index in 18" :key="index"></span>
-        </div>
         <div class="agp-victory-card">
-          <span class="agp-victory-kicker">Победа</span>
+          <AppIcon name="check" />
           <strong>Задача решена!</strong>
-          <small>Реплей досмотрен до конца</small>
+          <small>Результат сохранён</small>
         </div>
       </div>
     </transition>
+
+    <nav v-if="game && !isBootstrapping" class="agp-workspace-tabs" aria-label="Рабочая панель">
+      <button v-for="tab in mobilePanels" :key="tab.id" type="button" :class="{ active: mobilePanel === tab.id }" :aria-pressed="mobilePanel === tab.id" @click="mobilePanel = tab.id"><AppIcon :name="tab.icon" />{{ tab.label }}</button>
+    </nav>
+
+    <div v-if="currentRun && !isRunActive && !isBootstrapping" class="agp-run-result" role="status">
+      <span>Последняя попытка: <strong>{{ isSolvedRun(currentRun) ? 'решено' : runStatusLabel === 'готово' ? 'не решено' : runStatusLabel }}</strong></span>
+      <span v-if="currentScore !== null" class="mono">Счёт: {{ currentScore }}</span>
+      <RouterLink v-if="isSolvedRun(currentRun) && nextTask" :to="{ name: 'task-run', params: { gameId: nextTask.game_id }, query: { from: taskBackTarget } }" class="agp-next-task">Следующая задача <AppIcon name="next" /></RouterLink>
+      <span v-else class="agp-result-hint">{{ isSolvedRun(currentRun) ? 'Можно вернуться к разделу или улучшить результат' : friendlyRunProblem || 'Измените код и запустите снова' }}</span>
+    </div>
 
     <template v-if="game && !isBootstrapping">
       <button
@@ -194,11 +168,12 @@
           'agp-main-columns--resizing': isSplitResizing,
           'agp-main-columns--viewer-only': viewMode === 'viewer',
           'agp-main-columns--code-only': viewMode === 'code',
+          [`agp-main-columns--mobile-${mobilePanel}`]: true,
         }"
         :style="mainColumnsStyle"
       >
         <article
-          v-if="viewMode !== 'code'"
+          v-show="viewMode !== 'code' || isMobile"
           :class="['agp-card p-3 agp-viewer-card', { 'agp-viewer-card--fullscreen': isViewerFullscreen }]"
         >
           <div class="agp-viewer-overlay agp-viewer-overlay--status">
@@ -212,7 +187,7 @@
             :aria-label="isViewerFullscreen ? 'Свернуть' : 'Во весь экран'"
             @click.stop="isViewerFullscreen ? closeViewerFullscreen() : openViewerFullscreen()"
           >
-            {{ isViewerFullscreen ? '×' : '⛶' }}
+            <AppIcon :name="isViewerFullscreen ? 'restore' : 'expand'" />
           </button>
           <div v-if="rendererUrl" class="agp-viewer-frame">
             <iframe
@@ -220,7 +195,7 @@
               :key="rendererKey"
               :src="rendererUrl"
               title="Визуализация задачи"
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts"
               @load="sendRendererInit"
             ></iframe>
           </div>
@@ -229,14 +204,7 @@
           </div>
           <div v-if="isReplayLoading" class="agp-viewer-overlay agp-viewer-overlay--message">Загружаем повтор...</div>
           <div v-else-if="replayError" class="agp-viewer-overlay agp-viewer-overlay--message agp-viewer-overlay--danger">{{ replayError }}</div>
-          <section class="agp-bot-console" aria-label="Вывод бота">
-            <div class="agp-bot-console-head">
-              <strong>Вывод запуска</strong>
-              <span v-if="replayFrames.length > 0" class="text-muted">
-                кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}
-              </span>
-            </div>
-            <div class="agp-bot-console-body">
+          <BotConsole :expanded="isMobile && mobilePanel === 'console'" :position="replayFrames.length ? `${replayFrameIndex + 1} / ${replayFrames.length}` : ''">
               <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
                 print и ошибки появятся здесь
               </div>
@@ -249,19 +217,25 @@
                 <span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span>
                 <span class="mono agp-bot-console-message">{{ line.message }}</span>
               </div>
-            </div>
-          </section>
+          </BotConsole>
         </article>
         <button
-          v-if="viewMode === 'split'"
+          v-show="viewMode === 'split'"
           type="button"
           class="agp-main-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          :aria-valuenow="splitRatio"
+          aria-valuemin="32"
+          aria-valuemax="70"
           title="Перетащите, чтобы изменить ширину колонок"
           aria-label="Изменить ширину колонок"
           @pointerdown="startSplitResize"
+          @keydown.left.prevent="splitRatio = clampSplitRatio(splitRatio - 2)"
+          @keydown.right.prevent="splitRatio = clampSplitRatio(splitRatio + 2)"
         ></button>
 
-        <article v-if="viewMode !== 'viewer'" class="agp-card p-3 agp-code-card">
+        <article v-show="viewMode !== 'viewer' || isMobile" class="agp-card p-3 agp-code-card">
           <div class="agp-code-toolbar">
             <span class="agp-pill" :class="isDirty ? 'agp-pill--warning' : 'agp-pill--neutral'">
               {{ isDirty ? 'изменен' : 'синхронизирован' }}
@@ -292,7 +266,7 @@
     </transition>
 
     <transition name="agp-modal-pop">
-      <aside v-if="conditionPanelOpen" class="agp-cockpit-modal agp-condition-modal" role="dialog" aria-label="Условие задачи">
+      <aside v-if="conditionPanelOpen" class="agp-cockpit-modal agp-condition-modal" v-dialog-focus="closeConditionPanel" role="dialog" aria-label="Условие задачи">
         <header class="agp-cockpit-panel-head">
           <div>
             <h2 class="h6 mb-0">Условие задачи</h2>
@@ -321,10 +295,10 @@
     </transition>
 
     <transition name="agp-drawer-slide">
-      <aside v-if="competitionPanelOpen" class="agp-competition-drawer" role="dialog" aria-label="Лидерборд и попытки">
+      <aside v-if="competitionPanelOpen" class="agp-competition-drawer" v-dialog-focus="closeCompetitionPanel" role="dialog" aria-label="Результаты и попытки">
         <header class="agp-cockpit-panel-head">
           <div>
-            <h2 class="h6 mb-0">Лидерборд</h2>
+            <h2 class="h6 mb-0">Результаты и попытки</h2>
             <div class="small">
               {{ isRefreshingStats ? 'Обновляем данные...' : 'Сравнение результатов и прошлые попытки' }}
             </div>
@@ -408,6 +382,13 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import CodeEditor from '../components/CodeEditor.vue';
+import AppIcon from '../components/AppIcon.vue';
+import BotConsole from '../components/BotConsole.vue';
+import ReplayControls from '../components/ReplayControls.vue';
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
+import { createReplayClock, loadReplayDelay, saveReplayDelay } from '../lib/replayPlayback';
+import { isShortcutInput } from '../lib/keyboard';
+import { difficultyOrder, sectionOrder } from '../lib/taskCatalog';
 import {
   createTeam,
   getGame,
@@ -419,6 +400,8 @@ import {
   getSingleTaskLeaderboard,
   getWorkspace,
   listSingleTaskAttempts,
+  listSingleTaskCatalog,
+  type SingleTaskCatalogItemDto,
   listTeamsByGame,
   startSingleTaskRun,
   stopSingleTaskRun,
@@ -455,11 +438,21 @@ type WorkspaceViewMode = 'viewer' | 'split' | 'code';
 
 const route = useRoute();
 const sessionStore = useSessionStore();
-const REPLAY_SPEED_STORAGE_KEY = 'agp_replay_speed_ms';
 const SPLIT_RATIO_STORAGE_KEY = 'agp_task_workspace_split_ratio';
 const VIEW_MODE_STORAGE_KEY = 'agp_task_workspace_view_mode';
 
+const catalogTasks = ref<SingleTaskCatalogItemDto[]>([]);
 const game = ref<GameDto | null>(null);
+const taskBackTarget = computed(() => {
+  const from = route.query.from;
+  if (typeof from === 'string' && from.startsWith('/tasks/sections/')) return from;
+  return game.value?.learning_section ? `/tasks/sections/${encodeURIComponent(game.value.learning_section)}` : '/tasks';
+});
+const nextTask = computed(() => {
+  const ordered = [...catalogTasks.value].sort((a, b) => sectionOrder(a.learning_section || '') - sectionOrder(b.learning_section || '') || difficultyOrder(a.difficulty || '') - difficultyOrder(b.difficulty || '') || a.title.localeCompare(b.title, 'ru'));
+  const index = ordered.findIndex(task => task.game_id === game.value?.game_id);
+  return index >= 0 ? ordered[index + 1] ?? null : null;
+});
 const templates = ref<GameTemplatesDto | null>(null);
 const docs = ref<GameDocumentationDto | null>(null);
 const workspace = ref<TeamWorkspaceDto | null>(null);
@@ -478,7 +471,7 @@ const conditionPanelOpen = ref(false);
 const isViewerFullscreen = ref(false);
 const replayFrameIndex = ref(0);
 const replayIsPlaying = ref(false);
-const replayPlaybackDelayMs = ref(loadReplayPlaybackDelay());
+const replayPlaybackDelayMs = ref(loadReplayDelay());
 const isBootstrapping = ref(false);
 const isSaving = ref(false);
 const isLaunching = ref(false);
@@ -498,7 +491,20 @@ const isSplitResizing = ref(false);
 const viewMode = ref<WorkspaceViewMode>(loadViewMode());
 const isHeaderCondensed = ref(false);
 let pollingHandle: ReturnType<typeof setInterval> | null = null;
-let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
+const replayPlaybackClock = createReplayClock(() => {
+  const last = replayFrames.value.length - 1;
+  if (replayFrameIndex.value < last) replayFrameIndex.value += 1;
+  if (replayFrameIndex.value >= last) stopReplayPlayback({ completed: true });
+}, () => replayPlaybackDelayMs.value);
+const isMobile = ref(window.matchMedia('(max-width: 900px)').matches);
+const mobilePanel = ref<'code' | 'viewer' | 'console'>('code');
+const mobilePanels = [
+  { id: 'code' as const, label: 'Код', icon: 'code' },
+  { id: 'viewer' as const, label: 'Игра', icon: 'viewer' },
+  { id: 'console' as const, label: 'Консоль', icon: 'console' },
+];
+const mobileMedia = window.matchMedia('(max-width: 900px)');
+function updateMobileMode(): void { isMobile.value = mobileMedia.matches; }
 let victoryCelebrationHandle: ReturnType<typeof setTimeout> | null = null;
 let isPollingRun = false;
 let pendingRunPoll = false;
@@ -594,11 +600,12 @@ const canInspectLeaderboardCode = computed(() => sessionStore.role === 'teacher'
 const canUseDemoStrategy = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 const competitionButtonLabel = computed(() => {
   const place = myLeaderboardEntry.value?.place;
-  return typeof place === 'number' ? `Лидерборд #${place}` : 'Лидерборд';
+  if (canInspectLeaderboardCode.value) return 'Решения и попытки';
+  return typeof place === 'number' ? `Результат #${place}` : 'Результаты';
 });
 const mainColumnsStyle = computed(() => ({
-  '--agp-viewer-col': `${splitRatio.value}%`,
-  '--agp-code-col': `${100 - splitRatio.value}%`,
+  '--agp-viewer-col': `${splitRatio.value}fr`,
+  '--agp-code-col': `${100 - splitRatio.value}fr`,
 }));
 const sidePanelOpen = computed(() => competitionPanelOpen.value || conditionPanelOpen.value);
 const runStatusLabel = computed(() => (currentRun.value ? attemptStatusLabel(currentRun.value.status) : 'готово'));
@@ -806,21 +813,13 @@ function updateHeaderCondensed(): void {
   isHeaderCondensed.value = false;
 }
 
-function isTypingContext(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.closest('.cm-editor')) return true;
-  const tag = target.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  return target.isContentEditable;
-}
-
 function handlePageKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     closeViewerFullscreen();
     closeSidePanels();
     return;
   }
-  if (isTypingContext(event.target)) {
+  if (event.ctrlKey || event.metaKey || event.altKey || sidePanelOpen.value || isShortcutInput(event.target)) {
     return;
   }
   if (event.code === 'Space') {
@@ -849,16 +848,6 @@ function handlePageKeydown(event: KeyboardEvent): void {
   if (event.key === '3') {
     setViewMode('code');
   }
-}
-
-function loadReplayPlaybackDelay(): number {
-  try {
-    const stored = Number(localStorage.getItem(REPLAY_SPEED_STORAGE_KEY));
-    if ([350, 700, 1200, 1800].includes(stored)) return stored;
-  } catch {
-    // localStorage may be unavailable in tests or restricted contexts
-  }
-  return 1200;
 }
 
 function clampSplitRatio(nextValue: number): number {
@@ -942,12 +931,21 @@ function teamIdForLeaderboardEntry(entry: SingleTaskLeaderboardEntryDto): string
   return teamsByGame.value.find((team) => team.captain_user_id === entry.user_id)?.team_id ?? '';
 }
 
+function taskDraftKey(): string {
+  return `agp_task_code_draft:${sessionStore.nickname}:${gameIdFromRoute()}:${selectedSlotKey.value}`;
+}
+
 function syncEditorFromWorkspace(payload: TeamWorkspaceDto): void {
   selectedSlotKey.value = payload.slot_states[0]?.slot_key ?? '';
   const selectedSlot = payload.slot_states.find((slot) => slot.slot_key === selectedSlotKey.value);
   const initialCode = selectedSlot?.code ?? selectedTemplateCode.value ?? firstDemoCode.value ?? '';
-  editorCode.value = initialCode;
   savedCode.value = selectedSlot?.code ?? '';
+  let restoredCode = initialCode;
+  try {
+    const draft = JSON.parse(localStorage.getItem(taskDraftKey()) ?? 'null');
+    if (draft && draft.base === savedCode.value && typeof draft.code === 'string') restoredCode = draft.code;
+  } catch { /* A saved server revision remains available when draft storage fails. */ }
+  editorCode.value = restoredCode;
 }
 
 async function loadPage(): Promise<void> {
@@ -958,6 +956,7 @@ async function loadPage(): Promise<void> {
   }
 
   isBootstrapping.value = true;
+  void listSingleTaskCatalog().then(items => { catalogTasks.value = items; }).catch(() => { /* Optional next-task navigation must not block the editor. */ });
   errorMessage.value = '';
   replay.value = null;
   rendererPreview.value = null;
@@ -1021,6 +1020,7 @@ async function saveCode(): Promise<void> {
     workspace.value = await getWorkspace(teamId.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось сохранить код';
+    throw error;
   } finally {
     isSaving.value = false;
   }
@@ -1211,7 +1211,7 @@ async function refreshStats(): Promise<void> {
 function sendToRenderer(message: Record<string, unknown>): void {
   const frame = rendererFrameRef.value;
   if (!frame?.contentWindow) return;
-  frame.contentWindow.postMessage(sanitizeForPostMessage(message), window.location.origin);
+  frame.contentWindow.postMessage(sanitizeForPostMessage(message), '*');
 }
 
 function sendRendererInit(): void {
@@ -1234,6 +1234,7 @@ function sendRendererState(): void {
   sendToRenderer({
     type: 'agp.renderer.state',
     payload: {
+      motion: { duration_ms: replayIsPlaying.value ? Math.min(180, replayPlaybackDelayMs.value / 2) : 0 },
       tick: activeFrame?.tick ?? preview?.tick ?? 0,
       phase: activeFrame?.phase ?? currentRun.value?.status ?? preview?.phase ?? 'preview',
       frame: activeFrame?.frame ?? currentRun.value?.result_payload ?? preview?.frame ?? {},
@@ -1271,23 +1272,11 @@ function startReplayPlayback(): void {
     replayFrameIndex.value = 0;
   }
   replayIsPlaying.value = true;
-  replayPlaybackHandle = setInterval(() => {
-    const lastFrameIndex = replayFrames.value.length - 1;
-    if (replayFrameIndex.value >= lastFrameIndex) {
-      stopReplayPlayback({ completed: true });
-      return;
-    }
-    replayFrameIndex.value += 1;
-    if (replayFrameIndex.value >= lastFrameIndex) {
-      stopReplayPlayback({ completed: true });
-    }
-  }, replayPlaybackDelayMs.value);
+  replayPlaybackClock.start();
 }
 
 function clearReplayPlaybackTimer(): void {
-  if (!replayPlaybackHandle) return;
-  clearInterval(replayPlaybackHandle);
-  replayPlaybackHandle = null;
+  replayPlaybackClock.stop();
 }
 
 function stopReplayPlayback(options: { completed?: boolean } = {}): void {
@@ -1312,7 +1301,7 @@ function maybeShowVictoryCelebration(): void {
   victoryCelebrationHandle = setTimeout(() => {
     victoryCelebrationVisible.value = false;
     victoryCelebrationHandle = null;
-  }, 3200);
+  }, 2400);
 }
 
 function attemptScoreValue(attempt: RunDto | null): number | null {
@@ -1361,16 +1350,20 @@ function attemptStatusLabel(status: RunDto['status']): string {
   return labels[status];
 }
 
+watch([editorCode, savedCode], () => {
+  if (isBootstrapping.value || !selectedSlotKey.value) return;
+  try {
+    if (editorCode.value === savedCode.value) localStorage.removeItem(taskDraftKey());
+    else localStorage.setItem(taskDraftKey(), JSON.stringify({ code: editorCode.value, base: savedCode.value }));
+  } catch { /* Editing does not depend on persistent storage. */ }
+});
+
 watch(replayFrameIndex, () => {
   sendRendererState();
 });
 
 watch(replayPlaybackDelayMs, (nextDelay) => {
-  try {
-    localStorage.setItem(REPLAY_SPEED_STORAGE_KEY, String(nextDelay));
-  } catch {
-    // ignore storage failures; the selected speed still works for this session
-  }
+  saveReplayDelay(nextDelay);
   if (replayIsPlaying.value) {
     startReplayPlayback();
   }
@@ -1400,11 +1393,13 @@ onMounted(async () => {
   window.addEventListener('pointermove', handleSplitPointerMove);
   window.addEventListener('pointerup', stopSplitResize);
   window.addEventListener('pointercancel', stopSplitResize);
+  mobileMedia.addEventListener('change', updateMobileMode);
   updateHeaderCondensed();
   await loadPage();
 });
 
 onUnmounted(() => {
+  mobileMedia.removeEventListener('change', updateMobileMode);
   window.removeEventListener('keydown', handlePageKeydown);
   window.removeEventListener('pointermove', handleSplitPointerMove);
   window.removeEventListener('pointerup', stopSplitResize);

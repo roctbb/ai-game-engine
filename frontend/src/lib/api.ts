@@ -1,3 +1,7 @@
+import { createRequestCache } from './requestCache';
+
+const catalogCache = createRequestCache();
+
 export type GameMode = 'single_task' | 'multiplayer' | 'small_match' | 'massive_lobby';
 export type CatalogMetadataStatus = 'draft' | 'ready' | 'archived';
 export type UserRole = 'student' | 'teacher' | 'admin';
@@ -475,6 +479,7 @@ export function getStoredSessionId(): string {
 }
 
 export function storeSessionId(sessionId: string): void {
+  if (inMemorySessionId !== sessionId) catalogCache.clear();
   inMemorySessionId = sessionId;
   try {
     localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
@@ -484,6 +489,7 @@ export function storeSessionId(sessionId: string): void {
 }
 
 export function clearStoredSessionId(): void {
+  catalogCache.clear();
   inMemorySessionId = '';
   try {
     localStorage.removeItem(SESSION_STORAGE_KEY);
@@ -518,6 +524,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(response.status, details);
   }
+  if (init?.method && init.method !== 'GET') catalogCache.clear();
   if (response.status === 204 || response.headers.get('content-length') === '0') {
     return undefined as T;
   }
@@ -530,11 +537,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function listGames(): Promise<GameDto[]> {
-  return request<GameDto[]>('/games');
+  return catalogCache.get(`${getStoredSessionId()}/games`, () => request<GameDto[]>('/games'));
 }
 
 export function listSingleTaskCatalog(): Promise<SingleTaskCatalogItemDto[]> {
-  return request<SingleTaskCatalogItemDto[]>('/catalog/single-tasks');
+  return catalogCache.get(`${getStoredSessionId()}/tasks`, () => request<SingleTaskCatalogItemDto[]>('/catalog/single-tasks'));
 }
 
 export function listSingleTaskCatalogGrouped(): Promise<SingleTaskCatalogGroupDto[]> {
@@ -847,6 +854,7 @@ export function getRunWatchContext(runId: string): Promise<RunWatchContextDto> {
 }
 
 export function getRunReplay(runId: string): Promise<ReplayDto> {
+  catalogCache.clear();
   return request<ReplayDto>(`/replays/runs/${encodeURIComponent(runId)}`);
 }
 

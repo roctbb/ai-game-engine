@@ -1,0 +1,98 @@
+.agp-page-heading {
+  display: grid;
+  gap: 1.25rem;
+  padding: .5rem 0 .75rem;
+}
+
+.agp-page-heading h1 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; letter-spacing: -.035em; }
+.agp-page-heading p.text-muted { max-width: 44rem; font-size: .9rem; line-height: 1.65; }
+.tasks-kicker, .games-kicker, .lobbies-kicker { color: var(--agp-primary); font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.tasks-head-stats, .games-head-stats, .lobbies-head-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.5rem;
+  align-items: center;
+}
+.tasks-head-stats { min-width: min(100%, 25rem); }
+.tasks-head-stats > div, .games-head-stats > div, .lobbies-head-stats > div { display: grid; gap: .25rem; }
+.tasks-head-stats span, .games-head-stats span, .lobbies-head-stats span { color: var(--agp-text-muted); font-size: .75rem; }
+.tasks-head-stats strong, .games-head-stats strong, .lobbies-head-stats strong { font-size: 1.2rem; font-weight: 500; }
+.games-head-stats, .lobbies-head-stats { border-top: 1px solid var(--agp-border); padding-top: 1rem; }
+.section-card-grid, .games-card-grid, .lobbies-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
+.section-card { display: grid; gap: 1rem; min-height: 13rem; color: inherit; text-decoration: none; transition: border-color var(--agp-motion-fast), box-shadow var(--agp-motion-fast); }
+.section-card:hover { border-color: var(--agp-primary); box-shadow: var(--agp-shadow-hover); color: inherit; }
+.section-card--done { border-color: #b4d9c9; }
+.section-card-top, .section-card-foot { display: flex; justify-content: space-between; align-items: center; gap: .75rem; }
+.section-index { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .6rem; background: var(--agp-surface-soft); color: var(--agp-text-muted); font-size: .85rem; }
+.section-card--done .section-index, .section-card--started .section-index { background: var(--agp-primary-soft); color: var(--agp-primary); }
+.section-status, .task-state { width: fit-content; border-radius: 999px; padding: .2rem .55rem; font-size: .72rem; font-weight: 500; white-space: nowrap; }
+.section-status--idle, .task-state--pending { background: var(--agp-surface-soft); color: var(--agp-text-muted); }
+.section-status--started { color: var(--agp-primary); background: var(--agp-primary-soft); }
+.section-status--done, .task-state--solved { color: var(--agp-success); background: #e9f5ee; }
+.section-card h2 { margin: 0 0 .5rem; font-size: 1rem; font-weight: 700; line-height: 1.4; }
+.section-card p { margin: 0; color: var(--agp-text-muted); font-size: .84rem; line-height: 1.6; }
+.section-card-foot { color: var(--agp-text-muted); font-size: .76rem; }
+.section-card-foot > :last-child { color: var(--agp-primary); font-weight: 700; }
+.section-progress { height: .3rem; overflow: hidden; border-radius: 999px; background: var(--agp-border); }
+.section-progress div { height: 100%; border-radius: inherit; background: var(--agp-primary); transition: width var(--agp-motion-panel); }
+.tasks-filter-panel, .games-filter-panel { display: flex; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.tasks-filter-field, .games-filter-field { display: grid; gap: .2rem; flex: 1 1 10rem; }
+.games-filter-field { max-width: 16rem; }
+.games-filter-summary { margin-left: auto; align-self: center; }
+.tasks-filter-reset { min-height: 2.3rem; }
+.tasks-active-filter-line, .lobbies-active-filter { display: flex; gap: .5rem; color: var(--agp-text-muted); font-size: .8rem; }
+.tasks-layout { display: grid; grid-template-columns: minmax(0, 1fr) 16rem; gap: 1.5rem; align-items: start; }
+.tasks-sidebar { position: sticky; top: 6rem; }
+.tasks-list, .tasks-group, .tasks-group-items { display: grid; gap: .75rem; }
+.task-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.5rem; align-items: center; }
+.task-row-main { display: grid; gap: .65rem; min-width: 0; }
+.task-row-main h3 { font-weight: 700; }
+.task-description, .game-description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.6; }
+.task-meta-row { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .75rem; }
+.task-row-action { width: 7rem; }
+.current-user-summary, .leaderboard-row--mine { border-color: #b4d9c9; background: var(--agp-primary-soft); }
+.games-head { grid-template-columns: 1fr auto; }
+.games-head-stats { grid-column: 1 / -1; }
+.games-head-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: start; }
+.game-card { min-height: 20rem; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 1rem; }
+.game-row-main { min-width: 0; display: grid; align-content: start; gap: .75rem; }
+.game-row-main h2 { font-weight: 700; }
+.game-meta-strip { display: flex; flex-wrap: wrap; gap: .75rem; }
+.game-meta-strip > div { display: flex; gap: .4rem; align-items: baseline; font-size: .75rem; }
+.game-meta-strip span { color: var(--agp-text-muted); }
+.game-meta-strip strong { font-weight: 500; }
+.lobbies-controls { display: flex; align-items: end; gap: .75rem; }
+.lobbies-filter-wrap { min-width: 13rem; }
+.lobby-card-simple { gap: 1rem; }
+.lobby-card-content { display: grid; gap: 1rem; height: 100%; }
+.lobby-main { min-width: 0; }
+.lobby-main h2 { font-size: 1rem; line-height: 1.5; }
+.lobby-card-meter { position: relative; padding-bottom: .6rem; }
+.lobby-card-meter > div { display: flex; align-items: center; justify-content: space-between; font-size: .78rem; }
+.lobby-card-meter span { color: var(--agp-text-muted); }
+.lobby-card-meter::after, .lobby-card-meter > i { position: absolute; bottom: 0; left: 0; height: .25rem; border-radius: 999px; }
+.lobby-card-meter::after { content: ''; width: 100%; background: var(--agp-border); }
+.lobby-card-meter > i { z-index: 1; background: var(--agp-primary); transition: width var(--agp-motion-panel); }
+.lobby-actions-simple { align-self: end; }
+.lobby-actions-simple .btn { width: 100%; }
+.lobby-access-code-field { display: grid; }
+.lobbies-empty-card { grid-column: 1 / -1; }
+
+@media (max-width: 1000px) {
+  .tasks-layout { grid-template-columns: minmax(0, 1fr); }
+  .tasks-sidebar { position: static; }
+}
+@media (max-width: 760px) {
+  .agp-page-heading { gap: 1rem; padding-top: .25rem; }
+  .tasks-head-stats { min-width: 0; gap: .75rem; padding-top: .5rem; }
+  .tasks-head-stats strong, .games-head-stats strong, .lobbies-head-stats strong { font-size: 1.05rem; }
+  .tasks-head-stats span, .games-head-stats span, .lobbies-head-stats span { font-size: .68rem; }
+  .games-head { grid-template-columns: minmax(0, 1fr); }
+  .games-head-actions { grid-row: 3; }
+  .games-head-stats, .lobbies-head-stats { gap: .75rem; }
+  .lobbies-controls { width: 100%; flex-wrap: wrap; }
+  .lobbies-filter-wrap { flex: 1; min-width: 10rem; }
+  .task-row { gap: 1rem; grid-template-columns: 1fr; }
+  .task-row-action { width: 100%; }
+  .task-meta-row { gap: .5rem 1rem; }
+}

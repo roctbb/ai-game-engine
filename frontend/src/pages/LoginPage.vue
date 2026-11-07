@@ -94,6 +94,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { UserRole } from '../lib/api';
+import { internalNextPath } from '../lib/roleNavigation';
 import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
@@ -126,8 +127,7 @@ const roleOptions: Array<{ value: UserRole; label: string; badge: string; hint: 
 ];
 
 const nextPath = computed(() => {
-  const candidate = typeof route.query.next === 'string' ? route.query.next : '/tasks';
-  return candidate.startsWith('/') ? candidate : '/tasks';
+  return internalNextPath(route.query.next, '/');
 });
 
 const geekClassLoginUrl = computed(
@@ -166,11 +166,7 @@ async function reloadAuthOptions(): Promise<void> {
   place-items: center;
   padding: 1rem;
   background-color: #07101f;
-  background-image:
-    url("data:image/svg+xml,%3Csvg width='160' height='160' viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.16' stroke-width='2'%3E%3Cpath d='M18 18h32v32H18zM110 18h32v32h-32zM18 110h32v32H18zM110 110h32v32h-32z'/%3E%3Cpath d='M80 0v32M80 128v32M0 80h32M128 80h32M64 80h32M80 64v32'/%3E%3C/g%3E%3C/svg%3E"),
-    radial-gradient(circle at 15% 18%, rgba(20, 184, 166, 0.28), transparent 22rem),
-    radial-gradient(circle at 86% 16%, rgba(245, 158, 11, 0.2), transparent 22rem),
-    linear-gradient(135deg, #07101f 0%, #0b1930 56%, #020617 100%);
+  background-image: none;
   background-size: 160px 160px, auto, auto, auto;
 }
 
@@ -196,11 +192,7 @@ async function reloadAuthOptions(): Promise<void> {
   min-height: 34rem;
   align-content: end;
   padding: 1.3rem;
-  background:
-    url("data:image/svg+xml,%3Csvg width='210' height='126' viewBox='0 0 210 126' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.18' stroke-width='2'%3E%3Cpath d='M24 24h36v36H24zM150 24h36v36h-36zM87 66h36v36H87z'/%3E%3Cpath d='M60 42h27M123 84h27M105 0v24M105 102v24M0 63h34M176 63h34'/%3E%3C/g%3E%3C/svg%3E") right 1.2rem top 1.2rem / 18rem auto no-repeat,
-    radial-gradient(circle at 25% 18%, rgba(45, 212, 191, 0.42), transparent 18rem),
-    radial-gradient(circle at 90% 26%, rgba(245, 158, 11, 0.32), transparent 16rem),
-    linear-gradient(135deg, rgba(15, 118, 110, 0.96), rgba(37, 99, 235, 0.86) 56%, rgba(2, 6, 23, 0.96));
+  background: #131e2f;
   color: #f8fbff;
 }
 
@@ -247,7 +239,7 @@ async function reloadAuthOptions(): Promise<void> {
   margin: 0;
   color: #b7f4ff;
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -256,7 +248,7 @@ async function reloadAuthOptions(): Promise<void> {
   max-width: 32rem;
   margin: 0;
   font-size: clamp(2.35rem, 5vw, 4.25rem);
-  font-weight: 950;
+  font-weight: 700;
   line-height: 0.98;
 }
 
@@ -291,8 +283,7 @@ async function reloadAuthOptions(): Promise<void> {
 .agp-login-panel {
   align-content: center;
   gap: 1rem;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(239, 246, 255, 0.94));
+  background: var(--agp-surface);
   padding: 2rem 1.5rem;
 }
 
@@ -305,14 +296,14 @@ async function reloadAuthOptions(): Promise<void> {
   margin-bottom: 0.35rem;
   color: #0f766e;
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .agp-login-panel h1 {
   margin-bottom: 0.35rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .agp-login-form {
@@ -350,9 +341,7 @@ async function reloadAuthOptions(): Promise<void> {
 
 .agp-login-role-button.active {
   border-color: rgba(20, 184, 166, 0.62);
-  background:
-    url("data:image/svg+xml,%3Csvg width='58' height='40' viewBox='0 0 58 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2314b8a6' stroke-opacity='.2'%3E%3Cpath d='M8 8h12v12H8zM38 8h12v12H38zM23 20h12v12H23z'/%3E%3C/g%3E%3C/svg%3E") right 0.35rem center / 3.6rem auto no-repeat,
-    linear-gradient(135deg, #dff7f4, #dbeafe);
+  background: var(--agp-surface);
   box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
 }
 

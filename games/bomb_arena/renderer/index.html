@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Бомбовая арена</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+body{background:#0c1524;color:#edf3fc;font-family:system-ui,-apple-system,sans-serif}
+.game{height:100%;max-width:1080px;margin:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px}h1{font-size:17px;margin:0;font-weight:650}
+#turn{font-size:12px;color:#a7b9d0;white-space:nowrap}.teams{display:grid;grid-template-columns:repeat(var(--teams,2),minmax(0,1fr));gap:8px}
+.team{border:1px solid #26364c;border-top:3px solid var(--color);border-radius:10px;background:#142033;padding:10px 12px;min-width:0}
+.name{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.value{font-size:19px;font-weight:700;margin-top:5px;white-space:nowrap}
+.detail{font-size:11px;color:#a7b9d0;margin-top:3px}.out{opacity:.5}.field{flex:1;min-height:0;position:relative}
+svg{position:absolute;inset:0;display:block;width:100%;height:100%;overflow:hidden}footer{min-height:30px;display:flex;align-items:center;justify-content:center;color:#a7b9d0;font-size:12px;line-height:1.5;text-align:center}
+.finished{color:#f4d18a;font-weight:650}@media(max-width:560px){.game{padding:10px;gap:8px}.teams{grid-template-columns:repeat(2,minmax(0,1fr))}.team{padding:7px 9px}.value{font-size:17px}h1{font-size:15px}footer{font-size:11px}}
+</style>
+</head>
+<body><main class="game"><header><h1>Бомбовая арена</h1><span id="turn"></span></header><div id="teams" class="teams" aria-label="Результаты команд"></div><div class="field"><svg id="field" role="img" aria-label="Поле игры Бомбовая арена"></svg></div><footer id="status" aria-live="polite"></footer></main>
+<script>
+const SVG_NS="http://www.w3.org/2000/svg";
+const field=document.getElementById("field"),teams=document.getElementById("teams"),status=document.getElementById("status");
+const colors={red:"#fb8585",blue:"#71b2ff",green:"#6bdda1",yellow:"#f3cd6b"};
+let current=null;
+function add(tag,attrs={},parent=field){const node=document.createElementNS(SVG_NS,tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));parent.appendChild(node);return node}
+function rect(x,y,width,height,fill,extra={}){return add("rect",{x,y,width,height,fill,...extra})}
+function circle(cx,cy,r,fill,extra={}){return add("circle",{cx,cy,r,fill,...extra})}
+function text(x,y,value,size=12,fill="#edf3fc",extra={}){const node=add("text",{x,y,"font-size":size,fill,"font-weight":600,"text-anchor":"middle","dominant-baseline":"central",...extra});node.textContent=value;return node}
+function line(x1,y1,x2,y2,stroke,width=1,extra={}){return add("line",{x1,y1,x2,y2,stroke,"stroke-width":width,...extra})}
+function tooltip(node,value){const title=add("title",{},node);title.textContent=value}
+function name(f,s){return f.labels?.[s]||s}
+function number(f,s){return f.active_slots.indexOf(s)+1}
+function view(width,height){field.replaceChildren();field.setAttribute("viewBox",`0 0 ${width} ${height}`);rect(0,0,width,height,"#101c2d",{rx:12})}
+function card(f,s,value,detail,out=false){const node=document.createElement("div");node.className="team"+(out?" out":"");node.style.setProperty("--color",colors[s]);for(const [cls,label]of [["name",`${number(f,s)} · ${name(f,s)}`],["value",value],["detail",detail]]){const part=document.createElement("div");part.className=cls;part.textContent=label;node.appendChild(part)}teams.appendChild(node)}
+function draw(f){if(!f||!Array.isArray(f.active_slots))return;current=f;teams.replaceChildren();teams.style.setProperty("--teams",f.active_slots.length);document.getElementById("turn").textContent=`Ход ${f.tick??0} / ${f.max_turns}`;status.className="";drawScene(f);if(f.finished){const winners=f.winner_slots||[];status.className="finished";status.textContent=winners.length===1?`Победа: ${name(f,winners[0])}`:`Ничья · ${winners.map(s=>name(f,s)).join(", ")}`}}
+function drawScene(f){
+  for(const s of f.active_slots){const p=f.players[s];card(f,s,p.alive?"В игре":"Выбыла",`${p.capacity} бомб · дальность ${p.range}`,!p.alive)}
+  const C=36;view(f.width*C,f.height*C);
+  for(let x=0;x<f.width;x++)for(let y=0;y<f.height;y++){const value=f.board[x][y],px=x*C,py=y*C;
+    rect(px+1,py+1,C-2,C-2,value===-2?"#481c2d":value===-1?"#3b4d64":"#182a3d",{rx:3});
+    if(value===1){rect(px+4,py+4,C-8,C-8,"#b08555",{rx:3,stroke:"#d2aa73","stroke-width":1});line(px+7,py+7,px+C-7,py+C-7,"#7f5c3b",2);line(px+C-7,py+7,px+7,py+C-7,"#7f5c3b",2)}
+    if(value===-2){line(px+10,py+10,px+C-10,py+C-10,"#a4425d",2);line(px+C-10,py+10,px+10,py+C-10,"#a4425d",2)}
+  }
+  for(const b of f.powerups){const node=rect(b.x*C+7,b.y*C+7,22,22,b.type==="capacity"?"#9a7aee":"#4fbf9e",{rx:6});tooltip(node,b.type==="capacity"?"+1 к лимиту бомб":"+1 к дальности");text(b.x*C+18,b.y*C+18,b.type==="capacity"?"+Б":"+Д",10,"#0c1524")}
+  for(const [x,y]of f.fire){rect(x*C+3,y*C+3,C-6,C-6,"#f69a38",{rx:7});rect(x*C+10,y*C+10,C-20,C-20,"#ffe5a0",{rx:4})}
+  for(const b of f.bombs){const x=b.x*C+18,y=b.y*C+18;const bomb=circle(x,y,12,"#07101e",{stroke:colors[b.owner],"stroke-width":2});tooltip(bomb,`${name(f,b.owner)} · взрыв на ходе ${b.explode_at} · дальность ${b.range}`);text(x,y,Math.max(0,b.explode_at-f.tick),13,"#fff");line(x+5,y-11,x+9,y-16,"#f3cd6b",2)}
+  for(const s of f.active_slots){const p=f.players[s];if(!p.alive)continue;const onBomb=f.bombs.some(b=>b.x===p.x&&b.y===p.y),x=p.x*C+(onBomb?27:18),y=p.y*C+(onBomb?27:18);const player=circle(x,y,onBomb?8:11,colors[s],{stroke:"#fff","stroke-width":2});tooltip(player,name(f,s));text(x,y,number(f,s),11,"#0c1524")}
+  const next=f.tick<f.shrink.start?f.shrink.start:f.shrink.start+(Math.floor((f.tick-f.shrink.start)/f.shrink.interval)+1)*f.shrink.interval;
+  status.textContent=`Цифра в бомбе — до взрыва · +Б: ещё бомба · +Д: дальность · сжатие через ${Math.max(0,next-f.tick)} ходов`;
+}
+window.addEventListener("message",event=>{const message=event.data;if(!message||typeof message!=="object")return;const payload=message.payload||message;if(message.type==="agp.renderer.init")ready();if(message.type==="agp.renderer.state"){const frame=payload.frame;if(frame)draw({...frame,tick:payload.tick??frame.tick,finished:frame.finished||payload.phase==="finished"})}if(message.type==="agp.renderer.result"&&current){const result=payload.result||payload;draw({...current,finished:true,winner_slots:result.metrics?.winner_slots||current.winner_slots||[]})}});
+window.addEventListener("resize",()=>{if(current)draw(current)});
+function ready(){window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*")}
+const preview={"kind": "bomb_arena", "active_slots": ["red", "blue", "green", "yellow"], "board": [[-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], [-1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, -1], [-1, 0, -1, 0, -1, 1, -1, 1, -1, 1, -1, 0, -1, 0, -1], [-1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, -1], [-1, 1, -1, 0, -1, 1, -1, 0, -1, 1, -1, 0, -1, 1, -1], [-1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, -1], [-1, 1, -1, 1, -1, 0, -1, 0, -1, 0, -1, 1, -1, 1, -1], [-1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, -1], [-1, 1, -1, 1, -1, 0, -1, 0, -1, 0, -1, 1, -1, 1, -1], [-1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, -1], [-1, 1, -1, 0, -1, 1, -1, 0, -1, 1, -1, 0, -1, 1, -1], [-1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, -1], [-1, 0, -1, 0, -1, 1, -1, 1, -1, 1, -1, 0, -1, 0, -1], [-1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, -1], [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]], "players": {"red": {"x": 1, "y": 1, "alive": true, "capacity": 1, "range": 2, "eliminated_at": null}, "blue": {"x": 13, "y": 13, "alive": true, "capacity": 1, "range": 2, "eliminated_at": null}, "green": {"x": 13, "y": 1, "alive": true, "capacity": 1, "range": 2, "eliminated_at": null}, "yellow": {"x": 1, "y": 13, "alive": true, "capacity": 1, "range": 2, "eliminated_at": null}}, "bombs": [], "fire": [], "powerups": [], "shrink": {"start": 100, "interval": 10}, "fuse": 5, "width": 15, "height": 15, "max_turns": 180, "turns_left": 180, "tick": 0, "labels": {"red": "Команда 1", "blue": "Команда 2", "green": "Команда 3", "yellow": "Команда 4"}};
+draw(preview);ready();
+</script></body></html>

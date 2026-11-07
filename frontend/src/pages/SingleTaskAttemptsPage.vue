@@ -16,9 +16,7 @@
       </div>
     </header>
 
-    <article v-if="isGameLoading" class="agp-card p-4">
-      <div class="agp-loading-state agp-loading-state--compact">Загрузка игры...</div>
-    </article>
+    <LoadingSkeleton v-if="isGameLoading" :count="1" layout="list" label="Загрузка задачи…" />
     <article v-else-if="gameError" class="agp-card p-3 text-danger">{{ gameError }}</article>
 
     <article v-if="game" class="agp-card p-3 attempts-filter-panel">
@@ -86,7 +84,7 @@
         </div>
       </div>
 
-      <div v-if="isLoading && attempts.length === 0" class="agp-loading-state agp-loading-state--compact">Загрузка попыток...</div>
+      <LoadingSkeleton v-if="isLoading && attempts.length === 0" :count="3" layout="list" label="Загрузка попыток…" />
       <div v-else-if="attempts.length === 0" class="agp-empty-state agp-empty-state--compact">Попытки не найдены.</div>
       <div v-else class="table-responsive">
         <table class="table table-sm align-middle mb-0 attempts-table">
@@ -155,6 +153,7 @@
 </template>
 
 <script setup lang="ts">
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
@@ -368,21 +367,13 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
-  background:
-    radial-gradient(circle at 14% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
-    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.14), transparent 13rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.9)),
-    url("data:image/svg+xml,%3Csvg width='168' height='104' viewBox='0 0 168 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.13' stroke-width='2'%3E%3Cpath d='M20 24h28v28H20zM74 14h28v28H74zM124 34h26v26h-26zM48 70h28v20H48zM104 66h28v28h-28z'/%3E%3Cpath d='M48 38h26M102 28h22M76 80h28M88 42v24'/%3E%3C/g%3E%3C/svg%3E");
+  background: var(--agp-surface);
   background-position: center, center, center, right 1rem center;
   background-repeat: no-repeat;
 }
 
 .attempts-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.25rem;
-  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
+  content: none;
 }
 
 .attempts-hero > * {
@@ -392,7 +383,7 @@ onMounted(async () => {
 .attempts-kicker {
   color: #0f766e;
   font-size: 0.76rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -436,7 +427,7 @@ onMounted(async () => {
   display: grid;
   gap: 0.1rem;
   border-color: rgba(148, 163, 184, 0.34);
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  background: var(--agp-surface);
 }
 
 .attempts-metric-card::after {
@@ -454,7 +445,7 @@ onMounted(async () => {
 .attempts-metric-card span {
   color: var(--agp-text-muted);
   font-size: 0.78rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .attempts-metric-card strong {
@@ -491,7 +482,7 @@ onMounted(async () => {
 .attempts-table thead th {
   color: var(--agp-text-muted);
   font-size: 0.76rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -505,7 +496,7 @@ onMounted(async () => {
   border-radius: 999px;
   padding: 0.16rem 0.55rem;
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -538,9 +529,7 @@ onMounted(async () => {
 
 .attempts-log-panel {
   border: 1px solid var(--agp-border);
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.12), transparent 10rem),
-    var(--agp-surface-soft);
+  background: var(--agp-surface);
   border-radius: 8px;
   padding: 0.85rem;
 }

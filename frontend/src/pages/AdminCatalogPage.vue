@@ -115,7 +115,7 @@
     </article>
 
     <article class="agp-card p-3 admin-catalog-table-card">
-      <div v-if="isLoading" class="agp-loading-state agp-loading-state--compact">Загрузка задач...</div>
+      <LoadingSkeleton v-if="isLoading" :count="3" layout="list" label="Загрузка задач…" />
       <div v-else-if="rows.length === 0" class="agp-empty-state agp-empty-state--compact">Задачи не найдены.</div>
       <div v-else class="table-responsive">
         <table class="table align-middle mb-0 admin-catalog-table">
@@ -265,6 +265,7 @@
 </template>
 
 <script setup lang="ts">
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 
@@ -651,21 +652,13 @@ watch(
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
-  background:
-    radial-gradient(circle at 12% 18%, rgba(20, 184, 166, 0.18), transparent 15rem),
-    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.16), transparent 14rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.9)),
-    url("data:image/svg+xml,%3Csvg width='184' height='112' viewBox='0 0 184 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M22 22h34v28H22zM76 18h34v28H76zM132 30h30v26h-30zM50 72h32v22H50zM106 68h34v26h-34z'/%3E%3Cpath d='M56 36h20M110 32h22M82 82h24M92 46v22'/%3E%3C/g%3E%3C/svg%3E");
+  background: var(--agp-surface);
   background-position: center, center, center, right 1rem center;
   background-repeat: no-repeat;
 }
 
 .admin-catalog-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.25rem;
-  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
+  content: none;
 }
 
 .admin-catalog-hero > * {
@@ -675,7 +668,7 @@ watch(
 .admin-catalog-kicker {
   color: #0f766e;
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -692,7 +685,7 @@ watch(
   display: grid;
   gap: 0.05rem;
   border-color: rgba(148, 163, 184, 0.34);
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  background: var(--agp-surface);
 }
 
 .admin-catalog-metric::after {
@@ -726,7 +719,7 @@ watch(
 .admin-catalog-metric span {
   color: var(--agp-text-muted);
   font-size: 0.78rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .admin-catalog-metric strong {
@@ -760,7 +753,7 @@ watch(
 .admin-catalog-filter-result span {
   color: var(--agp-text-muted);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .admin-catalog-filter-result strong {
@@ -803,11 +796,7 @@ watch(
 }
 
 .admin-catalog-table-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.18rem;
-  background: linear-gradient(90deg, rgba(20, 184, 166, 0.72), rgba(37, 99, 235, 0.5), transparent);
+  content: none;
 }
 
 .admin-catalog-table-card > * {
@@ -823,7 +812,7 @@ watch(
 .admin-catalog-table thead th {
   color: var(--agp-text-muted);
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -836,7 +825,7 @@ watch(
   border-radius: 999px;
   padding: 0.16rem 0.55rem;
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -873,9 +862,7 @@ watch(
 .admin-catalog-editor {
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 0.85rem;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 10rem),
-    #f8fafc;
+  background: var(--agp-surface);
 }
 
 .admin-catalog-visibility-toggle {

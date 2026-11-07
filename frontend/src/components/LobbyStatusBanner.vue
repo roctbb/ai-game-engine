@@ -10,6 +10,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { statusPillClass } from '../lib/statusTone';
 
 const props = defineProps<{
   status: 'draft' | 'open' | 'running' | 'paused' | 'updating' | 'closed';
@@ -24,11 +25,7 @@ const message = computed(() => {
   return 'Лобби открыто для действий по правилам текущего режима.';
 });
 
-const toneClass = computed(() => {
-  if (props.status === 'updating' || props.status === 'paused') return 'agp-pill--warning';
-  if (props.status === 'closed') return 'agp-pill--danger';
-  return 'agp-pill--primary';
-});
+const toneClass = computed(() => statusPillClass(props.status));
 
 const toneText = computed(() => {
   if (props.status === 'updating') return 'Действия ограничены';

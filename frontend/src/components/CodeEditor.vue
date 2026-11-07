@@ -87,6 +87,7 @@ function ensureEditor(): void {
       highlightActiveLine(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ 'aria-label': props.language === 'python' ? 'Редактор кода Python' : 'Редактор кода' }),
       oneDark,
       editorTheme,
       languageCompartment.of(resolveLanguage()),

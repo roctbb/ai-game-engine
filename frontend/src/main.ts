@@ -7,10 +7,16 @@ import { storeSessionId } from './lib/api';
 import { router } from './router';
 import { useSessionStore } from './stores/session';
 import './style.css';
+import './styles/catalog.css';
+import './styles/interaction.css';
+import './styles/responsive.css';
+import { dialogFocus } from './lib/dialogFocus';
+import { internalNextPath, roleLandingPath } from './lib/roleNavigation';
 
 const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
+app.directive('dialog-focus', dialogFocus);
 
 const initialSessionId = new URL(window.location.href).searchParams.get('session_id')?.trim();
 if (initialSessionId) {
@@ -36,10 +42,7 @@ router.beforeEach(async (to) => {
 
   if (to.meta.public) {
     if (to.name === 'login' && sessionStore.isAuthenticated) {
-      const next = typeof to.query.next === 'string' && to.query.next.startsWith('/')
-        ? to.query.next
-        : '/tasks';
-      return next;
+      return internalNextPath(to.query.next, roleLandingPath(sessionStore.role));
     }
     return true;
   }
@@ -48,12 +51,14 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: { next: to.fullPath } };
   }
 
+  if (to.name === 'home') return roleLandingPath(sessionStore.role);
+
   const allowedRoles = Array.isArray(to.meta.roles) ? to.meta.roles : [];
   if (
     allowedRoles.length > 0 &&
     !allowedRoles.includes(sessionStore.role)
   ) {
-    return { name: 'tasks', replace: true };
+    return { path: roleLandingPath(sessionStore.role), replace: true };
   }
 
   return true;

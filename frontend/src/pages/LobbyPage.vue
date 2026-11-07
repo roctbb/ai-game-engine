@@ -3,13 +3,13 @@
     <header class="agp-card p-2 lobby-head">
       <div class="lobby-title-block">
         <div class="lobby-title-line">
-          <RouterLink class="agp-back-link" to="/lobbies">←</RouterLink>
+          <RouterLink class="agp-back-link" to="/lobbies" aria-label="К списку лобби"><AppIcon name="back" /></RouterLink>
           <h1 class="h4 mb-0">{{ lobby?.title || 'Лобби' }}</h1>
         </div>
       </div>
       <nav v-if="lobby" class="lobby-tabs" aria-label="Разделы лобби">
         <button v-if="canSeeCodeTab" :class="{ active: activeTab === 'code' }" @click="activeTab = 'code'">Код</button>
-        <button :class="{ active: activeTab === 'lobby' }" @click="activeTab = 'lobby'">Лобби</button>
+        <button :class="{ active: activeTab === 'lobby' }" @click="activeTab = 'lobby'">Участники и матчи</button>
         <button v-if="canSeeGameTab" :class="{ active: activeTab === 'game' }" @click="activeTab = 'game'">
           <span
             class="lobby-game-signal"
@@ -39,7 +39,7 @@
           aria-label="Готов играть"
           @click="play"
         >
-          {{ isBusy ? '…' : '▶' }}
+          <AppIcon name="play" /> <span>{{ isBusy ? 'Обновляем…' : 'Готов играть' }}</span>
         </button>
         <button
           v-if="showStopAction"
@@ -49,7 +49,7 @@
           aria-label="Не готов"
           @click="stop"
         >
-          ■
+          <AppIcon name="stop" />
         </button>
         <button
           v-if="canLeaveAsPlayer"
@@ -69,7 +69,7 @@
           aria-label="Начать соревнование"
           @click="showCompetitionDialog = true"
         >
-          ⚑
+          <AppIcon name="trophy" />
         </button>
         <button
           v-if="canManage"
@@ -79,7 +79,7 @@
           aria-label="Настройки лобби"
           @click="showLobbySettingsDialog = true"
         >
-          ⚙
+          <AppIcon name="settings" />
         </button>
         <button
           v-if="canManage && canPauseLobby"
@@ -89,7 +89,7 @@
           aria-label="Пауза"
           @click="pauseLobbyByTeacher"
         >
-          ❚❚
+          <AppIcon name="pause" />
         </button>
         <button
           v-if="canManage && canStartLobby"
@@ -99,7 +99,7 @@
           aria-label="Запустить"
           @click="startLobbyByTeacher"
         >
-          ▶
+          <AppIcon name="play" />
         </button>
         <button
           v-if="canManage && canStopLobbyByTeacher"
@@ -109,7 +109,7 @@
           aria-label="Остановить"
           @click="stopLobbyByTeacher"
         >
-          ■
+          <AppIcon name="stop" />
         </button>
       </div>
       <div v-else-if="lobby && canManage" class="lobby-head-actions">
@@ -134,7 +134,7 @@
           aria-label="Начать соревнование"
           @click="showCompetitionDialog = true"
         >
-          ⚑
+          <AppIcon name="trophy" />
         </button>
         <button
           class="lobby-action-icon"
@@ -143,7 +143,7 @@
           aria-label="Настройки лобби"
           @click="showLobbySettingsDialog = true"
         >
-          ⚙
+          <AppIcon name="settings" />
         </button>
         <button
           v-if="canPauseLobby"
@@ -153,7 +153,7 @@
           aria-label="Пауза"
           @click="pauseLobbyByTeacher"
         >
-          ❚❚
+          <AppIcon name="pause" />
         </button>
         <button
           v-if="canStartLobby"
@@ -163,7 +163,7 @@
           aria-label="Запустить"
           @click="startLobbyByTeacher"
         >
-          ▶
+          <AppIcon name="play" />
         </button>
         <button
           v-if="canStopLobbyByTeacher"
@@ -173,15 +173,13 @@
           aria-label="Остановить"
           @click="stopLobbyByTeacher"
         >
-          ■
+          <AppIcon name="stop" />
         </button>
       </div>
     </header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
-    <article v-if="isLoading" class="agp-card p-4">
-      <div class="agp-loading-state agp-loading-state--compact">Загрузка лобби...</div>
-    </article>
+    <LoadingSkeleton v-if="isLoading" :count="3" label="Загрузка лобби…" />
 
     <article v-else-if="joinRequired" class="agp-card p-4 lobby-access-card">
       <div>
@@ -215,7 +213,7 @@
 
       <Teleport to="body">
         <div v-if="showCompetitionDialog" class="lobby-modal-backdrop" @click.self="showCompetitionDialog = false">
-          <article class="lobby-competition-dialog" role="dialog" aria-modal="true" aria-labelledby="competition-dialog-title">
+          <article class="lobby-competition-dialog" v-dialog-focus="() => showCompetitionDialog = false" role="dialog" aria-modal="true" aria-labelledby="competition-dialog-title">
             <header class="lobby-dialog-head">
               <div>
                 <h2 id="competition-dialog-title" class="h5 mb-1">Начать соревнование</h2>
@@ -228,7 +226,7 @@
                 :disabled="isBusy"
                 @click="showCompetitionDialog = false"
               >
-                ×
+                <AppIcon name="close" />
               </button>
             </header>
 
@@ -291,7 +289,7 @@
 
       <Teleport to="body">
         <div v-if="showLobbySettingsDialog" class="lobby-modal-backdrop" @click.self="showLobbySettingsDialog = false">
-          <article class="lobby-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="lobby-settings-dialog-title">
+          <article class="lobby-settings-dialog" v-dialog-focus="() => showLobbySettingsDialog = false" role="dialog" aria-modal="true" aria-labelledby="lobby-settings-dialog-title">
             <header class="lobby-dialog-head">
               <div>
                 <h2 id="lobby-settings-dialog-title" class="h5 mb-1">Настройки лобби</h2>
@@ -304,7 +302,7 @@
                 :disabled="isSavingLobbySettings"
                 @click="showLobbySettingsDialog = false"
               >
-                ×
+                <AppIcon name="close" />
               </button>
             </header>
 
@@ -372,7 +370,7 @@
 
       <Teleport to="body">
         <div v-if="showPlayerCodeDialog" class="lobby-modal-backdrop" @click.self="closePlayerCodeDialog">
-          <article class="lobby-player-code-dialog" role="dialog" aria-modal="true" aria-labelledby="player-code-dialog-title">
+          <article class="lobby-player-code-dialog" v-dialog-focus="closePlayerCodeDialog" role="dialog" aria-modal="true" aria-labelledby="player-code-dialog-title">
             <header class="lobby-dialog-head">
               <div>
                 <h2 id="player-code-dialog-title" class="h5 mb-1">Код игрока</h2>
@@ -385,7 +383,7 @@
                 :disabled="isSavingCode"
                 @click="closePlayerCodeDialog"
               >
-                ×
+                <AppIcon name="close" />
               </button>
             </header>
 
@@ -441,7 +439,7 @@
         </div>
       </Teleport>
 
-      <section v-if="activeTab === 'code' && canSeeCodeTab && workspace" class="lobby-code-layout">
+      <section v-if="canSeeCodeTab && workspace" v-show="activeTab === 'code'" class="lobby-code-layout" :class="{ 'lobby-code-layout--single-slot': slotStates.length === 1 }">
         <aside class="agp-card p-3 lobby-roles">
           <div class="lobby-roles-head">
             <div>
@@ -483,10 +481,11 @@
         <article class="agp-card p-3 lobby-editor">
           <div class="lobby-editor-toolbar">
             <div>
-              <h2 class="h6 mb-1">{{ activeSlotKey || 'Код' }}</h2>
+              <h2 class="h6 mb-1">{{ slotStates.length === 1 ? 'Код игрока' : activeSlotKey || 'Код' }}</h2>
               <p class="small mb-0">{{ codeStateLabel }}</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
+              <RouterLink class="btn btn-sm btn-outline-secondary" :to="{ name: 'game-docs', params: { gameId: lobby.game_id }, query: { from: 'lobby', lobby_id: lobby.lobby_id } }" target="_blank" rel="noopener noreferrer">Правила игры</RouterLink>
               <button class="btn btn-sm btn-outline-secondary" :disabled="!activeTemplate || !canEditSelectedCode" @click="applyTemplate">
                 Шаблон
               </button>
@@ -506,14 +505,14 @@
           <CodeEditor v-model="editorCode" :readonly="!activeSlotKey || !canEditSelectedCode" />
         </article>
       </section>
-      <section v-else-if="activeTab === 'code' && canSeeCodeTab" class="agp-card p-4 lobby-code-empty">
+      <section v-if="canSeeCodeTab && !workspace" v-show="activeTab === 'code'" class="agp-card p-4 lobby-code-empty">
         <h2 class="h5 mb-2">Код пока недоступен</h2>
         <p class="text-muted mb-0">
           Рабочее место появится после присоединения к лобби как игрок.
         </p>
       </section>
 
-      <section v-else-if="activeTab === 'lobby'" class="lobby-state-grid">
+      <section v-show="activeTab === 'lobby'" class="lobby-state-grid">
         <div class="lobby-main-stack">
           <article class="agp-card p-3 lobby-matches-card">
             <header class="lobby-section-head">
@@ -633,7 +632,7 @@
                     aria-label="Удалить игрока из лобби"
                     @click="removeTeamFromLobby(stat)"
                   >
-                    ×
+                    <AppIcon name="close" />
                   </button>
                 </div>
               </div>
@@ -643,7 +642,7 @@
         </aside>
       </section>
 
-      <section v-else-if="activeTab === 'game'" class="lobby-game-layout">
+      <section v-if="canSeeGameTab" v-show="activeTab === 'game'" class="lobby-game-layout">
         <article class="lobby-game-view">
           <iframe
             v-if="displayedGameRunId"
@@ -722,7 +721,7 @@
         </aside>
       </section>
 
-      <section v-else-if="activeTab === 'competition' && activeCompetition" class="agp-card p-3 lobby-competition-panel">
+      <section v-if="activeCompetition" v-show="activeTab === 'competition'" class="agp-card p-3 lobby-competition-panel">
         <div class="d-flex justify-content-between gap-3 flex-wrap">
           <div>
             <h2 class="h6 mb-1">{{ cleanCompetitionTitle(activeCompetition.title) }}</h2>
@@ -799,7 +798,7 @@
         <div v-else class="agp-empty-state agp-empty-state--compact mt-3">Сетка появится после старта первого раунда.</div>
       </section>
 
-      <section v-else-if="activeTab === 'archive'" class="agp-card p-3">
+      <section v-show="activeTab === 'archive'" class="agp-card p-3">
         <h2 class="h6 mb-3">Архив соревнований</h2>
         <div class="lobby-match-list">
           <RouterLink
@@ -824,6 +823,9 @@
 </template>
 
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue';
+import { statusPillClass } from '../lib/statusTone';
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch, type PropType } from 'vue';
 import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
@@ -1003,7 +1005,7 @@ const activeCompetition = ref<CompetitionDto | null>(null);
 const competitionRuns = ref<CompetitionRunItemDto[]>([]);
 const trainingRuns = ref<RunDto[]>([]);
 const competitionArchive = ref<LobbyCompetitionDto[]>([]);
-const activeTab = ref<'code' | 'lobby' | 'game' | 'competition' | 'archive'>('code');
+const activeTab = ref<'code' | 'lobby' | 'game' | 'competition' | 'archive'>(sessionStore.role === 'student' ? 'code' : 'lobby');
 const activeSlotKey = ref('');
 const editorCode = ref('');
 const savedCode = ref('');
@@ -1184,10 +1186,7 @@ function lobbyStatusText(status: LobbyDto['status']): string {
 }
 
 function lobbyStatusClass(status: LobbyDto['status']): string {
-  if (status === 'open' || status === 'draft') return 'agp-pill--primary';
-  if (status === 'running') return 'agp-pill--warning';
-  if (status === 'closed' || status === 'stopped') return 'agp-pill--danger';
-  return 'agp-pill--neutral';
+  return statusPillClass(status);
 }
 
 function teamStatusLabel(teamId: string): string {
@@ -1617,11 +1616,11 @@ const currentGamePhaseLabel = computed(() => {
   }
   return gamePhaseLabel(message.phase, message.status);
 });
-const gameSignalTone = computed<'red' | 'yellow' | 'green'>(() => {
+const gameSignalTone = computed<'idle' | 'yellow' | 'green'>(() => {
   const phase = lobby.value?.cycle_phase;
   if (phase === 'replay' || phase === 'result') return 'green';
   if (phase === 'simulation' || phase === 'waiting_viewer' || displayedGameRunId.value) return 'yellow';
-  return 'red';
+  return 'idle';
 });
 const gameSignalLabel = computed(() => {
   const phase = lobby.value?.cycle_phase;
@@ -2933,6 +2932,7 @@ async function submitLobbyAccessCode(): Promise<void> {
   errorMessage.value = '';
   try {
     await loadLobby();
+    if (!canManage.value && lobby.value?.my_status === 'playing') activeTab.value = 'game';
     if (!canSeeCodeTab.value && activeTab.value === 'code') {
       activeTab.value = 'lobby';
     }
@@ -3281,6 +3281,7 @@ onMounted(async () => {
   errorMessage.value = '';
   try {
     await loadLobby();
+    if (!canManage.value && lobby.value?.my_status === 'playing') activeTab.value = 'game';
     if (lobby.value) {
       startLiveUpdates();
       startCompetitionPolling();
@@ -3309,23 +3310,15 @@ onUnmounted(() => {
   align-content: start;
   grid-auto-rows: max-content;
   padding: 0;
-  background-color: #eef4fb;
-  background-image:
-    url("data:image/svg+xml,%3Csvg width='160' height='160' viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.12' stroke-width='2'%3E%3Cpath d='M16 16h28v28H16zM116 16h28v28h-28zM16 116h28v28H16zM116 116h28v28h-28z'/%3E%3Cpath d='M64 80h32M80 64v32M0 80h24M136 80h24M80 0v24M80 136v24'/%3E%3C/g%3E%3C/svg%3E"),
-    radial-gradient(circle at 12% 8%, rgba(45, 212, 191, 0.22), transparent 26rem),
-    radial-gradient(circle at 85% 18%, rgba(251, 191, 36, 0.18), transparent 24rem),
-    linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+  background-color: var(--agp-bg);
+  background-image: none;
   background-size: 160px 160px, auto, auto, auto;
 }
 
 .lobby-page--game {
   gap: 0;
   background-color: #020617;
-  background-image:
-    url("data:image/svg+xml,%3Csvg width='144' height='144' viewBox='0 0 144 144' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.14' stroke-width='1.5'%3E%3Cpath d='M18 18h30v30H18zM96 18h30v30H96zM18 96h30v30H18zM96 96h30v30H96z'/%3E%3Cpath d='M72 0v144M0 72h144'/%3E%3C/g%3E%3C/svg%3E"),
-    radial-gradient(circle at 14% 12%, rgba(20, 184, 166, 0.24), transparent 28rem),
-    radial-gradient(circle at 82% 20%, rgba(59, 130, 246, 0.18), transparent 24rem),
-    linear-gradient(135deg, #030712 0%, #071528 50%, #020617 100%);
+  background-image: none;
 }
 
 .lobby-head {
@@ -3404,15 +3397,18 @@ onUnmounted(() => {
 }
 
 .lobby-ready-icon {
-  width: 2.45rem;
-  height: 2.45rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  padding: .5rem .75rem;
   border: 1px solid transparent;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  font-size: 1rem;
-  font-weight: 900;
-  line-height: 1;
+  border-radius: .55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  font-size: .85rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .lobby-ready-icon:disabled {
@@ -3441,7 +3437,7 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.82);
   color: #334155;
   font-size: 0.95rem;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
@@ -3517,9 +3513,7 @@ onUnmounted(() => {
   width: min(100%, 28rem);
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 0.7rem;
-  background:
-    url("data:image/svg+xml,%3Csvg width='112' height='112' viewBox='0 0 112 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2314b8a6' stroke-opacity='.14'%3E%3Cpath d='M16 16h24v24H16zM72 16h24v24H72zM44 64h24v24H44z'/%3E%3Cpath d='M40 28h32M56 40v24'/%3E%3C/g%3E%3C/svg%3E") right 0.8rem bottom 0.8rem / 8rem auto no-repeat,
-    #ffffff;
+  background: var(--agp-surface);
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
   padding: 1rem;
 }
@@ -3576,7 +3570,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.35rem;
   padding: 0.4rem 0.7rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .lobby-tabs button.active {
@@ -3591,8 +3585,8 @@ onUnmounted(() => {
   box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.16);
 }
 
-.lobby-game-signal--red {
-  background: #ef4444;
+.lobby-game-signal--idle {
+  background: #94a3b8;
 }
 
 .lobby-game-signal--yellow {
@@ -3664,21 +3658,14 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   border-color: rgba(34, 211, 238, 0.24);
-  background:
-    url("data:image/svg+xml,%3Csvg width='128' height='96' viewBox='0 0 128 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.12'%3E%3Cpath d='M16 16h24v24H16zM88 16h24v24H88zM52 52h24v24H52z'/%3E%3Cpath d='M40 28h12M76 64h12M64 0v16M64 80v16'/%3E%3C/g%3E%3C/svg%3E") right 0.75rem top 0.75rem / 9rem auto no-repeat,
-    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98));
+  background: #131e2f;
   color: #e5f3ff;
-  box-shadow: 0 18px 48px rgba(2, 6, 23, 0.2);
+  box-shadow: none;
 }
 
 .lobby-roles::before,
 .lobby-editor::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.18rem;
-  background: linear-gradient(90deg, #22d3ee, #14b8a6, #facc15);
-  opacity: 0.82;
+  content: none;
 }
 
 .lobby-roles-head {
@@ -3712,8 +3699,8 @@ onUnmounted(() => {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #22d3ee, #14b8a6, #facc15);
-  box-shadow: 0 0 18px rgba(34, 211, 238, 0.32);
+  background: var(--agp-primary);
+  box-shadow: none;
 }
 
 .lobby-role-button {
@@ -3731,7 +3718,7 @@ onUnmounted(() => {
 
 .lobby-role-button.active {
   border-color: rgba(45, 212, 191, 0.72);
-  background: linear-gradient(90deg, rgba(20, 184, 166, 0.32), rgba(15, 23, 42, 0.72));
+  background: #131e2f;
   box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
 }
 
@@ -3756,7 +3743,7 @@ onUnmounted(() => {
 
 .lobby-role-button span,
 .lobby-participant-column h3 {
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .lobby-role-button small,
@@ -3786,11 +3773,7 @@ onUnmounted(() => {
 }
 
 .lobby-settings-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.18rem;
-  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
+  content: none;
 }
 
 .lobby-settings-grid {
@@ -3917,7 +3900,7 @@ onUnmounted(() => {
 
 .lobby-editor-toolbar .btn-dark {
   border: 0;
-  background: linear-gradient(135deg, #14b8a6, #2563eb);
+  background: var(--agp-action);
   color: #ffffff;
   box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
 }
@@ -3932,7 +3915,7 @@ onUnmounted(() => {
   align-content: start;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 0.55rem;
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.92));
+  background: var(--agp-surface);
   padding: 0.65rem;
   min-width: 0;
   overflow: hidden;
@@ -3954,7 +3937,7 @@ onUnmounted(() => {
   justify-content: center;
   background: #e2f7f4;
   color: #0f766e;
-  font-weight: 850;
+  font-weight: 700;
   font-size: 0.78rem;
 }
 
@@ -3976,9 +3959,7 @@ onUnmounted(() => {
 .lobby-column-empty {
   border: 1px dashed rgba(15, 118, 110, 0.22);
   border-radius: 0.55rem;
-  background:
-    url("data:image/svg+xml,%3Csvg width='72' height='48' viewBox='0 0 72 48' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2314b8a6' stroke-opacity='.16'%3E%3Cpath d='M12 12h14v14H12zM46 12h14v14H46zM29 26h14v14H29z'/%3E%3C/g%3E%3C/svg%3E") right 0.4rem center / 4.5rem auto no-repeat,
-    rgba(240, 253, 250, 0.46);
+  background: var(--agp-surface);
   color: var(--agp-text-muted);
   font-size: 0.84rem;
   padding: 0.65rem;
@@ -4054,7 +4035,7 @@ onUnmounted(() => {
   background: #e2f7f4;
   color: #0f766e;
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .lobby-participant-column--playing .lobby-player-avatar {
@@ -4133,7 +4114,7 @@ onUnmounted(() => {
   margin: 0;
   color: var(--agp-text-muted);
   font-size: 0.8rem;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .lobby-match-group.muted {
@@ -4184,7 +4165,7 @@ onUnmounted(() => {
   color: var(--agp-primary);
   padding: 0.2rem 0.55rem;
   font-size: 0.78rem;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .lobby-match-meta {
@@ -4213,7 +4194,7 @@ onUnmounted(() => {
   color: var(--agp-text-muted);
   padding: 0.14rem 0.55rem;
   font-size: 0.78rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .lobby-match-player-chip span {
@@ -4226,7 +4207,7 @@ onUnmounted(() => {
 .lobby-match-player-chip small {
   color: var(--agp-text);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .lobby-match-player-chip.winner {
@@ -4241,7 +4222,7 @@ onUnmounted(() => {
   background: #fffbeb;
   color: #b45309;
   padding: 0.12rem 0.5rem;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .lobby-match-pagination {
@@ -4284,7 +4265,7 @@ onUnmounted(() => {
   background: rgba(204, 251, 241, 0.76);
   color: #0f766e;
   font-size: 0.98rem;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 1;
 }
 
@@ -4342,7 +4323,7 @@ onUnmounted(() => {
   color: var(--agp-text-muted);
   padding: 0.12rem 0.45rem;
   font-size: 0.7rem;
-  font-weight: 850;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -4374,7 +4355,7 @@ onUnmounted(() => {
   background: #fff7f7;
   color: #b91c1c;
   font-size: 1rem;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1;
 }
 
@@ -4395,7 +4376,7 @@ onUnmounted(() => {
   place-items: center;
   background: var(--agp-primary-soft);
   color: var(--agp-primary);
-  font-weight: 850;
+  font-weight: 700;
   font-size: 0.78rem;
 }
 
@@ -4456,9 +4437,7 @@ onUnmounted(() => {
   border: 0;
   border-left: 1px solid rgba(34, 211, 238, 0.24);
   border-radius: 0;
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98)),
-    url("data:image/svg+xml,%3Csvg width='104' height='104' viewBox='0 0 104 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23facc15' stroke-opacity='.12'%3E%3Cpath d='M16 52h72M52 16v72M28 28l48 48M76 28 28 76'/%3E%3C/g%3E%3C/svg%3E");
+  background: #131e2f;
   color: #dbeafe;
   box-shadow: none;
 }
@@ -4494,7 +4473,7 @@ onUnmounted(() => {
 .lobby-game-run-select span {
   color: #8ea7c1;
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .lobby-game-run-card {
@@ -4513,7 +4492,7 @@ onUnmounted(() => {
 .lobby-game-run-card:hover,
 .lobby-game-run-card.active {
   border-color: rgba(45, 212, 191, 0.55);
-  background: linear-gradient(90deg, rgba(20, 184, 166, 0.28), rgba(15, 23, 42, 0.72));
+  background: #131e2f;
 }
 
 .lobby-game-run-card i {
@@ -4526,7 +4505,7 @@ onUnmounted(() => {
   background: rgba(45, 212, 191, 0.16);
   color: #99f6e4;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 700;
   font-size: 0.78rem;
 }
 
@@ -4583,7 +4562,7 @@ onUnmounted(() => {
 
 .lobby-game-layout .lobby-stat-row--self {
   border-color: rgba(45, 212, 191, 0.5);
-  background: linear-gradient(90deg, rgba(20, 184, 166, 0.28), rgba(15, 23, 42, 0.7));
+  background: #131e2f;
 }
 
 .lobby-stat-title {
@@ -4601,7 +4580,7 @@ onUnmounted(() => {
 
 .lobby-stat-score {
   color: #fef3c7;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.22;
   overflow-wrap: anywhere;
   text-align: left;
@@ -4627,11 +4606,11 @@ onUnmounted(() => {
 }
 
 .lobby-stat-bars span:first-child i {
-  background: linear-gradient(90deg, #fb7185, #facc15);
+  background: #22c55e;
 }
 
 .lobby-stat-bars span:last-child i {
-  background: linear-gradient(90deg, #38bdf8, #22d3ee);
+  background: #38bdf8;
 }
 
 .lobby-game-layout .lobby-stat-row small {
@@ -4651,10 +4630,7 @@ onUnmounted(() => {
   place-content: center;
   gap: 0.25rem;
   border: 1px solid rgba(34, 211, 238, 0.12);
-  background:
-    url("data:image/svg+xml,%3Csvg width='180' height='120' viewBox='0 0 180 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.14' stroke-width='2'%3E%3Cpath d='M32 24h32v32H32zM116 24h32v32h-32zM74 64h32v32H74z'/%3E%3Cpath d='M64 40h52M90 0v24M90 96v24'/%3E%3C/g%3E%3C/svg%3E") center / 16rem auto no-repeat,
-    radial-gradient(circle at 50% 45%, rgba(20, 184, 166, 0.18), transparent 18rem),
-    #020617;
+  background: #131e2f;
   color: #e5f3ff;
   text-align: center;
 }
@@ -4664,13 +4640,13 @@ onUnmounted(() => {
 }
 
 @media (max-width: 980px) {
+  .lobby-code-layout--single-slot .lobby-roles { display: none; }
   .lobby-head,
   .lobby-code-layout,
   .lobby-game-layout,
   .lobby-state-grid,
   .lobby-participant-columns {
     grid-template-columns: 1fr;
-    display: grid;
   }
 
   .lobby-head-actions,

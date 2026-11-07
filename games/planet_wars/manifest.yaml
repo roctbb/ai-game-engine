@@ -1,0 +1,28 @@
+id: planet_wars_v1
+title: Планетные войны
+game_mode: multiplayer
+min_players_per_match: 2
+max_players_per_match: 4
+semver: 1.0.0
+code_api_mode: script_based
+engine_entrypoint: engine.py
+renderer_entrypoint: renderer/index.html
+player_instruction: 'Напишите make_move(state): верните список приказов {"from": id, "to": id, "ships": число}. Захватывайте планеты и сохраняйте свой флот.'
+description: Команды производят корабли на планетах и одновременно отправляют флоты для захвата нейтральных и вражеских миров.
+difficulty: hard
+learning_section: Соревновательные стратегии
+topics:
+  - стратегия
+  - симуляция
+  - управление ресурсами
+slots:
+  - key: player
+    title: Код команды
+    required: true
+demo_strategies:
+  - id: expansion
+    slot_key: player
+    title: 'Демо: расширение и подкрепление'
+    language: python
+    path: examples/expansion.py
+    description: Учитывает производство за время перелёта, выбирает выгодные цели и подводит подкрепления к фронту.

@@ -2,60 +2,24 @@
   <section class="agp-grid agp-task-workspace agp-watch-page" :class="{ 'agp-watch-page--embedded': isEmbedded }">
     <header v-if="!isEmbedded" class="agp-task-header">
       <div class="agp-task-header-main">
-        <RouterLink :to="backTarget" class="agp-back-link" :title="backLabel" :aria-label="backLabel">←</RouterLink>
+        <RouterLink :to="backTarget" class="agp-back-link" :title="backLabel" :aria-label="backLabel"><AppIcon name="back" /></RouterLink>
         <h1>{{ watchContext?.game_title || watchContext?.game_slug || 'Просмотр запуска' }}</h1>
       </div>
 
-      <div v-if="!isLoading" class="agp-task-header-player">
-        <button
-          class="agp-icon-button agp-icon-button--replay"
-          :disabled="!canPlayReplay"
-          :title="replayIsPlaying ? 'Пауза' : 'Воспроизвести'"
-          aria-label="Воспроизвести повтор"
-          @click="toggleReplayPlay"
-        >
-          {{ replayIsPlaying ? '❚❚' : '▶' }}
-        </button>
-        <button
-          class="agp-icon-button agp-icon-button--ghost"
-          :disabled="!canStepBackward"
-          title="Предыдущий кадр"
-          aria-label="Предыдущий кадр"
-          @click="stepReplay(-1)"
-        >
-          ‹
-        </button>
-        <button
-          class="agp-icon-button agp-icon-button--ghost"
-          :disabled="!canStepForward"
-          title="Следующий кадр"
-          aria-label="Следующий кадр"
-          @click="stepReplay(1)"
-        >
-          ›
-        </button>
-        <span class="small text-muted agp-player-frame-label">
-          <template v-if="replayFrames.length">кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</template>
-          <template v-else>повтор после завершения</template>
-        </span>
-        <input
-          v-model.number="replayFrameIndex"
-          class="form-range agp-player-range"
-          type="range"
-          min="0"
-          :max="Math.max(0, replayFrames.length - 1)"
-          :disabled="replayFrames.length <= 1 || firstReplayLockActive"
-        />
-        <label class="agp-speed-control small text-muted">
-          <span class="agp-speed-label">скорость</span>
-          <select v-model.number="replaySpeedMs" class="form-select form-select-sm agp-speed-select">
-            <option :value="2000">медленно</option>
-            <option :value="1000">обычно</option>
-            <option :value="500">быстро</option>
-            <option :value="250">очень быстро</option>
-          </select>
-        </label>
-      </div>
+      <ReplayControls
+        v-if="!isLoading"
+        v-model:frame-index="replayFrameIndex"
+        v-model:delay="replaySpeedMs"
+        class="agp-task-header-player"
+        :frame-count="replayFrames.length"
+        :playing="replayIsPlaying"
+        :can-play="canPlayReplay"
+        :can-step-backward="canStepBackward"
+        :can-step-forward="canStepForward"
+        :seek-disabled="firstReplayLockActive"
+        @toggle="toggleReplayPlay"
+        @step="stepReplay"
+      />
 
       <div class="agp-task-header-actions">
         <div class="agp-run-status">
@@ -71,12 +35,12 @@
           aria-label="Перезапустить визуализацию"
           @click="restartRenderer"
         >
-          ↻
+          <AppIcon name="refresh" />
         </button>
       </div>
     </header>
 
-    <article v-if="isLoading" class="agp-card p-4 text-muted">Загрузка матча...</article>
+    <LoadingSkeleton v-if="isLoading" :count="2" layout="workspace" label="Загрузка матча…" />
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="watchContext && run">
@@ -86,8 +50,8 @@
             <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
             {{ runStatusLabel }}
           </div>
-          <div class="agp-viewer-overlay agp-viewer-overlay--message agp-watch-renderer-state">
-            {{ rendererStatusLabel }}
+          <div v-if="!rendererReady && safeRendererUrl" class="agp-viewer-overlay agp-viewer-overlay--message agp-watch-renderer-state">
+            Подготавливаем визуализацию…
           </div>
           <div v-if="showWinnerBanner" class="agp-watch-winner-banner">
             <span>Победитель</span>
@@ -103,21 +67,14 @@
               :key="rendererKey"
               :src="safeRendererUrl"
               title="Визуализация игры"
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts"
               @load="onRendererLoad"
             ></iframe>
           </div>
           <div v-else class="agp-card-soft p-3 text-muted small">
             Для этой игры визуализация не настроена.
           </div>
-          <section v-if="showBotConsole" class="agp-bot-console" aria-label="Вывод бота">
-            <div class="agp-bot-console-head">
-              <strong>Вывод print</strong>
-              <span v-if="replayFrames.length > 0" class="text-muted">
-                кадр {{ replayFrameIndex + 1 }}/{{ replayFrames.length }}
-              </span>
-            </div>
-            <div class="agp-bot-console-body">
+          <BotConsole v-if="showBotConsole" :position="replayFrames.length ? `${replayFrameIndex + 1} / ${replayFrames.length}` : ''">
               <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
                 print появится здесь
               </div>
@@ -125,8 +82,7 @@
                 <span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span>
                 <span class="mono agp-bot-console-message">{{ line.message }}</span>
               </div>
-            </div>
-          </section>
+          </BotConsole>
         </article>
 
         <aside v-if="!isEmbedded" class="agp-card p-3 agp-watch-side-card">
@@ -247,6 +203,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import AppIcon from '../components/AppIcon.vue';
+import BotConsole from '../components/BotConsole.vue';
+import ReplayControls from '../components/ReplayControls.vue';
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
+import { createReplayClock, loadReplayDelay, saveReplayDelay } from '../lib/replayPlayback';
+import { isShortcutInput } from '../lib/keyboard';
 import { RouterLink, useRoute } from 'vue-router';
 
 import RunReasonBadge from '../components/RunReasonBadge.vue';
@@ -337,7 +299,11 @@ const nowMs = ref(Date.now());
 let rendererLogCounter = 0;
 let runPollingHandle: ReturnType<typeof setInterval> | null = null;
 let runEventSource: EventSource | null = null;
-let replayPlaybackHandle: ReturnType<typeof setInterval> | null = null;
+const replayPlaybackClock = createReplayClock(() => {
+  if (replayFrameIndex.value >= replayFrames.value.length - 1) { stopReplayPlayback(); return; }
+  if (firstReplayLockActive.value && replayFrameIndex.value >= firstReplayAllowedFrameIndex.value) return;
+  replayFrameIndex.value += 1;
+}, () => replaySpeedMs.value);
 let replayClockHandle: ReturnType<typeof setInterval> | null = null;
 let isPollingRun = false;
 let pendingRunPoll = false;
@@ -376,11 +342,12 @@ const runKindLabel = computed(() => {
   return 'запуск';
 });
 const backTarget = computed(() => {
-  if (run.value?.run_kind === 'single_task') return '/tasks';
+  if (run.value?.run_kind === 'single_task') return `/tasks/${encodeURIComponent(run.value.game_id)}/run`;
+  if (run.value?.lobby_id) return `/lobbies/${encodeURIComponent(run.value.lobby_id)}`;
   return '/lobbies';
 });
 const backLabel = computed(() => {
-  if (run.value?.run_kind === 'single_task') return 'К задачам';
+  if (run.value?.run_kind === 'single_task') return 'К решению задачи';
   return 'К лобби';
 });
 const rendererStatusLabel = computed(() => {
@@ -1119,7 +1086,7 @@ function sendToRenderer(message: Record<string, unknown>): void {
   if (!frame || !frame.contentWindow) {
     return;
   }
-  frame.contentWindow.postMessage(sanitizeForPostMessage(message), window.location.origin);
+  frame.contentWindow.postMessage(sanitizeForPostMessage(message), '*');
 }
 
 function sendRendererInit(): void {
@@ -1150,6 +1117,7 @@ function sendRendererStateAndResult(): void {
   sendToRenderer({
     type: 'agp.renderer.state',
     payload: {
+      motion: { duration_ms: replayIsPlaying.value ? Math.min(180, replaySpeedMs.value / 2) : 0 },
       tick: rendererTick.value,
       phase: rendererPhase,
       frame: rendererFrame,
@@ -1223,7 +1191,7 @@ function embeddedPlayerStatsForFrame(frame: unknown): MatchPlayerStat[] {
 function replaySpeedFromQuery(): number {
   const raw = route.query.speed_ms;
   const value = typeof raw === 'string' ? Number(raw) : NaN;
-  if (!Number.isFinite(value)) return 1000;
+  if (!Number.isFinite(value)) return loadReplayDelay();
   return Math.max(150, Math.min(3000, value));
 }
 
@@ -1272,12 +1240,7 @@ function restartRenderer(): void {
 }
 
 function stopReplayPlayback(): void {
-  if (!replayPlaybackHandle) {
-    replayIsPlaying.value = false;
-    return;
-  }
-  clearInterval(replayPlaybackHandle);
-  replayPlaybackHandle = null;
+  replayPlaybackClock.stop();
   replayIsPlaying.value = false;
 }
 
@@ -1291,16 +1254,7 @@ function startReplayPlayback(): void {
     replayFrameIndex.value = 0;
   }
   replayIsPlaying.value = true;
-  replayPlaybackHandle = setInterval(() => {
-    if (replayFrameIndex.value >= replayFrames.value.length - 1) {
-      stopReplayPlayback();
-      return;
-    }
-    if (firstReplayLockActive.value && replayFrameIndex.value >= firstReplayAllowedFrameIndex.value) {
-      return;
-    }
-    replayFrameIndex.value += 1;
-  }, replaySpeedMs.value);
+  replayPlaybackClock.start();
 }
 
 function toggleReplayPlay(): void {
@@ -1590,19 +1544,33 @@ watch(firstReplayAllowedFrameIndex, () => {
   syncFirstReplayFrame();
 });
 
-watch(replaySpeedMs, () => {
+watch(replaySpeedMs, (delay) => {
+  if (!isEmbedded.value) saveReplayDelay(delay);
   if (replayIsPlaying.value) {
     startReplayPlayback();
   }
 });
 
+function handlePlaybackKeydown(event: KeyboardEvent): void {
+  if (isEmbedded.value || event.ctrlKey || event.metaKey || event.altKey || isShortcutInput(event.target)) return;
+  if (event.code === 'Space') {
+    event.preventDefault();
+    toggleReplayPlay();
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault();
+    stepReplay(event.key === 'ArrowLeft' ? -1 : 1);
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', handlePlaybackKeydown);
   window.addEventListener('message', onRendererMessage);
   replayClockHandle = setInterval(syncFirstReplayFrame, 500);
   await bootstrapPage();
 });
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', handlePlaybackKeydown);
   window.removeEventListener('message', onRendererMessage);
   if (replayClockHandle) clearInterval(replayClockHandle);
   stopReplayPlayback();
@@ -1623,20 +1591,14 @@ onUnmounted(() => {
 
 .agp-watch-page {
   min-height: 100dvh;
-  background-color: #050b1a;
-  background-image:
-    url("data:image/svg+xml,%3Csvg width='180' height='180' viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.16' stroke-width='2'%3E%3Cpath d='M20 20h34v34H20zM126 20h34v34h-34zM20 126h34v34H20zM126 126h34v34h-34z'/%3E%3Cpath d='M72 90h36M90 72v36M0 90h28M152 90h28M90 0v28M90 152v28'/%3E%3C/g%3E%3C/svg%3E"),
-    radial-gradient(circle at 12% 10%, rgba(45, 212, 191, 0.22), transparent 26rem),
-    radial-gradient(circle at 84% 22%, rgba(251, 191, 36, 0.14), transparent 22rem),
-    linear-gradient(135deg, #050b1a 0%, #071528 52%, #030712 100%);
+  background-color: var(--agp-bg);
+  background-image: none;
   background-size: 180px 180px, auto, auto, auto;
   color: #dbeafe;
 }
 
 .agp-watch-page .agp-task-header {
-  background:
-    linear-gradient(90deg, rgba(7, 16, 31, 0.98), rgba(8, 26, 48, 0.96)),
-    url("data:image/svg+xml,%3Csvg width='128' height='64' viewBox='0 0 128 64' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.14'%3E%3Cpath d='M0 32h128M32 0v64M96 0v64M48 16h32v32H48z'/%3E%3C/g%3E%3C/svg%3E");
+  background: #131e2f;
 }
 
 .agp-watch-page--embedded .agp-watch-columns {
@@ -1656,13 +1618,13 @@ onUnmounted(() => {
 }
 
 .agp-watch-page--embedded .agp-viewer-card .agp-viewer-frame {
-  height: auto !important;
+  height: 100% !important;
   min-height: 0;
 }
 
 .agp-watch-page .agp-viewer-card .agp-viewer-frame {
-  height: calc(100dvh - 7.15rem);
-  min-height: 30rem;
+  height: 100%;
+  min-height: 0;
 }
 
 .agp-watch-page .agp-viewer-card {
@@ -1671,7 +1633,7 @@ onUnmounted(() => {
   border: 1px solid rgba(34, 211, 238, 0.24);
   border-radius: 0;
   background: #020617;
-  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.08), 0 0 42px rgba(34, 211, 238, 0.08);
+  box-shadow: none;
   padding: 0 !important;
 }
 
@@ -1685,14 +1647,7 @@ onUnmounted(() => {
 }
 
 .agp-watch-page .agp-viewer-card::after {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 1;
-  height: 0.22rem;
-  background: linear-gradient(90deg, #22d3ee, #facc15, #14b8a6, #2563eb);
-  opacity: 0.74;
-  pointer-events: none;
+  content: none;
 }
 
 .agp-watch-renderer-state {
@@ -1711,9 +1666,7 @@ onUnmounted(() => {
   transform: translateX(-50%);
   border: 1px solid rgba(250, 204, 21, 0.36);
   border-radius: 0.75rem;
-  background:
-    linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(8, 47, 73, 0.9)),
-    rgba(15, 23, 42, 0.94);
+  background: #131e2f;
   color: #f8fafc;
   padding: 0.8rem 1rem;
   text-align: center;
@@ -1726,7 +1679,7 @@ onUnmounted(() => {
   display: block;
   color: #a7f3d0;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1754,13 +1707,9 @@ onUnmounted(() => {
   border-width: 0 0 0 1px;
   border-color: rgba(34, 211, 238, 0.24);
   border-radius: 0;
-  background:
-    radial-gradient(circle at 12% 4%, rgba(34, 211, 238, 0.16), transparent 11rem),
-    radial-gradient(circle at 92% 18%, rgba(250, 204, 21, 0.1), transparent 10rem),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98)),
-    url("data:image/svg+xml,%3Csvg width='96' height='96' viewBox='0 0 96 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23facc15' stroke-opacity='.10'%3E%3Cpath d='M12 48h72M48 12v72M24 24l48 48M72 24 24 72'/%3E%3C/g%3E%3C/svg%3E");
+  background: #131e2f;
   color: #dbeafe;
-  max-height: calc(100dvh - 3.4rem);
+  max-height: 100%;
   overflow-y: auto;
   box-shadow: none;
 }
@@ -1785,7 +1734,7 @@ onUnmounted(() => {
 .agp-watch-side-lock {
   border: 1px solid rgba(250, 204, 21, 0.28);
   border-radius: 0.75rem;
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(250, 204, 21, 0.08));
+  background: var(--agp-surface);
   margin: 0.75rem 0;
   padding: 0.75rem;
 }
@@ -1794,7 +1743,7 @@ onUnmounted(() => {
   display: block;
   color: #99f6e4;
   font-size: 0.72rem;
-  font-weight: 850;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1883,15 +1832,7 @@ onUnmounted(() => {
 }
 
 .agp-match-panel-head h2::before {
-  content: '';
-  display: inline-block;
-  width: 0.58rem;
-  height: 0.58rem;
-  margin-right: 0.45rem;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #22d3ee, #facc15);
-  box-shadow: 0 0 16px rgba(34, 211, 238, 0.55);
-  vertical-align: 0.05rem;
+  content: none;
 }
 
 .agp-match-panel-head span {
@@ -1905,7 +1846,7 @@ onUnmounted(() => {
   padding: 0.25rem 0.55rem;
   color: #dbeafe;
   font-size: 0.76rem;
-  font-weight: 850;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -1941,24 +1882,17 @@ onUnmounted(() => {
   align-items: center;
   border: 1px solid rgba(34, 211, 238, 0.18);
   border-radius: 8px;
-  background:
-    linear-gradient(90deg, rgba(34, 211, 238, 0.08), transparent 42%),
-    rgba(15, 23, 42, 0.68);
+  background: #131e2f;
   padding: 0.6rem 0.55rem 0.6rem 0.7rem;
 }
 
 .agp-match-player::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0.2rem;
-  background: linear-gradient(180deg, #22d3ee, #facc15);
-  opacity: 0.72;
+  content: none;
 }
 
 .agp-match-player--self {
   border-color: rgba(45, 212, 191, 0.5);
-  background: linear-gradient(90deg, rgba(20, 184, 166, 0.26), rgba(15, 23, 42, 0.68));
+  background: #131e2f;
 }
 
 .agp-match-player--out {
@@ -1971,11 +1905,9 @@ onUnmounted(() => {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background:
-    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.24), transparent 38%),
-    rgba(34, 211, 238, 0.16);
+  background: var(--agp-surface);
   color: #a5f3fc;
-  font-weight: 900;
+  font-weight: 700;
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.16);
 }
 
@@ -2009,8 +1941,7 @@ onUnmounted(() => {
   min-width: 2.8rem;
   border: 1px solid rgba(125, 211, 252, 0.22);
   border-radius: 999px;
-  background:
-    linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(250, 204, 21, 0.1));
+  background: var(--agp-surface);
   padding: 0.16rem 0.5rem;
   color: #fefce8;
   font-size: 0.95rem;
@@ -2038,11 +1969,11 @@ onUnmounted(() => {
 }
 
 .agp-match-bars span:first-child i {
-  background: linear-gradient(90deg, #fb7185, #facc15);
+  background: #22c55e;
 }
 
 .agp-match-bars span:last-child i {
-  background: linear-gradient(90deg, #38bdf8, #22d3ee);
+  background: #38bdf8;
 }
 
 .agp-match-mini-stats {
@@ -2056,9 +1987,7 @@ onUnmounted(() => {
 .agp-match-empty {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(34, 211, 238, 0.08), rgba(250, 204, 21, 0.04)),
-    rgba(15, 23, 42, 0.62);
+  background: #131e2f;
   padding: 0.55rem;
 }
 
@@ -2130,7 +2059,7 @@ onUnmounted(() => {
 .agp-watch-move-action {
   grid-column: 2;
   color: #e5f3ff;
-  font-weight: 800;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
@@ -2157,9 +2086,7 @@ onUnmounted(() => {
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 8px;
-  background:
-    url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.05'%3E%3Cpath d='M0 16h32M16 0v32'/%3E%3C/g%3E%3C/svg%3E"),
-    #050812;
+  background: var(--agp-surface);
   color: #d1d5db;
 }
 
@@ -2170,8 +2097,7 @@ onUnmounted(() => {
   gap: 1rem;
   padding: 0.55rem 0.75rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(90deg, rgba(15, 23, 42, 0.96), rgba(12, 74, 110, 0.45));
+  background: #131e2f;
   font-size: 0.78rem;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -2215,92 +2141,18 @@ onUnmounted(() => {
   color: #e5e7eb;
 }
 
+
+
+
 @media (max-width: 992px) {
-  .agp-watch-columns {
-    grid-template-columns: 1fr;
-  }
-
-  .agp-watch-side-card {
-    position: static;
-  }
-
-  .agp-watch-page .agp-viewer-card .agp-viewer-frame {
-    height: 24rem;
-    min-height: 24rem;
-  }
-
-  .agp-bot-console-line {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .agp-bot-console-role {
-    display: none;
-  }
+  .agp-watch-page:not(.agp-watch-page--embedded) { height: auto; overflow: visible; }
+  .agp-watch-page:not(.agp-watch-page--embedded) .agp-watch-columns { display: flex; flex-direction: column; overflow: visible; }
+  .agp-watch-page:not(.agp-watch-page--embedded) .agp-viewer-card { height: calc(100dvh - 10rem); min-height: 26rem; }
+  .agp-watch-side-card { position: static; max-height: none; border-width: 1px 0 0; }
+  .agp-watch-page .agp-task-header-player { display: flex; }
+  .agp-match-mini-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
-@media (max-width: 720px) {
-  .agp-watch-page .agp-task-header {
-    padding: 0.45rem;
-    gap: 0.35rem;
-  }
-
-  .agp-watch-page .agp-task-header-main {
-    min-height: 2.2rem;
-  }
-
-  .agp-watch-page .agp-task-header-player {
-    display: grid;
-    grid-template-columns: auto auto auto minmax(4.5rem, 1fr) auto;
-    align-items: center;
-    width: 100%;
-    gap: 0.35rem;
-  }
-
-  .agp-watch-page .agp-task-header-player .agp-player-frame-label {
-    min-width: 0;
-    overflow: hidden;
-    color: #c7d2fe !important;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .agp-watch-page .agp-task-header-player .agp-speed-control {
-    grid-column: 5;
-    grid-row: 1;
-    width: auto !important;
-    min-width: 0 !important;
-    margin: 0 !important;
-    justify-content: flex-end !important;
-  }
-
-  .agp-watch-page .agp-task-header-player .agp-speed-label {
-    display: none;
-  }
-
-  .agp-watch-page .agp-task-header-player .agp-speed-select {
-    width: 6rem;
-    min-height: 2.2rem;
-  }
-
-  .agp-watch-page .agp-task-header-player .agp-player-range {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    order: initial;
-    width: 100%;
-    min-width: 0 !important;
-  }
-
-  .agp-watch-page .agp-task-header-actions {
-    justify-content: space-between;
-  }
-
-  .agp-watch-side-card {
-    max-height: none;
-    border-width: 1px 0 0;
-  }
-
-  .agp-match-mini-stats {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 560px) {
+  .agp-match-mini-stats { grid-template-columns: 1fr; }
 }
 </style>

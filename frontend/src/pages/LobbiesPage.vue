@@ -1,18 +1,18 @@
 <template>
   <section class="agp-grid lobbies-page-simple">
-    <header class="agp-card p-4 lobbies-simple-head">
+    <header class="agp-page-heading lobbies-simple-head">
       <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
         <div>
           <p class="lobbies-kicker mb-1">Матчи и соревнования</p>
-          <h1 class="h3 mb-1">Лобби</h1>
+          <h1 class="h3 mb-1">{{ canManage ? 'Занятия и лобби' : 'Лобби' }}</h1>
           <p class="text-muted mb-0">
-            Ученики входят как игроки, преподаватель открывает лобби для управления.
+            {{ canManage ? 'Создайте лобби, пригласите участников и запустите тренировку или соревнование.' : 'Войдите в лобби, подготовьте код и нажмите «Готов играть».' }}
           </p>
         </div>
         <div class="lobbies-controls">
           <div class="lobbies-filter-wrap">
-            <label class="form-label small mb-1">Игра</label>
-            <select v-model="selectedGameId" class="form-select">
+            <label class="form-label small mb-1" for="lobby-game-filter">Игра</label>
+            <select id="lobby-game-filter" v-model="selectedGameId" class="form-select">
               <option value="">Все игры</option>
               <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">
                 {{ game.title }}
@@ -21,7 +21,7 @@
           </div>
           <RouterLink
             v-if="canManage"
-            class="btn btn-dark lobbies-create-btn"
+            class="btn btn-primary lobbies-create-btn"
             :to="createLobbyRoute"
           >
             Создать лобби
@@ -57,13 +57,11 @@
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
     <section class="lobbies-card-grid">
-      <article v-if="isLoading && lobbies.length === 0" class="agp-card p-4 lobbies-empty-card">
-        <div class="agp-loading-state agp-loading-state--compact">Загрузка лобби...</div>
-      </article>
+      <LoadingSkeleton v-if="isLoading && lobbies.length === 0" class="lobbies-empty-card" :count="4" label="Загрузка лобби…" />
       <article v-else-if="filteredLobbies.length === 0" class="agp-card p-4">
         <div class="agp-empty-state">
           <div>
-            <h2 class="h6 mb-1">{{ selectedGameId ? 'Лобби по выбранной игре не найдены' : 'Открытых лобби пока нет' }}</h2>
+            <h2 class="h6 mb-1">{{ selectedGameId ? 'Лобби по выбранной игре не найдены' : 'Лобби пока нет' }}</h2>
             <p class="small mb-0">
               {{ selectedGameId ? 'Смените игру в фильтре или выберите "Все игры".' : 'Когда преподаватель создаст лобби, оно появится здесь.' }}
             </p>
@@ -110,7 +108,7 @@
           </div>
           <div class="agp-lobby-actions lobby-actions-simple">
             <button
-              class="btn btn-dark"
+              class="btn btn-primary"
               :disabled="!canEnterLobby(lobby) || busyLobbyId === lobby.lobby_id"
               @click="enterLobby(lobby)"
             >
@@ -124,8 +122,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
-import { RouterLink, useRouter } from 'vue-router';
+import { statusPillClass } from '../lib/statusTone';
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 
 import {
   joinLobbyAsUser,
@@ -140,6 +140,7 @@ import { createResilientSSE } from '../lib/resilientSSE';
 import { useSessionStore } from '../stores/session';
 
 const router = useRouter();
+const route = useRoute();
 const sessionStore = useSessionStore();
 
 const isLoading = ref(false);
@@ -147,7 +148,9 @@ const busyLobbyId = ref('');
 const errorMessage = ref('');
 const games = ref<GameDto[]>([]);
 const lobbies = ref<LobbyDto[]>([]);
-const selectedGameId = ref('');
+const selectedGameId = ref(typeof route.query.game_id === 'string' ? route.query.game_id : '');
+watch(selectedGameId, (gameId) => { void router.replace({ query: { ...route.query, game_id: gameId || undefined } }); });
+watch(() => route.query.game_id, (gameId) => { selectedGameId.value = typeof gameId === 'string' ? gameId : ''; });
 const accessCodeByLobbyId = reactive<Record<string, string>>({});
 let lobbiesEventSource: EventSource | null = null;
 let lobbiesPollingHandle: ReturnType<typeof setInterval> | null = null;
@@ -199,10 +202,7 @@ function statusLabel(status: LobbyStatus): string {
 }
 
 function statusClass(status: LobbyStatus): string {
-  if (status === 'open' || status === 'draft') return 'agp-pill--primary';
-  if (status === 'running') return 'agp-pill--warning';
-  if (status === 'closed' || status === 'stopped') return 'agp-pill--danger';
-  return 'agp-pill--neutral';
+  return statusPillClass(status);
 }
 
 function gameTitle(gameId: string): string {
@@ -223,7 +223,7 @@ function canEnterLobby(lobby: LobbyDto): boolean {
 
 function enterButtonText(lobby: LobbyDto): string {
   if (busyLobbyId.value === lobby.lobby_id) return 'Входим...';
-  if (canManage.value && !lobby.my_team_id) return 'Открыть';
+  if (canManage.value && !lobby.my_team_id) return 'Управлять';
   if (lobby.my_team_id) return 'Вернуться';
   if (needsAccessCode(lobby)) return 'Войти по коду';
   return 'Войти';
@@ -356,246 +356,3 @@ onUnmounted(() => {
   stopLobbiesLiveUpdates();
 });
 </script>
-
-<style scoped>
-.lobbies-page-simple {
-  gap: 0.9rem;
-}
-
-.lobbies-simple-head {
-  position: relative;
-  overflow: hidden;
-  background:
-    url("data:image/svg+xml,%3Csvg width='176' height='104' viewBox='0 0 176 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.12' stroke-width='2'%3E%3Cpath d='M18 18h28v28H18zM130 18h28v28h-28zM74 58h28v28H74z'/%3E%3Cpath d='M46 32h28M102 72h28M88 0v24M88 80v24'/%3E%3C/g%3E%3C/svg%3E") right 1rem top 0.8rem / 14rem auto no-repeat,
-    radial-gradient(circle at 10% 20%, rgba(20, 184, 166, 0.16), transparent 16rem),
-    radial-gradient(circle at 92% 10%, rgba(245, 158, 11, 0.18), transparent 15rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.95));
-}
-
-.lobbies-simple-head::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.22rem;
-  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
-}
-
-.lobbies-kicker {
-  color: var(--agp-primary);
-  font-size: 0.76rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.lobbies-filter-wrap {
-  width: min(18rem, 100%);
-}
-
-.lobbies-controls {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.55rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.lobbies-create-btn {
-  white-space: nowrap;
-}
-
-.lobbies-head-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.lobbies-head-stats > div {
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 0.6rem;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 0.52rem 0.68rem;
-  backdrop-filter: blur(8px);
-}
-
-.lobbies-head-stats span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-}
-
-.lobbies-head-stats strong {
-  color: var(--agp-text);
-  font-size: 0.96rem;
-}
-
-.lobbies-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
-  gap: 0.75rem;
-  justify-content: start;
-}
-
-.lobbies-empty-card {
-  grid-column: 1 / -1;
-}
-
-.lobbies-active-filter {
-  display: flex;
-  gap: 0.4rem;
-  align-items: baseline;
-  flex-wrap: wrap;
-  color: var(--agp-text-muted);
-}
-
-.lobbies-active-filter strong {
-  color: var(--agp-text);
-}
-
-.lobby-card-simple {
-  position: relative;
-  overflow: hidden;
-  gap: 0.45rem;
-  align-content: start;
-  min-height: 13.25rem;
-  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
-}
-
-.lobby-card-simple::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.28rem;
-  background: linear-gradient(90deg, #14b8a6, #2563eb, #f59e0b);
-}
-
-.lobby-card-simple--running::before {
-  background: linear-gradient(90deg, #f59e0b, #14b8a6, #2563eb);
-}
-
-.lobby-card-simple--closed::before {
-  background: linear-gradient(90deg, #94a3b8, #64748b);
-}
-
-.lobby-card-simple--paused::before,
-.lobby-card-simple--updating::before {
-  background: linear-gradient(90deg, #64748b, #22d3ee);
-}
-
-.lobby-card-simple:hover {
-  transform: translateY(-2px);
-  border-color: rgba(20, 184, 166, 0.42);
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.11);
-}
-
-.lobby-card-simple h2 {
-  font-size: 1rem;
-  font-weight: 900;
-}
-
-.lobby-card-content {
-  position: relative;
-  display: grid;
-  gap: 0.75rem;
-}
-
-.lobby-card-content::after {
-  content: '';
-  position: absolute;
-  right: -1.2rem;
-  bottom: -1.4rem;
-  width: 5rem;
-  height: 5rem;
-  border-radius: 1.2rem;
-  background:
-    linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(37, 99, 235, 0.1)),
-    url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.28'%3E%3Cpath d='M12 40h56M40 12v56M26 26h28v28H26z'/%3E%3C/g%3E%3C/svg%3E");
-  pointer-events: none;
-}
-
-.lobby-card-simple .btn {
-  white-space: nowrap;
-  width: 100%;
-}
-
-.lobby-main {
-  min-width: 0;
-}
-
-.lobby-access-code-field {
-  display: block;
-  width: min(15rem, 100%);
-}
-
-.lobby-card-meter {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 0.55rem;
-  background: rgba(248, 250, 252, 0.84);
-  padding: 0.5rem 0.6rem 0.7rem;
-}
-
-.lobby-card-meter > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.35rem;
-}
-
-.lobby-card-meter span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.lobby-card-meter::after {
-  content: '';
-  position: absolute;
-  left: 0.6rem;
-  right: 0.6rem;
-  bottom: 0.42rem;
-  height: 0.26rem;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.22);
-}
-
-.lobby-card-meter i {
-  position: absolute;
-  left: 0.6rem;
-  bottom: 0.42rem;
-  z-index: 1;
-  height: 0.26rem;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #14b8a6, #2563eb);
-}
-
-.lobby-actions-simple {
-  justify-content: flex-end;
-}
-
-@media (max-width: 920px) {
-  .lobbies-controls {
-    justify-content: flex-start;
-  }
-
-  .lobby-actions-simple {
-    justify-content: flex-start;
-  }
-
-  .lobbies-head-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 520px) {
-  .lobbies-head-stats {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

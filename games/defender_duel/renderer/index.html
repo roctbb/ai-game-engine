@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Дуэль защитников</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+body{background:#0c1524;color:#edf3fc;font-family:system-ui,-apple-system,sans-serif}
+.game{height:100%;max-width:1080px;margin:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px}h1{font-size:17px;margin:0;font-weight:650}
+#turn{font-size:12px;color:#a7b9d0;white-space:nowrap}.teams{display:grid;grid-template-columns:repeat(var(--teams,2),minmax(0,1fr));gap:8px}
+.team{border:1px solid #26364c;border-top:3px solid var(--color);border-radius:10px;background:#142033;padding:10px 12px;min-width:0}
+.name{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.value{font-size:19px;font-weight:700;margin-top:5px;white-space:nowrap}
+.detail{font-size:11px;color:#a7b9d0;margin-top:3px}.out{opacity:.5}.field{flex:1;min-height:0;position:relative}
+svg{position:absolute;inset:0;display:block;width:100%;height:100%;overflow:hidden}footer{min-height:30px;display:flex;align-items:center;justify-content:center;color:#a7b9d0;font-size:12px;line-height:1.5;text-align:center}
+.finished{color:#f4d18a;font-weight:650}@media(max-width:560px){.game{padding:10px;gap:8px}.teams{grid-template-columns:repeat(2,minmax(0,1fr))}.team{padding:7px 9px}.value{font-size:17px}h1{font-size:15px}footer{font-size:11px}}
+</style>
+</head>
+<body><main class="game"><header><h1>Дуэль защитников</h1><span id="turn"></span></header><div id="teams" class="teams" aria-label="Результаты команд"></div><div class="field"><svg id="field" role="img" aria-label="Поле игры Дуэль защитников"></svg></div><footer id="status" aria-live="polite"></footer></main>
+<script>
+const SVG_NS="http://www.w3.org/2000/svg";
+const field=document.getElementById("field"),teams=document.getElementById("teams"),status=document.getElementById("status");
+const colors={red:"#fb8585",blue:"#71b2ff",green:"#6bdda1",yellow:"#f3cd6b"};
+let current=null;
+function add(tag,attrs={},parent=field){const node=document.createElementNS(SVG_NS,tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));parent.appendChild(node);return node}
+function rect(x,y,width,height,fill,extra={}){return add("rect",{x,y,width,height,fill,...extra})}
+function circle(cx,cy,r,fill,extra={}){return add("circle",{cx,cy,r,fill,...extra})}
+function text(x,y,value,size=12,fill="#edf3fc",extra={}){const node=add("text",{x,y,"font-size":size,fill,"font-weight":600,"text-anchor":"middle","dominant-baseline":"central",...extra});node.textContent=value;return node}
+function line(x1,y1,x2,y2,stroke,width=1,extra={}){return add("line",{x1,y1,x2,y2,stroke,"stroke-width":width,...extra})}
+function tooltip(node,value){const title=add("title",{},node);title.textContent=value}
+function name(f,s){return f.labels?.[s]||s}
+function number(f,s){return f.active_slots.indexOf(s)+1}
+function view(width,height){field.replaceChildren();field.setAttribute("viewBox",`0 0 ${width} ${height}`);rect(0,0,width,height,"#101c2d",{rx:12})}
+function card(f,s,value,detail,out=false){const node=document.createElement("div");node.className="team"+(out?" out":"");node.style.setProperty("--color",colors[s]);for(const [cls,label]of [["name",`${number(f,s)} · ${name(f,s)}`],["value",value],["detail",detail]]){const part=document.createElement("div");part.className=cls;part.textContent=label;node.appendChild(part)}teams.appendChild(node)}
+function draw(f){if(!f||!Array.isArray(f.active_slots))return;current=f;teams.replaceChildren();teams.style.setProperty("--teams",f.active_slots.length);document.getElementById("turn").textContent=`Ход ${f.tick??0} / ${f.max_turns}`;status.className="";drawScene(f);if(f.finished){const winners=f.winner_slots||[];status.className="finished";status.textContent=winners.length===1?`Победа: ${name(f,winners[0])}`:`Ничья · ${winners.map(s=>name(f,s)).join(", ")}`}}
+function pathPoint(path,distance){for(let i=0;i<path.length-1;i++){const a=path[i],b=path[i+1],length=Math.abs(b[0]-a[0])+Math.abs(b[1]-a[1]);if(distance<=length)return[a[0]+(b[0]-a[0])*distance/length,a[1]+(b[1]-a[1])*distance/length];distance-=length}return path[path.length-1]}
+function drawScene(f){
+  for(const s of f.active_slots){const p=f.players[s];card(f,s,`${p.hp} ♥`,`${p.money} монет · доход +${p.income}`,p.hp<=0)}
+  const stacked=window.innerWidth<620,C=30;view(stacked?440:900,stacked?620:330);
+  f.active_slots.forEach((s,index)=>{const mirror=index===1,ox=stacked?(mirror?400:40):(mirror?860:40),oy=stacked?40+index*300:50,point=([x,y])=>[ox+(mirror?-1:1)*x*C,oy+y*C],p=f.players[s];
+    const [lx,ly]=point([6,-.6]);text(lx,ly,`${number(f,s)} · ${name(f,s)}`,12,colors[s]);
+    add("polyline",{points:f.path.map(p=>point(p).join(",")).join(" "),fill:"none",stroke:"#344359","stroke-width":22,"stroke-linecap":"round","stroke-linejoin":"round"});
+    add("polyline",{points:f.path.map(p=>point(p).join(",")).join(" "),fill:"none",stroke:"#65748a","stroke-width":1,"stroke-dasharray":"3 6"});
+    const [bx,by]=point(f.path[f.path.length-1]);rect(bx-16,by-18,32,36,colors[s],{rx:6});text(bx,by,"♥",17,"#0c1524");
+    f.pads.forEach((pad,padId)=>{const [x,y]=point(pad),tower=p.towers.find(t=>t.pad===padId);if(!tower){const node=circle(x,y,11,"#16263b",{stroke:"#556781","stroke-width":1,"stroke-dasharray":"3 2"});tooltip(node,`Площадка ${padId}`);text(x,y,padId,10,"#8c9fb7");return}
+      const symbol={arrow:"↑",blast:"✹",slow:"❄"}[tower.type],config=f.tower_types[tower.type];
+      const targets=f.enemies.filter(e=>e.target===s&&e.distance>=0&&Math.hypot(pad[0]-pathPoint(f.path,e.distance)[0],pad[1]-pathPoint(f.path,e.distance)[1])<=config.range).sort((a,b)=>b.distance-a.distance);
+      if(targets.length){const [tx,ty]=point(pathPoint(f.path,targets[0].distance));line(x,y,tx,ty,colors[s],1,{opacity:.4})}
+      const node=rect(x-12,y-12,24,24,"#1b3149",{rx:6,stroke:colors[s],"stroke-width":2});tooltip(node,`Площадка ${padId} · ${{arrow:"Стрелковая",blast:"Взрывная",slow:"Замедляющая"}[tower.type]} · уровень ${tower.level}`);text(x,y,symbol,18,colors[s]);circle(x+11,y+11,6,colors[s]);text(x+11,y+11,tower.level,8,"#0c1524");
+    });
+    for(const enemy of f.enemies){if(enemy.target!==s||enemy.distance<0)continue;const [x,y]=point(pathPoint(f.path,enemy.distance)),color={scout:"#f4cf76",swarm:"#dc98ef",armored:"#d2dae7"}[enemy.type],r=enemy.type==="armored"?9:6;const node=circle(x,y,r,color,{stroke:"#101c2d","stroke-width":1.5});tooltip(node,`${enemy.type} · ${enemy.hp}/${enemy.max_hp} здоровья · урон базе ${enemy.damage}`);rect(x-9,y-r-5,18,2,"#101c2d");rect(x-9,y-r-5,18*Math.max(0,enemy.hp/enemy.max_hp),2,"#6bdda1")}
+    const queued=f.enemies.filter(e=>e.target===s&&e.distance<0).length;if(queued){const [x,y]=point(f.path[0]);text(x,y+28,`+${queued} в пути`,10,"#a7b9d0")}
+  });
+  status.textContent=`↑ Стрелковая · ✹ Взрывная · ❄ Замедляющая · нейтральная волна через ${f.next_wave-f.tick} ходов`;
+}
+window.addEventListener("message",event=>{const message=event.data;if(!message||typeof message!=="object")return;const payload=message.payload||message;if(message.type==="agp.renderer.init")ready();if(message.type==="agp.renderer.state"){const frame=payload.frame;if(frame)draw({...frame,tick:payload.tick??frame.tick,finished:frame.finished||payload.phase==="finished"})}if(message.type==="agp.renderer.result"&&current){const result=payload.result||payload;draw({...current,finished:true,winner_slots:result.metrics?.winner_slots||current.winner_slots||[]})}});
+window.addEventListener("resize",()=>{if(current)draw(current)});
+function ready(){window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*")}
+const preview={"kind": "defender_duel", "active_slots": ["red", "blue"], "players": {"red": {"hp": 50, "money": 70, "income": 12, "income_upgrades": 0, "towers": []}, "blue": {"hp": 50, "money": 70, "income": 12, "income_upgrades": 0, "towers": []}}, "enemies": [], "path": [[0, 2], [3, 2], [3, 6], [8, 6], [8, 2], [12, 2]], "pads": [[2, 3], [4, 3], [2, 5], [4, 5], [6, 5], [7, 3], [9, 3], [10, 1]], "tower_types": {"arrow": {"cost": 30, "damage": 6, "range": 3.2}, "blast": {"cost": 45, "damage": 4, "range": 2.8, "splash": 1.4}, "slow": {"cost": 35, "damage": 1, "range": 3.0}}, "unit_types": {"scout": {"cost": 16, "count": 2, "hp": 9, "speed": 1.1, "armor": 0, "damage": 1}, "swarm": {"cost": 26, "count": 6, "hp": 5, "speed": 0.7, "armor": 0, "damage": 1}, "armored": {"cost": 42, "count": 1, "hp": 65, "speed": 0.45, "armor": 2, "damage": 5}}, "next_wave": 20, "wave_interval": 20, "next_wave_type": "swarm", "income_interval": 5, "max_turns": 300, "turns_left": 300, "tick": 0, "labels": {"red": "Команда 1", "blue": "Команда 2"}};
+draw(preview);ready();
+</script></body></html>

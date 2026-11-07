@@ -1,6 +1,6 @@
 <template>
   <section class="agp-grid tasks-catalog-page">
-    <header class="agp-card p-4 tasks-head">
+    <header class="agp-page-heading tasks-head">
       <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
         <div>
           <div class="mb-2">
@@ -22,7 +22,7 @@
             <strong class="mono">{{ sectionSolvedCount }}</strong>
           </div>
           <div>
-            <span>Тегов</span>
+            <span>Тем</span>
             <strong class="mono">{{ topicOptions.length }}</strong>
           </div>
           <div>
@@ -33,22 +33,7 @@
       </div>
     </header>
 
-    <section class="agp-card p-3 section-progress-panel" aria-label="Прогресс раздела">
-      <div>
-        <div class="small text-muted text-uppercase fw-semibold">Прогресс раздела</div>
-        <strong>{{ sectionSolvedCount }} из {{ sectionTasks.length }}</strong>
-      </div>
-      <div class="section-progress" role="progressbar" :aria-valuenow="sectionProgressPercent" aria-valuemin="0" aria-valuemax="100">
-        <div :style="{ width: `${sectionProgressPercent}%` }"></div>
-      </div>
-      <span class="mono">{{ sectionProgressPercent }}%</span>
-    </section>
-
     <section class="agp-card p-3 tasks-filter-panel" aria-label="Фильтры задач">
-      <div>
-        <div class="small text-muted text-uppercase fw-semibold">Фильтры обучения</div>
-        <div class="fw-semibold">Найдите следующую задачу по тегу, сложности и прогрессу</div>
-      </div>
       <label class="tasks-filter-field">
         <span class="form-label small mb-1">Тег</span>
         <select v-model="selectedTopic" class="form-select form-select-sm">
@@ -85,9 +70,7 @@
 
     <div class="tasks-layout">
       <section class="agp-grid">
-        <article v-if="isLoading" class="agp-card p-4">
-          <div class="agp-loading-state agp-loading-state--compact">Загрузка задач...</div>
-        </article>
+        <LoadingSkeleton v-if="isLoading" :count="4" layout="list" label="Загрузка задач…" />
         <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
         <article v-else-if="tasks.length === 0" class="agp-card p-4">
           <div class="agp-empty-state">Задачи пока не опубликованы.</div>
@@ -101,13 +84,6 @@
 
         <div v-else class="tasks-list">
           <section v-for="group in groupedFilteredTasks" :key="group.key" class="tasks-group">
-            <header class="tasks-group-head">
-              <div>
-                <h2>{{ group.learningSection }}</h2>
-                <p>{{ sectionDescription(group.learningSection) }}</p>
-              </div>
-              <span>{{ group.items.length }}</span>
-            </header>
             <div class="tasks-group-items">
               <article v-for="task in group.items" :key="task.game_id" class="agp-card p-3 task-row">
                 <div class="task-row-main">
@@ -123,7 +99,6 @@
                     </div>
                     <div class="d-flex gap-1 flex-wrap justify-content-end">
                       <span v-if="task.difficulty" class="agp-pill agp-pill--neutral">{{ difficultyLabel(task.difficulty) }}</span>
-                      <span v-if="task.learning_section" class="agp-pill agp-pill--primary">{{ task.learning_section }}</span>
                     </div>
                   </div>
                   <p class="small text-muted mb-0 task-description">
@@ -141,7 +116,7 @@
                   </div>
                 </div>
                 <div class="task-row-action">
-                  <RouterLink :to="`/tasks/${task.game_id}/run`" class="btn btn-dark btn-sm w-100">
+                  <RouterLink :to="{ name: 'task-run', params: { gameId: task.game_id }, query: { from: route.fullPath } }" class="btn btn-primary btn-sm w-100">
                     {{ isSolvedTask(task.game_id) ? 'Повторить' : 'Решать' }}
                   </RouterLink>
                 </div>
@@ -185,8 +160,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { RouterLink, useRoute } from 'vue-router';
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 
 import { useSessionStore } from '../stores/session';
 import {
@@ -202,14 +178,23 @@ const SOLVED_SUMMARY_LIMIT = 500;
 
 const sessionStore = useSessionStore();
 const route = useRoute();
+const router = useRouter();
 const tasks = ref<SingleTaskCatalogItemDto[]>([]);
 const solvedSummary = ref<SingleTaskSolvedSummaryDto | null>(null);
 const isLoading = ref(false);
 const errorMessage = ref('');
 const summaryError = ref('');
-const selectedTopic = ref('');
-const selectedDifficulty = ref('');
-const selectedProgress = ref<'all' | 'solved' | 'unsolved'>('all');
+const selectedTopic = ref(typeof route.query.topic === 'string' ? route.query.topic : '');
+const selectedDifficulty = ref(typeof route.query.difficulty === 'string' ? route.query.difficulty : '');
+const selectedProgress = ref<'all' | 'solved' | 'unsolved'>(route.query.progress === 'solved' || route.query.progress === 'unsolved' ? route.query.progress : 'all');
+watch([selectedTopic, selectedDifficulty, selectedProgress], ([topic, difficulty, progress]) => {
+  void router.replace({ query: { ...route.query, topic: topic || undefined, difficulty: difficulty || undefined, progress: progress === 'all' ? undefined : progress } });
+});
+watch(() => route.query, (query) => {
+  selectedTopic.value = typeof query.topic === 'string' ? query.topic : '';
+  selectedDifficulty.value = typeof query.difficulty === 'string' ? query.difficulty : '';
+  selectedProgress.value = query.progress === 'solved' || query.progress === 'unsolved' ? query.progress : 'all';
+});
 
 const routeSection = computed(() => String(route.params.section ?? ''));
 
@@ -326,311 +311,13 @@ function resetFilters(): void {
 
 onMounted(async () => {
   isLoading.value = true;
-  errorMessage.value = '';
-  try {
-    tasks.value = await listSingleTaskCatalog();
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить каталог задач';
-  } finally {
-    isLoading.value = false;
-  }
-
-  try {
-    solvedSummary.value = await getSingleTaskSolvedSummary(SOLVED_SUMMARY_LIMIT);
-  } catch (error) {
-    summaryError.value = error instanceof Error ? error.message : 'Не удалось загрузить лидерборд';
-  }
+  const [catalog, summary] = await Promise.allSettled([
+    listSingleTaskCatalog(), getSingleTaskSolvedSummary(SOLVED_SUMMARY_LIMIT),
+  ]);
+  if (catalog.status === 'fulfilled') tasks.value = catalog.value;
+  else errorMessage.value = catalog.reason instanceof Error ? catalog.reason.message : 'Не удалось загрузить каталог задач';
+  if (summary.status === 'fulfilled') solvedSummary.value = summary.value;
+  else summaryError.value = 'Прогресс пока недоступен. Попробуйте обновить страницу.';
+  isLoading.value = false;
 });
 </script>
-
-<style scoped>
-.tasks-catalog-page {
-  gap: 0.9rem;
-}
-
-.tasks-head {
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 10% 16%, rgba(20, 184, 166, 0.16), transparent 15rem),
-    radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.14), transparent 14rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 250, 0.88)),
-    url("data:image/svg+xml,%3Csvg width='176' height='112' viewBox='0 0 176 112' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%230f766e' stroke-opacity='.13' stroke-width='2'%3E%3Cpath d='M20 28h30v30H20zM78 18h30v30H78zM134 34h26v26h-26zM50 74h28v18H50zM108 68h28v28h-28z'/%3E%3Cpath d='M50 43h28M108 33h26M78 83h30M92 48v20'/%3E%3C/g%3E%3C/svg%3E");
-  background-position: center, center, center, right 1rem center;
-  background-repeat: no-repeat;
-}
-
-.tasks-head::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.25rem;
-  background: linear-gradient(90deg, #14b8a6, #f59e0b, #2563eb);
-}
-
-.tasks-head > * {
-  position: relative;
-}
-
-.tasks-kicker {
-  color: #0f766e;
-  font-size: 0.76rem;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.tasks-head-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(5.5rem, 1fr));
-  gap: 0.55rem;
-  min-width: min(100%, 28rem);
-}
-
-.tasks-head-stats div {
-  display: grid;
-  gap: 0.05rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
-}
-
-.tasks-head-stats span {
-  color: var(--agp-text-muted);
-  font-size: 0.72rem;
-  font-weight: 750;
-}
-
-.tasks-head-stats strong {
-  color: var(--agp-text);
-  font-size: 1.18rem;
-}
-
-.section-progress-panel {
-  display: grid;
-  grid-template-columns: minmax(10rem, auto) minmax(12rem, 1fr) auto;
-  gap: 0.85rem;
-  align-items: center;
-}
-
-.section-progress {
-  height: 0.65rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e2e8f0;
-}
-
-.section-progress div {
-  height: 100%;
-  border-radius: inherit;
-  background: #2563eb;
-  transition: width 0.2s ease;
-}
-
-.tasks-filter-panel {
-  display: grid;
-  grid-template-columns: minmax(14rem, 1fr) repeat(3, minmax(9rem, 0.62fr)) auto;
-  gap: 0.75rem;
-  align-items: end;
-}
-
-.tasks-filter-field {
-  min-width: 0;
-}
-
-.tasks-filter-reset {
-  white-space: nowrap;
-}
-
-.tasks-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 18rem);
-  gap: 0.9rem;
-  align-items: start;
-}
-
-.tasks-active-filter-line {
-  display: flex;
-  gap: 0.4rem;
-  align-items: baseline;
-  color: var(--agp-text-muted);
-  font-size: 0.86rem;
-}
-
-.tasks-active-filter-line strong {
-  color: var(--agp-text);
-}
-
-.tasks-list {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.tasks-group {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.tasks-group-items {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
-  gap: 0.75rem;
-  justify-content: start;
-}
-
-.tasks-group-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.75rem;
-  padding: 0.1rem 0.1rem 0;
-}
-
-.tasks-group-head h2 {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 850;
-}
-
-.tasks-group-head p {
-  margin: 0.15rem 0 0;
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-}
-
-.tasks-group-head span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-}
-
-.task-row {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.65rem;
-  align-items: start;
-  min-height: 13.25rem;
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
-}
-
-.task-row:hover {
-  transform: translateY(-1px);
-  border-color: #c8d4e0;
-  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.08);
-}
-
-.task-row-main {
-  min-width: 0;
-  display: grid;
-  gap: 0.45rem;
-}
-
-.task-row-action {
-  align-self: end;
-  display: flex;
-  align-items: flex-end;
-}
-
-.task-description {
-  min-height: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.task-meta-row {
-  display: flex;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-}
-
-.task-state {
-  width: fit-content;
-  border-radius: 999px;
-  border: 1px solid var(--agp-border);
-  padding: 0.14rem 0.52rem;
-  font-size: 0.72rem;
-  letter-spacing: 0.015em;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.task-state--solved {
-  border-color: #83c9bf;
-  background: #eaf9f6;
-  color: var(--agp-primary);
-}
-
-.task-state--pending {
-  border-color: #e1c69b;
-  background: #fff6e9;
-  color: #8a4b0c;
-}
-
-.tasks-sidebar {
-  gap: 0.65rem;
-}
-
-.leaderboard-card {
-  position: sticky;
-  top: 0.85rem;
-}
-
-.current-user-summary {
-  background: #edf8f6;
-  border-color: #9fd7cf;
-}
-
-.leaderboard-row--mine {
-  border-color: rgba(15, 118, 110, 0.45);
-  background: #ecf9f7;
-}
-
-@media (max-width: 1100px) {
-  .tasks-head-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    min-width: 0;
-  }
-
-  .section-progress-panel,
-  .tasks-filter-panel {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .tasks-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .leaderboard-card {
-    position: static;
-  }
-}
-
-@media (max-width: 800px) {
-  .tasks-head-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .section-progress-panel,
-  .tasks-filter-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .task-row {
-    grid-template-columns: 1fr;
-  }
-
-  .tasks-filter-reset {
-    width: 100%;
-  }
-}
-
-@media (max-width: 360px) {
-  .tasks-head-stats {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

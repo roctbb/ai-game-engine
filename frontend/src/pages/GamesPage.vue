@@ -1,13 +1,13 @@
 <template>
   <section class="agp-grid games-page">
-    <header class="agp-card p-4 games-head">
+    <header class="agp-page-heading games-head">
       <div>
         <p class="games-kicker mb-1">База арен</p>
         <h1 class="h3 mb-1">Игры</h1>
         <p class="text-muted mb-0">Документация и режимы доступных игр.</p>
       </div>
       <div v-if="canManageGameSources" class="games-head-actions">
-        <RouterLink class="btn btn-dark" to="/admin/game-sources">+ Добавить игру</RouterLink>
+        <RouterLink class="btn btn-primary" to="/admin/game-sources">+ Добавить игру</RouterLink>
         <RouterLink class="btn btn-outline-secondary" to="/admin/game-sources">Источники игр</RouterLink>
       </div>
       <div class="games-head-stats">
@@ -31,9 +31,7 @@
     </header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
-    <article v-if="isLoading" class="agp-card p-4">
-      <div class="agp-loading-state agp-loading-state--compact">Загрузка игр...</div>
-    </article>
+    <LoadingSkeleton v-if="isLoading" :count="8" label="Загрузка игр…" />
 
     <article v-if="canManageGameSources && !isLoading" class="agp-card p-3 games-filter-panel">
       <div>
@@ -90,7 +88,7 @@
         </div>
         <div class="game-actions">
           <RouterLink
-            class="btn btn-sm btn-dark w-100"
+            class="btn btn-sm btn-primary w-100"
             :to="{ name: 'game-docs', params: { gameId: game.game_id }, query: { from: 'games' } }"
             target="_blank"
             rel="noopener noreferrer"
@@ -107,6 +105,7 @@
 </template>
 
 <script setup lang="ts">
+import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 
@@ -190,213 +189,3 @@ onMounted(async () => {
   }
 });
 </script>
-
-<style scoped>
-.games-page {
-  gap: 0.9rem;
-}
-
-.games-head {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1rem;
-  align-items: flex-start;
-  background:
-    url("data:image/svg+xml,%3Csvg width='176' height='104' viewBox='0 0 176 104' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%232563eb' stroke-opacity='.13' stroke-width='2'%3E%3Cpath d='M18 18h28v28H18zM130 18h28v28h-28zM74 58h28v28H74z'/%3E%3Cpath d='M46 32h28M102 72h28M88 0v24M88 80v24'/%3E%3C/g%3E%3C/svg%3E") right 1rem top 0.8rem / 14rem auto no-repeat,
-    radial-gradient(circle at 12% 18%, rgba(37, 99, 235, 0.16), transparent 16rem),
-    radial-gradient(circle at 88% 8%, rgba(20, 184, 166, 0.18), transparent 15rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 250, 0.95));
-}
-
-.games-head::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.22rem;
-  background: linear-gradient(90deg, #2563eb, #14b8a6, #f59e0b);
-}
-
-.games-kicker {
-  color: #2563eb;
-  font-size: 0.76rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.games-head-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.games-head-stats {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.games-head-stats > div {
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 0.6rem;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 0.52rem 0.68rem;
-  backdrop-filter: blur(8px);
-}
-
-.games-head-stats span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-}
-
-.games-head-stats strong {
-  color: var(--agp-text);
-  font-size: 0.96rem;
-}
-
-.games-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
-  gap: 0.75rem;
-  justify-content: start;
-}
-
-.games-filter-panel {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.games-filter-field {
-  min-width: min(100%, 14rem);
-}
-
-.games-filter-summary {
-  margin-left: auto;
-}
-
-.game-card {
-  position: relative;
-  overflow: hidden;
-  min-height: 13.25rem;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.65rem;
-  align-items: start;
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
-}
-
-.game-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(37, 99, 235, 0.34);
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.11);
-}
-
-.game-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0.28rem;
-  background: linear-gradient(90deg, #2563eb, #14b8a6, #f59e0b);
-}
-
-.game-card::after {
-  content: '';
-  position: absolute;
-  right: -1.4rem;
-  bottom: -1.55rem;
-  width: 5.5rem;
-  height: 5.5rem;
-  border-radius: 1.35rem;
-  background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(245, 158, 11, 0.12)),
-    url("data:image/svg+xml,%3Csvg width='88' height='88' viewBox='0 0 88 88' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%232563eb' stroke-opacity='.25'%3E%3Cpath d='M14 44h60M44 14v60M28 28h32v32H28z'/%3E%3C/g%3E%3C/svg%3E");
-  pointer-events: none;
-}
-
-.game-row-main {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-  display: grid;
-  gap: 0.45rem;
-}
-
-.game-meta-strip {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.game-meta-strip > div {
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 0.55rem;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.6rem;
-  background: rgba(248, 250, 252, 0.84);
-  padding: 0.42rem 0.55rem;
-}
-
-.game-meta-strip span {
-  color: var(--agp-text-muted);
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.game-actions {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-self: end;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.game-description {
-  min-height: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-@media (max-width: 760px) {
-  .games-head {
-    display: grid;
-  }
-
-  .game-actions {
-    justify-content: flex-start;
-  }
-
-  .games-head-actions {
-    justify-content: flex-start;
-  }
-
-  .games-filter-summary {
-    margin-left: 0;
-  }
-
-  .games-head-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 520px) {
-  .games-head-stats {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

@@ -7,16 +7,16 @@
   <style>
     *{box-sizing:border-box}
     body{margin:0;width:100vw;height:100vh;display:grid;place-items:center;background:#0a0e17;font-family:"Segoe UI",Arial,sans-serif;color:#c8d6e5;overflow:hidden}
-    .wrap{width:100vw;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:6px}
-    .board{flex:1 1 auto;max-width:100%;max-height:calc(100vh - 40px);aspect-ratio:1/1;border-radius:4px;overflow:hidden}
-    .hud{display:flex;gap:12px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#94a3b8;flex-shrink:0}
+    .wrap{width:100vw;height:100dvh;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:8px;padding:12px}
+    .board{display:block;width:100%;height:100%;min-height:0;border-radius:8px;overflow:hidden}
+    .hud{display:flex;justify-content:center;flex-wrap:wrap;gap:12px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#94a3b8;flex-shrink:0}
     .hud b{color:#e2e8f0;font-weight:600}
     .hud .win{color:#4ade80}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <svg id="board" class="board" role="img" aria-label="Maze board"></svg>
+  <svg id="board" class="board" role="img" aria-label="Лабиринт и положение игрока"></svg>
   <div class="hud" id="hud"></div>
 </div>
 <script>
@@ -24,6 +24,9 @@ const SVG="http://www.w3.org/2000/svg";
 const boardEl=document.getElementById("board");
 const hudEl=document.getElementById("hud");
 let runId="",lastFrame=null,prevSteps=-1;
+let sceneKey="", scene=null, movement=null;
+let visual={x:0,y:0}, target={x:0,y:0};
+const reducedMotion=window.matchMedia("(prefers-reduced-motion: reduce)");
 
 /* ── SVG helpers ── */
 function el(tag,attrs){const e=document.createElementNS(SVG,tag);for(const[k,v]of Object.entries(attrs))e.setAttribute(k,String(v));return e}
@@ -107,9 +110,9 @@ function drawHero(cx,cy,C,dir,tick,moving){
   // flame
   const flame=circle(sx+C*0.06,sy-C*0.04,C*0.065,"#fb923c",{opacity:0.95});
   const fa=el("animate",{attributeName:"r",values:`${C*0.05};${C*0.08};${C*0.05}`,dur:"0.6s",repeatCount:"indefinite"});
-  flame.appendChild(fa);
+  if(!reducedMotion.matches)flame.appendChild(fa);
   const fc=el("animate",{attributeName:"fill",values:"#fb923c;#facc15;#f97316;#fb923c",dur:"0.7s",repeatCount:"indefinite"});
-  flame.appendChild(fc);
+  if(!reducedMotion.matches)flame.appendChild(fc);
   body.appendChild(flame);
   // flame tip
   body.appendChild(circle(sx+C*0.06,sy-C*0.09,C*0.035,"#fde68a",{opacity:0.6}));
@@ -118,88 +121,67 @@ function drawHero(cx,cy,C,dir,tick,moving){
   return g;
 }
 
-/* ── Main draw ── */
-function draw(frame){
-  if(!frame)return;
-  const sz=frame.size||{};
+/* Static tiles and the sprite survive state updates; only positions and HUD change. */
+function placeHero(x,y){
+  visual={x,y};
+  if(!scene)return;
+  scene.hero.setAttribute("transform",`translate(${x} ${y})`);
+  scene.torch.setAttribute("cx",x);scene.torch.setAttribute("cy",y);
+  scene.fogHole.setAttribute("cx",x);scene.fogHole.setAttribute("cy",y);
+}
+function moveHero(x,y,duration){
+  if(movement!==null)cancelAnimationFrame(movement);
+  movement=null;target={x,y};
+  if(reducedMotion.matches||!duration||Math.hypot(x-visual.x,y-visual.y)>48){placeHero(x,y);return}
+  const from={...visual},started=performance.now();
+  function animate(now){
+    const progress=Math.min(1,(now-started)/duration), eased=1-Math.pow(1-progress,3);
+    placeHero(from.x+(x-from.x)*eased,from.y+(y-from.y)*eased);
+    movement=progress<1?requestAnimationFrame(animate):null;
+  }
+  movement=requestAnimationFrame(animate);
+}
+function draw(frame,motion={}){
   const grid=Array.isArray(frame.maze)?frame.maze:[];
-  const W=sz.width||(Array.isArray(grid[0])?grid[0].length:31),H=sz.height||grid.length||31;
+  const W=frame.size?.width||grid.length||21,H=frame.size?.height||grid[0]?.length||21,C=32;
   const walls=new Set();
-  if(Array.isArray(frame.walls))for(const w of frame.walls)if(w&&Number.isFinite(w.x))walls.add(w.x+","+w.y);
-  if(!walls.size&&grid.length)for(let y=0;y<grid.length;y++)if(Array.isArray(grid[y]))for(let x=0;x<grid[y].length;x++)if(grid[x]?.[y]===-1)walls.add(x+","+y);
-
-  const C=Math.max(8,Math.floor(Math.min(window.innerWidth*0.92,window.innerHeight-44)/Math.max(W,H)));
-  const pw=W*C,ph=H*C;
-  boardEl.setAttribute("viewBox",`0 0 ${pw} ${ph}`);
-  boardEl.replaceChildren();
-  addDefs(C);
-
-  // background
-  boardEl.appendChild(rect(0,0,pw,ph,"#2d3a28"));
-
-  // cells
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-    const isW=walls.has(x+","+y);
-    boardEl.appendChild(rect(x*C,y*C,C,C,isW?"url(#wll)":"url(#gnd)"));
-  }
-
-  // wall top edges (3d effect)
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-    if(!walls.has(x+","+y))continue;
-    if(y>0&&!walls.has(x+","+(y-1))){
-      boardEl.appendChild(rect(x*C,y*C,C,2,"#6b7280",{opacity:0.5}));
+  if(Array.isArray(frame.walls))for(const wall of frame.walls)if(wall&&Number.isFinite(wall.x))walls.add(wall.x+","+wall.y);
+  if(!walls.size&&grid.length)for(let x=0;x<W;x++)for(let y=0;y<H;y++)if(grid[x]?.[y]===-1)walls.add(x+","+y);
+  const ex=frame.exit?.x||0,ey=frame.exit?.y||0;
+  const key=JSON.stringify([W,H,ex,ey,[...walls].sort()]);
+  const changed=key!==sceneKey;
+  if(changed){
+    sceneKey=key;boardEl.replaceChildren();boardEl.setAttribute("viewBox",`0 0 ${W*C} ${H*C}`);addDefs(C);
+    const tiles=el("g",{"data-layer":"tiles"});
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const wall=walls.has(x+","+y);
+      tiles.appendChild(rect(x*C,y*C,C,C,wall?"url(#wll)":"url(#gnd)"));
+      if(wall&&y>0&&!walls.has(x+","+(y-1)))tiles.appendChild(rect(x*C,y*C,C,2,"#6b7280",{opacity:.5}));
     }
+    tiles.appendChild(rect(ex*C,ey*C,C,C,"url(#exG)"));
+    const doorW=C*.5,doorH=C*.65,doorX=ex*C+(C-doorW)/2,doorY=ey*C+(C-doorH)*.8;
+    tiles.appendChild(rect(doorX,doorY,doorW,doorH,"#166534",{rx:doorW/2,opacity:.7}));
+    tiles.appendChild(rect(doorX+2,doorY+2,doorW-4,doorH-2,"#22c55e",{rx:(doorW-4)/2,opacity:.4}));
+    boardEl.appendChild(tiles);
+    const torch=el("ellipse",{cx:0,cy:0,rx:C*2.5,ry:C*2.5,fill:"url(#torch)",opacity:.8});
+    const hero=drawHero(0,0,C,"right",0,false);
+    hero.setAttribute("data-layer","hero");
+    boardEl.append(torch,hero);
+    const fogHole=circle(0,0,C*4.5,"black"),mask=el("mask",{id:"fogM"});
+    mask.append(rect(0,0,W*C,H*C,"white"),fogHole);
+    boardEl.append(mask,rect(0,0,W*C,H*C,"#0a0e17",{opacity:.75,mask:"url(#fogM)"}));
+    scene={hero,torch,fogHole};
   }
-
-  // exit
-  const ex=(frame.exit||{}).x||0,ey=(frame.exit||{}).y||0;
-  boardEl.appendChild(rect(ex*C,ey*C,C,C,"url(#exG)"));
-  // exit icon — door arch
-  const doorW=C*0.5,doorH=C*0.65;
-  const doorX=ex*C+(C-doorW)/2,doorY=ey*C+(C-doorH)*0.8;
-  boardEl.appendChild(rect(doorX,doorY,doorW,doorH,"#166534",{rx:doorW/2+" "+doorW/2+" 0 0",opacity:0.7}));
-  boardEl.appendChild(rect(doorX+2,doorY+2,doorW-4,doorH-2,"#22c55e",{rx:(doorW-4)/2+" "+(doorW-4)/2+" 0 0",opacity:0.4}));
-
-  // player
-  const pos=frame.position||{x:1,y:1};
-  const px=pos.x||0,py=pos.y||0;
-  const hx=px*C+C/2,hy=py*C+C/2;
-  const steps=Number.isFinite(frame.steps)?frame.steps:0;
-  const moving=prevSteps>=0&&steps>prevSteps;
-  prevSteps=steps;
-
-  // torch glow
-  boardEl.appendChild(el("ellipse",{cx:hx,cy:hy,rx:C*2.5,ry:C*2.5,fill:"url(#torch)",opacity:0.8}));
-
-  // hero
-  const dir=frame.direction||"right";
-  const tick=Number.isFinite(frame.steps)?frame.steps:0;
-  boardEl.appendChild(drawHero(hx,hy,C,dir,tick,moving));
-
-  // fog of war — centered on player
-  const fogR=Math.max(pw,ph);
-  const fogRect=rect(0,0,pw,ph,"url(#fog)");
-  // We need to reposition the fog gradient center to the player
-  // Use a mask approach: dark overlay with a transparent hole at player
-  const mask=el("mask",{id:"fogM"});
-  mask.appendChild(rect(0,0,pw,ph,"white"));
-  mask.appendChild(circle(hx,hy,C*4.5,"black"));
-  boardEl.appendChild(mask);
-  const overlay=rect(0,0,pw,ph,"#0a0e17",{opacity:0.75,mask:"url(#fogM)"});
-  boardEl.appendChild(overlay);
-
-  // HUD
-  const reached=frame.reached_exit===true;
-  const sc=Number.isFinite(frame.score)?frame.score:null;
-  const over=Number.isFinite(frame.steps_over_optimal)?frame.steps_over_optimal:null;
-  const opt=Number.isFinite(frame.optimal_steps)?frame.optimal_steps:null;
-  let html=`<span>steps: <b>${steps}</b></span>`;
-  if(opt!==null)html+=`<span>optimal: <b>${opt}</b></span>`;
-  if(over!==null)html+=`<span>overhead: <b>${over}</b></span>`;
-  if(sc!==null)html+=`<span>score: <b>${sc}</b></span>`;
-  if(reached)html+=`<span class="win">✓ EXIT</span>`;
-  if(frame.invalid_moves)html+=`<span>invalid: <b>${frame.invalid_moves}</b></span>`;
-  hudEl.innerHTML=html;
+  const x=(frame.position?.x||0)*C+C/2,y=(frame.position?.y||0)*C+C/2;
+  const angle=({right:0,down:90,left:180,up:-90})[frame.direction]||0;
+  scene.hero.firstElementChild.setAttribute("transform",`rotate(${angle})`);
+  moveHero(x,y,changed?0:Math.max(0,Math.min(220,Number(motion.duration_ms)||0)));
+  const metrics=[`Шаги: ${frame.steps||0}`];
+  if(Number.isFinite(frame.optimal_steps))metrics.push(`Оптимум: ${frame.optimal_steps}`);
+  if(Number.isFinite(frame.score))metrics.push(`Счёт: ${frame.score}`);
+  if(frame.reached_exit)metrics.push("Выход найден");
+  if(frame.invalid_moves)metrics.push(`Неверных ходов: ${frame.invalid_moves}`);
+  const text=metrics.join(" · ");if(hudEl.textContent!==text)hudEl.textContent=text;
 }
 
 /* ── Message protocol ── */
@@ -210,13 +192,16 @@ window.addEventListener("message",e=>{
     runId=m.payload?.runId||"";prevSteps=-1;
   }else if(m.type==="agp.renderer.state"){
     lastFrame=m.payload||{};
-    draw((lastFrame&&typeof lastFrame.frame==="object")?lastFrame.frame:{});
+    draw((lastFrame&&typeof lastFrame.frame==="object")?lastFrame.frame:{},lastFrame.motion);
   }else if(m.type==="agp.renderer.result"){
     /* keep last drawn frame */
   }
 });
 
-window.addEventListener("resize",()=>{if(lastFrame)draw(typeof lastFrame.frame==="object"?lastFrame.frame:{})});
+reducedMotion.addEventListener("change",()=>{
+  if(reducedMotion.matches){if(movement!==null)cancelAnimationFrame(movement);movement=null;placeHero(target.x,target.y);boardEl.pauseAnimations()}
+  else boardEl.unpauseAnimations();
+});
 
 draw({position:{x:1,y:1},size:{width:31,height:31},walls:[],exit:{x:29,y:29},direction:"right",steps:0});
 window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"2.0.0"}},"*");
