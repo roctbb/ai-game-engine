@@ -21,10 +21,8 @@ export function roleLandingPath(role: UserRole): string {
   return '/tasks';
 }
 
-export function primaryNavigation(role: UserRole): NavigationItem[] {
-  return role === 'admin'
-    ? [...learningNavigation, { path: '/admin/game-sources', label: 'Система', icon: 'settings' }]
-    : learningNavigation;
+export function primaryNavigation(_role: UserRole): NavigationItem[] {
+  return learningNavigation;
 }
 
 export function profileNavigation(role: UserRole): NavigationItem[] {
@@ -33,7 +31,11 @@ export function profileNavigation(role: UserRole): NavigationItem[] {
     { path: '/admin/catalog', label: 'Управление задачами', icon: 'tasks' },
     { path: '/replays', label: 'Повторы матчей', icon: 'history' },
   ];
-  return role === 'admin' ? [{ path: '/games', label: 'Каталог игр', icon: 'games' }, ...teaching] : teaching;
+  return role === 'admin' ? [
+    { path: '/admin/game-sources', label: 'Система', icon: 'settings' },
+    { path: '/games', label: 'Каталог игр', icon: 'games' },
+    ...teaching,
+  ] : teaching;
 }
 
 export function internalNextPath(candidate: unknown, fallback: string): string {

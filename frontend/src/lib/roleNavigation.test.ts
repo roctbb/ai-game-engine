@@ -16,9 +16,11 @@ describe('role-based user journeys', () => {
     expect(ROUTE_ROLES.games).toEqual(['admin']);
   });
 
-  it('keeps infrastructure out of teaching and learning navigation', () => {
-    expect(primaryNavigation('student').map((item) => item.path)).toEqual(['/tasks', '/lobbies']);
-    expect(primaryNavigation('teacher').map((item) => item.path)).toEqual(['/tasks', '/lobbies']);
+  it('keeps infrastructure exclusively in the admin profile', () => {
+    for (const role of ['student', 'teacher', 'admin'] as const) {
+      expect(primaryNavigation(role).map((item) => item.path)).toEqual(['/tasks', '/lobbies']);
+      expect(profileNavigation(role).some((item) => item.path === '/admin/game-sources')).toBe(role === 'admin');
+    }
     expect(profileNavigation('student')).toEqual([]);
     expect(ROUTE_ROLES['admin-game-sources']).toEqual(['admin']);
     expect(ROUTE_ROLES['admin-catalog']).toContain('teacher');
