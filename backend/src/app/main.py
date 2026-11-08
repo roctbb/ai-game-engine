@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 _matchmaking_task: asyncio.Task[None] | None = None
 
 
+async def _execution_maintenance_loop() -> None:
+    while True:
+        await asyncio.sleep(1)
+        try:
+            await asyncio.to_thread(get_container().execution.dispatch_pending_runs)
+        except Exception:
+            logger.exception("Execution maintenance failed")
+
+
 async def start_training_lobby_matchmaking_loop() -> None:
     global _matchmaking_task
     if not settings.training_lobby_auto_matchmaking_enabled:
@@ -46,9 +55,13 @@ async def _training_lobby_matchmaking_loop() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await start_training_lobby_matchmaking_loop()
+    maintenance = asyncio.create_task(_execution_maintenance_loop())
     try:
         yield
     finally:
+        maintenance.cancel()
+        with suppress(asyncio.CancelledError):
+            await maintenance
         await stop_training_lobby_matchmaking_loop()
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from execution.infrastructure.game_packages import GamePackageStore
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -84,11 +86,9 @@ REMOVED_MANIFEST_GAME_SLUGS = {
 
 
 class _DistributedLock(Protocol):
-    def acquire(self, blocking: bool = True) -> bool:
-        ...
+    def acquire(self, blocking: bool = True) -> bool: ...
 
-    def release(self) -> None:
-        ...
+    def release(self) -> None: ...
 
 
 class _DistributedLockClient(Protocol):
@@ -97,8 +97,7 @@ class _DistributedLockClient(Protocol):
         name: str,
         timeout: float | None = None,
         blocking_timeout: float | None = None,
-    ) -> _DistributedLock:
-        ...
+    ) -> _DistributedLock: ...
 
 
 @dataclass(slots=True)
@@ -252,6 +251,9 @@ def _build_container() -> ServiceContainer:
         workspace_service=team_workspace,
         game_catalog=game_catalog,
         run_replay_recorder=spectator_replay,
+        game_package_store=GamePackageStore(
+            game_catalog, get_games_root(), Path(settings.game_packages_root)
+        ),
     )
     training_lobby = TrainingLobbyService(
         repository=lobby_repo,
@@ -328,7 +330,9 @@ def _archive_removed_manifest_games(game_catalog: GameCatalogService) -> None:
         game = game_catalog.get_game_by_slug(slug)
         if game is None or game.catalog_metadata_status is CatalogMetadataStatus.ARCHIVED:
             continue
-        game_catalog.update_game(game.game_id, catalog_metadata_status=CatalogMetadataStatus.ARCHIVED)
+        game_catalog.update_game(
+            game.game_id, catalog_metadata_status=CatalogMetadataStatus.ARCHIVED
+        )
 
 
 def _update_existing_game(game_catalog: GameCatalogService, manifest: GameManifest) -> None:
@@ -357,7 +361,11 @@ def _update_existing_game(game_catalog: GameCatalogService, manifest: GameManife
     except ConflictError:
         refreshed = game_catalog.get_game(game.game_id)
         existing_version = next(
-            (version for version in refreshed.versions.values() if version.semver == manifest.semver),
+            (
+                version
+                for version in refreshed.versions.values()
+                if version.semver == manifest.semver
+            ),
             None,
         )
         if existing_version is None:

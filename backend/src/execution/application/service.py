@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 
 from execution.application.replay_recorder import NoopRunReplayRecorder, RunReplayRecorder
-from execution.application.repositories import BuildRepository, MatchExecutionRepository, RunRepository, WorkerRepository
+from execution.application.game_packages import GamePackageProvider
+from execution.application.repositories import (
+    BuildRepository,
+    MatchExecutionRepository,
+    RunRepository,
+    WorkerRepository,
+)
 from execution.application.scheduler_gateway import SchedulerGateway
 from execution.domain.model import (
     BuildJob,
@@ -26,6 +33,8 @@ from game_catalog.application.service import GameCatalogService
 from shared.kernel import ConflictError, ExternalServiceError, InvariantViolationError
 from team_workspace.application.service import TeamWorkspaceService
 
+
+logger = logging.getLogger(__name__)
 
 _SINGLE_TASK_BLOCKING_STATUSES = {RunStatus.QUEUED, RunStatus.RUNNING}
 _SHADOW_WORKER_PREFIX = "shadow:"
@@ -67,6 +76,7 @@ class ExecutionService:
         workspace_service: TeamWorkspaceService,
         game_catalog: GameCatalogService,
         run_replay_recorder: RunReplayRecorder | None = None,
+        game_package_store: GamePackageProvider | None = None,
     ) -> None:
         self._run_repository = run_repository
         self._match_execution_repository = match_execution_repository
@@ -76,6 +86,7 @@ class ExecutionService:
         self._workspace_service = workspace_service
         self._game_catalog = game_catalog
         self._run_replay_recorder = run_replay_recorder or NoopRunReplayRecorder()
+        self.game_package_store = game_package_store
 
     def create_run(self, data: CreateRunInput) -> Run:
         team = self._workspace_service.get_team(data.team_id)
@@ -100,7 +111,9 @@ class ExecutionService:
     def queue_run(self, run_id: str) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         if run.run_kind is RunKind.SINGLE_TASK:
-            self._ensure_single_task_can_be_queued(requested_by=run.requested_by, exclude_run_id=run.run_id)
+            self._ensure_single_task_can_be_queued(
+                requested_by=run.requested_by, exclude_run_id=run.run_id
+            )
         try:
             snapshot = self._workspace_service.create_snapshot(
                 team_id=run.team_id,
@@ -113,20 +126,9 @@ class ExecutionService:
                 self._run_repository.save(run)
             raise
         run.queue_with_snapshot(snapshot)
+        self._prepare_dispatch(run)
         self._run_repository.save(run)
-        required_worker_labels = self._game_catalog.get_version(
-            game_id=run.game_id,
-            version_id=snapshot.version_id,
-        ).required_worker_labels
-        try:
-            self._scheduler_gateway.schedule_run(
-                run_id=run.run_id,
-                required_worker_labels=required_worker_labels,
-            )
-        except ExternalServiceError as exc:
-            run.mark_failed(message=f"Scheduler enqueue failed: {exc.message}")
-            self._run_repository.save(run)
-            raise
+        self._dispatch_run(run)
         return run
 
     def queue_match_group(self, run_ids: list[str]) -> MatchExecution:
@@ -134,15 +136,19 @@ class ExecutionService:
             raise InvariantViolationError("Нельзя поставить в очередь пустой матч")
         runs = [require_run(self._run_repository.get(run_id), run_id) for run_id in run_ids]
         primary_run = runs[0]
-        if primary_run.run_kind is not RunKind.TRAINING_MATCH:
-            raise InvariantViolationError("MatchExecution сейчас поддерживает только training_match")
+        if primary_run.run_kind not in {RunKind.TRAINING_MATCH, RunKind.COMPETITION_MATCH}:
+            raise InvariantViolationError("MatchExecution поддерживает только multiplayer матчи")
         for run in runs:
             if run.run_kind is not primary_run.run_kind:
                 raise InvariantViolationError("Все run в матче должны иметь один тип")
             if run.game_id != primary_run.game_id or run.lobby_id != primary_run.lobby_id:
-                raise InvariantViolationError("Все run в матче должны принадлежать одной игре и лобби")
+                raise InvariantViolationError(
+                    "Все run в матче должны принадлежать одной игре и лобби"
+                )
             if run.status is not RunStatus.CREATED:
-                raise InvariantViolationError("Run можно добавить в MatchExecution только из created")
+                raise InvariantViolationError(
+                    "Run можно добавить в MatchExecution только из created"
+                )
 
         snapshots = []
         for run in runs:
@@ -174,23 +180,14 @@ class ExecutionService:
             run.queue_with_snapshot(snapshot)
             run.match_execution_id = match.match_execution_id
             run.match_primary_run_id = primary_run.run_id
+            run.execution_options["seed"] = (
+                primary_run.execution_options.get("seed") or primary_run.run_id
+            )
+            if run.run_id == primary_run.run_id:
+                self._prepare_dispatch(run)
             self._run_repository.save(run)
 
-        required_worker_labels = self._game_catalog.get_version(
-            game_id=primary_run.game_id,
-            version_id=primary_run.snapshot_version_id,
-        ).required_worker_labels
-        try:
-            self._scheduler_gateway.schedule_run(
-                run_id=primary_run.run_id,
-                required_worker_labels=required_worker_labels,
-            )
-        except ExternalServiceError as exc:
-            primary_run.mark_failed(message=f"Scheduler enqueue failed: {exc.message}")
-            self._run_repository.save(primary_run)
-            match.mark_failed(message=f"Scheduler enqueue failed: {exc.message}")
-            self._match_execution_repository.save(match)
-            raise
+        self._dispatch_run(primary_run)
         return match
 
     def queue_shadow_run(self, run_id: str, *, primary_run_id: str) -> Run:
@@ -216,8 +213,7 @@ class ExecutionService:
     @staticmethod
     def is_shadow_of(run: Run, primary_run_id: str) -> bool:
         return (
-            run.match_primary_run_id == primary_run_id
-            and run.run_id != primary_run_id
+            run.match_primary_run_id == primary_run_id and run.run_id != primary_run_id
         ) or run.worker_id == f"{_SHADOW_WORKER_PREFIX}{primary_run_id}"
 
     @staticmethod
@@ -238,24 +234,50 @@ class ExecutionService:
     def start_run(self, run_id: str, worker_id: str, lease_id: str | None = None) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         require_worker(self._worker_repository.get(worker_id), worker_id)
-        if run.status is RunStatus.RUNNING and run.worker_id == worker_id and run.active_lease_id == lease_id:
+        if (
+            run.status is RunStatus.RUNNING
+            and run.worker_id == worker_id
+            and run.active_lease_id == lease_id
+        ):
             return run
         run.mark_started(worker_id=worker_id, lease_id=lease_id)
         self._run_repository.save(run)
         self._mark_primary_match_started(run=run, worker_id=worker_id)
         return run
 
-    def accept_run(self, run_id: str, worker_id: str, lease_id: str) -> Run:
+    def accept_run(
+        self, run_id: str, worker_id: str, lease_id: str, lease_generation: int = 0
+    ) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         require_worker(self._worker_repository.get(worker_id), worker_id)
-        if run.status is RunStatus.RUNNING and run.worker_id == worker_id and run.active_lease_id == lease_id:
+        if (
+            run.status is RunStatus.RUNNING
+            and run.worker_id == worker_id
+            and run.active_lease_id == lease_id
+        ):
             return run
+        if lease_generation and lease_generation < run.lease_generation:
+            raise InvariantViolationError("Устаревшая попытка выполнения")
+        if run.active_lease_id and run.active_lease_id != lease_id:
+            legacy_queued = (
+                run.status is RunStatus.QUEUED and run.lease_generation == lease_generation == 0
+            )
+            if lease_generation <= run.lease_generation and not legacy_queued:
+                raise InvariantViolationError("Устаревший lease_id запуска")
+            if run.status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+                raise InvariantViolationError("Завершенный запуск нельзя принять повторно")
+            run.status = RunStatus.QUEUED
+            run.started_at = None
+        run.lease_generation = lease_generation or run.lease_generation
         run.mark_accepted(worker_id=worker_id, lease_id=lease_id)
+        run.dispatch_pending = False
         self._run_repository.save(run)
         self._mark_primary_match_accepted(run=run, worker_id=worker_id)
         return run
 
-    def finish_run(self, run_id: str, payload: dict[str, object], lease_id: str | None = None) -> Run:
+    def finish_run(
+        self, run_id: str, payload: dict[str, object], lease_id: str | None = None
+    ) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
         if run.status is RunStatus.FINISHED:
             run.require_active_lease(worker_id=None, lease_id=lease_id)
@@ -266,36 +288,131 @@ class ExecutionService:
                 run.result_summary = result_summary_from_payload(merged_payload)
                 self._run_repository.save(run)
                 self._merge_primary_match_payload(run=run, payload=payload)
-                self._run_replay_recorder.record_run(run)
+            self._complete_run(run)
             return run
         run.require_active_lease(worker_id=None, lease_id=lease_id)
         validate_result_payload(run_kind=run.run_kind, payload=payload)
         run.mark_finished(payload=payload)
         run.result_summary = result_summary_from_payload(payload)
+        run.dispatch_pending = False
+        run.completion_pending = True
         self._run_repository.save(run)
-        self._mark_primary_match_finished(run=run, payload=payload)
-        self._run_replay_recorder.record_run(run)
+        self._complete_run(run)
         return run
 
-    def fail_run(self, run_id: str, message: str, lease_id: str | None = None) -> Run:
+    def fail_run(
+        self, run_id: str, message: str, lease_id: str | None = None, timed_out: bool = False
+    ) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
-        if run.status is RunStatus.FAILED:
-            run.require_active_lease(worker_id=None, lease_id=lease_id)
-            return run
         run.require_active_lease(worker_id=None, lease_id=lease_id)
-        run.mark_failed(message=message)
-        self._run_repository.save(run)
-        self._mark_primary_match_failed(run=run, message=message)
-        self._run_replay_recorder.record_run(run)
+        terminal_status = RunStatus.TIMEOUT if timed_out else RunStatus.FAILED
+        if run.status is not terminal_status:
+            run.mark_failed(message=message)
+            run.status = terminal_status
+            run.dispatch_pending = False
+            run.completion_pending = True
+            self._run_repository.save(run)
+        self._complete_run(run)
         return run
 
     def cancel_run(self, run_id: str, message: str | None = None) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
-        run.mark_canceled(message=message)
-        self._run_repository.save(run)
-        self._mark_primary_match_canceled(run=run, message=message)
-        self._run_replay_recorder.record_run(run)
+        primary_id = self.primary_run_id_for_shadow(run)
+        if primary_id:
+            primary = self.get_run(primary_id)
+            if primary.status in {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}:
+                self.cancel_run(primary_id, message)
+                return self.get_run(run_id)
+        if run.status is not RunStatus.CANCELED:
+            run.mark_canceled(message=message)
+            run.dispatch_pending = False
+            run.completion_pending = True
+            self._run_repository.save(run)
+        self._complete_run(run)
         return run
+
+    def _prepare_dispatch(self, run: Run) -> None:
+        if self.game_package_store is not None:
+            self.game_package_store.freeze(run)
+        run.dispatch_pending = True
+
+    def _dispatch_run(self, run: Run) -> None:
+        if run.status is not RunStatus.QUEUED or not run.dispatch_pending:
+            return
+        try:
+            if self.game_package_store is not None and not run.execution_options.get(
+                "package_digest"
+            ):
+                previous_options = dict(run.execution_options)
+                self.game_package_store.freeze(run)
+                if run.execution_options != previous_options:
+                    self._run_repository.save(run)
+            labels = self._game_catalog.get_version(
+                run.game_id, run.snapshot_version_id
+            ).required_worker_labels
+            self._scheduler_gateway.schedule_run(run.run_id, required_worker_labels=labels)
+            run.dispatch_pending = False
+            self._run_repository.save(run)
+        except (ExternalServiceError, ConflictError):
+            logger.warning("Run %s remains queued for scheduler delivery", run.run_id)
+
+    def _complete_run(self, run: Run) -> None:
+        if run.status is RunStatus.FINISHED:
+            self._mark_primary_match_finished(run=run, payload=run.result_payload or {})
+        elif run.status in {RunStatus.FAILED, RunStatus.TIMEOUT}:
+            self._mark_primary_match_failed(run=run, message=run.error_message or "failed")
+        elif run.status is RunStatus.CANCELED:
+            self._mark_primary_match_canceled(run=run, message=run.error_message)
+        self._settle_match_members(run)
+        self._run_replay_recorder.record_run(run)
+        if run.status is RunStatus.CANCELED:
+            cancel = getattr(self._scheduler_gateway, "cancel_run", None)
+            if cancel is not None:
+                try:
+                    cancel(run.run_id)
+                except ExternalServiceError:
+                    logger.warning("Scheduler cancellation pending for %s", run.run_id)
+                    return
+        if run.completion_pending:
+            run.completion_pending = False
+            self._run_repository.save(run)
+
+    def _settle_match_members(self, primary: Run) -> None:
+        if primary.match_primary_run_id != primary.run_id or primary.match_execution_id is None:
+            return
+        match = self.get_match_execution(primary.match_execution_id)
+        for run_id in match.run_ids:
+            if run_id == primary.run_id:
+                continue
+            member = self.get_run(run_id)
+            if member.status not in {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}:
+                continue
+            if primary.status is RunStatus.FINISHED:
+                payload = result_summary_from_payload(primary.result_payload) or {}
+                payload["shadow_result"] = True
+                self.finish_run(run_id, payload)
+            elif primary.status in {RunStatus.FAILED, RunStatus.TIMEOUT}:
+                self.fail_run(
+                    run_id,
+                    primary.error_message or "primary_run_failed",
+                    timed_out=primary.status is RunStatus.TIMEOUT,
+                )
+            elif primary.status is RunStatus.CANCELED:
+                self.cancel_run(run_id, primary.error_message or "primary_run_canceled")
+
+    def dispatch_pending_runs(self) -> None:
+        for run in self._run_repository.list_pending():
+            try:
+                if run.status is RunStatus.QUEUED:
+                    self._dispatch_run(run)
+                elif (
+                    run.status
+                    in {RunStatus.FINISHED, RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED}
+                    and run.completion_pending
+                ):
+                    self._complete_run(run)
+            except Exception:
+                logger.exception("Deferred run delivery failed for %s", run.run_id)
 
     def get_run(self, run_id: str, *, include_result_payload: bool = True) -> Run:
         return require_run(
@@ -400,7 +517,9 @@ class ExecutionService:
     def get_worker(self, worker_id: str) -> WorkerNode:
         return require_worker(self._worker_repository.get(worker_id), worker_id)
 
-    def get_match_execution(self, match_execution_id: str, *, include_result_payload: bool = True) -> MatchExecution:
+    def get_match_execution(
+        self, match_execution_id: str, *, include_result_payload: bool = True
+    ) -> MatchExecution:
         return require_match_execution(
             self._match_execution_repository.get(
                 match_execution_id,
@@ -409,7 +528,9 @@ class ExecutionService:
             match_execution_id,
         )
 
-    def get_match_execution_for_run(self, run: Run, *, include_result_payload: bool = True) -> MatchExecution | None:
+    def get_match_execution_for_run(
+        self, run: Run, *, include_result_payload: bool = True
+    ) -> MatchExecution | None:
         if run.match_execution_id is not None:
             return self._match_execution_repository.get(
                 run.match_execution_id,
@@ -425,13 +546,17 @@ class ExecutionService:
         self._build_repository.save(build)
         return build
 
-    def _ensure_single_task_can_be_queued(self, requested_by: str, exclude_run_id: str | None = None) -> None:
+    def _ensure_single_task_can_be_queued(
+        self, requested_by: str, exclude_run_id: str | None = None
+    ) -> None:
         active_runs = self._run_repository.list_active_by_requested_by_and_kind(
             requested_by=requested_by,
             run_kind=RunKind.SINGLE_TASK,
         )
         blocking_runs = [
-            run for run in active_runs if run.run_id != exclude_run_id and run.status in _SINGLE_TASK_BLOCKING_STATUSES
+            run
+            for run in active_runs
+            if run.run_id != exclude_run_id and run.status in _SINGLE_TASK_BLOCKING_STATUSES
         ]
         for run in active_runs:
             if run.run_id == exclude_run_id or run.status is not RunStatus.CREATED:
@@ -458,8 +583,13 @@ class ExecutionService:
 
     def _mark_primary_match_accepted(self, *, run: Run, worker_id: str) -> None:
         match = self._primary_match_execution_for_run(run)
-        if match is None or match.status is not MatchExecutionStatus.QUEUED:
+        if match is None or match.status not in {
+            MatchExecutionStatus.QUEUED,
+            MatchExecutionStatus.RUNNING,
+        }:
             return
+        match.status = MatchExecutionStatus.QUEUED
+        match.worker_id = None
         match.mark_accepted(worker_id)
         self._match_execution_repository.save(match)
 
@@ -492,7 +622,11 @@ class ExecutionService:
         match = self._primary_match_execution_for_run(run)
         if match is None or match.status is MatchExecutionStatus.FAILED:
             return
-        if match.status in {MatchExecutionStatus.CREATED, MatchExecutionStatus.QUEUED, MatchExecutionStatus.RUNNING}:
+        if match.status in {
+            MatchExecutionStatus.CREATED,
+            MatchExecutionStatus.QUEUED,
+            MatchExecutionStatus.RUNNING,
+        }:
             match.mark_failed(message)
             self._match_execution_repository.save(match)
 
@@ -500,7 +634,11 @@ class ExecutionService:
         match = self._primary_match_execution_for_run(run)
         if match is None or match.status is MatchExecutionStatus.CANCELED:
             return
-        if match.status in {MatchExecutionStatus.CREATED, MatchExecutionStatus.QUEUED, MatchExecutionStatus.RUNNING}:
+        if match.status in {
+            MatchExecutionStatus.CREATED,
+            MatchExecutionStatus.QUEUED,
+            MatchExecutionStatus.RUNNING,
+        }:
             match.mark_canceled(message)
             self._match_execution_repository.save(match)
 
@@ -510,13 +648,19 @@ class ExecutionService:
         return self._match_execution_repository.get(run.match_execution_id)
 
 
-def _merge_finished_payload(existing: dict[str, object] | None, incoming: dict[str, object]) -> dict[str, object]:
+def _merge_finished_payload(
+    existing: dict[str, object] | None, incoming: dict[str, object]
+) -> dict[str, object]:
     if not isinstance(existing, dict):
         return dict(incoming)
     merged = dict(existing)
     for key, value in incoming.items():
         current = merged.get(key)
-        if key in {"scores", "placements"} and isinstance(current, dict) and isinstance(value, dict):
+        if (
+            key in {"scores", "placements"}
+            and isinstance(current, dict)
+            and isinstance(value, dict)
+        ):
             merged[key] = {**current, **value}
             continue
         if key == "metrics" and isinstance(current, dict) and isinstance(value, dict):
@@ -528,11 +672,17 @@ def _merge_finished_payload(existing: dict[str, object] | None, incoming: dict[s
     return merged
 
 
-def _merge_metrics_payload(existing: dict[object, object], incoming: dict[object, object]) -> dict[object, object]:
+def _merge_metrics_payload(
+    existing: dict[object, object], incoming: dict[object, object]
+) -> dict[object, object]:
     merged = dict(existing)
     for key, value in incoming.items():
         current = merged.get(key)
-        if key in {"scores", "placements"} and isinstance(current, dict) and isinstance(value, dict):
+        if (
+            key in {"scores", "placements"}
+            and isinstance(current, dict)
+            and isinstance(value, dict)
+        ):
             merged[key] = {**current, **value}
         else:
             merged[key] = value

@@ -83,7 +83,7 @@ services:
     container_name: ai-game-redis-v2
     logging: *default-logging
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
     ports:
       - "6379:6379"
     volumes:
@@ -107,6 +107,8 @@ services:
     container_name: ai-game-backend-v2
     logging: *default-logging
     restart: unless-stopped
+    volumes:
+      - game_packages:/app/game-packages
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -123,6 +125,7 @@ services:
       SESSION_REPOSITORY_BACKEND: sqlalchemy
       SESSION_REPOSITORY_AUTO_CREATE_TABLES: "true"
       GAMES_ROOT: /app/games
+      GAME_PACKAGES_ROOT: /app/game-packages
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       BACKEND_WORKERS: "2"
       TRAINING_LOBBY_AUTO_MATCHMAKING_ENABLED: "false"
@@ -152,6 +155,8 @@ services:
     logging: *default-logging
     restart: unless-stopped
     command: ["python", "-m", "app.matchmaker"]
+    volumes:
+      - game_packages:/app/game-packages
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -167,6 +172,7 @@ services:
       SESSION_REPOSITORY_BACKEND: sqlalchemy
       SESSION_REPOSITORY_AUTO_CREATE_TABLES: "false"
       GAMES_ROOT: /app/games
+      GAME_PACKAGES_ROOT: /app/game-packages
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       TRAINING_LOBBY_AUTO_MATCHMAKING_ENABLED: "true"
       TRAINING_LOBBY_AUTO_MATCHMAKING_INTERVAL_SECONDS: "1.0"
@@ -295,5 +301,6 @@ services:
           cpus: "0.5"
 
 volumes:
+  game_packages:
   postgres_data:
   redis_data:

@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+import hashlib
+import gzip
+import shutil
+import tempfile
+from threading import Lock
 from contextlib import suppress
 from io import BytesIO
 import json
@@ -18,6 +24,8 @@ from pydantic import BaseModel
 import httpx
 
 from worker_service.settings import settings
+from worker_service import processes
+from worker_service.processes import run_command as _run_engine_command
 
 app = FastAPI(title=settings.app_name)
 logger = logging.getLogger(__name__)
@@ -27,6 +35,11 @@ _worker_registration_expires_at: float = 0.0
 _worker_heartbeat_expires_at: float = 0.0
 _persistent_client: httpx.Client | None = None
 _package_archive_cache: dict[str, bytes] = {}
+_frozen_package_cache: dict[str, bytes] = {}
+_last_worker_status: str | None = None
+_slot_lock = Lock()
+_active_slots = 0
+_active_containers: dict[str, str] = {}
 
 SUPPORTED_RUN_KINDS: set[str] = {"single_task", "training_match", "competition_match"}
 SUPPORTED_CODE_API_MODES: set[str] = {"script_based", "turn_based"}
@@ -58,6 +71,8 @@ async def stop_auto_poll_loop() -> None:
     global _auto_poll_stop_event, _auto_poll_task, _persistent_client
     if _auto_poll_stop_event is not None:
         _auto_poll_stop_event.set()
+    for run_id, name in list(_active_containers.items()):
+        await asyncio.to_thread(_stop_engine, run_id, name)
     if _auto_poll_task is not None:
         _auto_poll_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -81,6 +96,12 @@ def pull_and_execute() -> dict[str, object]:
 
 
 async def _auto_poll_loop(stop_event: asyncio.Event) -> None:
+    await asyncio.gather(
+        *(_auto_poll_slot_loop(stop_event) for _ in range(max(settings.max_slots, 1)))
+    )
+
+
+async def _auto_poll_slot_loop(stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         try:
             result = await asyncio.to_thread(_pull_and_execute_once)
@@ -96,6 +117,23 @@ async def _auto_poll_loop(stop_event: asyncio.Event) -> None:
 
 
 def _pull_and_execute_once() -> dict[str, object]:
+    global _active_slots
+    with _slot_lock:
+        if _active_slots >= settings.max_slots:
+            return {"worker_id": settings.worker_id, "status": "busy"}
+        _active_slots += 1
+    try:
+        return _pull_and_execute_in_slot()
+    finally:
+        with _slot_lock:
+            _active_slots -= 1
+            available = max(settings.max_slots - _active_slots, 0)
+        client = _persistent_client
+        if client is not None and not client.is_closed:
+            _best_effort_send_worker_heartbeat(client, available, force=True)
+
+
+def _pull_and_execute_in_slot() -> dict[str, object]:
     # MVP: worker запрашивает следующую задачу у scheduler и проходит lifecycle accepted->started->finished.
     client = _persistent_client
     owns_client = False
@@ -107,7 +145,8 @@ def _pull_and_execute_once() -> dict[str, object]:
             registered_status = _ensure_worker_registered(client=client)
             heartbeat_status = _best_effort_send_worker_heartbeat(
                 client=client,
-                capacity_available=settings.max_slots,
+                force=True,
+                capacity_available=max(settings.max_slots - _active_slots + 1, 0),
             )
             effective_status = heartbeat_status or registered_status
             if not _is_worker_pull_allowed(effective_status):
@@ -151,14 +190,20 @@ def _pull_and_execute_once() -> dict[str, object]:
 
         _best_effort_send_worker_heartbeat(
             client=client,
-            capacity_available=max(settings.max_slots - 1, 0),
+            capacity_available=max(settings.max_slots - _active_slots, 0),
             force=True,
         )
         try:
             execution_context = _get_execution_context(client=client, run_id=run_id)
             if execution_context is None:
-                raise RuntimeError(f"Execution context is not available for run {run_id}")
-            run_kind_raw = execution_context.get("run_kind") if execution_context is not None else None
+                raise RuntimeError(
+                    f"Execution context is not available for run {run_id}"
+                )
+            run_kind_raw = (
+                execution_context.get("run_kind")
+                if execution_context is not None
+                else None
+            )
             if not isinstance(run_kind_raw, str):
                 raise RuntimeError("Execution context is missing run_kind")
             resolved_context = _require_execution_context(
@@ -171,7 +216,15 @@ def _pull_and_execute_once() -> dict[str, object]:
                 client=client,
                 method="POST",
                 url=f"{settings.backend_api_url}/internal/runs/{run_id}/accepted",
-                json_payload={"worker_id": settings.worker_id, "lease_id": lease_id},
+                json_payload={
+                    "worker_id": settings.worker_id,
+                    "lease_id": lease_id,
+                    **(
+                        {"lease_generation": data["lease_generation"]}
+                        if data.get("lease_generation")
+                        else {}
+                    ),
+                },
             )
 
             _request_with_retry(
@@ -181,8 +234,26 @@ def _pull_and_execute_once() -> dict[str, object]:
                 json_payload={"worker_id": settings.worker_id, "lease_id": lease_id},
             )
 
-            payload = _execute_manifest_game(resolved_context)
+            payload = _execute_with_control(
+                client,
+                run_id,
+                lease_id,
+                resolved_context,
+                float(data.get("lease_ttl_seconds", 30)),
+            )
 
+            renewed = _request_with_retry(
+                client,
+                "POST",
+                f"{settings.scheduler_url}/internal/runs/renew-lease",
+                {
+                    "worker_id": settings.worker_id,
+                    "run_id": run_id,
+                    "lease_id": lease_id,
+                },
+            )
+            if renewed.json().get("renewed") is not True:
+                raise ExecutionAborted("lease_lost", False)
             _request_with_retry(
                 client=client,
                 method="POST",
@@ -200,6 +271,14 @@ def _pull_and_execute_once() -> dict[str, object]:
                     "lease_id": lease_id,
                 },
             )
+        except ExecutionAborted as exc:
+            if exc.terminal:
+                _best_effort_ack_scheduler(client, run_id, lease_id)
+            return {
+                "worker_id": settings.worker_id,
+                "run_id": run_id,
+                "status": exc.status,
+            }
         except httpx.HTTPError as exc:
             reported_terminal = _best_effort_report_failed(
                 client=client,
@@ -207,17 +286,36 @@ def _pull_and_execute_once() -> dict[str, object]:
                 lease_id=lease_id,
                 error=str(exc),
             )
-            if reported_terminal or _is_stale_backend_run_error(exc):
-                _best_effort_ack_scheduler(client=client, run_id=run_id, lease_id=lease_id)
-            raise HTTPException(status_code=502, detail=f"Worker execution failed for run {run_id}") from exc
+            if reported_terminal or (
+                _is_stale_backend_run_error(exc)
+                and _backend_run_is_terminal(client, run_id)
+            ):
+                _best_effort_ack_scheduler(
+                    client=client, run_id=run_id, lease_id=lease_id
+                )
+            raise HTTPException(
+                status_code=502, detail=f"Worker execution failed for run {run_id}"
+            ) from exc
         except Exception as exc:
-            if _best_effort_report_failed(client=client, run_id=run_id, lease_id=lease_id, error=str(exc)):
-                _best_effort_ack_scheduler(client=client, run_id=run_id, lease_id=lease_id)
-            raise HTTPException(status_code=500, detail=f"Worker execution failed for run {run_id}") from exc
+            if _best_effort_report_failed(
+                client=client,
+                run_id=run_id,
+                lease_id=lease_id,
+                error=str(exc),
+                timed_out=isinstance(
+                    exc, (GameExecutionTimeout, subprocess.TimeoutExpired)
+                ),
+            ):
+                _best_effort_ack_scheduler(
+                    client=client, run_id=run_id, lease_id=lease_id
+                )
+            raise HTTPException(
+                status_code=500, detail=f"Worker execution failed for run {run_id}"
+            ) from exc
         finally:
             _best_effort_send_worker_heartbeat(
                 client=client,
-                capacity_available=settings.max_slots,
+                capacity_available=max(settings.max_slots - _active_slots + 1, 0),
                 force=True,
             )
 
@@ -234,10 +332,10 @@ def _pull_and_execute_once() -> dict[str, object]:
 
 
 def _ensure_worker_registered(client: httpx.Client) -> str | None:
-    global _worker_registration_expires_at
+    global _worker_registration_expires_at, _last_worker_status
     now = time.monotonic()
     if now < _worker_registration_expires_at:
-        return None
+        return _last_worker_status
 
     response = _request_with_retry(
         client=client,
@@ -252,8 +350,12 @@ def _ensure_worker_registered(client: httpx.Client) -> str | None:
     )
     payload = response.json()
     status = payload.get("status")
-    _worker_registration_expires_at = now + max(settings.worker_registration_ttl_seconds, 1.0)
-    return status if isinstance(status, str) else None
+    _worker_registration_expires_at = now + max(
+        settings.worker_registration_ttl_seconds, 1.0
+    )
+    if isinstance(status, str):
+        _last_worker_status = status
+    return _last_worker_status
 
 
 def _require_execution_context(
@@ -279,7 +381,9 @@ def _require_execution_context(
     return execution_context
 
 
-def _get_execution_context(client: httpx.Client, run_id: str) -> dict[str, object] | None:
+def _get_execution_context(
+    client: httpx.Client, run_id: str
+) -> dict[str, object] | None:
     try:
         response = _request_with_retry(
             client=client,
@@ -290,19 +394,65 @@ def _get_execution_context(client: httpx.Client, run_id: str) -> dict[str, objec
         if exc.response.status_code == 404:
             return None
         raise
-    return response.json()
+    context = response.json()
+    digest = context.get("package_digest")
+    if isinstance(digest, str) and digest not in _frozen_package_cache:
+        package = _request_with_retry(
+            client, "GET", f"{settings.backend_api_url}/internal/runs/{run_id}/package"
+        )
+        raw = package.content
+        if len(raw) > 64 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
+            raise RuntimeError("Game package digest mismatch or package too large")
+        if len(_frozen_package_cache) >= 32:
+            _frozen_package_cache.pop(next(iter(_frozen_package_cache)))
+        _frozen_package_cache[digest] = raw
+    return context
 
 
 def _execute_manifest_game(context: dict[str, object]) -> dict[str, object]:
+    digest = context.get("package_digest")
+    if isinstance(digest, str):
+        raw = _frozen_package_cache.get(digest)
+        if raw is None or hashlib.sha256(raw).hexdigest() != digest:
+            raise RuntimeError("Frozen game package is unavailable")
+        with tempfile.TemporaryDirectory(prefix="agp-game-") as directory:
+            package_dir = Path(directory).resolve()
+            with tarfile.open(fileobj=BytesIO(raw), mode="r:gz") as archive:
+                total = 0
+                for member in archive.getmembers():
+                    target = (package_dir / member.name).resolve()
+                    total += member.size
+                    if (
+                        not member.isfile()
+                        or package_dir not in target.parents
+                        or total > 64 * 1024 * 1024
+                    ):
+                        raise RuntimeError("Unsafe game package entry")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with (
+                        archive.extractfile(member) as source,
+                        target.open("wb") as output,
+                    ):
+                        shutil.copyfileobj(source, output)
+            return _execute_package(context, package_dir)
+    return _execute_package(context)
+
+
+def _execute_package(
+    context: dict[str, object], frozen_dir: Path | None = None
+) -> dict[str, object]:
     package_dir_raw = context.get("game_package_dir")
     entrypoint_raw = context.get("engine_entrypoint")
     if not isinstance(package_dir_raw, str) or not isinstance(entrypoint_raw, str):
-        raise RuntimeError("Execution context is missing game package or engine entrypoint")
+        raise RuntimeError(
+            "Execution context is missing game package or engine entrypoint"
+        )
 
     games_root = Path(settings.games_root).resolve()
-    package_dir = (games_root / package_dir_raw).resolve()
+    package_dir = frozen_dir or (games_root / package_dir_raw).resolve()
     engine_path = (package_dir / entrypoint_raw).resolve()
-    if games_root not in engine_path.parents or not engine_path.is_file():
+    root = frozen_dir or games_root
+    if root not in engine_path.parents or not engine_path.is_file():
         raise RuntimeError(f"Engine entrypoint is not available: {entrypoint_raw}")
 
     if settings.execution_mode == "docker":
@@ -328,8 +478,13 @@ def _execute_manifest_game_locally(
 ) -> dict[str, object]:
     env = os.environ.copy()
     env["AGP_RUN_CONTEXT"] = json.dumps(context, ensure_ascii=False)
-    completed = subprocess.run(
-        [sys.executable, str(Path(__file__).with_name("game_runtime.py")), str(engine_path)],
+    completed = _run_engine_command(
+        [
+            sys.executable,
+            str(Path(__file__).with_name("game_runtime.py")),
+            str(engine_path),
+        ],
+        context=context,
         cwd=str(package_dir),
         env=env,
         text=True,
@@ -351,7 +506,9 @@ def _execute_manifest_game_in_docker(
 ) -> dict[str, object]:
     package_archive = _build_package_archive(package_dir)
     context_json = json.dumps(context, ensure_ascii=False)
-    container_name = _docker_container_name(context)
+    container_name = str(
+        context.get("runtime_container_name") or _docker_container_name(context)
+    )
     timeout_seconds = _engine_timeout_seconds()
 
     command = [
@@ -396,27 +553,35 @@ def _execute_manifest_game_in_docker(
             "mkdir -p /workspace/game; "
             "tar -xzf - -C /workspace/game; "
             "cd /workspace/game; "
-            'python .agp-runtime/entry.py "$1"'
+            'python .agp-runtime/supervisor.py "$1" "$2"'
         ),
         "sh",
         entrypoint,
+        str(timeout_seconds),
     ]
     try:
-        completed = subprocess.run(
+        completed = _run_engine_command(
             command,
+            context=context,
             input=package_archive,
             capture_output=True,
             timeout=timeout_seconds,
             check=False,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(f"Docker binary not found: {settings.docker_binary}") from exc
+        raise RuntimeError(
+            f"Docker binary not found: {settings.docker_binary}"
+        ) from exc
     except subprocess.TimeoutExpired as exc:
         _force_remove_docker_container(container_name)
-        raise RuntimeError(f"Game engine timed out after {timeout_seconds:.1f}s") from exc
+        raise RuntimeError(
+            f"Game engine timed out after {timeout_seconds:.1f}s"
+        ) from exc
 
     stdout_text = completed.stdout.decode("utf-8", errors="replace")
     stderr_text = completed.stderr.decode("utf-8", errors="replace").strip()
+    if completed.returncode == 124:
+        raise GameExecutionTimeout("Game engine execution deadline exceeded")
     if completed.returncode != 0:
         raise RuntimeError(
             "Game engine in docker failed "
@@ -465,25 +630,47 @@ def _force_remove_docker_container(container_name: str) -> None:
             check=False,
         )
     except (FileNotFoundError, subprocess.SubprocessError):
-        logger.exception("Failed to remove timed-out docker container %s", container_name)
+        logger.exception(
+            "Failed to remove timed-out docker container %s", container_name
+        )
 
 
 def _build_package_archive(package_dir: Path) -> bytes:
-    cache_key = str(package_dir)
+    buffer = BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as archive:
+        paths = [
+            (path, str(path.relative_to(package_dir)))
+            for path in sorted(package_dir.rglob("*"))
+            if path.is_file()
+            and not path.is_symlink()
+            and path.suffix != ".pyc"
+            and not any(
+                part.startswith(".") or part == "__pycache__"
+                for part in path.relative_to(package_dir).parts
+            )
+        ]
+        paths.append(
+            (Path(__file__).with_name("game_runtime.py"), ".agp-runtime/entry.py")
+        )
+        paths.append(
+            (
+                Path(__file__).with_name("runtime_supervisor.py"),
+                ".agp-runtime/supervisor.py",
+            )
+        )
+        for path, name in paths:
+            data = path.read_bytes()
+            info = tarfile.TarInfo(name)
+            info.size, info.mode = len(data), 0o644
+            archive.addfile(info, BytesIO(data))
+    raw = buffer.getvalue()
+    cache_key = hashlib.sha256(raw).hexdigest()
     cached = _package_archive_cache.get(cache_key)
     if cached is not None:
         return cached
-    buffer = BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        for path in sorted(package_dir.rglob("*")):
-            if path.is_dir():
-                continue
-            relative = path.relative_to(package_dir)
-            if relative.parts and relative.parts[0].startswith("."):
-                continue
-            archive.add(path, arcname=str(relative))
-        archive.add(Path(__file__).with_name("game_runtime.py"), arcname=".agp-runtime/entry.py")
-    result = buffer.getvalue()
+    result = gzip.compress(raw, mtime=0)
+    if len(_package_archive_cache) >= 32:
+        _package_archive_cache.pop(next(iter(_package_archive_cache)))
     _package_archive_cache[cache_key] = result
     return result
 
@@ -501,48 +688,39 @@ def _parse_engine_payload(stdout: str) -> dict[str, object]:
 
 
 def _enforce_result_turn_limit(payload: dict[str, object]) -> dict[str, object]:
-    max_turns = max(int(settings.result_max_turns), 0)
+    """Bound replay detail without changing simulation results or timestamps."""
+    limit = max(int(settings.result_max_turns), 0)
     frames = payload.get("frames")
     if not isinstance(frames, list):
         return payload
-
-    kept_frames: list[object] = []
-    dropped_frames = 0
-    final_frame: object | None = None
-    for frame in frames:
-        if isinstance(frame, dict) and frame.get("phase") == "finished":
-            final_frame = frame
-
-        tick = _frame_tick(frame)
-        if tick is None or tick <= max_turns:
-            kept_frames.append(frame)
-        else:
-            dropped_frames += 1
-
-    if final_frame is not None and final_frame not in kept_frames:
-        if isinstance(final_frame, dict):
-            capped_final = dict(final_frame)
-            capped_final["tick"] = max_turns
-            kept_frames.append(capped_final)
-        else:
-            kept_frames.append(final_frame)
-
-    if dropped_frames <= 0:
+    kept = [
+        frame
+        for frame in frames
+        if (isinstance(frame, dict) and frame.get("phase") == "finished")
+        or _frame_tick(frame) is None
+        or _frame_tick(frame) <= limit
+    ]
+    dropped = len(frames) - len(kept)
+    if not dropped:
         return payload
-
-    payload = dict(payload)
-    payload["frames"] = kept_frames
-    payload["metrics"] = _metrics_with_turn_limit(
-        payload.get("metrics"),
-        max_turns=max_turns,
-        dropped_frames=dropped_frames,
-    )
-    payload["events"] = _events_with_turn_limit(
-        payload.get("events"),
-        max_turns=max_turns,
-        dropped_frames=dropped_frames,
-    )
-    return payload
+    return {
+        **payload,
+        "frames": kept,
+        "metrics": {
+            **(payload.get("metrics") or {}),
+            "replay_truncated": True,
+            "replay_tick_limit": limit,
+            "dropped_frames": dropped,
+        },
+        "events": [
+            *(payload.get("events") or []),
+            {
+                "type": "replay_truncated",
+                "message": "Сокращена запись реплея; результат партии сохранен.",
+                "dropped_frames": dropped,
+            },
+        ],
+    }
 
 
 def _frame_tick(frame: object) -> int | None:
@@ -559,52 +737,32 @@ def _frame_tick(frame: object) -> int | None:
     return None
 
 
-def _metrics_with_turn_limit(raw_metrics: object, *, max_turns: int, dropped_frames: int) -> dict[str, object]:
-    metrics = dict(raw_metrics) if isinstance(raw_metrics, dict) else {}
-    metrics["turn_limit_enforced"] = True
-    metrics["max_turns"] = min(int(metrics.get("max_turns", max_turns)), max_turns)
-    metrics["result_max_turns"] = max_turns
-    metrics["dropped_frames"] = dropped_frames
-    return metrics
-
-
-def _events_with_turn_limit(raw_events: object, *, max_turns: int, dropped_frames: int) -> list[object]:
-    raw_items = raw_events if isinstance(raw_events, list) else []
-    events: list[object] = []
-    dropped_events = 0
-    for event in raw_items:
-        tick = _frame_tick(event)
-        if tick is None or tick <= max_turns:
-            events.append(event)
-        else:
-            dropped_events += 1
-
-    events.append(
-        {
-            "type": "turn_limit_enforced",
-            "tick": max_turns,
-            "message": f"Игра принудительно ограничена {max_turns} ходами.",
-            "dropped_frames": dropped_frames,
-            "dropped_events": dropped_events,
-        }
-    )
-    return events
-
-
-def _best_effort_report_failed(client: httpx.Client, run_id: str, lease_id: str, error: str) -> bool:
+def _best_effort_report_failed(
+    client: httpx.Client,
+    run_id: str,
+    lease_id: str,
+    error: str,
+    timed_out: bool = False,
+) -> bool:
     try:
         _request_with_retry(
             client=client,
             method="POST",
             url=f"{settings.backend_api_url}/internal/runs/{run_id}/failed",
-            json_payload={"message": error[:3000], "lease_id": lease_id},
+            json_payload={
+                "message": error[:3000],
+                "lease_id": lease_id,
+                **({"timeout": True} if timed_out else {}),
+            },
         )
         return True
     except httpx.HTTPError:
         return False
 
 
-def _best_effort_ack_scheduler(client: httpx.Client, run_id: str, lease_id: str) -> bool:
+def _best_effort_ack_scheduler(
+    client: httpx.Client, run_id: str, lease_id: str
+) -> bool:
     try:
         _request_with_retry(
             client=client,
@@ -627,10 +785,10 @@ def _best_effort_send_worker_heartbeat(
     *,
     force: bool = False,
 ) -> str | None:
-    global _worker_heartbeat_expires_at
+    global _worker_heartbeat_expires_at, _last_worker_status
     now = time.monotonic()
     if not force and now < _worker_heartbeat_expires_at:
-        return None
+        return _last_worker_status
     try:
         response = _request_with_retry(
             client=client,
@@ -640,10 +798,14 @@ def _best_effort_send_worker_heartbeat(
         )
         payload = response.json()
         status = payload.get("status")
-        _worker_heartbeat_expires_at = now + max(settings.worker_heartbeat_interval_seconds, 0.1)
-        return status if isinstance(status, str) else None
+        _worker_heartbeat_expires_at = now + max(
+            settings.worker_heartbeat_interval_seconds, 0.1
+        )
+        if isinstance(status, str):
+            _last_worker_status = status
+        return _last_worker_status
     except httpx.HTTPError:
-        return None
+        return _last_worker_status
 
 
 def _is_worker_pull_allowed(worker_status: str | None) -> bool:
@@ -701,6 +863,123 @@ def _is_stale_backend_run_error(exc: httpx.HTTPError) -> bool:
     if not isinstance(exc, httpx.HTTPStatusError):
         return False
     request_url = str(exc.request.url)
-    if not request_url.startswith(f"{settings.backend_api_url.rstrip('/')}/internal/runs/"):
+    if not request_url.startswith(
+        f"{settings.backend_api_url.rstrip('/')}/internal/runs/"
+    ):
         return False
     return exc.response.status_code in {404, 409, 422}
+
+
+class GameExecutionTimeout(RuntimeError):
+    pass
+
+
+class ExecutionAborted(RuntimeError):
+    def __init__(self, status: str, terminal: bool) -> None:
+        self.status, self.terminal = status, terminal
+        super().__init__(status)
+
+
+def _get_control(client: httpx.Client, run_id: str) -> dict[str, object]:
+    try:
+        response = _request_with_retry(
+            client, "GET", f"{settings.backend_api_url}/internal/runs/{run_id}/control"
+        )
+        return response.json()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return {"status": "missing"}
+        raise
+
+
+def _backend_run_is_terminal(client: httpx.Client, run_id: str) -> bool:
+    try:
+        return _get_control(client, run_id).get("status") in {
+            "finished",
+            "failed",
+            "timeout",
+            "canceled",
+            "missing",
+        }
+    except httpx.HTTPError:
+        return False
+
+
+def _execute_with_control(
+    client: httpx.Client,
+    run_id: str,
+    lease_id: str,
+    context: dict[str, object],
+    ttl: float,
+) -> dict[str, object]:
+    context = {**context, "runtime_container_name": _docker_container_name(context)}
+    renewed = _request_with_retry(
+        client,
+        "POST",
+        f"{settings.scheduler_url}/internal/runs/renew-lease",
+        {"worker_id": settings.worker_id, "run_id": run_id, "lease_id": lease_id},
+    )
+    if renewed.json().get("renewed") is not True:
+        raise ExecutionAborted("lease_lost", False)
+    processes.prepare(run_id)
+    with _slot_lock:
+        _active_containers[run_id] = str(context["runtime_container_name"])
+    last_renew = time.monotonic()
+    interval = max(0.05, min(0.5, ttl / 4))
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_execute_manifest_game, context)
+    try:
+        while True:
+            try:
+                result = future.result(timeout=interval)
+                if context.get("run_kind") == "competition_match":
+                    placements = result.get("placements")
+                    if isinstance(placements, dict) and len(
+                        set(placements.values())
+                    ) < len(placements):
+                        result["tie_resolution"] = "explicit_tie"
+                return result
+            except FutureTimeout:
+                if future.done():
+                    raise
+            control = _get_control(client, run_id)
+            status = str(control.get("status"))
+            terminal = status in {
+                "finished",
+                "failed",
+                "timeout",
+                "canceled",
+                "missing",
+            }
+            if terminal or control.get("lease_id") != lease_id:
+                raise ExecutionAborted(status if terminal else "lease_lost", terminal)
+            if time.monotonic() - last_renew >= max(0.1, min(ttl / 4, 5)):
+                response = _request_with_retry(
+                    client,
+                    "POST",
+                    f"{settings.scheduler_url}/internal/runs/renew-lease",
+                    {
+                        "worker_id": settings.worker_id,
+                        "run_id": run_id,
+                        "lease_id": lease_id,
+                    },
+                )
+                if response.json().get("renewed") is not True:
+                    raise ExecutionAborted("lease_lost", False)
+                last_renew = time.monotonic()
+                _best_effort_send_worker_heartbeat(
+                    client, max(settings.max_slots - _active_slots, 0), force=True
+                )
+    finally:
+        if not future.done():
+            _stop_engine(run_id, str(context["runtime_container_name"]))
+        executor.shutdown(wait=True, cancel_futures=True)
+        processes.forget(run_id)
+        with _slot_lock:
+            _active_containers.pop(run_id, None)
+
+
+def _stop_engine(run_id: str, container_name: str) -> None:
+    processes.stop(run_id)
+    if settings.execution_mode == "docker":
+        _force_remove_docker_container(container_name)

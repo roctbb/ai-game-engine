@@ -16,6 +16,7 @@ async def run_matchmaker_loop(stop_event: asyncio.Event) -> None:
     logger.info("Training lobby matchmaker loop started with interval %.2fs", interval)
     while not stop_event.is_set():
         try:
+            await asyncio.to_thread(get_container().execution.dispatch_pending_runs)
             await asyncio.to_thread(get_container().training_lobby.run_due_matchmaking_cycles)
         except Exception:
             logger.exception("Training lobby matchmaker tick failed")

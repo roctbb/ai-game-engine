@@ -104,7 +104,9 @@ class CompetitionService:
 
     def create_competition(self, data: CreateCompetitionInput) -> Competition:
         if data.format is not CompetitionFormat.SINGLE_ELIMINATION:
-            raise InvariantViolationError("В текущей версии поддерживается только single_elimination")
+            raise InvariantViolationError(
+                "В текущей версии поддерживается только single_elimination"
+            )
         game = self._game_catalog.get_game(data.game_id)
         if not game.is_multiplayer:
             raise InvariantViolationError("Соревнование можно создать только для multiplayer игры")
@@ -152,7 +154,9 @@ class CompetitionService:
     ) -> Competition:
         competition = self.get_competition(competition_id)
         if competition.status is not CompetitionStatus.DRAFT:
-            raise InvariantViolationError("Редактирование соревнования доступно только в статусе draft")
+            raise InvariantViolationError(
+                "Редактирование соревнования доступно только в статусе draft"
+            )
 
         if title is not None:
             normalized_title = title.strip()
@@ -190,22 +194,32 @@ class CompetitionService:
             if competition.status is CompetitionStatus.FINISHED:
                 continue
             if competition.code_policy is CompetitionCodePolicy.LOCKED_ON_REGISTRATION:
-                raise InvariantViolationError("Код заблокирован политикой соревнования: locked_on_registration")
+                raise InvariantViolationError(
+                    "Код заблокирован политикой соревнования: locked_on_registration"
+                )
             if (
                 competition.code_policy is CompetitionCodePolicy.LOCKED_ON_START
                 and competition.status in _ACTIVE_COMPETITION_STATUSES
             ):
-                raise InvariantViolationError("Код заблокирован политикой соревнования: locked_on_start")
+                raise InvariantViolationError(
+                    "Код заблокирован политикой соревнования: locked_on_start"
+                )
             if competition.code_policy is CompetitionCodePolicy.ALLOWED_BETWEEN_MATCHES:
-                if self._team_has_running_competition_match(competition=competition, team_id=team_id):
-                    raise InvariantViolationError("Код можно менять только между матчами соревнования")
+                if self._team_has_running_competition_match(
+                    competition=competition, team_id=team_id
+                ):
+                    raise InvariantViolationError(
+                        "Код можно менять только между матчами соревнования"
+                    )
                 active_runs = self._execution.list_runs(
                     team_id=team_id,
                     lobby_id=competition.competition_id,
                     run_kind=RunKind.COMPETITION_MATCH,
                 )
                 if any(run.status in _ACTIVE_STATUSES for run in active_runs):
-                    raise InvariantViolationError("Код можно менять только между матчами соревнования")
+                    raise InvariantViolationError(
+                        "Код можно менять только между матчами соревнования"
+                    )
 
     @staticmethod
     def _team_has_running_competition_match(*, competition: Competition, team_id: str) -> bool:
@@ -225,7 +239,9 @@ class CompetitionService:
         competition = self.get_competition(competition_id)
         team = self._team_workspace.get_team(team_id)
         if team.game_id != competition.game_id:
-            raise InvariantViolationError("Команда может участвовать только в соревновании своей игры")
+            raise InvariantViolationError(
+                "Команда может участвовать только в соревновании своей игры"
+            )
 
         competition.register_team(team_id)
         self._revalidate_one_entrant(competition=competition, team_id=team_id)
@@ -244,7 +260,9 @@ class CompetitionService:
         self._repository.save(competition)
         return competition
 
-    def set_ban(self, competition_id: str, team_id: str, banned: bool, reason: str | None) -> Competition:
+    def set_ban(
+        self, competition_id: str, team_id: str, banned: bool, reason: str | None
+    ) -> Competition:
         competition = self.get_competition(competition_id)
         competition.set_ban(team_id=team_id, banned=banned, blocker_reason=reason)
         if banned:
@@ -313,7 +331,10 @@ class CompetitionService:
         found_tiebreak = False
 
         for match in current_round.matches:
-            if match.status in {CompetitionMatchStatus.FINISHED, CompetitionMatchStatus.AUTO_ADVANCED}:
+            if match.status in {
+                CompetitionMatchStatus.FINISHED,
+                CompetitionMatchStatus.AUTO_ADVANCED,
+            }:
                 next_seed.extend(match.advanced_team_ids)
                 continue
             if match.status is CompetitionMatchStatus.AWAITING_TIEBREAK:
@@ -321,7 +342,9 @@ class CompetitionService:
                 continue
 
             match_runs = self._require_terminal_match_runs(match=match, runs_by_id=runs_by_id)
-            outcome = self._build_match_outcome(competition=competition, match=match, runs=match_runs)
+            outcome = self._build_match_outcome(
+                competition=competition, match=match, runs=match_runs
+            )
             if outcome.requires_manual_tiebreak:
                 competition.mark_match_awaiting_tiebreak(
                     round_index=current_round.round_index,
@@ -388,7 +411,9 @@ class CompetitionService:
         if compatibility.compatible:
             competition.set_ready(team_id=team_id, ready=True, blocker_reason=None)
             return
-        reason = "Не заполнены обязательные слоты: " + ", ".join(compatibility.missing_required_slots)
+        reason = "Не заполнены обязательные слоты: " + ", ".join(
+            compatibility.missing_required_slots
+        )
         competition.set_ready(team_id=team_id, ready=False, blocker_reason=reason)
 
     def list_competition_runs(self, competition_id: str) -> list[dict[str, object]]:
@@ -425,6 +450,7 @@ class CompetitionService:
         for match in current_round.matches:
             if match.status is not CompetitionMatchStatus.PENDING:
                 continue
+            group = []
             for team_id in match.team_ids:
                 run = self._execution.create_run(
                     CreateRunInput(
@@ -436,22 +462,27 @@ class CompetitionService:
                         version_id=competition.game_version_id,
                     )
                 )
-                queued = self._execution.queue_run(run.run_id)
-                run_ids.append(queued.run_id)
+                group.append(run.run_id)
                 competition.mark_match_scheduled(
                     round_index=current_round.round_index,
                     match_id=match.match_id,
                     team_id=team_id,
-                    run_id=queued.run_id,
+                    run_id=run.run_id,
                 )
+            self._execution.queue_match_group(group)
+            run_ids.extend(group)
         return run_ids
 
-    def _require_terminal_match_runs(self, match: CompetitionMatch, runs_by_id: dict[str, Run]) -> dict[str, Run]:
+    def _require_terminal_match_runs(
+        self, match: CompetitionMatch, runs_by_id: dict[str, Run]
+    ) -> dict[str, Run]:
         terminal_runs: dict[str, Run] = {}
         for team_id in match.team_ids:
             run_id = match.run_ids_by_team.get(team_id)
             if not run_id:
-                raise InvariantViolationError(f"Для команды {team_id} не найден competition-run в матче")
+                raise InvariantViolationError(
+                    f"Для команды {team_id} не найден competition-run в матче"
+                )
             run = runs_by_id.get(run_id)
             if run is None:
                 raise InvariantViolationError(f"competition-run {run_id} не найден")
@@ -469,7 +500,10 @@ class CompetitionService:
     ) -> bool:
         runs: list[Run] = []
         for match in matches:
-            if match.status in {CompetitionMatchStatus.FINISHED, CompetitionMatchStatus.AUTO_ADVANCED}:
+            if match.status in {
+                CompetitionMatchStatus.FINISHED,
+                CompetitionMatchStatus.AUTO_ADVANCED,
+            }:
                 continue
             if not match.run_ids_by_team:
                 return False
@@ -477,7 +511,9 @@ class CompetitionService:
                 run = runs_by_id.get(run_id)
                 if run is None or run.status not in _TERMINAL_STATUSES:
                     return False
-                runs.append(run if run.result_payload is not None else self._execution.get_run(run.run_id))
+                runs.append(
+                    run if run.result_payload is not None else self._execution.get_run(run.run_id)
+                )
         if not runs:
             return False
         if not any(self._replay_frames_count(run) > 1 for run in runs):
@@ -487,7 +523,9 @@ class CompetitionService:
             return False
         frame_count = max((self._replay_frames_count(run) for run in runs), default=1)
         replay_seconds = max(1.0, frame_count * _COMPETITION_REPLAY_FRAME_MS / 1000)
-        advance_after = latest_finished_at + timedelta(seconds=replay_seconds + _COMPETITION_RESULT_SECONDS)
+        advance_after = latest_finished_at + timedelta(
+            seconds=replay_seconds + _COMPETITION_RESULT_SECONDS
+        )
         return utc_now() < advance_after
 
     @staticmethod

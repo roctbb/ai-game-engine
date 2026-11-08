@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 from pathlib import Path
 import random
@@ -13,7 +14,7 @@ if str(_GAME_ROOT) not in sys.path:
     sys.path.insert(0, str(_GAME_ROOT))
 
 from domain.common import Booster, Decision, Point  # noqa: E402
-from domain.game import Game  # noqa: E402
+from domain.game import Game, MapState  # noqa: E402
 from domain.general_player import GeneralPlayer  # noqa: E402
 from domain.maps.tanks import TankMap  # noqa: E402
 
@@ -41,6 +42,9 @@ _ACTION_ALIASES = {
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
+    participants = ctx.get("participants")
+    if isinstance(participants, list) and len(participants) >= 2:
+        return _run_match(ctx, participants)
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
 
@@ -202,6 +206,74 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     return payload
 
 
+def _run_match(ctx: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, object]:
+    """Use the same arena and legacy win scores for every submitted tank."""
+    if not 2 <= len(participants) <= 16:
+        raise ValueError("Для танкового матча нужно от 2 до 16 команд")
+    random.seed(str(ctx.get("seed") or ctx.get("run_id") or "tanks_match"))
+    game = Game()
+    TankMap.init(game, players=[])
+    events: list[dict[str, object]] = []
+    clock = {"tick": 0}
+    players = {}
+    supports = {}
+    spawns = {}
+    cooldowns = {}
+    compile_errors = {}
+    for participant in participants:
+        team = str(participant["team_id"])
+        code_context = {"codes_by_slot": participant.get("codes_by_slot", {})}
+        driver, driver_error = _build_slot_callable(ctx=code_context, slot_key="driver",
+            function_names=("make_choice", "make_move"), fallback=_fallback_driver,
+            events=events, print_context=clock)
+        support, support_error = _build_slot_callable(ctx=code_context, slot_key="support",
+            function_names=("make_support", "choose_support", "make_choice"), fallback=_fallback_support,
+            events=events, print_context=clock)
+        player = RuntimeTank(slot_key=team, strategy=driver, events=events, print_context=clock,
+            properties={"team": team, "name": str(participant.get("display_name") or team)})
+        spawn = _pick_spawn(game)
+        game.players[(spawn.x, spawn.y)] = player
+        players[team], supports[team], spawns[team], cooldowns[team] = player, support, (spawn.x, spawn.y), 0
+        if driver_error or support_error:
+            compile_errors[team] = {"driver": driver_error, "support": support_error}
+    frames = [_frame_envelope(0, "running", game.as_dict())]
+    turns = 0
+    for tick in range(_MAX_TICKS):
+        clock["tick"] = tick
+        for team, player in players.items():
+            if not _is_player_alive(game, player):
+                continue
+            _update_metadata(game=game, tick=tick, player=player, player_spawn=spawns[team],
+                             support_cooldown=cooldowns[team])
+            player.runtime_metadata = copy.deepcopy(game.metadata)
+            action = _call_support(supports[team], copy.deepcopy(game.metadata))
+            if action == "boost" and cooldowns[team] == 0:
+                boost = Booster("speed", 1, 2)
+                player.boosters.append(boost)
+                boost.apply(player)
+                cooldowns[team] = _SUPPORT_COOLDOWN
+                events.append({"type": "support_boost", "tick": tick + 1, "team_id": team})
+        frame = game.make_step()
+        turns = tick + 1
+        _append_legacy_events(events=events, tick=turns, frame=frame)
+        frames.append(_frame_envelope(turns, "running", frame))
+        cooldowns = {team: max(value - 1, 0) for team, value in cooldowns.items()}
+        if sum(_is_player_alive(game, player) for player in players.values()) <= 1 or _dare_core_destroyed(game):
+            break
+    core_destroyed = _dare_core_destroyed(game)
+    scores = {team: (3 if core_destroyed else 1) if _is_player_alive(game, player) else 0
+              for team, player in players.items()}
+    placements = {team: 1 + sum(other > score for other in scores.values()) for team, score in scores.items()}
+    winners = [team for team, place in placements.items() if place == 1]
+    frames.append(_frame_envelope(turns, "finished", game.as_dict()))
+    result = {"status": "finished", "metrics": {"ticks_played": turns, "compile_errors": compile_errors},
+              "frames": frames, "events": events, "scores": scores, "placements": placements,
+              "winner_slots": winners, "is_tie": len(winners) > 1}
+    if len(set(placements.values())) < len(placements):
+        result["tie_resolution"] = "explicit_tie"
+    return result
+
+
 class RuntimeTank(GeneralPlayer):
     def __init__(
         self,
@@ -225,6 +297,8 @@ class RuntimeTank(GeneralPlayer):
         return data
 
     def step(self, point: Point, map_state: object):
+        if hasattr(self, "runtime_metadata"):
+            map_state = MapState(copy.deepcopy(list(map_state)), self.runtime_metadata)
         for booster in self.boosters[:]:
             booster.tick()
             if booster.over():

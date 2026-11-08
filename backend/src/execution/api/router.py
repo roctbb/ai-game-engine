@@ -35,7 +35,11 @@ from execution.api.access import ensure_can_view_run
 from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 from execution.domain.result_payload import compact_result_payload as compact_run_result_payload
 from game_catalog.domain.model import GameMode
-from game_catalog.infrastructure.manifest_loader import GameManifest, find_game_manifest_path, load_game_manifest
+from game_catalog.infrastructure.manifest_loader import (
+    GameManifest,
+    find_game_manifest_path,
+    load_game_manifest,
+)
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
 from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
@@ -47,6 +51,7 @@ _TERMINAL_RUN_STATUSES = {
     RunStatus.TIMEOUT,
     RunStatus.CANCELED,
 }
+
 
 def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunResponse:
     result_payload = run.result_payload
@@ -152,17 +157,23 @@ def _ensure_can_use_team(container: ServiceContainer, session: AppSession, team_
         return
     team = container.team_workspace.get_team(team_id)
     if team.captain_user_id != session.nickname:
-        raise ForbiddenError("Запускать код этой команды может только капитан, преподаватель или админ")
+        raise ForbiddenError(
+            "Запускать код этой команды может только капитан, преподаватель или админ"
+        )
 
 
 def _ensure_can_manage_run(container: ServiceContainer, session: AppSession, run: Run) -> None:
     if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
         return
     if run.requested_by != session.nickname:
-        raise ForbiddenError("Управлять этим запуском может только его автор, преподаватель или админ")
+        raise ForbiddenError(
+            "Управлять этим запуском может только его автор, преподаватель или админ"
+        )
 
 
-def _ensure_single_task_available(container: ServiceContainer, session: AppSession, game_id: str) -> None:
+def _ensure_single_task_available(
+    container: ServiceContainer, session: AppSession, game_id: str
+) -> None:
     game = container.game_catalog.get_game(game_id)
     if game.mode is not GameMode.SINGLE_TASK:
         raise InvariantViolationError("Запуск single_task доступен только для single_task игры")
@@ -209,7 +220,11 @@ def create_run(
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
     _ensure_can_use_team(container=container, session=session, team_id=request.team_id)
-    requested_by = request.requested_by if session.role in {UserRole.TEACHER, UserRole.ADMIN} else session.nickname
+    requested_by = (
+        request.requested_by
+        if session.role in {UserRole.TEACHER, UserRole.ADMIN}
+        else session.nickname
+    )
     run = container.execution.create_run(
         data=container.execution_create_run_input(
             team_id=request.team_id,
@@ -232,7 +247,11 @@ def start_single_task_run(
 ) -> RunResponse:
     _ensure_single_task_available(container=container, session=session, game_id=game_id)
     _ensure_can_use_team(container=container, session=session, team_id=request.team_id)
-    requested_by = request.requested_by if session.role in {UserRole.TEACHER, UserRole.ADMIN} else session.nickname
+    requested_by = (
+        request.requested_by
+        if session.role in {UserRole.TEACHER, UserRole.ADMIN}
+        else session.nickname
+    )
     options: dict[str, object] = {"debug_trace": request.debug}
     if request.repeat_run_id:
         source = container.execution.get_run(request.repeat_run_id)
@@ -246,7 +265,13 @@ def start_single_task_run(
             raise InvariantViolationError("Версия игры обновилась. Запустите новую попытку")
         options["seed"] = source.execution_options.get("seed") or source.run_id
         options["repeat_run_id"] = source.run_id
-        for key in ("package_digest", "engine_entrypoint", "renderer_entrypoint", "code_api_mode", "game_package_dir"):
+        for key in (
+            "package_digest",
+            "engine_entrypoint",
+            "renderer_entrypoint",
+            "code_api_mode",
+            "game_package_dir",
+        ):
             if key in source.execution_options:
                 options[key] = source.execution_options[key]
     run = container.execution.create_run(
@@ -274,7 +299,9 @@ def stop_single_task_run(
     run = container.execution.get_run(run_id=request.run_id)
     _ensure_can_manage_run(container=container, session=session, run=run)
     if run.run_kind is not RunKind.SINGLE_TASK:
-        raise InvariantViolationError("Остановка single_task доступна только для single_task попытки")
+        raise InvariantViolationError(
+            "Остановка single_task доступна только для single_task попытки"
+        )
     if run.game_id != game_id:
         raise InvariantViolationError("run_id не принадлежит указанной single_task игре")
     stopped = container.execution.cancel_run(
@@ -298,9 +325,11 @@ def get_run_code(
     if not run.snapshot_id:
         raise NotFoundError("Код запуска ещё не зафиксирован")
     snapshot = container.team_workspace.get_snapshot(run.snapshot_id)
-    return {"run_id": run.run_id, "codes_by_slot": snapshot.codes_by_slot,
-            "revisions_by_slot": snapshot.revisions_by_slot}
-
+    return {
+        "run_id": run.run_id,
+        "codes_by_slot": snapshot.codes_by_slot,
+        "revisions_by_slot": snapshot.revisions_by_slot,
+    }
 
 
 @router.get("/single-tasks/{game_id}/attempts", response_model=list[RunResponse])
@@ -330,7 +359,10 @@ def list_single_task_attempts(
         offset=bounded_offset,
     )
     return [
-        _run_response(_attach_replay_summary_payload_if_available(container=container, run=run), compact_result_payload=True)
+        _run_response(
+            _attach_replay_summary_payload_if_available(container=container, run=run),
+            compact_result_payload=True,
+        )
         for run in runs
     ]
 
@@ -418,15 +450,14 @@ def list_runs(
 
     # Batch: check competition entrants for competition_match runs
     competition_lobby_ids = {
-        run.lobby_id for run in runs
-        if run.run_kind is RunKind.COMPETITION_MATCH and run.lobby_id
+        run.lobby_id for run in runs if run.run_kind is RunKind.COMPETITION_MATCH and run.lobby_id
     }
     user_competition_ids: set[str] = set()
     for comp_id in competition_lobby_ids:
         try:
             competition = container.competition.get_competition(comp_id)
             user_teams = container.team_workspace.list_teams_by_game_and_captain(
-                game_id=competition.game_id if hasattr(competition, 'game_id') else runs[0].game_id,
+                game_id=competition.game_id if hasattr(competition, "game_id") else runs[0].game_id,
                 captain_user_id=user_id,
             )
             if any(t.team_id in competition.entrants for t in user_teams):
@@ -444,10 +475,18 @@ def list_runs(
         if run.team_id in user_team_ids:
             visible_runs.append(run)
             continue
-        if run.run_kind is RunKind.TRAINING_MATCH and run.lobby_id and run.lobby_id in user_lobby_ids:
+        if (
+            run.run_kind is RunKind.TRAINING_MATCH
+            and run.lobby_id
+            and run.lobby_id in user_lobby_ids
+        ):
             visible_runs.append(run)
             continue
-        if run.run_kind is RunKind.COMPETITION_MATCH and run.lobby_id and run.lobby_id in user_competition_ids:
+        if (
+            run.run_kind is RunKind.COMPETITION_MATCH
+            and run.lobby_id
+            and run.lobby_id in user_competition_ids
+        ):
             visible_runs.append(run)
             continue
 
@@ -529,7 +568,9 @@ def get_run_watch_context(
     )
 
 
-def _watch_context_participants(container: ServiceContainer, current_run: Run) -> list[dict[str, object]]:
+def _watch_context_participants(
+    container: ServiceContainer, current_run: Run
+) -> list[dict[str, object]]:
     run_ids = _watch_context_run_ids(container=container, current_run=current_run)
     participants: list[dict[str, object]] = []
     seen_team_ids: set[str] = set()
@@ -542,7 +583,11 @@ def _watch_context_participants(container: ServiceContainer, current_run: Run) -
         if participant_run.team_id in seen_team_ids:
             continue
         seen_team_ids.add(participant_run.team_id)
-        participants.append(_participant_summary(container=container, run=participant_run, current_run_id=current_run.run_id))
+        participants.append(
+            _participant_summary(
+                container=container, run=participant_run, current_run_id=current_run.run_id
+            )
+        )
 
     return participants
 
@@ -774,13 +819,24 @@ def get_run_execution_context(
 ) -> RunExecutionContextResponse:
     run = container.execution.get_run(run_id=run_id)
     if run.snapshot_id is None or run.snapshot_version_id is None:
-        raise InvariantViolationError("Execution context доступен только для queued/running запуска")
+        raise InvariantViolationError(
+            "Execution context доступен только для queued/running запуска"
+        )
 
     game = container.game_catalog.get_game(run.game_id)
     snapshot = container.team_workspace.get_snapshot(run.snapshot_id)
     games_root = get_games_root()
-    manifest_path = find_game_manifest_path(games_root=games_root, game_id=game.slug)
-    manifest = load_game_manifest(manifest_path)
+    options = run.execution_options
+    if options.get("package_digest"):
+        manifest_path = Path(str(options["game_package_dir"])) / "manifest.yaml"
+        code_api_mode = str(options["code_api_mode"])
+        engine_entrypoint = str(options["engine_entrypoint"])
+        renderer_entrypoint = options.get("renderer_entrypoint")
+    else:
+        manifest_path = find_game_manifest_path(games_root=games_root, game_id=game.slug)
+        manifest = load_game_manifest(manifest_path)
+        code_api_mode, engine_entrypoint = manifest.code_api_mode, manifest.engine_entrypoint
+        renderer_entrypoint = manifest.renderer_entrypoint
 
     return RunExecutionContextResponse(
         run_id=run.run_id,
@@ -789,23 +845,32 @@ def get_run_execution_context(
         game_id=run.game_id,
         game_slug=game.slug,
         game_package_dir=manifest_path.parent.name,
-        code_api_mode=manifest.code_api_mode,
-        engine_entrypoint=manifest.engine_entrypoint,
-        renderer_entrypoint=manifest.renderer_entrypoint,
+        code_api_mode=code_api_mode,
+        engine_entrypoint=engine_entrypoint,
+        renderer_entrypoint=renderer_entrypoint,
         snapshot_id=snapshot.snapshot_id,
         snapshot_version_id=snapshot.version_id,
         codes_by_slot=snapshot.codes_by_slot,
         revisions_by_slot=snapshot.revisions_by_slot,
-        participants=_execution_context_participants(container=container, current_run_id=run.run_id),
+        participants=_execution_context_participants(
+            container=container, current_run_id=run.run_id
+        ),
+        package_digest=options.get("package_digest"),
         seed=str(run.execution_options.get("seed") or run.run_id),
-        debug_trace=run.run_kind is RunKind.SINGLE_TASK and run.execution_options.get("debug_trace") is True,
+        debug_trace=run.run_kind is RunKind.SINGLE_TASK
+        and run.execution_options.get("debug_trace") is True,
     )
 
 
-def _execution_context_participants(container: ServiceContainer, current_run_id: str) -> list[dict[str, object]]:
+def _execution_context_participants(
+    container: ServiceContainer, current_run_id: str
+) -> list[dict[str, object]]:
     run = container.execution.get_run(current_run_id)
     run_ids = [current_run_id]
-    if run.lobby_id is not None and run.run_kind is RunKind.TRAINING_MATCH:
+    match = container.execution.get_match_execution_for_run(run)
+    if match is not None:
+        run_ids = list(match.run_ids)
+    elif run.lobby_id is not None and run.run_kind is RunKind.TRAINING_MATCH:
         lobby = container.training_lobby.get_lobby(run.lobby_id)
         scheduled_group: list[str] = []
         for group in lobby.last_scheduled_match_groups:
@@ -823,7 +888,11 @@ def _execution_context_participants(container: ServiceContainer, current_run_id:
                     if rid == current_run_id:
                         continue
                     peer = container.execution.get_run(rid)
-                    if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 2:
+                    if (
+                        peer.created_at
+                        and run.created_at
+                        and abs((peer.created_at - run.created_at).total_seconds()) < 2
+                    ):
                         peer_ids.append(rid)
             if not peer_ids:
                 lobby_runs = container.execution.list_runs(
@@ -836,7 +905,11 @@ def _execution_context_participants(container: ServiceContainer, current_run_id:
                         continue
                     if peer.status not in {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}:
                         continue
-                    if peer.created_at and run.created_at and abs((peer.created_at - run.created_at).total_seconds()) < 5:
+                    if (
+                        peer.created_at
+                        and run.created_at
+                        and abs((peer.created_at - run.created_at).total_seconds()) < 5
+                    ):
                         peer_ids.append(peer.run_id)
             unsorted_run_ids = [current_run_id] + peer_ids
             fallback_at = run.created_at or run.queued_at or run.started_at or run.finished_at
@@ -987,6 +1060,7 @@ def mark_run_accepted(
         run_id=run_id,
         worker_id=request.worker_id,
         lease_id=request.lease_id,
+        lease_generation=request.lease_generation,
     )
     return _run_response(run)
 
@@ -998,7 +1072,9 @@ def mark_run_finished(
     _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> RunResponse:
-    payload = _payload_with_training_match_context(container=container, run_id=run_id, payload=request.payload)
+    payload = _payload_with_training_match_context(
+        container=container, run_id=run_id, payload=request.payload
+    )
     run = container.execution.finish_run(run_id=run_id, payload=payload, lease_id=request.lease_id)
     container.training_lobby.finish_shadow_match_runs(primary_run=run, payload=payload)
     _reconcile_training_lobby_for_terminal_run(container=container, run=run)
@@ -1018,6 +1094,7 @@ def mark_run_failed(
     run = container.execution.fail_run(
         run_id=run_id,
         message=request.message,
+        timed_out=request.timeout,
         lease_id=request.lease_id,
     )
     container.training_lobby.fail_shadow_match_runs(primary_run=run, message=request.message)
@@ -1102,3 +1179,32 @@ def fail_build(
 ) -> BuildResponse:
     build = container.execution.fail_build(build_id=build_id, error_message=request.error_message)
     return _build_response(build)
+
+
+@router.get("/internal/runs/{run_id}/control")
+def get_run_control(
+    run_id: str,
+    _: object = Depends(require_internal_token),
+    container: ServiceContainer = Depends(get_container),
+) -> dict[str, object]:
+    run = container.execution.get_run(run_id, include_result_payload=False)
+    return {
+        "status": run.status.value,
+        "lease_id": run.active_lease_id,
+        "lease_generation": run.lease_generation,
+    }
+
+
+@router.get("/internal/runs/{run_id}/package")
+def get_run_package(
+    run_id: str,
+    _: object = Depends(require_internal_token),
+    container: ServiceContainer = Depends(get_container),
+) -> FileResponse:
+    run = container.execution.get_run(run_id, include_result_payload=False)
+    digest = run.execution_options.get("package_digest")
+    if not isinstance(digest, str) or container.execution.game_package_store is None:
+        raise NotFoundError("Игровой пакет запуска не найден")
+    return FileResponse(
+        container.execution.game_package_store.path(digest), media_type="application/gzip"
+    )

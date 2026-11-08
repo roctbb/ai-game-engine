@@ -26,11 +26,16 @@ Scheduler:
 - `POST /internal/runs/{run_id}/schedule` — добавить run в очередь
 - `POST /internal/workers/pull-next` — выдать run конкретному worker и записать lease
 - `POST /internal/runs/ack-finished` — подтвердить завершение run для актуального lease
+- `POST /internal/runs/renew-lease` — продлить актуальный lease работающего worker
+- `POST /internal/runs/{run_id}/cancel` — удалить отмененное задание из очереди и активных lease
 - `GET /internal/queue/stats` — текущая глубина очереди и активные lease
 
 Важно:
 - `scheduler-service` должен работать с Redis не через `localhost`, а через переменную `REDIS_URL` (в compose: `redis://redis:6379/0`).
-- scheduler использует `lease_ttl_seconds`: истекший lease автоматически снимается, а run возвращается в очередь.
+- операции очереди и lease выполняются атомарными Lua-скриптами Redis;
+- scheduler использует `lease_ttl_seconds`: worker продлевает lease во время симуляции; истекший lease возвращается в очередь;
+- каждой выдаче соответствует возрастающий `lease_generation`: backend принимает новую попытку и отклоняет результат замененного worker;
+- Redis для очереди должен использовать `noeviction`, чтобы давление памяти не удаляло задания.
 - `ack-finished` может вернуть:
   - `acknowledged` — run закрыт по валидному lease;
   - `stale_lease_ignored` — ack проигнорирован как устаревший.
@@ -42,7 +47,11 @@ Worker:
 - в текущей итерации `pull-and-execute` делает lifecycle:
   - запрашивает у backend `/internal/runs/{run_id}/execution-context`;
   - валидирует `execution-context` (`run_kind`, `code_api_mode`) и работает только для поддерживаемых `code_api_mode` (`script_based`, `turn_based`) и run kinds (`single_task`, `training_match`, `competition_match`);
+  - загружает зафиксированный пакет из `/internal/runs/{run_id}/package` и проверяет SHA-256;
   - запускает `engine_entrypoint` в одноразовом Docker-контейнере (`execution_mode=docker`);
+  - отслеживает `/internal/runs/{run_id}/control`; отмена или потеря lease останавливает процесс и контейнер;
+  - ограничивает число одновременно занятых слотов и сохраняет последний известный статус worker;
+  - использует таймер внутри контейнера, который продолжает действовать после падения worker;
   - применяет изоляцию и лимиты (`--read-only`, `--network`, CPU/RAM/PIDs, tmpfs);
   - при неполном/некорректном `execution-context` помечает run как `failed` (fail-fast), без fallback/stub;
   - `accepted` в backend
@@ -109,3 +118,12 @@ cd services/builder && pytest -q
 # или единым прогоном из корня репозитория:
 pytest -q services/scheduler/tests services/worker/tests services/builder/tests
 ```
+
+
+`RESULT_MAX_TURNS` ограничивает детализацию реплея, а не правила симуляции: итоговые очки,
+события и настоящий tick финального кадра сохраняются. Сокращение помечается `replay_truncated`.
+
+Проверки очереди используют отдельный локальный `redis-server`. Сквозные тесты в
+`backend/tests/test_distributed_execution.py` выполняют настоящие движки, восстановление lease,
+продление во время долгой симуляции и остановку бесконечного бота. Вариант Docker запускается,
+если доступны daemon и образ `python:3.12-slim`; остальные сценарии используют локальный процесс.

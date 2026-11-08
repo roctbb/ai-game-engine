@@ -12,6 +12,7 @@
 - при смене версии игры в лобби `ready` перевалидацируется;
 - `execution` валидирует `result payload` по `run_kind` (`single_task`, `training_match`, `competition_match`).
 - `single_task` запрещает параллельные активные запуски для одного пользователя по всей платформе;
+- таймаут движка получает статус `timeout`, а инфраструктурные ошибки — `failed`;
 - активный `run` можно явно остановить через `POST /api/v1/runs/{runId}/cancel`.
 - для `single_task` доступны API прогресса:
   - `POST /api/v1/single-tasks/{gameId}/run`;
@@ -25,7 +26,18 @@
 - попытка выставить `catalog_metadata_status=ready` без `description/difficulty/topics` отклоняется.
 - mutation-endpoint’ы каталога игр (`POST /games`, `POST /games/{id}/versions`, `POST /games/{id}/activate`, `PATCH /games/{id}/catalog-metadata`) требуют роль `teacher/admin`.
 - при `queue_run` backend вызывает `scheduler-service` (`/internal/runs/{runId}/schedule`);
-- если scheduler недоступен, `run` переводится в `failed`, а API возвращает `503`.
+- если scheduler недоступен, `run` остается `queued`: намерение отправки сохраняется вместе с запуском и повторяется фоновым обработчиком;
+- переходы запусков защищены ревизией записи, а БД запрещает две активные одиночные попытки одного пользователя;
+- результаты матчей, реплеи и отмена восстанавливаются после частичного сбоя через сохраняемое состояние доставки;
+- multiplayer-матч, включая турнирный, выполняется один раз для всей группы команд;
+- пакет движка фиксируется по SHA-256 при постановке в очередь и выдается worker через внутренний API.
+
+Перед миграцией остановите новые запуски и старые worker. Затем примените `alembic upgrade head`
+и обновите backend, scheduler и worker вместе. Миграция возвращает незавершенные основные запуски
+в очередь, в том числе потерявшие запись lease в старом scheduler.
+Миграция `0015_execution_reliability` оставляет старейшую активную одиночную попытку пользователя,
+а дубликаты переводит в `canceled`. Для игровых пакетов используется `GAME_PACKAGES_ROOT`;
+backend API и matchmaker должны видеть один постоянный каталог (в Compose — volume `game_packages`).
 
 ## Scheduler integration
 

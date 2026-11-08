@@ -42,7 +42,12 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     assert expected_tables.issubset(table_names)
 
     catalog_columns = {item["name"] for item in inspector.get_columns("catalog_games")}
-    assert {"learning_section", "min_players_per_match", "max_players_per_match", "is_hidden"}.issubset(catalog_columns)
+    assert {
+        "learning_section",
+        "min_players_per_match",
+        "max_players_per_match",
+        "is_hidden",
+    }.issubset(catalog_columns)
 
     lobby_columns = {item["name"] for item in inspector.get_columns("training_lobbies")}
     assert "last_scheduled_run_ids_json" in lobby_columns
@@ -62,11 +67,19 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     assert {"run_id", "frames_json", "events_json", "summary_json"}.issubset(replay_columns)
 
     session_columns = {item["name"] for item in inspector.get_columns("identity_sessions")}
-    assert {"session_id", "external_user_id", "nickname", "role", "provider", "created_at"}.issubset(
-        session_columns
-    )
+    assert {
+        "session_id",
+        "external_user_id",
+        "nickname",
+        "role",
+        "provider",
+        "created_at",
+    }.issubset(session_columns)
 
     run_indexes = {item["name"] for item in inspector.get_indexes("execution_runs")}
+    run_columns = {item["name"] for item in inspector.get_columns("execution_runs")}
+    assert {"revision", "lease_generation", "dispatch_pending", "completion_pending"} <= run_columns
+    assert "uq_execution_single_task_active_user" in run_indexes
     assert {
         "ix_execution_runs_lobby_id",
         "ix_execution_runs_lobby_kind_created_at",
@@ -75,7 +88,72 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
     }.issubset(run_indexes)
 
     match_columns = {item["name"] for item in inspector.get_columns("execution_match_executions")}
-    assert {"match_execution_id", "primary_run_id", "run_ids", "result_payload"}.issubset(match_columns)
+    assert {"match_execution_id", "primary_run_id", "run_ids", "result_payload"}.issubset(
+        match_columns
+    )
 
     replay_indexes = {item["name"] for item in inspector.get_indexes("spectator_replays")}
     assert "ix_spectator_replays_game_kind_updated_at" in replay_indexes
+
+
+def test_reliability_migration_upgrades_existing_attempts_and_can_be_reapplied(
+    tmp_path, monkeypatch
+):
+    from datetime import UTC, datetime, timedelta
+    from sqlalchemy import MetaData, Table, select
+
+    backend_root = Path(__file__).resolve().parents[1]
+    url = f"sqlite+pysqlite:///{tmp_path / 'upgrade.sqlite'}"
+    monkeypatch.setenv("DATABASE_URL_OVERRIDE", url)
+    cfg = Config(str(backend_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    command.upgrade(cfg, "0014_run_execution_options")
+    engine = create_engine(url)
+    table = Table("execution_runs", MetaData(), autoload_with=engine)
+    now = datetime.now(tz=UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            table.insert(),
+            [
+                dict(
+                    run_id=name,
+                    team_id="team",
+                    game_id="game",
+                    requested_by="same-user",
+                    run_kind="single_task",
+                    status="queued",
+                    revisions_by_slot={},
+                    execution_options={},
+                    created_at=now + timedelta(seconds=index),
+                )
+                for index, name in enumerate(("oldest", "newer"))
+            ],
+        )
+    with engine.begin() as connection:
+        connection.execute(
+            table.insert(),
+            dict(
+                run_id="orphan-running",
+                team_id="team",
+                game_id="game",
+                requested_by="other-user",
+                run_kind="single_task",
+                status="running",
+                revisions_by_slot={},
+                execution_options={},
+                created_at=now,
+            ),
+        )
+    command.upgrade(cfg, "head")
+    upgraded = Table("execution_runs", MetaData(), autoload_with=engine)
+    with engine.connect() as connection:
+        rows = {row.run_id: row for row in connection.execute(select(upgraded))}
+    assert rows["oldest"].status == "queued"
+    assert rows["oldest"].dispatch_pending
+    assert rows["newer"].status == "canceled"
+    assert rows["newer"].completion_pending
+    assert rows["orphan-running"].status == "queued"
+    assert rows["orphan-running"].dispatch_pending
+    command.downgrade(cfg, "0014_run_execution_options")
+    command.upgrade(cfg, "head")
+    engine.dispose()

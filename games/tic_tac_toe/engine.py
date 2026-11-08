@@ -14,6 +14,10 @@ _MAX_TURNS = _BOARD_SIZE * _BOARD_SIZE
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
+    participants = ctx.get("participants")
+    if isinstance(participants, list) and participants and isinstance(participants[0], dict):
+        ctx = {**ctx, "team_id": participants[0].get("team_id", ctx.get("team_id")),
+               "codes_by_slot": participants[0].get("codes_by_slot", ctx.get("codes_by_slot", {}))}
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
     labels = _resolve_labels(ctx)
@@ -23,6 +27,16 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         events=events,
         print_context=print_context,
     )
+
+    participants = ctx.get("participants")
+    opponent = participants[1] if isinstance(participants, list) and len(participants) >= 2 else None
+    enemy_fn = None
+    enemy_compile_error = None
+    if isinstance(opponent, dict):
+        enemy_fn, enemy_compile_error = _build_player_fn(
+            ctx={"codes_by_slot": opponent.get("codes_by_slot", {})}, slot_key="bot",
+            events=events, print_context=print_context,
+        )
 
     board = _create_board()
     invalid_moves_player = 0
@@ -53,7 +67,8 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
                 events.append({"type": "invalid_move", "role": "player"})
                 move = _first_free_cell(board)
         else:
-            move = _enemy_move(board)
+            print_context["tick"] = turns_played
+            move = _call_player(enemy_fn, board, current_role) if enemy_fn is not None else _enemy_move(board)
             if not _is_valid_move(board=board, move=move):
                 invalid_moves_enemy += 1
                 events.append({"type": "invalid_move", "role": "enemy"})
@@ -92,7 +107,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         current_role = next_role
 
     team_player_id = _resolve_team_player_id(ctx)
-    team_enemy_id = "team-bot"
+    team_enemy_id = str(opponent["team_id"]) if isinstance(opponent, dict) and opponent.get("team_id") else "team-bot"
     scores = _build_scores(team_player_id=team_player_id, team_enemy_id=team_enemy_id, winner_role=winner_role)
     placements = _build_placements(team_player_id=team_player_id, team_enemy_id=team_enemy_id, winner_role=winner_role)
 
@@ -106,6 +121,10 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     if compile_error:
         metrics["compile_error"] = compile_error
         events.append({"type": "compile_error", "message": compile_error})
+
+    if enemy_compile_error:
+        metrics["opponent_compile_error"] = enemy_compile_error
+        events.append({"type": "compile_error", "team_id": team_enemy_id, "message": enemy_compile_error})
 
     payload: dict[str, object] = {
         "status": "finished",

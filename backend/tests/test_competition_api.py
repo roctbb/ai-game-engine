@@ -30,7 +30,11 @@ def test_competition_auto_advances_are_rotated_between_rounds() -> None:
     assert len(first_auto) == 1
 
     next_seed = list(first_auto)
-    next_seed.extend(match.team_ids[0] for match in first_round.matches if match.status is not CompetitionMatchStatus.AUTO_ADVANCED)
+    next_seed.extend(
+        match.team_ids[0]
+        for match in first_round.matches
+        if match.status is not CompetitionMatchStatus.AUTO_ADVANCED
+    )
     second_round = competition.create_next_round(next_seed)
     second_auto = [
         team_id
@@ -116,7 +120,9 @@ def test_competition_uses_multiplayer_match_bounds(client, teacher_headers) -> N
     assert too_small.status_code == 422
 
     teams = [
-        _create_ready_team(client, game_id=game["game_id"], name=f"Team {index}", captain=f"bounds-{index}")
+        _create_ready_team(
+            client, game_id=game["game_id"], name=f"Team {index}", captain=f"bounds-{index}"
+        )
         for index in range(6)
     ]
     competition = client.post(
@@ -195,7 +201,9 @@ def test_competition_start_schedules_competition_runs(client, teacher_headers) -
 
 
 def test_create_competition_rejects_unsupported_formats(client, teacher_headers) -> None:
-    game = _create_small_match_game(client, "competition_api_unsupported_format", headers=teacher_headers)
+    game = _create_small_match_game(
+        client, "competition_api_unsupported_format", headers=teacher_headers
+    )
 
     denied = client.post(
         "/api/v1/competitions",
@@ -214,7 +222,9 @@ def test_create_competition_rejects_unsupported_formats(client, teacher_headers)
 
 
 def test_create_competition_rejects_future_tie_break_policy(client, teacher_headers) -> None:
-    game = _create_small_match_game(client, "competition_api_unsupported_tie_break", headers=teacher_headers)
+    game = _create_small_match_game(
+        client, "competition_api_unsupported_tie_break", headers=teacher_headers
+    )
 
     denied = client.post(
         "/api/v1/competitions",
@@ -254,7 +264,9 @@ def test_create_competition_rejects_direct_lobby_attachment(client, teacher_head
 
 def test_unrelated_student_cannot_read_competition_details(client, teacher_headers) -> None:
     game = _create_small_match_game(client, "competition_api_read_scope", headers=teacher_headers)
-    team = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-read-scope")
+    team = _create_ready_team(
+        client, game_id=game["game_id"], name="Alpha", captain="captain-read-scope"
+    )
     competition = client.post(
         "/api/v1/competitions",
         json={
@@ -288,8 +300,12 @@ def test_unrelated_student_cannot_read_competition_details(client, teacher_heade
 
 
 def test_registered_student_can_read_own_competition(client, teacher_headers) -> None:
-    game = _create_small_match_game(client, "competition_api_read_participant", headers=teacher_headers)
-    team = _create_ready_team(client, game_id=game["game_id"], name="Participant", captain="participant-reader")
+    game = _create_small_match_game(
+        client, "competition_api_read_participant", headers=teacher_headers
+    )
+    team = _create_ready_team(
+        client, game_id=game["game_id"], name="Participant", captain="participant-reader"
+    )
     competition = client.post(
         "/api/v1/competitions",
         json={
@@ -352,9 +368,15 @@ def test_competition_ban_disables_ready(client, teacher_headers) -> None:
 
 
 def test_competition_ban_cancels_active_runs_for_team(client, teacher_headers) -> None:
-    game = _create_small_match_game(client, "competition_api_ban_cancel_runs", headers=teacher_headers)
-    team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-cancel-a")
-    team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-cancel-b")
+    game = _create_small_match_game(
+        client, "competition_api_ban_cancel_runs", headers=teacher_headers
+    )
+    team_a = _create_ready_team(
+        client, game_id=game["game_id"], name="Alpha", captain="captain-cancel-a"
+    )
+    team_b = _create_ready_team(
+        client, game_id=game["game_id"], name="Bravo", captain="captain-cancel-b"
+    )
 
     competition = client.post(
         "/api/v1/competitions",
@@ -401,7 +423,7 @@ def test_competition_ban_cancels_active_runs_for_team(client, teacher_headers) -
     assert run_b.status_code == 200
     assert run_a.json()["status"] == "canceled"
     assert run_a.json()["error_message"] == "manual_moderation_ban"
-    assert run_b.json()["status"] == "queued"
+    assert run_b.json()["status"] == "canceled"
 
     runs_view = client.get(f"/api/v1/competitions/{competition['competition_id']}/runs")
     assert runs_view.status_code == 200
@@ -410,14 +432,20 @@ def test_competition_ban_cancels_active_runs_for_team(client, teacher_headers) -
     queued_item = next(item for item in items if item["run_id"] == run_id_for_b)
     assert canceled_item["status"] == "canceled"
     assert canceled_item["error_message"] == "manual_moderation_ban"
-    assert queued_item["status"] == "queued"
-    assert queued_item["error_message"] is None
+    assert queued_item["status"] == "canceled"
+    assert queued_item["error_message"] == "manual_moderation_ban"
 
 
 def test_competition_runs_include_compact_result_payload(client, teacher_headers) -> None:
-    game = _create_small_match_game(client, "competition_api_runs_compact_payload", headers=teacher_headers)
-    team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-compact-a")
-    team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-compact-b")
+    game = _create_small_match_game(
+        client, "competition_api_runs_compact_payload", headers=teacher_headers
+    )
+    team_a = _create_ready_team(
+        client, game_id=game["game_id"], name="Alpha", captain="captain-compact-a"
+    )
+    team_b = _create_ready_team(
+        client, game_id=game["game_id"], name="Bravo", captain="captain-compact-b"
+    )
 
     competition = client.post(
         "/api/v1/competitions",
@@ -458,7 +486,9 @@ def test_competition_runs_include_compact_result_payload(client, teacher_headers
     )
     assert finished.status_code == 200
 
-    runs_view = client.get(f"/api/v1/competitions/{competition['competition_id']}/runs", headers=teacher_headers)
+    runs_view = client.get(
+        f"/api/v1/competitions/{competition['competition_id']}/runs", headers=teacher_headers
+    )
     assert runs_view.status_code == 200
     item = next(item for item in runs_view.json() if item["run_id"] == run_id)
     assert item["result_payload"]["scores"] == {team_a["team_id"]: 42}
@@ -468,8 +498,12 @@ def test_competition_runs_include_compact_result_payload(client, teacher_headers
 
 def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -> None:
     game = _create_small_match_game(client, "competition_api_game_advance", headers=teacher_headers)
-    team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-a-2")
-    team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-b-2")
+    team_a = _create_ready_team(
+        client, game_id=game["game_id"], name="Alpha", captain="captain-a-2"
+    )
+    team_b = _create_ready_team(
+        client, game_id=game["game_id"], name="Bravo", captain="captain-b-2"
+    )
 
     competition = client.post(
         "/api/v1/competitions",
@@ -508,19 +542,19 @@ def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -
     match = round_one["matches"][0]
     run_ids_by_team = match["run_ids_by_team"]
 
-    for team_id, run_id in run_ids_by_team.items():
-        score = 100 if team_id == team_b["team_id"] else 50
-        client.post(
-            f"/api/v1/internal/runs/{run_id}/finished",
-            json={
-                "payload": {
-                    "status": "ok",
-                    "metrics": {},
-                    "placements": {team_id: 1},
-                    "scores": {team_id: score},
-                }
-            },
-        )
+    primary = next(iter(run_ids_by_team.values()))
+    completed = client.post(
+        f"/api/v1/internal/runs/{primary}/finished",
+        json={
+            "payload": {
+                "status": "ok",
+                "metrics": {},
+                "placements": {team_a["team_id"]: 2, team_b["team_id"]: 1},
+                "scores": {team_a["team_id"]: 50, team_b["team_id"]: 100},
+            }
+        },
+    )
+    assert completed.status_code == 200, completed.json()
 
     advanced = client.get(
         f"/api/v1/competitions/{competition['competition_id']}",
@@ -541,9 +575,15 @@ def test_competition_advance_finishes_and_sets_winner(client, teacher_headers) -
 
 
 def test_get_competition_reconciles_terminal_match_runs(client, teacher_headers, container) -> None:
-    game = _create_small_match_game(client, "competition_api_game_reconcile", headers=teacher_headers)
-    team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-reconcile-a")
-    team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-reconcile-b")
+    game = _create_small_match_game(
+        client, "competition_api_game_reconcile", headers=teacher_headers
+    )
+    team_a = _create_ready_team(
+        client, game_id=game["game_id"], name="Alpha", captain="captain-reconcile-a"
+    )
+    team_b = _create_ready_team(
+        client, game_id=game["game_id"], name="Bravo", captain="captain-reconcile-b"
+    )
 
     competition = client.post(
         "/api/v1/competitions",
@@ -595,8 +635,12 @@ def test_get_competition_reconciles_terminal_match_runs(client, teacher_headers,
 
 def test_competition_advance_manual_tie_requires_resolution(client, teacher_headers) -> None:
     game = _create_small_match_game(client, "competition_api_game_tie", headers=teacher_headers)
-    team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-a-3")
-    team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-b-3")
+    team_a = _create_ready_team(
+        client, game_id=game["game_id"], name="Alpha", captain="captain-a-3"
+    )
+    team_b = _create_ready_team(
+        client, game_id=game["game_id"], name="Bravo", captain="captain-b-3"
+    )
 
     competition = client.post(
         "/api/v1/competitions",
@@ -781,7 +825,9 @@ def test_competition_patch_updates_draft_competition(client, teacher_headers) ->
 
 
 def test_competition_patch_denied_for_non_draft(client, teacher_headers) -> None:
-    game = _create_small_match_game(client, "competition_api_patch_status_guard", headers=teacher_headers)
+    game = _create_small_match_game(
+        client, "competition_api_patch_status_guard", headers=teacher_headers
+    )
     team_a = _create_ready_team(client, game_id=game["game_id"], name="Alpha", captain="captain-pa")
     team_b = _create_ready_team(client, game_id=game["game_id"], name="Bravo", captain="captain-pb")
 

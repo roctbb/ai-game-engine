@@ -35,7 +35,9 @@ def test_build_package_archive_contains_game_files(tmp_path: Path) -> None:
     assert ".secret" not in names
 
 
-def test_execute_manifest_game_uses_docker_runner_with_limits(monkeypatch: Any, tmp_path: Path) -> None:
+def test_execute_manifest_game_uses_docker_runner_with_limits(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     games_root = tmp_path / "games"
     package_dir = games_root / "sample_game"
     package_dir.mkdir(parents=True, exist_ok=True)
@@ -68,6 +70,7 @@ def test_execute_manifest_game_uses_docker_runner_with_limits(monkeypatch: Any, 
         captured["kwargs"] = kwargs
         return _Completed()
 
+    monkeypatch.setattr("worker_service.main._run_engine_command", fake_run)
     monkeypatch.setattr("worker_service.main.subprocess.run", fake_run)
 
     payload = _execute_manifest_game(
@@ -114,7 +117,9 @@ def test_execute_manifest_game_uses_docker_runner_with_limits(monkeypatch: Any, 
     assert len(kwargs["input"]) > 0
 
 
-def test_execute_manifest_game_reports_missing_docker_binary(monkeypatch: Any, tmp_path: Path) -> None:
+def test_execute_manifest_game_reports_missing_docker_binary(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     games_root = tmp_path / "games"
     package_dir = games_root / "sample_game"
     package_dir.mkdir(parents=True, exist_ok=True)
@@ -127,6 +132,7 @@ def test_execute_manifest_game_reports_missing_docker_binary(monkeypatch: Any, t
     def fake_run(*_: Any, **__: Any) -> Any:
         raise FileNotFoundError("docker-missing")
 
+    monkeypatch.setattr("worker_service.main._run_engine_command", fake_run)
     monkeypatch.setattr("worker_service.main.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="Docker binary not found"):
@@ -138,7 +144,9 @@ def test_execute_manifest_game_reports_missing_docker_binary(monkeypatch: Any, t
         )
 
 
-def test_execute_manifest_game_removes_docker_container_on_timeout(monkeypatch: Any, tmp_path: Path) -> None:
+def test_execute_manifest_game_removes_docker_container_on_timeout(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     games_root = tmp_path / "games"
     package_dir = games_root / "sample_game"
     package_dir.mkdir(parents=True, exist_ok=True)
@@ -157,12 +165,14 @@ def test_execute_manifest_game_removes_docker_container_on_timeout(monkeypatch: 
     def fake_run(command: list[str], **kwargs: Any) -> Any:
         calls.append((command, kwargs))
         if command[:3] == ["docker", "rm", "-f"]:
+
             class _Completed:
                 returncode = 0
 
             return _Completed()
         raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs["timeout"])
 
+    monkeypatch.setattr("worker_service.main._run_engine_command", fake_run)
     monkeypatch.setattr("worker_service.main.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="timed out after 3.0s"):
@@ -206,13 +216,17 @@ def test_parse_engine_payload_enforces_result_turn_limit() -> None:
 
         parsed = _parse_engine_payload(json.dumps(payload))
 
-        assert [frame["tick"] for frame in parsed["frames"]] == [0, 1200, 1200]
+        assert [frame["tick"] for frame in parsed["frames"]] == [0, 1200, 1300]
         assert parsed["frames"][-1]["phase"] == "finished"
-        assert parsed["metrics"]["turn_limit_enforced"] is True
-        assert parsed["metrics"]["result_max_turns"] == 1200
-        assert parsed["metrics"]["dropped_frames"] == 2
-        assert [event["type"] for event in parsed["events"]] == ["kept", "turn_limit_enforced"]
-        assert parsed["events"][-1]["dropped_events"] == 1
+        assert parsed["metrics"]["replay_truncated"] is True
+        assert parsed["metrics"]["replay_tick_limit"] == 1200
+        assert parsed["metrics"]["dropped_frames"] == 1
+        assert [event["type"] for event in parsed["events"]] == [
+            "kept",
+            "dropped",
+            "replay_truncated",
+        ]
+        assert parsed["metrics"]["turns"] == 1300
     finally:
         settings.result_max_turns = old_limit
 

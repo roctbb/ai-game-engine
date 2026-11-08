@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -55,26 +54,27 @@ def _wait_for_run_terminal(backend_api: str, run_id: str, timeout_sec: int) -> d
     raise RuntimeError(f"Run {run_id} did not finish in time, last={last}")
 
 
-def _drain_worker_until_completed(worker_api: str, expected_count: int, timeout_sec: int) -> None:
+def _drain_worker_until_completed(worker_api: str, backend_api: str, run_ids: list[str], timeout_sec: int) -> None:
+    # Automatic workers may finish these runs before the manual probe arrives.
     deadline = time.time() + timeout_sec
-    completed = 0
-    while completed < expected_count and time.time() < deadline:
+    while time.time() < deadline:
+        states = []
+        for run_id in run_ids:
+            code, run = _request("GET", f"{backend_api}/runs/{run_id}")
+            if code != 200:
+                raise RuntimeError(f"Unable to inspect run {run_id}: HTTP {code}, {run}")
+            if run.get("status") in {"failed", "canceled", "timeout"}:
+                raise RuntimeError(f"Run did not finish successfully: {run}")
+            states.append(run.get("status"))
+        if all(state == "finished" for state in states):
+            return
         code, body = _request("POST", f"{worker_api}/internal/worker/pull-and-execute")
         if code != 200:
             raise RuntimeError(f"worker pull-and-execute failed: HTTP {code}, body={body}")
-        status = body.get("status")
-        if status == "completed":
-            completed += 1
-            continue
-        if status == "idle":
-            time.sleep(0.25)
-            continue
-        raise RuntimeError(f"Unexpected worker status while draining queue: {body}")
-
-    if completed < expected_count:
-        raise RuntimeError(
-            f"Timed out while waiting worker completions: got={completed}, expected={expected_count}"
-        )
+        if body.get("status") not in {"completed", "idle", "busy"}:
+            raise RuntimeError(f"Unexpected worker status while draining queue: {body}")
+        time.sleep(0.25)
+    raise RuntimeError(f"Timed out waiting for runs: {run_ids}")
 
 
 def _get_games_by_slug(backend_api: str) -> dict[str, dict]:
@@ -559,7 +559,7 @@ def _single_task_smoke(
         requested_by=user,
         run_kind="single_task",
     )
-    _drain_worker_until_completed(worker_api=worker_api, expected_count=1, timeout_sec=timeout_sec)
+    _drain_worker_until_completed(worker_api=worker_api, backend_api=backend_api, run_ids=[run_id], timeout_sec=timeout_sec)
     return _assert_run_finished(backend_api=backend_api, run_id=run_id, timeout_sec=timeout_sec)
 
 
@@ -652,7 +652,7 @@ def _run_training_lobby_matchmaking(
             f"Unexpected scheduled runs count for {game['slug']}: got={len(run_ids)}, expected={expected_runs}, tick={tick}"
         )
 
-    _drain_worker_until_completed(worker_api=worker_api, expected_count=expected_runs, timeout_sec=timeout_sec)
+    _drain_worker_until_completed(worker_api=worker_api, backend_api=backend_api, run_ids=run_ids, timeout_sec=timeout_sec)
     return [
         _assert_run_finished(backend_api=backend_api, run_id=run_id, timeout_sec=timeout_sec)
         for run_id in run_ids
@@ -989,7 +989,8 @@ def main() -> int:
         )
 
     required_labels = {
-        next(iter(worker_labels.keys())): next(iter(worker_labels.values()))
+        next(iter(worker_labels.keys())): next(iter(worker_labels.values())),
+        "smoke_probe": uuid4().hex,
     }
     labeled_game = _register_small_match_game(
         backend_api=args.backend,
@@ -1059,10 +1060,17 @@ def main() -> int:
             f"got: {match_pull}, expected run_id={labeled_run_id}"
         )
 
+    lease_id = match_pull["lease_id"]
+    code, accepted = _request("POST", f"{args.backend}/internal/runs/{labeled_run_id}/accepted",
+        {"worker_id": probe_worker_id, "lease_id": lease_id,
+         "lease_generation": match_pull["lease_generation"]})
+    if code != 200:
+        raise RuntimeError(f"Run acceptance failed: HTTP {code}, {accepted}")
+
     code, started = _request(
         "POST",
         f"{args.backend}/internal/runs/{labeled_run_id}/started",
-        {"worker_id": probe_worker_id},
+        {"worker_id": probe_worker_id, "lease_id": lease_id},
     )
     if code != 200:
         raise RuntimeError(f"POST /internal/runs/{labeled_run_id}/started failed: HTTP {code}, body={started}")
@@ -1070,7 +1078,7 @@ def main() -> int:
     code, finished = _request(
         "POST",
         f"{args.backend}/internal/runs/{labeled_run_id}/finished",
-        {"payload": {"status": "finished", "scores": {labeled_team['team_id']: 1}}},
+        {"payload": {"status": "finished", "scores": {labeled_team['team_id']: 1}}, "lease_id": lease_id},
     )
     if code != 200:
         raise RuntimeError(f"POST /internal/runs/{labeled_run_id}/finished failed: HTTP {code}, body={finished}")
@@ -1078,7 +1086,7 @@ def main() -> int:
     code, ack = _request(
         "POST",
         f"{args.scheduler}/internal/runs/ack-finished",
-        {"worker_id": probe_worker_id, "run_id": labeled_run_id},
+        {"worker_id": probe_worker_id, "run_id": labeled_run_id, "lease_id": lease_id},
     )
     if code != 200 or ack.get("status") != "acknowledged":
         raise RuntimeError(
@@ -1183,7 +1191,7 @@ def main() -> int:
     print("[17/19] lobby stream smoke")
     probe_lobby = _create_training_lobby(
         backend_api=args.backend,
-        game_id=template_game["game_id"],
+        game_id=ttt_game["game_id"],
         title=f"Stream Probe Lobby {uuid4().hex[:6]}",
         admin_headers=admin_headers,
     )
@@ -1201,7 +1209,7 @@ def main() -> int:
         "POST",
         f"{args.backend}/competitions",
         {
-            "game_id": template_game["game_id"],
+            "game_id": ttt_game["game_id"],
             "title": f"Stream Probe Competition {uuid4().hex[:6]}",
             "format": "single_elimination",
             "tie_break_policy": "manual",

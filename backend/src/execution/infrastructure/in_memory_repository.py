@@ -1,25 +1,64 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from copy import deepcopy
+from threading import RLock
+from shared.kernel import ConflictError
 
-from execution.domain.model import BuildJob, MatchExecution, Run, RunKind, RunStatus, RunSummaryRecord, WorkerNode
+from execution.domain.model import (
+    BuildJob,
+    MatchExecution,
+    Run,
+    RunKind,
+    RunStatus,
+    RunSummaryRecord,
+    WorkerNode,
+)
 
 
 class InMemoryRunRepository:
     def __init__(self) -> None:
         self._items: dict[str, Run] = {}
+        self._lock = RLock()
 
     def save(self, run: Run) -> None:
-        self._items[run.run_id] = run
+        with self._lock:
+            existing = self._items.get(run.run_id)
+            if (existing is None and run.revision != 0) or (
+                existing is not None and existing.revision != run.revision
+            ):
+                raise ConflictError("Запуск уже изменен другим запросом")
+            if run.run_kind is RunKind.SINGLE_TASK and run.status in {
+                RunStatus.QUEUED,
+                RunStatus.RUNNING,
+            }:
+                if any(
+                    other.run_id != run.run_id
+                    and other.requested_by == run.requested_by
+                    and other.run_kind is RunKind.SINGLE_TASK
+                    and other.status in {RunStatus.QUEUED, RunStatus.RUNNING}
+                    for other in self._items.values()
+                ):
+                    raise ConflictError("У пользователя уже есть активный single_task запуск")
+            run.revision += 1
+            self._items[run.run_id] = deepcopy(run)
+
+    def list_pending(self) -> list[Run]:
+        with self._lock:
+            return [
+                deepcopy(run)
+                for run in self._items.values()
+                if run.dispatch_pending or run.completion_pending
+            ]
 
     def get(self, run_id: str, *, include_result_payload: bool = True) -> Run | None:
         run = self._items.get(run_id)
         if run is None or include_result_payload:
-            return run
-        return replace(run, result_payload=None)
+            return deepcopy(run)
+        return deepcopy(replace(run, result_payload=None))
 
     def list(self) -> list[Run]:
-        return sorted(self._items.values(), key=lambda run: run.created_at, reverse=True)
+        return deepcopy(sorted(self._items.values(), key=lambda run: run.created_at, reverse=True))
 
     def list_filtered(
         self,
@@ -48,7 +87,9 @@ class InMemoryRunRepository:
                 continue
             if requested_by is not None and run.requested_by != requested_by:
                 continue
-            runs.append(run if include_result_payload else replace(run, result_payload=None))
+            runs.append(
+                deepcopy(run if include_result_payload else replace(run, result_payload=None))
+            )
         result = sorted(runs, key=lambda item: item.created_at, reverse=True)
         if offset is not None and offset > 0:
             result = result[offset:]
@@ -61,8 +102,8 @@ class InMemoryRunRepository:
     ) -> list[Run]:
         active_statuses = {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING}
         return [
-            run
-            for run in self._items.values()
+            deepcopy(run)
+            for run in list(self._items.values())
             if run.requested_by == requested_by
             and run.run_kind is run_kind
             and run.status in active_statuses
@@ -102,20 +143,32 @@ class InMemoryRunRepository:
 class InMemoryMatchExecutionRepository:
     def __init__(self) -> None:
         self._items: dict[str, MatchExecution] = {}
+        self._lock = RLock()
 
     def save(self, match: MatchExecution) -> None:
-        self._items[match.match_execution_id] = match
+        with self._lock:
+            previous = self._items.get(match.match_execution_id)
+            if previous is not None and previous.revision != match.revision:
+                raise ConflictError("Матч уже изменен другим запросом")
+            match.revision += 1
+            self._items[match.match_execution_id] = deepcopy(match)
 
-    def get(self, match_execution_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+    def get(
+        self, match_execution_id: str, *, include_result_payload: bool = True
+    ) -> MatchExecution | None:
         match = self._items.get(match_execution_id)
         if match is None or include_result_payload:
-            return match
-        return replace(match, result_payload=None)
+            return deepcopy(match)
+        return deepcopy(replace(match, result_payload=None))
 
-    def find_by_run_id(self, run_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+    def find_by_run_id(
+        self, run_id: str, *, include_result_payload: bool = True
+    ) -> MatchExecution | None:
         for match in self._items.values():
             if run_id in match.run_ids:
-                return match if include_result_payload else replace(match, result_payload=None)
+                return deepcopy(
+                    match if include_result_payload else replace(match, result_payload=None)
+                )
         return None
 
     def delete_many(self, match_execution_ids: list[str]) -> None:

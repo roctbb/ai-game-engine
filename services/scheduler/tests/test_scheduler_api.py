@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from scheduler_service.settings import settings
 from scheduler_service.main import app
 from scheduler_service.queue import Lease
 
@@ -15,13 +16,21 @@ class FakeQueue:
     pull_result: Lease | None = None
     ack_result: bool = True
     stats_payload: dict[str, object] = field(
-        default_factory=lambda: {"queue_depth": 0, "known_count": 0, "worker_leases": {}}
+        default_factory=lambda: {
+            "queue_depth": 0,
+            "known_count": 0,
+            "worker_leases": {},
+        }
     )
     enqueue_calls: list[tuple[str, dict[str, str] | None]] = field(default_factory=list)
-    pull_calls: list[tuple[str, int, dict[str, str] | None]] = field(default_factory=list)
+    pull_calls: list[tuple[str, int, dict[str, str] | None]] = field(
+        default_factory=list
+    )
     ack_calls: list[tuple[str, str, str]] = field(default_factory=list)
 
-    def enqueue(self, run_id: str, required_worker_labels: dict[str, str] | None = None) -> bool:
+    def enqueue(
+        self, run_id: str, required_worker_labels: dict[str, str] | None = None
+    ) -> bool:
         self.enqueue_calls.append((run_id, required_worker_labels))
         return self.enqueue_result
 
@@ -86,12 +95,16 @@ def test_schedule_run_with_required_worker_labels(monkeypatch: Any) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"run_id": "run-2", "status": "queued"}
-    assert fake_queue.enqueue_calls == [("run-2", {"pool": "gpu", "region": "eu-mow-1"})]
+    assert fake_queue.enqueue_calls == [
+        ("run-2", {"pool": "gpu", "region": "eu-mow-1"})
+    ]
 
 
 def test_pull_next_assigned(monkeypatch: Any) -> None:
     fake_queue = FakeQueue(
-        pull_result=Lease(worker_id="w-1", run_id="run-7", lease_id="lease-7", leased_at=123)
+        pull_result=Lease(
+            worker_id="w-1", run_id="run-7", lease_id="lease-7", leased_at=123
+        )
     )
     monkeypatch.setattr("scheduler_service.main.queue", fake_queue)
     client = TestClient(app)
@@ -108,7 +121,7 @@ def test_pull_next_assigned(monkeypatch: Any) -> None:
     assert response.json()["status"] == "assigned"
     assert len(fake_queue.pull_calls) == 1
     assert fake_queue.pull_calls[0][0] == "w-1"
-    assert isinstance(fake_queue.pull_calls[0][1], int)
+    assert isinstance(fake_queue.pull_calls[0][1], (int, float))
     assert fake_queue.pull_calls[0][2] == {"pool": "gpu"}
 
 
@@ -120,7 +133,14 @@ def test_pull_next_empty(monkeypatch: Any) -> None:
     response = client.post("/internal/workers/pull-next", json={"worker_id": "w-2"})
 
     assert response.status_code == 200
-    assert response.json() == {"worker_id": "w-2", "run_id": None, "lease_id": None, "status": "empty"}
+    assert response.json() == {
+        "worker_id": "w-2",
+        "run_id": None,
+        "lease_id": None,
+        "lease_generation": 0,
+        "lease_ttl_seconds": settings.lease_ttl_seconds,
+        "status": "empty",
+    }
 
 
 def test_ack_finished(monkeypatch: Any) -> None:
@@ -157,7 +177,16 @@ def test_queue_stats(monkeypatch: Any) -> None:
     stats_payload = {
         "queue_depth": 3,
         "known_count": 4,
-        "worker_leases": {"w-1": [{"worker_id": "w-1", "run_id": "run-1", "lease_id": "lease-1", "leased_at": 10}]},
+        "worker_leases": {
+            "w-1": [
+                {
+                    "worker_id": "w-1",
+                    "run_id": "run-1",
+                    "lease_id": "lease-1",
+                    "leased_at": 10,
+                }
+            ]
+        },
     }
     fake_queue = FakeQueue(stats_payload=stats_payload)
     monkeypatch.setattr("scheduler_service.main.queue", fake_queue)

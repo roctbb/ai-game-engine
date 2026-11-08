@@ -4,6 +4,7 @@ from __future__ import annotations
 COMPACT_RESULT_PAYLOAD_KEYS = frozenset(
     {
         "status",
+        "tie_resolution",
         "score",
         "scores",
         "placement",

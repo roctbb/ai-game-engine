@@ -61,6 +61,10 @@ class Run:
     snapshot_version_id: str | None = None
     revisions_by_slot: dict[str, int] = field(default_factory=dict)
     execution_options: dict[str, object] = field(default_factory=dict)
+    revision: int = 0
+    lease_generation: int = 0
+    dispatch_pending: bool = False
+    completion_pending: bool = False
     worker_id: str | None = None
     active_lease_id: str | None = None
     created_at: object = field(default_factory=utc_now)
@@ -92,7 +96,9 @@ class Run:
 
     def queue_with_snapshot(self, snapshot: TeamSnapshot) -> None:
         if self.status != RunStatus.CREATED:
-            raise InvariantViolationError("Snapshot можно фиксировать только при переходе created->queued")
+            raise InvariantViolationError(
+                "Snapshot можно фиксировать только при переходе created->queued"
+            )
         if snapshot.team_id != self.team_id:
             raise InvariantViolationError("Snapshot не принадлежит команде запуска")
         self.snapshot_id = snapshot.snapshot_id
@@ -167,6 +173,7 @@ class MatchExecution:
     run_kind: RunKind
     lobby_id: str | None
     status: MatchExecutionStatus
+    revision: int = 0
     worker_id: str | None = None
     created_at: object = field(default_factory=utc_now)
     queued_at: object | None = None
@@ -229,14 +236,22 @@ class MatchExecution:
         self.finished_at = utc_now()
 
     def mark_failed(self, message: str) -> None:
-        if self.status not in {MatchExecutionStatus.CREATED, MatchExecutionStatus.QUEUED, MatchExecutionStatus.RUNNING}:
+        if self.status not in {
+            MatchExecutionStatus.CREATED,
+            MatchExecutionStatus.QUEUED,
+            MatchExecutionStatus.RUNNING,
+        }:
             raise InvariantViolationError("Матч нельзя перевести в failed из текущего статуса")
         self.status = MatchExecutionStatus.FAILED
         self.error_message = message
         self.finished_at = utc_now()
 
     def mark_canceled(self, message: str | None = None) -> None:
-        if self.status not in {MatchExecutionStatus.CREATED, MatchExecutionStatus.QUEUED, MatchExecutionStatus.RUNNING}:
+        if self.status not in {
+            MatchExecutionStatus.CREATED,
+            MatchExecutionStatus.QUEUED,
+            MatchExecutionStatus.RUNNING,
+        }:
             raise InvariantViolationError("Матч нельзя отменить из текущего статуса")
         self.status = MatchExecutionStatus.CANCELED
         self.error_message = message
@@ -254,7 +269,9 @@ class WorkerNode:
     last_heartbeat_at: object
 
     @staticmethod
-    def register(worker_id: str, hostname: str, capacity_total: int, labels: dict[str, str]) -> "WorkerNode":
+    def register(
+        worker_id: str, hostname: str, capacity_total: int, labels: dict[str, str]
+    ) -> "WorkerNode":
         return WorkerNode(
             worker_id=worker_id,
             hostname=hostname,
@@ -265,7 +282,9 @@ class WorkerNode:
             last_heartbeat_at=utc_now(),
         )
 
-    def refresh_registration(self, hostname: str, capacity_total: int, labels: dict[str, str]) -> None:
+    def refresh_registration(
+        self, hostname: str, capacity_total: int, labels: dict[str, str]
+    ) -> None:
         if capacity_total <= 0:
             raise InvariantViolationError("capacity_total должен быть положительным")
         self.hostname = hostname
@@ -324,7 +343,9 @@ def require_run(value: Run | None, run_id: str) -> Run:
     return value
 
 
-def require_match_execution(value: MatchExecution | None, match_execution_id: str) -> MatchExecution:
+def require_match_execution(
+    value: MatchExecution | None, match_execution_id: str
+) -> MatchExecution:
     if value is None:
         raise NotFoundError(f"MatchExecution {match_execution_id} не найден")
     return value

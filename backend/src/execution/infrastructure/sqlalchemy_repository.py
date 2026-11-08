@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, select, update
+from sqlalchemy.exc import IntegrityError
+from shared.kernel import ConflictError
 from sqlalchemy.orm import Session, load_only, sessionmaker
 
 from execution.domain.model import (
@@ -15,7 +17,12 @@ from execution.domain.model import (
     WorkerNode,
     WorkerStatus,
 )
-from execution.infrastructure.sqlalchemy_models import BuildOrm, MatchExecutionOrm, RunOrm, WorkerOrm
+from execution.infrastructure.sqlalchemy_models import (
+    BuildOrm,
+    MatchExecutionOrm,
+    RunOrm,
+    WorkerOrm,
+)
 
 
 class SqlAlchemyRunRepository:
@@ -23,8 +30,42 @@ class SqlAlchemyRunRepository:
         self._session_factory = session_factory
 
     def save(self, run: Run) -> None:
-        with self._session_factory.begin() as session:
-            session.merge(_map_run_to_orm(run))
+        row = _map_run_to_orm(run)
+        next_revision = run.revision + 1
+        row.revision = next_revision
+        try:
+            with self._session_factory.begin() as session:
+                if run.revision == 0:
+                    session.add(row)
+                else:
+                    values = {
+                        column.name: getattr(row, column.name)
+                        for column in RunOrm.__table__.columns
+                        if column.name != "run_id"
+                    }
+                    changed = session.execute(
+                        update(RunOrm)
+                        .where(RunOrm.run_id == run.run_id, RunOrm.revision == run.revision)
+                        .values(**values)
+                    ).rowcount
+                    if changed != 1:
+                        raise ConflictError(
+                            "Запуск уже изменен другим запросом. Обновите его состояние."
+                        )
+        except IntegrityError as exc:
+            raise ConflictError(
+                "У пользователя уже есть активный single_task запуск или запуск уже существует"
+            ) from exc
+        run.revision = next_revision
+
+    def list_pending(self) -> list[Run]:
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(RunOrm).where(
+                    (RunOrm.dispatch_pending.is_(True)) | (RunOrm.completion_pending.is_(True))
+                )
+            ).all()
+            return [_map_run_from_orm(row) for row in rows]
 
     def get(self, run_id: str, *, include_result_payload: bool = True) -> Run | None:
         with self._session_factory() as session:
@@ -36,6 +77,10 @@ class SqlAlchemyRunRepository:
                     .where(RunOrm.run_id == run_id)
                     .options(
                         load_only(
+                            RunOrm.revision,
+                            RunOrm.lease_generation,
+                            RunOrm.dispatch_pending,
+                            RunOrm.completion_pending,
                             RunOrm.run_id,
                             RunOrm.team_id,
                             RunOrm.game_id,
@@ -49,7 +94,7 @@ class SqlAlchemyRunRepository:
                             RunOrm.snapshot_id,
                             RunOrm.snapshot_version_id,
                             RunOrm.revisions_by_slot,
-                    RunOrm.execution_options,
+                            RunOrm.execution_options,
                             RunOrm.worker_id,
                             RunOrm.active_lease_id,
                             RunOrm.created_at,
@@ -61,7 +106,11 @@ class SqlAlchemyRunRepository:
                         )
                     )
                 )
-            return None if row is None else _map_run_from_orm(row, include_result_payload=include_result_payload)
+            return (
+                None
+                if row is None
+                else _map_run_from_orm(row, include_result_payload=include_result_payload)
+            )
 
     def list(self) -> list[Run]:
         with self._session_factory() as session:
@@ -97,6 +146,10 @@ class SqlAlchemyRunRepository:
         if not include_result_payload:
             statement = statement.options(
                 load_only(
+                    RunOrm.revision,
+                    RunOrm.lease_generation,
+                    RunOrm.dispatch_pending,
+                    RunOrm.completion_pending,
                     RunOrm.run_id,
                     RunOrm.team_id,
                     RunOrm.game_id,
@@ -201,10 +254,35 @@ class SqlAlchemyMatchExecutionRepository:
         self._session_factory = session_factory
 
     def save(self, match: MatchExecution) -> None:
-        with self._session_factory.begin() as session:
-            session.merge(_map_match_to_orm(match))
+        row = _map_match_to_orm(match)
+        row.revision = match.revision + 1
+        try:
+            with self._session_factory.begin() as session:
+                if match.revision == 0:
+                    session.add(row)
+                else:
+                    values = {
+                        column.name: getattr(row, column.name)
+                        for column in MatchExecutionOrm.__table__.columns
+                        if column.name != "match_execution_id"
+                    }
+                    changed = session.execute(
+                        update(MatchExecutionOrm)
+                        .where(
+                            MatchExecutionOrm.match_execution_id == match.match_execution_id,
+                            MatchExecutionOrm.revision == match.revision,
+                        )
+                        .values(**values)
+                    ).rowcount
+                    if changed != 1:
+                        raise ConflictError("Состояние матча уже изменено другим запросом")
+        except IntegrityError as exc:
+            raise ConflictError("Матч уже существует") from exc
+        match.revision += 1
 
-    def get(self, match_execution_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+    def get(
+        self, match_execution_id: str, *, include_result_payload: bool = True
+    ) -> MatchExecution | None:
         with self._session_factory() as session:
             if include_result_payload:
                 row = session.get(MatchExecutionOrm, match_execution_id)
@@ -214,6 +292,7 @@ class SqlAlchemyMatchExecutionRepository:
                     .where(MatchExecutionOrm.match_execution_id == match_execution_id)
                     .options(
                         load_only(
+                            MatchExecutionOrm.revision,
                             MatchExecutionOrm.match_execution_id,
                             MatchExecutionOrm.primary_run_id,
                             MatchExecutionOrm.run_ids,
@@ -230,9 +309,15 @@ class SqlAlchemyMatchExecutionRepository:
                         )
                     )
                 )
-            return None if row is None else _map_match_from_orm(row, include_result_payload=include_result_payload)
+            return (
+                None
+                if row is None
+                else _map_match_from_orm(row, include_result_payload=include_result_payload)
+            )
 
-    def find_by_run_id(self, run_id: str, *, include_result_payload: bool = True) -> MatchExecution | None:
+    def find_by_run_id(
+        self, run_id: str, *, include_result_payload: bool = True
+    ) -> MatchExecution | None:
         with self._session_factory() as session:
             row = session.scalar(
                 select(MatchExecutionOrm)
@@ -245,7 +330,11 @@ class SqlAlchemyMatchExecutionRepository:
                     .where(MatchExecutionOrm.primary_run_id == run_id)
                     .order_by(desc(MatchExecutionOrm.created_at))
                 )
-            return None if row is None else _map_match_from_orm(row, include_result_payload=include_result_payload)
+            return (
+                None
+                if row is None
+                else _map_match_from_orm(row, include_result_payload=include_result_payload)
+            )
 
     def delete_many(self, match_execution_ids: list[str]) -> None:
         if not match_execution_ids:
@@ -293,6 +382,10 @@ class SqlAlchemyBuildRepository:
 
 def _map_run_to_orm(run: Run) -> RunOrm:
     return RunOrm(
+        revision=run.revision,
+        lease_generation=run.lease_generation,
+        dispatch_pending=run.dispatch_pending,
+        completion_pending=run.completion_pending,
         run_id=run.run_id,
         team_id=run.team_id,
         game_id=run.game_id,
@@ -321,6 +414,10 @@ def _map_run_to_orm(run: Run) -> RunOrm:
 
 def _map_run_from_orm(row: RunOrm, *, include_result_payload: bool = True) -> Run:
     return Run(
+        revision=row.revision,
+        lease_generation=row.lease_generation,
+        dispatch_pending=row.dispatch_pending,
+        completion_pending=row.completion_pending,
         run_id=row.run_id,
         team_id=row.team_id,
         game_id=row.game_id,
@@ -349,6 +446,7 @@ def _map_run_from_orm(row: RunOrm, *, include_result_payload: bool = True) -> Ru
 
 def _map_match_to_orm(match: MatchExecution) -> MatchExecutionOrm:
     return MatchExecutionOrm(
+        revision=match.revision,
         match_execution_id=match.match_execution_id,
         primary_run_id=match.primary_run_id,
         run_ids=list(match.run_ids),
@@ -366,8 +464,11 @@ def _map_match_to_orm(match: MatchExecution) -> MatchExecutionOrm:
     )
 
 
-def _map_match_from_orm(row: MatchExecutionOrm, *, include_result_payload: bool = True) -> MatchExecution:
+def _map_match_from_orm(
+    row: MatchExecutionOrm, *, include_result_payload: bool = True
+) -> MatchExecution:
     return MatchExecution(
+        revision=row.revision,
         match_execution_id=row.match_execution_id,
         primary_run_id=row.primary_run_id,
         run_ids=tuple(str(run_id) for run_id in (row.run_ids or [])),

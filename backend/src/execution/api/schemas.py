@@ -19,9 +19,9 @@ class CreateRunRequest(BaseModel):
 class StartSingleTaskRunRequest(BaseModel):
     team_id: str
     requested_by: str = Field(min_length=1, max_length=120)
-
     repeat_run_id: str | None = Field(default=None, max_length=64)
     debug: bool = False
+
 
 class StopSingleTaskRunRequest(BaseModel):
     run_id: str
@@ -73,6 +73,7 @@ class RunExecutionContextResponse(BaseModel):
     participants: list[dict[str, object]] = Field(default_factory=list)
     seed: str | None = None
     debug_trace: bool = False
+    package_digest: str | None = None
 
 
 class RunWatchParticipantResponse(BaseModel):
@@ -126,6 +127,7 @@ class FinishRunRequest(BaseModel):
 
 
 class FailRunRequest(BaseModel):
+    timeout: bool = False
     message: str = Field(min_length=1, max_length=4000)
     lease_id: str | None = None
 
@@ -138,6 +140,7 @@ class StartRunRequest(BaseModel):
 class AcceptRunRequest(BaseModel):
     worker_id: str
     lease_id: str
+    lease_generation: int = Field(default=0, ge=0)
 
 
 class StartBuildRequest(BaseModel):

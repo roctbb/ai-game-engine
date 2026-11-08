@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, text
 from sqlalchemy import JSON as SqlJson
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,11 +12,26 @@ from shared.db.base import Base
 class RunOrm(Base):
     __tablename__ = "execution_runs"
     __table_args__ = (
+        Index(
+            "uq_execution_single_task_active_user",
+            "requested_by",
+            unique=True,
+            postgresql_where=text("run_kind = 'single_task' AND status IN ('queued', 'running')"),
+            sqlite_where=text("run_kind = 'single_task' AND status IN ('queued', 'running')"),
+        ),
         Index("ix_execution_runs_lobby_kind_created_at", "lobby_id", "run_kind", "created_at"),
         Index("ix_execution_runs_requested_kind_status", "requested_by", "run_kind", "status"),
         Index("ix_execution_runs_game_kind_created_at", "game_id", "run_kind", "created_at"),
     )
 
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    dispatch_pending: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", index=True
+    )
+    completion_pending: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", index=True
+    )
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     team_id: Mapped[str] = mapped_column(String(64), index=True)
     game_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -31,7 +46,9 @@ class RunOrm(Base):
     snapshot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     snapshot_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     revisions_by_slot: Mapped[dict[str, int]] = mapped_column(SqlJson, default=dict)
-    execution_options: Mapped[dict[str, object]] = mapped_column(SqlJson, default=dict, server_default="{}")
+    execution_options: Mapped[dict[str, object]] = mapped_column(
+        SqlJson, default=dict, server_default="{}"
+    )
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     active_lease_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
@@ -46,10 +63,21 @@ class RunOrm(Base):
 
 
 class MatchExecutionOrm(Base):
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     __tablename__ = "execution_match_executions"
     __table_args__ = (
-        Index("ix_execution_match_executions_lobby_kind_created_at", "lobby_id", "run_kind", "created_at"),
-        Index("ix_execution_match_executions_game_kind_created_at", "game_id", "run_kind", "created_at"),
+        Index(
+            "ix_execution_match_executions_lobby_kind_created_at",
+            "lobby_id",
+            "run_kind",
+            "created_at",
+        ),
+        Index(
+            "ix_execution_match_executions_game_kind_created_at",
+            "game_id",
+            "run_kind",
+            "created_at",
+        ),
     )
 
     match_execution_id: Mapped[str] = mapped_column(String(64), primary_key=True)

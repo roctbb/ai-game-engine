@@ -10,7 +10,9 @@ class HttpSchedulerGateway:
         self._scheduler_base_url = scheduler_base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
 
-    def schedule_run(self, run_id: str, required_worker_labels: dict[str, str] | None = None) -> None:
+    def schedule_run(
+        self, run_id: str, required_worker_labels: dict[str, str] | None = None
+    ) -> None:
         url = f"{self._scheduler_base_url}/internal/runs/{run_id}/schedule"
         payload = {"required_worker_labels": required_worker_labels or {}}
         try:
@@ -32,3 +34,11 @@ class HttpSchedulerGateway:
             raise ExternalServiceError(
                 f"scheduler-service вернул неожиданный статус '{status}' для run {run_id}"
             )
+
+    def cancel_run(self, run_id: str) -> None:
+        try:
+            with httpx.Client(timeout=self._timeout_seconds) as client:
+                response = client.post(f"{self._scheduler_base_url}/internal/runs/{run_id}/cancel")
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise ExternalServiceError(f"Не удалось отменить задание {run_id} в scheduler") from exc

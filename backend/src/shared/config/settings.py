@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     session_repository_backend: str = "memory"
     session_repository_auto_create_tables: bool = True
     games_root: str | None = None
+    game_packages_root: str = "/tmp/ai-game-engine-packages"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -50,9 +51,7 @@ class Settings(BaseSettings):
             host=self.db_host,
             port=self.db_port,
             database=self.db_name,
-        ).render_as_string(
-            hide_password=False
-        )
+        ).render_as_string(hide_password=False)
 
 
 settings = Settings()

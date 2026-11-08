@@ -35,10 +35,14 @@ def healthcheck() -> dict[str, str]:
 
 
 @app.post("/internal/runs/{run_id}/schedule")
-def schedule_run(run_id: str, request: ScheduleRunRequest | None = None) -> dict[str, object]:
+def schedule_run(
+    run_id: str, request: ScheduleRunRequest | None = None
+) -> dict[str, object]:
     inserted = queue.enqueue(
         run_id=run_id,
-        required_worker_labels=request.required_worker_labels if request is not None else None,
+        required_worker_labels=request.required_worker_labels
+        if request is not None
+        else None,
     )
     return {
         "run_id": run_id,
@@ -50,13 +54,15 @@ def schedule_run(run_id: str, request: ScheduleRunRequest | None = None) -> dict
 def pull_next(request: PullRequest) -> dict[str, object]:
     lease = queue.pull_next(
         worker_id=request.worker_id,
-        leased_at_epoch=int(datetime.now(tz=UTC).timestamp()),
+        leased_at_epoch=datetime.now(tz=UTC).timestamp(),
         worker_labels=request.worker_labels,
     )
     return {
         "worker_id": request.worker_id,
         "run_id": lease.run_id if lease else None,
         "lease_id": lease.lease_id if lease else None,
+        "lease_generation": lease.generation if lease else 0,
+        "lease_ttl_seconds": settings.lease_ttl_seconds,
         "status": "assigned" if lease else "empty",
     }
 
@@ -74,3 +80,20 @@ def ack_finished(request: AckFinishedRequest) -> dict[str, str]:
 @app.get("/internal/queue/stats")
 def queue_stats() -> dict[str, object]:
     return queue.stats()
+
+
+@app.post("/internal/runs/renew-lease")
+def renew_lease(request: AckFinishedRequest) -> dict[str, object]:
+    renewed = queue.renew(
+        request.worker_id,
+        request.run_id,
+        request.lease_id,
+        datetime.now(tz=UTC).timestamp(),
+    )
+    return {"renewed": renewed}
+
+
+@app.post("/internal/runs/{run_id}/cancel")
+def cancel_run(run_id: str) -> dict[str, str]:
+    queue.cancel(run_id)
+    return {"status": "canceled"}
