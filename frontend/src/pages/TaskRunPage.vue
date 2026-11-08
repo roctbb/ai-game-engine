@@ -1161,6 +1161,12 @@ function stopRunPolling(): void {
 }
 
 async function loadReplay(runId: string): Promise<void> {
+  if (currentRun.value?.run_id === runId && currentRun.value.status !== 'finished') {
+    stopReplayPlayback();
+    replay.value = null;
+    replayError.value = '';
+    return;
+  }
   isReplayLoading.value = true;
   replayError.value = '';
   try {

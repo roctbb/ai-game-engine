@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, desc, select, update
+from sqlalchemy import cast, delete, desc, exists, func, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from shared.kernel import ConflictError
 from sqlalchemy.orm import Session, load_only, sessionmaker
@@ -319,22 +320,22 @@ class SqlAlchemyMatchExecutionRepository:
         self, run_id: str, *, include_result_payload: bool = True
     ) -> MatchExecution | None:
         with self._session_factory() as session:
-            row = session.scalar(
-                select(MatchExecutionOrm)
-                .where(MatchExecutionOrm.run_ids.contains([run_id]))
+            if session.get_bind().dialect.name == "postgresql":
+                membership = cast(MatchExecutionOrm.run_ids, JSONB).contains([run_id])
+            else:
+                # SQLite JSON.contains is a string LIKE, not array membership.
+                members = func.json_each(MatchExecutionOrm.run_ids).table_valued("key", "value")
+                membership = exists(select(1).select_from(members).where(members.c.value == run_id))
+            match_id = session.scalar(
+                select(MatchExecutionOrm.match_execution_id)
+                .where(or_(MatchExecutionOrm.primary_run_id == run_id, membership))
                 .order_by(desc(MatchExecutionOrm.created_at))
             )
-            if row is None:
-                row = session.scalar(
-                    select(MatchExecutionOrm)
-                    .where(MatchExecutionOrm.primary_run_id == run_id)
-                    .order_by(desc(MatchExecutionOrm.created_at))
-                )
-            return (
-                None
-                if row is None
-                else _map_match_from_orm(row, include_result_payload=include_result_payload)
-            )
+        return (
+            None
+            if match_id is None
+            else self.get(match_id, include_result_payload=include_result_payload)
+        )
 
     def delete_many(self, match_execution_ids: list[str]) -> None:
         if not match_execution_ids:

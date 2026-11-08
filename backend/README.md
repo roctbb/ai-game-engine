@@ -39,6 +39,10 @@
 а дубликаты переводит в `canceled`. Для игровых пакетов используется `GAME_PACKAGES_ROOT`;
 backend API и matchmaker должны видеть один постоянный каталог (в Compose — volume `game_packages`).
 
+Миграция `0016_lease_generation_bigint` расширяет `lease_generation` до `BIGINT` в PostgreSQL:
+поколения lease используют микросекунды и не помещаются в 32-битный `INTEGER`.
+Обновление с `0015` сохраняет данные и совместимо с работающими scheduler и worker.
+
 ## Scheduler integration
 
 Настройка через env:
@@ -69,6 +73,10 @@ uvicorn app.main:app --reload --app-dir src
 cd backend
 pytest
 ```
+
+Для проверки SQL-репозиториев и полного цикла запуска на PostgreSQL задайте `POSTGRES_TEST_URL`.
+Тесты создают отдельные временные схемы и удаляют их после проверки. В CI PostgreSQL и Redis
+доступны всегда; локально эти интеграционные проверки требуют PostgreSQL и `redis-server`.
 
 ## Alembic migrations (v2 backend)
 

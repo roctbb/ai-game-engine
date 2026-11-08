@@ -9,6 +9,7 @@
 import { computed, ref } from 'vue';
 import { readableMetrics, record, replayMoments } from '../lib/replayInsights';
 import type { ReplayDto, RunDto } from '../lib/api';
+import { runOutcomeTitle, runOutcomeReason } from '../lib/runOutcome';
 const props = defineProps<{ run: RunDto | null; replay: ReplayDto | null; bestScore?: number | null; revision?: number; previous?: RunDto | null }>();
 defineEmits<{ (e: 'problem', frame: number): void }>();
 const detailsOpen = ref(false);
@@ -25,20 +26,6 @@ const problem = computed(() => {
   const moments = replayMoments(props.replay?.events ?? [], props.replay?.frames ?? []);
   return moments.find(m => m.line) ?? moments.find(m => m.tone === 'error');
 });
-const title = computed(() => {
-  if (props.run?.status === 'canceled') return 'Запуск остановлен';
-  if (props.run?.status === 'timeout') return 'Превышено время выполнения';
-  if (props.run?.status === 'failed' || raw.value.compile_error || Number(raw.value.bot_errors) > 0) return 'В коде есть ошибка';
-  const objective = ['solved', 'success', 'passed', 'win', 'won', 'escaped', 'reached_exit', 'reached_goal', 'completed'].find(key => typeof raw.value[key] === 'boolean');
-  if (objective) return raw.value[objective] === true ? 'Задача решена' : 'Цель пока не выполнена';
-  return 'Попытка завершена';
-});
-const reason = computed(() => {
-  if (raw.value.compile_error) return String(raw.value.compile_error);
-  if (Number(raw.value.bot_errors) > 0) return 'Бот завершал ход с ошибкой Python. Откройте событие ошибки, чтобы перейти к строке кода.';
-  if (props.run?.error_message) return props.run.error_message;
-  if (raw.value.escaped === false) return 'Выход не достигнут. Посмотрите последние ходы и заблокированные перемещения.';
-  if (raw.value.solved === false) return 'Цель задачи пока не выполнена. События и состояние поля помогут проверить стратегию.';
-  return '';
-});
+const title = computed(() => runOutcomeTitle(props.run?.status, raw.value));
+const reason = computed(() => runOutcomeReason(props.run?.status, raw.value, props.run?.error_message));
 </script>

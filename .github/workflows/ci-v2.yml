@@ -11,6 +11,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      POSTGRES_TEST_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/agp_test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -38,6 +54,14 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm --prefix frontend ci
+
+      - name: Install Redis for protocol integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server
+
+      - name: Test frontend
+        run: npm --prefix frontend test -- --run
 
       - name: Verify v2
         run: bash scripts/verify_v2.sh

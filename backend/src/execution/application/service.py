@@ -531,6 +531,8 @@ class ExecutionService:
     def get_match_execution_for_run(
         self, run: Run, *, include_result_payload: bool = True
     ) -> MatchExecution | None:
+        if run.run_kind is RunKind.SINGLE_TASK:
+            return None
         if run.match_execution_id is not None:
             return self._match_execution_repository.get(
                 run.match_execution_id,

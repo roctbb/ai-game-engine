@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, Integer, String, Text, text
 from sqlalchemy import JSON as SqlJson
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,7 +25,7 @@ class RunOrm(Base):
     )
 
     revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    lease_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_generation: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     dispatch_pending: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", index=True
     )
