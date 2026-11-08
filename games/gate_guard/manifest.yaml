@@ -1,6 +1,7 @@
 id: gate_guard_v1
 title: Страж ворот
 game_mode: single_task
+catalog_metadata_status: archived
 semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py

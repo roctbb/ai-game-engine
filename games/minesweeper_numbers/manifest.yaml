@@ -1,6 +1,7 @@
 id: minesweeper_numbers_v1
 title: Сапер-редактор
 game_mode: single_task
+catalog_metadata_status: archived
 semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py

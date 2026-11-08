@@ -1,6 +1,7 @@
 id: pixel_painter_v1
 title: Пиксельный художник
 game_mode: single_task
+catalog_metadata_status: archived
 semver: 1.0.0
 code_api_mode: script_based
 engine_entrypoint: engine.py
