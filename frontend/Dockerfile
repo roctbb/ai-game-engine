@@ -11,6 +11,7 @@ COPY frontend/tsconfig.node.json /app/tsconfig.node.json
 COPY frontend/vite.config.ts /app/vite.config.ts
 COPY frontend/index.html /app/index.html
 COPY frontend/src /app/src
+COPY frontend/public /app/public
 
 RUN npm run build
 
