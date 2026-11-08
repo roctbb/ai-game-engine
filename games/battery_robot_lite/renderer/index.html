@@ -81,5 +81,5 @@ window.addEventListener("resize",()=>{if(lastFrame)draw(lastFrame)});
 draw({title:"Страж ворот",kind:"gate_guard",task:{cases:[{input:{id:0,color:"red",has_key:true,trap:false,hp:40},expected:"attack"}]},case:{input:{id:0,color:"red",has_key:true,trap:false,hp:40},expected:"attack"},expected:["attack"],actual:[],score:0});
 window.parent.postMessage({type:"agp.renderer.ready",payload:{version:VERSION},version:VERSION},"*");
 </script>
-</body>
+<script src="/game-renderer-ui.js"></script></body>
 </html>

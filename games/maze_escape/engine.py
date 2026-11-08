@@ -307,7 +307,7 @@ def _make_bot_print(
 # ---------------------------------------------------------------------------
 
 def _build_maze(context: dict[str, Any]) -> dict[str, object]:
-    run_id = context.get("run_id")
+    run_id = (context.get("seed") or context.get("run_id"))
     if not isinstance(run_id, str) or not run_id:
         run_id = "maze_escape_offline"
     return _build_random_maze(seed_source=run_id)

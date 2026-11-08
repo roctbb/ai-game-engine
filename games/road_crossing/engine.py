@@ -88,7 +88,7 @@ def _load_context() -> dict[str, Any]:
 
 
 def _build_cars(context: dict[str, Any]) -> set[tuple[int, int]]:
-    seed = context.get("run_id")
+    seed = (context.get("seed") or context.get("run_id"))
     if not isinstance(seed, str) or not seed:
         seed = "road_crossing_offline"
     rng = random.Random(seed)

@@ -31,6 +31,7 @@ class RunOrm(Base):
     snapshot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     snapshot_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     revisions_by_slot: Mapped[dict[str, int]] = mapped_column(SqlJson, default=dict)
+    execution_options: Mapped[dict[str, object]] = mapped_column(SqlJson, default=dict, server_default="{}")
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     active_lease_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 

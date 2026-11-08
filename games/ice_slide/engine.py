@@ -91,7 +91,7 @@ def _load_context() -> dict[str, Any]:
 
 
 def _build_walls(context: dict[str, Any]) -> set[tuple[int, int]]:
-    seed = context.get("run_id")
+    seed = (context.get("seed") or context.get("run_id"))
     if not isinstance(seed, str) or not seed:
         seed = "ice_slide_offline"
     rng = random.Random(seed)

@@ -32,7 +32,7 @@ CONFIG = {
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ctx = context or _load_context()
-    rng = random.Random(str(ctx.get("run_id") or CONFIG["id"]))
+    rng = random.Random(str((ctx.get("seed") or ctx.get("run_id")) or CONFIG["id"]))
     if CONFIG.get("mode") == "small_match":
         return _run_match(ctx, rng)
     return _run_single(ctx, rng)

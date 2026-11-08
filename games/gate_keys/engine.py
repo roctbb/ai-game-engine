@@ -59,8 +59,8 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         action = _safe_call(move_fn, position[0], position[1], board, keys)
         if action not in _DELTAS:
             invalid_moves += 1
-            action = "stay"
             events.append({"type": "invalid_action", "message": "Недопустимое действие: верните одну из разрешенных команд.", "tick": turn, "action": repr(action)})
+            action = "stay"
 
         target = _move(position, str(action))
         if target in walls:
@@ -123,7 +123,7 @@ def _load_context() -> dict[str, Any]:
 
 
 def _build_map(context: dict[str, Any]) -> dict[str, object]:
-    seed = context.get("run_id")
+    seed = (context.get("seed") or context.get("run_id"))
     if not isinstance(seed, str) or not seed:
         seed = "gate_keys_offline"
     rng = random.Random(seed)

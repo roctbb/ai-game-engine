@@ -48,5 +48,5 @@ window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")
 draw({board:Array.from({length:15},()=>Array(15).fill(0)),pacman:{x:1,y:1},ghost_states:[{x:13,y:13,active:false,resting:false}],ghost_vision:6,dots_left:0,alive:true});
 window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
 </script>
-</body>
+<script src="/game-renderer-ui.js"></script></body>
 </html>

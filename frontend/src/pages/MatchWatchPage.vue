@@ -17,6 +17,7 @@
         :can-step-backward="canStepBackward"
         :can-step-forward="canStepForward"
         :seek-disabled="firstReplayLockActive"
+        :markers="watchMoments"
         @toggle="toggleReplayPlay"
         @step="stepReplay"
       />
@@ -57,7 +58,7 @@
             <span>Победитель</span>
             <strong>{{ finalWinnerLabel }}</strong>
           </div>
-          <div v-else-if="firstReplayLockActive" class="agp-watch-replay-lock">
+          <div v-else-if="firstReplayLockActive && isEmbedded" class="agp-watch-replay-lock">
             <strong>Идет первый показ</strong>
             <span>Перемотка откроется после реплея.</span>
           </div>
@@ -114,10 +115,10 @@
                 <strong>{{ player.name }}</strong>
                 <span v-if="player.detailLabel">{{ player.detailLabel }}</span>
                 <div class="agp-match-bars">
-                  <span>
+                  <span v-if="player.life !== null" title="Здоровье">
                     <i :style="{ width: `${player.lifePercent}%` }"></i>
                   </span>
-                  <span>
+                  <span v-if="player.shield !== null" title="Щит">
                     <i :style="{ width: `${player.shieldPercent}%` }"></i>
                   </span>
                 </div>
@@ -147,26 +148,7 @@
             </div>
           </section>
 
-          <h3 class="h6 mb-2 mt-3">Лог ходов</h3>
-          <div v-if="!replay" class="text-muted small">Лог появится вместе с повтором.</div>
-          <div v-else-if="moveLogItems.length === 0" class="text-muted small">
-            В повторе нет событий ходов.
-          </div>
-          <div v-else class="agp-watch-move-log">
-            <div
-              v-for="item in visibleMoveLogItems"
-              :key="item.id"
-              class="agp-watch-move-row"
-              :class="`agp-watch-move-row--${item.tone}`"
-            >
-              <span class="mono small">#{{ item.tick }}</span>
-              <strong v-if="item.actor">{{ item.actor }}</strong>
-              <span v-else class="text-muted small">событие</span>
-              <span class="agp-watch-move-action">{{ item.action }}</span>
-              <small v-if="item.detail">{{ item.detail }}</small>
-            </div>
-          </div>
-
+          <ReplayInsights @pause="stopReplayPlayback()" :frames="replay?.frames ?? []" :events="replay?.events ?? []" :frame-index="replayFrameIndex" :locked="firstReplayLockActive" :actor-names="eventActorNames" @seek="seekMoment" @line="openRunLine" />
           <details v-if="canSeeTechnicalDetails" class="agp-tech-details mt-3">
             <summary class="agp-details-summary">Технические детали</summary>
             <div class="agp-watch-stat mt-2">
@@ -206,10 +188,12 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppIcon from '../components/AppIcon.vue';
 import BotConsole from '../components/BotConsole.vue';
 import ReplayControls from '../components/ReplayControls.vue';
+import ReplayInsights from '../components/ReplayInsights.vue';
+import { replayMoments } from '../lib/replayInsights';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { createReplayClock, loadReplayDelay, saveReplayDelay } from '../lib/replayPlayback';
 import { isShortcutInput } from '../lib/keyboard';
-import { RouterLink, useRoute } from 'vue-router';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 
 import RunReasonBadge from '../components/RunReasonBadge.vue';
 import {
@@ -273,6 +257,18 @@ interface MatchPlayerStat {
 }
 
 const route = useRoute();
+const router = useRouter();
+const watchMoments = computed(() => replayMoments((replay.value?.events ?? []).filter(e => !firstReplayLockActive.value || Number(e.tick ?? 0) <= replayFrameTick.value), replay.value?.frames ?? []));
+function seekMoment(frame: number): void {
+  if (firstReplayLockActive.value) return;
+  stopReplayPlayback();
+  replayFrameIndex.value = Math.max(0, Math.min(frame, replayFrames.value.length - 1));
+}
+function openRunLine(location: { line: number; role?: string }): void {
+  if (!run.value) return;
+  if (run.value.run_kind !== 'single_task') return;
+  void router.push({ name: 'task-run', params: { gameId: run.value.game_id }, query: { inspect_run: run.value.run_id, line: location.line, ...(location.role ? { role: location.role } : {}) } });
+}
 const sessionStore = useSessionStore();
 const isEmbedded = computed(() => route.query.embed === '1');
 const showBotConsole = computed(() => route.query.show_print !== '0');
@@ -315,6 +311,7 @@ const safeRendererUrl = computed(() => {
 });
 const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(safeRendererUrl.value));
 const runStatusLabel = computed(() => {
+  if (firstReplayLockActive.value) return 'Первый показ';
   const status = run.value?.status ?? 'created';
   const labels: Record<RunDto['status'], string> = {
     created: 'создан',
@@ -328,6 +325,7 @@ const runStatusLabel = computed(() => {
   return labels[status];
 });
 const runStatusTone = computed<'idle' | 'active' | 'success' | 'danger'>(() => {
+  if (firstReplayLockActive.value) return 'active';
   const status = run.value?.status;
   if (!status || status === 'created') return 'idle';
   if (status === 'queued' || status === 'running') return 'active';
@@ -386,6 +384,21 @@ const participantNamesByTeam = computed<Record<string, string>>(() => {
   return names;
 });
 
+const eventActorNames = computed<Record<string, string>>(() => {
+  const names = { ...participantNamesByTeam.value };
+  const first = replayFrames.value[0]?.frame ?? {};
+  const snakes = isRecord(first.snakes) ? first.snakes : {};
+  for (const [role, raw] of Object.entries(snakes)) {
+    if (isRecord(raw)) names[role] = names[String(raw.team_id)] || String(raw.name || role);
+  }
+  const positions = isRecord(first.positions) ? first.positions : {};
+  Object.keys(positions).forEach((role, index) => {
+    const participant = watchContext.value?.participants[index];
+    if (participant) names[role] = participant.display_name;
+  });
+  return names;
+});
+
 const currentReplayFrame = computed<ReplayFrameView | null>(() => {
   if (replayFrames.value.length === 0) return null;
   const index = Math.max(0, Math.min(replayFrameIndex.value, replayFrames.value.length - 1));
@@ -397,16 +410,21 @@ const matchPlayerStats = computed<MatchPlayerStat[]>(() => {
   const players = new Map<string, MatchPlayerStat>();
   const frame = currentReplayFrame.value?.frame ?? null;
   collectFramePlayers(players, frame);
-  if (players.size === 0) {
+  if (players.size === 0 && isReplayAtLastFrame.value) {
     collectSummaryPlayers(players);
   } else {
     mergeSummaryPlacements(players);
   }
-  return [...players.values()].sort((left, right) => {
+  const sorted = [...players.values()].sort((left, right) => {
     const leftPlace = left.place ?? Number.POSITIVE_INFINITY;
     const rightPlace = right.place ?? Number.POSITIVE_INFINITY;
     if (leftPlace !== rightPlace) return leftPlace - rightPlace;
     return (right.score ?? -Infinity) - (left.score ?? -Infinity);
+  });
+  let place = 1;
+  return sorted.map((player, index) => {
+    if (index > 0 && player.score !== sorted[index - 1].score) place = index + 1;
+    return { ...player, place: player.place ?? place, placeLabel: String(player.place ?? place) };
   });
 });
 const matchLeaderLabel = computed(() => matchPlayerStats.value[0]?.name ?? '—');
@@ -741,6 +759,7 @@ function collectSummaryPlayers(players: Map<string, MatchPlayerStat>): void {
 }
 
 function mergeSummaryPlacements(players: Map<string, MatchPlayerStat>): void {
+  if (!isReplayAtLastFrame.value) return;
   const scores = isRecord(replay.value?.summary?.scores) ? replay.value.summary.scores : {};
   const placements = isRecord(replay.value?.summary?.placements) ? replay.value.summary.placements : {};
   for (const [id, player] of players.entries()) {
@@ -772,7 +791,7 @@ function upsertPlayerStat(players: Map<string, MatchPlayerStat>, next: MatchPlay
   players.set(duplicateId, buildPlayerStat({
     id: previous.id,
     name: previous.name || next.name,
-    teamId: previous.isSelf || next.isSelf ? run.value?.team_id ?? previous.teamId : previous.teamId || next.teamId,
+    teamId: previous.teamId || next.teamId,
     score: next.score ?? previous.score,
     life: next.life ?? previous.life,
     shield: next.shield ?? previous.shield,
@@ -812,7 +831,7 @@ function buildPlayerStat(input: {
 }): MatchPlayerStat {
   const name = input.name || compactTeamLabel(input.teamId);
   const teamLabel = compactTeamLabel(input.teamId);
-  const isSelf = input.teamId === run.value?.team_id || input.id === run.value?.team_id;
+  const isSelf = watchContext.value?.participants.some(participant => participant.captain_user_id === sessionStore.nickname && (participant.team_id === input.teamId || participant.team_id === input.id)) ?? false;
   const detailLabel = isSelf
     ? 'ваш бот'
     : normalizePlayerName(name) === normalizePlayerName(teamLabel)
@@ -839,6 +858,7 @@ function buildPlayerStat(input: {
 }
 
 function summaryPlaceFor(teamId: string): number | null {
+  if (!isReplayAtLastFrame.value) return null;
   const placements = isRecord(replay.value?.summary?.placements)
     ? replay.value.summary.placements
     : isRecord(run.value?.result_payload?.placements)
@@ -870,8 +890,8 @@ function compactTeamLabel(teamId: string): string {
   const participantName = participantNamesByTeam.value[teamId];
   if (participantName) return participantName;
   if (teamId.startsWith('builtin-')) return teamId.replace('builtin-', '');
-  if (teamId === run.value?.team_id) return 'ваш бот';
-  if (teamId.startsWith('team_')) return `team ${teamId.slice(-4)}`;
+  if (watchContext.value?.participants.some(p => p.team_id === teamId && p.captain_user_id === sessionStore.nickname)) return 'ваш бот';
+  if (teamId.startsWith('team_')) return `Игрок ${teamId.slice(-4)}`;
   return teamId;
 }
 
@@ -1177,7 +1197,7 @@ function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknow
 function embeddedPlayerStatsForFrame(frame: unknown): MatchPlayerStat[] {
   const players = new Map<string, MatchPlayerStat>();
   collectFramePlayers(players, frame);
-  if (players.size === 0 && !firstReplayLockActive.value) {
+  if (players.size === 0 && isReplayAtLastFrame.value) {
     collectSummaryPlayers(players);
   }
   return [...players.values()].sort((left, right) => {
@@ -1305,6 +1325,10 @@ function onRendererMessage(event: MessageEvent): void {
   }
   const type = 'type' in data ? String(data.type) : '';
   if (!type.startsWith('agp.renderer.')) {
+    return;
+  }
+  if (type === 'agp.renderer.shortcut' && ['Space', 'ArrowLeft', 'ArrowRight'].includes(data.payload?.code)) {
+    handlePlaybackKeydown(new KeyboardEvent('keydown', { key: String(data.payload.key), code: data.payload.code }));
     return;
   }
   if (type === 'agp.renderer.ready') {

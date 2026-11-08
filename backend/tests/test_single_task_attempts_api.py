@@ -60,6 +60,52 @@ def _finish_run(client, run_id: str, metrics: dict[str, object]) -> None:
     assert finished.status_code == 200
 
 
+def test_repeat_field_and_snapshot_code_preserve_original_seed_and_revision(client):
+    headers = _auth_headers(client, 'repeat-author')
+    game_id = _find_game_id(client, 'maze_escape_v1', headers)
+    team_id, headers = _create_ready_team(client, game_id, 'repeat-author')
+    first = client.post(f'/api/v1/single-tasks/{game_id}/run', headers=headers,
+                        json={'team_id': team_id, 'requested_by': 'repeat-author', 'debug': True}).json()
+    context = client.get(f"/api/v1/internal/runs/{first['run_id']}/execution-context").json()
+    assert context['seed'] == first['run_id']
+    assert context['debug_trace'] is True
+    original_code = client.get(f"/api/v1/runs/{first['run_id']}/code", headers=headers).json()
+    assert original_code['revisions_by_slot'] == first['revisions_by_slot']
+    updated_code = 'def make_move(x, y, board):\n    return "down"\n'
+    assert client.put(f'/api/v1/teams/{team_id}/slots/agent', headers=headers,
+                      json={'actor_user_id': 'repeat-author', 'code': updated_code}).status_code == 200
+    assert client.get(f"/api/v1/runs/{first['run_id']}/code", headers=headers).json() == original_code
+    outsider = _auth_headers(client, 'repeat-outsider')
+    assert client.get(f"/api/v1/runs/{first['run_id']}/code", headers=outsider).status_code == 403
+    _finish_run(client, first['run_id'], {'score': 0, 'solved': False})
+    second_response = client.post(f'/api/v1/single-tasks/{game_id}/run', headers=headers,
+                                 json={'team_id': team_id, 'requested_by': 'repeat-author', 'repeat_run_id': first['run_id']})
+    assert second_response.status_code == 200, second_response.json()
+    second = second_response.json()
+    assert second['execution_options']['seed'] == first['run_id']
+    assert second['revisions_by_slot']['agent'] > first['revisions_by_slot']['agent']
+    context = client.get(f"/api/v1/internal/runs/{second['run_id']}/execution-context").json()
+    assert context['seed'] == first['run_id']
+    assert context['debug_trace'] is False
+    _finish_run(client, second['run_id'], {'score': 1, 'solved': False})
+    third = client.post(f'/api/v1/single-tasks/{game_id}/run', headers=headers,
+                        json={'team_id': team_id, 'requested_by': 'repeat-author', 'repeat_run_id': second['run_id']}).json()
+    assert third['execution_options']['seed'] == first['run_id']
+
+
+def test_repeat_field_rejects_other_users_run(client):
+    owner = _auth_headers(client, 'field-owner')
+    game_id = _find_game_id(client, 'maze_escape_v1', owner)
+    team_id, owner = _create_ready_team(client, game_id, 'field-owner')
+    first = client.post(f'/api/v1/single-tasks/{game_id}/run', headers=owner,
+                        json={'team_id': team_id, 'requested_by': 'field-owner'}).json()
+    _finish_run(client, first['run_id'], {'score': 0, 'solved': False})
+    other_team, other = _create_ready_team(client, game_id, 'field-other')
+    response = client.post(f'/api/v1/single-tasks/{game_id}/run', headers=other,
+                           json={'team_id': other_team, 'requested_by': 'field-other', 'repeat_run_id': first['run_id']})
+    assert response.status_code == 403
+
+
 def test_single_task_run_endpoint_creates_and_queues_run(client) -> None:
     headers = _auth_headers(client, 'runner')
     game_id = _find_game_id(client, 'maze_escape_v1', headers=headers)

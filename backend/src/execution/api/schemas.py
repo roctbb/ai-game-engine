@@ -20,6 +20,8 @@ class StartSingleTaskRunRequest(BaseModel):
     team_id: str
     requested_by: str = Field(min_length=1, max_length=120)
 
+    repeat_run_id: str | None = Field(default=None, max_length=64)
+    debug: bool = False
 
 class StopSingleTaskRunRequest(BaseModel):
     run_id: str
@@ -45,6 +47,7 @@ class RunResponse(BaseModel):
     snapshot_version_id: str | None
     worker_id: str | None
     revisions_by_slot: dict[str, int]
+    execution_options: dict[str, object] = Field(default_factory=dict)
     result_payload: dict[str, object] | None
     error_message: str | None
     created_at: datetime
@@ -68,6 +71,8 @@ class RunExecutionContextResponse(BaseModel):
     codes_by_slot: dict[str, str]
     revisions_by_slot: dict[str, int]
     participants: list[dict[str, object]] = Field(default_factory=list)
+    seed: str | None = None
+    debug_trace: bool = False
 
 
 class RunWatchParticipantResponse(BaseModel):

@@ -39,6 +39,15 @@ def test_loads_repository_game_manifests() -> None:
     assert by_id["tanks_ctf_v1"].demo_strategies[1].slot_key == "support"
 
 
+def test_manifest_rejects_template_with_wrong_entrypoint_signature(tmp_path):
+    import shutil
+    package = tmp_path / "gate_keys"
+    shutil.copytree(_repo_root() / "games/gate_keys", package)
+    (package / "templates/agent.py").write_text('def make_move(state):\n    return "stay"\n')
+    with pytest.raises(InvariantViolationError, match="аргументы make_move"):
+        load_game_manifest(package / "manifest.yaml")
+
+
 def test_repository_learning_sections_match_course_topics() -> None:
     manifests = load_game_manifests(_repo_root() / "games")
     by_id = {manifest.id: manifest for manifest in manifests}

@@ -22,6 +22,7 @@ const props = withDefaults(
     modelValue: string;
     readonly?: boolean;
     language?: 'python' | 'plain';
+    focusLine?: number;
   }>(),
   {
     readonly: false,
@@ -31,6 +32,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
+  (e: 'run'): void;
 }>();
 
 const host = ref<HTMLElement | null>(null);
@@ -85,13 +87,13 @@ function ensureEditor(): void {
       lineNumbers(),
       drawSelection(),
       highlightActiveLine(),
-      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      keymap.of([{ key: 'Mod-Enter', run: () => { emit('run'); return true; } }, ...defaultKeymap, ...historyKeymap, indentWithTab]),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ 'aria-label': props.language === 'python' ? 'Редактор кода Python' : 'Редактор кода' }),
       oneDark,
       editorTheme,
       languageCompartment.of(resolveLanguage()),
-      readOnlyCompartment.of(EditorState.readOnly.of(props.readonly)),
+      readOnlyCompartment.of([EditorState.readOnly.of(props.readonly), EditorView.editable.of(!props.readonly), EditorView.contentAttributes.of({ 'aria-readonly': String(props.readonly), tabindex: '0' })]),
       updateListener,
     ],
   });
@@ -102,8 +104,18 @@ function ensureEditor(): void {
   });
 }
 
+function focusLine(line: number): void {
+  if (!editorView) return;
+  const target = editorView.state.doc.line(Math.max(1, Math.min(Math.floor(line), editorView.state.doc.lines)));
+  editorView.dispatch({ selection: { anchor: target.from, head: target.to }, effects: EditorView.scrollIntoView(target.from, { y: 'center' }) });
+  editorView.focus();
+}
+defineExpose({ focusLine });
+watch(() => props.focusLine, line => { if (line) focusLine(line); });
+
 onMounted(() => {
   ensureEditor();
+  if (props.focusLine) focusLine(props.focusLine);
 });
 
 onUnmounted(() => {
@@ -131,7 +143,7 @@ watch(
   (nextReadonly) => {
     if (!editorView) return;
     editorView.dispatch({
-      effects: readOnlyCompartment.reconfigure(EditorState.readOnly.of(nextReadonly)),
+      effects: readOnlyCompartment.reconfigure([EditorState.readOnly.of(nextReadonly), EditorView.editable.of(!nextReadonly), EditorView.contentAttributes.of({ 'aria-readonly': String(nextReadonly), tabindex: '0' })]),
     });
   }
 );

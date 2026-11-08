@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import ast
+from functools import lru_cache
 from typing import Literal
 
 import yaml
@@ -187,7 +189,42 @@ def load_game_manifest(manifest_path: Path) -> GameManifest:
         _ensure_package_file(manifest_path.parent, manifest.renderer_entrypoint, manifest_path)
     for strategy in manifest.demo_strategies:
         _ensure_package_file(manifest_path.parent, strategy.path, manifest_path)
+    _validate_slot_templates(manifest_path.parent, manifest)
     return manifest
+
+
+@lru_cache(maxsize=512)
+def _template_functions(source: str) -> dict[str, tuple[int, int | None]]:
+    functions = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            count = len(node.args.posonlyargs) + len(node.args.args)
+            functions[node.name] = (count - len(node.args.defaults), None if node.args.vararg else count)
+    return functions
+
+
+def _validate_slot_templates(package_root: Path, manifest: GameManifest) -> None:
+    """Validate without executing third-party strategy code at import/publication time."""
+    for slot in manifest.slots:
+        template = package_root / "templates" / f"{slot.key}.py"
+        if not template.is_file():
+            continue  # Existing external packages may still use the API fallback.
+        try:
+            functions = _template_functions(template.read_text(encoding="utf-8"))
+            for strategy in manifest.demo_strategies:
+                if strategy.slot_key != slot.key:
+                    continue
+                expected = _template_functions((package_root / strategy.path).read_text(encoding="utf-8"))
+                entrypoints = {"make_move", "make_choice", "choose_cell", "place_tower", "make_support"} & expected.keys()
+                for name in entrypoints:
+                    if name not in functions:
+                        raise ValueError(f"нет функции {name}")
+                    minimum, maximum = functions[name]
+                    required = expected[name][0]
+                    if minimum > required or (maximum is not None and maximum < required):
+                        raise ValueError(f"аргументы {name} не соответствуют API примера")
+        except (SyntaxError, ValueError) as exc:
+            raise InvariantViolationError(f"Некорректный шаблон {template}: {exc}") from exc
 
 
 def _ensure_package_file(package_root: Path, relative_path: str, manifest_path: Path) -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from execution.application.replay_recorder import NoopRunReplayRecorder, RunReplayRecorder
 from execution.application.repositories import BuildRepository, MatchExecutionRepository, RunRepository, WorkerRepository
@@ -39,6 +39,7 @@ class CreateRunInput:
     run_kind: RunKind
     lobby_id: str | None = None
     version_id: str | None = None
+    execution_options: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -92,6 +93,7 @@ class ExecutionService:
             lobby_id=data.lobby_id,
             target_version_id=data.version_id,
         )
+        run.execution_options = dict(data.execution_options)
         self._run_repository.save(run)
         return run
 

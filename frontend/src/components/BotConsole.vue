@@ -15,17 +15,18 @@
 import { computed, ref, watch } from 'vue';
 import AppIcon from './AppIcon.vue';
 
-withDefaults(defineProps<{ label?: string; position?: string; expanded?: boolean }>(), { label: 'Вывод запуска', position: '', expanded: false });
+const props = withDefaults(defineProps<{ label?: string; position?: string; expanded?: boolean; initiallyCollapsed?: boolean; reveal?: boolean }>(), { label: 'Вывод запуска', position: '', expanded: false, initiallyCollapsed: false, reveal: false });
 const STORAGE_KEY = 'agp_console_layout';
 function readLayout(): { height: number; collapsed: boolean } {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
-    return { height: Math.min(320, Math.max(64, Number(stored.height) || 112)), collapsed: stored.collapsed === true };
-  } catch { return { height: 112, collapsed: false }; }
+    return { height: Math.min(320, Math.max(64, Number(stored.height) || 112)), collapsed: typeof stored.collapsed === 'boolean' ? stored.collapsed : props.initiallyCollapsed };
+  } catch { return { height: 112, collapsed: props.initiallyCollapsed }; }
 }
 const initial = readLayout();
 const height = ref(initial.height);
 const collapsed = ref(initial.collapsed);
+watch(() => props.reveal, reveal => { if (reveal) collapsed.value = false; });
 const maxHeight = computed(() => Math.min(320, Math.floor(window.innerHeight * .4)));
 let drag: { y: number; height: number } | null = null;
 function setHeight(value: number) { height.value = Math.min(maxHeight.value, Math.max(64, value)); }

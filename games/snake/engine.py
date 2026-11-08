@@ -108,7 +108,7 @@ def _load_context() -> dict[str, Any]:
 
 
 def _rng(context: dict[str, Any]) -> random.Random:
-    seed = context.get("run_id")
+    seed = (context.get("seed") or context.get("run_id"))
     if not isinstance(seed, str) or not seed:
         seed = "snake_offline"
     return random.Random(seed)

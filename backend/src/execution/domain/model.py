@@ -60,6 +60,7 @@ class Run:
     snapshot_id: str | None = None
     snapshot_version_id: str | None = None
     revisions_by_slot: dict[str, int] = field(default_factory=dict)
+    execution_options: dict[str, object] = field(default_factory=dict)
     worker_id: str | None = None
     active_lease_id: str | None = None
     created_at: object = field(default_factory=utc_now)

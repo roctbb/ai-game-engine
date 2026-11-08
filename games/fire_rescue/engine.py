@@ -36,7 +36,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     print_context = {"tick": 0}
     move_fn, compile_error = _build_player_fn(ctx, events, print_context)
     game_map = _build_map(ctx)
-    spread_rng = random.Random(str(ctx.get("run_id") or "fire_rescue_offline") + "_spread")
+    spread_rng = random.Random(str((ctx.get("seed") or ctx.get("run_id")) or "fire_rescue_offline") + "_spread")
     walls = game_map["walls"]
     fires = game_map["fires"]
     water_sources = game_map["water_sources"]
@@ -123,7 +123,7 @@ def _load_context() -> dict[str, Any]:
 
 
 def _build_map(context: dict[str, Any]) -> dict[str, object]:
-    seed = context.get("run_id")
+    seed = (context.get("seed") or context.get("run_id"))
     if not isinstance(seed, str) or not seed:
         seed = "fire_rescue_offline"
     rng = random.Random(seed)

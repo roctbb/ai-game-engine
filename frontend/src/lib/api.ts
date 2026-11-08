@@ -378,6 +378,7 @@ export interface RunDto {
   snapshot_version_id: string | null;
   worker_id: string | null;
   revisions_by_slot: Record<string, number>;
+  execution_options?: { seed?: string; repeat_run_id?: string; debug_trace?: boolean };
   result_payload: Record<string, unknown> | null;
   error_message: string | null;
   created_at: string;
@@ -792,12 +793,16 @@ export function startSingleTaskRun(payload: {
   game_id: string;
   team_id: string;
   requested_by: string;
+  repeat_run_id?: string;
+  debug?: boolean;
 }): Promise<RunDto> {
   return request<RunDto>(`/single-tasks/${encodeURIComponent(payload.game_id)}/run`, {
     method: 'POST',
     body: JSON.stringify({
       team_id: payload.team_id,
       requested_by: payload.requested_by,
+      repeat_run_id: payload.repeat_run_id,
+      debug: payload.debug,
     }),
   });
 }
@@ -1222,4 +1227,8 @@ export function checkCompetitionAntiplagiarism(payload: {
   return request<AntiplagiarismWarningDto[]>(
     `/competitions/${encodeURIComponent(payload.competition_id)}/antiplagiarism/warnings${suffix}`
   );
+}
+
+export function getRunCode(runId: string): Promise<{ run_id: string; codes_by_slot: Record<string, string>; revisions_by_slot: Record<string, number> }> {
+  return request(`/runs/${encodeURIComponent(runId)}/code`);
 }

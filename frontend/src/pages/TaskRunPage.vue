@@ -5,37 +5,7 @@
         <RouterLink :to="taskBackTarget" class="agp-back-link" title="К задачам" aria-label="К задачам"><AppIcon name="back" /></RouterLink>
         <h1>{{ game?.title || 'Задача' }}</h1>
       </div>
-      <ReplayControls
-        v-if="!isBootstrapping"
-        v-model:frame-index="replayFrameIndex"
-        v-model:delay="replayPlaybackDelayMs"
-        class="agp-task-header-player"
-        :frame-count="replayFrames.length"
-        :playing="replayIsPlaying"
-        :can-play="replayFrames.length > 1"
-        :can-step-backward="replayFrameIndex > 0"
-        :can-step-forward="replayFrameIndex < replayFrames.length - 1"
-        @toggle="toggleReplay"
-        @step="stepReplay"
-      >
-
-          <button
-            class="agp-panel-toggle"
-            :class="{ 'agp-panel-toggle--active': conditionPanelOpen }"
-            :aria-pressed="conditionPanelOpen ? 'true' : 'false'"
-            @click="toggleConditionPanel"
-          >
-            Условие
-          </button>
-          <button
-            class="agp-panel-toggle"
-            :class="{ 'agp-panel-toggle--active': competitionPanelOpen }"
-            :aria-pressed="competitionPanelOpen ? 'true' : 'false'"
-            @click="toggleCompetitionPanel"
-          >
-            {{ competitionButtonLabel }}
-          </button>
-      </ReplayControls>
+      <div class="agp-task-reference-actions"><button class="agp-panel-toggle" :class="{ 'agp-panel-toggle--active': conditionPanelOpen }" :aria-pressed="conditionPanelOpen" @click="toggleConditionPanel">Условие и API</button><button class="agp-panel-toggle" :aria-pressed="competitionPanelOpen" @click="toggleCompetitionPanel">{{ competitionButtonLabel }}</button></div>
       <div class="agp-task-header-actions">
         <div class="agp-view-mode-toggle" role="group" aria-label="Режим экрана">
           <button
@@ -69,23 +39,6 @@
             <AppIcon name="code" /><span>Код</span>
           </button>
         </div>
-        <label
-          v-if="viewMode === 'split'"
-          class="agp-column-size-control"
-          title="Размер колонок"
-          aria-label="Размер колонок"
-        >
-          <span aria-hidden="true">◧</span>
-          <input
-            v-model.number="splitRatio"
-            type="range"
-            min="32"
-            max="70"
-            step="1"
-            aria-label="Ширина просмотра"
-          />
-          <span class="mono">{{ splitRatio }}%</span>
-        </label>
         <div class="agp-run-status">
           <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
           <span class="small text-muted">Запуск</span>
@@ -98,9 +51,9 @@
           <button
             class="agp-launch-button"
             :disabled="isRunActive || !canLaunch || isLaunching || isRestarting || isSaving"
-            title="Запустить код"
+            title="Запустить код (⌘/Ctrl+Enter)"
             aria-label="Запустить код"
-            @click="launchRun"
+            @click="launchRun()"
           >
             <AppIcon name="play" /> <span>{{ isLaunching || isSaving ? 'Запускаем…' : 'Запустить' }}</span>
           </button>
@@ -145,13 +98,10 @@
       <button v-for="tab in mobilePanels" :key="tab.id" type="button" :class="{ active: mobilePanel === tab.id }" :aria-pressed="mobilePanel === tab.id" @click="mobilePanel = tab.id"><AppIcon :name="tab.icon" />{{ tab.label }}</button>
     </nav>
 
-    <div v-if="currentRun && !isRunActive && !isBootstrapping" class="agp-run-result" role="status">
-      <span>Последняя попытка: <strong>{{ isSolvedRun(currentRun) ? 'решено' : runStatusLabel === 'готово' ? 'не решено' : runStatusLabel }}</strong></span>
-      <span v-if="currentScore !== null" class="mono">Счёт: {{ currentScore }}</span>
+    <RunOutcome v-if="currentRun && !isRunActive && !isBootstrapping" :run="currentRun" :replay="replay" :revision="runRevision" :best-score="myLeaderboardEntry?.best_score" :previous="previousRun ?? attempts.find(a => a.run_id === currentRun?.execution_options?.repeat_run_id) ?? null" @problem="seekProblem">
+      <button class="agp-panel-toggle" :disabled="!canLaunch" @click="launchRun(currentRun?.run_id)">Повторить это поле</button>
       <RouterLink v-if="isSolvedRun(currentRun) && nextTask" :to="{ name: 'task-run', params: { gameId: nextTask.game_id }, query: { from: taskBackTarget } }" class="agp-next-task">Следующая задача <AppIcon name="next" /></RouterLink>
-      <span v-else class="agp-result-hint">{{ isSolvedRun(currentRun) ? 'Можно вернуться к разделу или улучшить результат' : friendlyRunProblem || 'Измените код и запустите снова' }}</span>
-    </div>
-
+    </RunOutcome>
     <template v-if="game && !isBootstrapping">
       <button
         v-if="isViewerFullscreen"
@@ -176,20 +126,18 @@
           v-show="viewMode !== 'code' || isMobile"
           :class="['agp-card p-3 agp-viewer-card', { 'agp-viewer-card--fullscreen': isViewerFullscreen }]"
         >
-          <div class="agp-viewer-overlay agp-viewer-overlay--status">
-            <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
-            {{ runStatusLabel }}
-          </div>
+          <GameReference v-if="conditionPanelOpen" :title="game.title" :description="game.description" :instruction="docs?.player_instruction" :template="selectedTemplateCode" :docs="docs" :frame="referenceFrame" :arguments="currentDebugArguments" :is-actual="!!currentReplayFrame" @close="closeConditionPanel" />
+          <div v-if="!conditionPanelOpen && !replayFrames.length" class="agp-viewer-overlay agp-viewer-overlay--status">{{ isRunActive ? repeatPreview ? 'То же поле · рассчитываем запуск' : 'Пример поля · рассчитываем запуск' : 'Пример поля · запустите стратегию' }}</div>
           <button
             type="button"
-            class="agp-viewer-overlay agp-viewer-fullscreen"
+            v-show="!conditionPanelOpen" class="agp-viewer-overlay agp-viewer-fullscreen"
             :title="isViewerFullscreen ? 'Свернуть' : 'Во весь экран'"
             :aria-label="isViewerFullscreen ? 'Свернуть' : 'Во весь экран'"
             @click.stop="isViewerFullscreen ? closeViewerFullscreen() : openViewerFullscreen()"
           >
             <AppIcon :name="isViewerFullscreen ? 'restore' : 'expand'" />
           </button>
-          <div v-if="rendererUrl" class="agp-viewer-frame">
+          <div v-if="rendererUrl" v-show="!conditionPanelOpen" class="agp-viewer-frame">
             <iframe
               ref="rendererFrameRef"
               :key="rendererKey"
@@ -204,7 +152,9 @@
           </div>
           <div v-if="isReplayLoading" class="agp-viewer-overlay agp-viewer-overlay--message">Загружаем повтор...</div>
           <div v-else-if="replayError" class="agp-viewer-overlay agp-viewer-overlay--message agp-viewer-overlay--danger">{{ replayError }}</div>
-          <BotConsole :expanded="isMobile && mobilePanel === 'console'" :position="replayFrames.length ? `${replayFrameIndex + 1} / ${replayFrames.length}` : ''">
+          <ReplayControls v-if="replayFrames.length && !conditionPanelOpen" v-model:frame-index="replayFrameIndex" v-model:delay="replayPlaybackDelayMs" :frame-count="replayFrames.length" :playing="replayIsPlaying" :can-play="replayFrames.length > 1" :can-step-backward="replayFrameIndex > 0" :can-step-forward="replayFrameIndex < replayFrames.length - 1" :markers="moments" @toggle="toggleReplay" @step="stepReplay" />
+          <details v-if="replayFrames.length && !conditionPanelOpen" class="agp-analysis-disclosure" :open="analysisOpen || (isMobile && mobilePanel === 'analysis')" @toggle="analysisOpen = ($event.target as HTMLDetailsElement).open"><summary>Разбор хода · события и переменные</summary><ReplayInsights @pause="stopReplayPlayback()" :frames="replay?.frames ?? []" :events="replay?.events ?? []" :frame-index="replayFrameIndex" @seek="seekReplay" @line="inspectRunLine" /></details>
+          <BotConsole initially-collapsed :reveal="currentConsoleLines.some(l => l.tone === 'error')" v-show="!conditionPanelOpen" :expanded="isMobile && mobilePanel === 'console'" :position="replayFrames.length ? `${replayFrameIndex + 1} / ${replayFrames.length}` : ''">
               <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
                 print и ошибки появятся здесь
               </div>
@@ -215,7 +165,7 @@
                 :class="{ 'agp-bot-console-line--error': line.tone === 'error' }"
               >
                 <span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span>
-                <span class="mono agp-bot-console-message">{{ line.message }}</span>
+                <span class="mono agp-bot-console-message">{{ line.message }}</span><button v-if="line.line" class="agp-error-line" @click="inspectRunLine({ line: line.line, role: line.role })">Строка {{ line.line }}</button>
               </div>
           </BotConsole>
         </article>
@@ -237,61 +187,31 @@
 
         <article v-show="viewMode !== 'viewer' || isMobile" class="agp-card p-3 agp-code-card">
           <div class="agp-code-toolbar">
-            <span class="agp-pill" :class="isDirty ? 'agp-pill--warning' : 'agp-pill--neutral'">
-              {{ isDirty ? 'изменен' : 'синхронизирован' }}
-            </span>
-            <button class="agp-panel-toggle" :disabled="!selectedSlotKey" @click="applyTemplate">Шаблон</button>
-            <button
-              v-if="canUseDemoStrategy"
-              class="agp-panel-toggle"
-              :disabled="!selectedSlotKey || !firstDemoCode"
-              @click="applyDemo"
-            >
-              Пример
-            </button>
+            <span class="agp-code-state" role="status">{{ reviewingRunCode ? `Код запуска v${reviewRevision}` : draftStateLabel }}</span>
+            <button v-if="reviewingRunCode" class="agp-panel-toggle" @click="reviewingRunCode = false">К черновику</button>
+            <button v-else-if="currentRun?.snapshot_id" class="agp-panel-toggle" @click="inspectRunLine({ line: 1 })">Код запуска v{{ runRevision }}</button>
+            <template v-if="!reviewingRunCode">
+              <button v-if="replacementUndo !== null" class="agp-panel-toggle" @click="undoReplacement">Отменить замену</button>
+              <button class="agp-panel-toggle" :disabled="!selectedSlotKey || isSaving" @click="applyTemplate">Шаблон</button>
+              <button v-if="canUseDemoStrategy" class="agp-panel-toggle" :disabled="!firstDemoCode || isSaving" @click="applyDemo">Пример</button>
+              <button v-if="isDirty || isSaving" class="agp-panel-toggle" :disabled="!isDirty || isSaving" @click="saveCode">Сохранить</button>
+            </template>
           </div>
-          <CodeEditor v-model="editorCode" :readonly="!selectedSlotKey || isSaving || isRunActive" language="python" />
+          <div v-if="!reviewingRunCode" class="agp-code-options"><label><input v-model="debugEnabled" type="checkbox" /> Записать отладку</label><span v-if="isRunActive">Выполняется v{{ runRevision }} · можно готовить следующий черновик</span><span v-else>⌘/Ctrl+Enter — запуск</span></div>
+          <CodeEditor v-if="reviewingRunCode" :model-value="reviewCode" readonly :focus-line="reviewLine" language="python" />
+          <CodeEditor v-show="!reviewingRunCode" ref="codeEditorRef" v-model="editorCode" :readonly="!selectedSlotKey || isSaving" language="python" @run="launchRun()" />
         </article>
       </div>
     </template>
 
     <transition name="agp-drawer-fade">
       <button
-        v-if="sidePanelOpen"
+        v-if="competitionPanelOpen"
         type="button"
         class="agp-drawer-backdrop"
         aria-label="Закрыть выезжаемую панель"
         @click="closeSidePanels"
       ></button>
-    </transition>
-
-    <transition name="agp-modal-pop">
-      <aside v-if="conditionPanelOpen" class="agp-cockpit-modal agp-condition-modal" v-dialog-focus="closeConditionPanel" role="dialog" aria-label="Условие задачи">
-        <header class="agp-cockpit-panel-head">
-          <div>
-            <h2 class="h6 mb-0">Условие задачи</h2>
-            <div class="small">Брифинг перед запуском</div>
-          </div>
-          <button type="button" class="agp-cockpit-close" aria-label="Закрыть условие" @click="closeConditionPanel">×</button>
-        </header>
-
-        <article class="agp-cockpit-panel-body">
-          <p class="agp-condition-lead">{{ game?.description || 'Описание задачи пока не заполнено.' }}</p>
-          <div v-if="templates?.player_instruction" class="agp-cockpit-callout">
-            {{ templates.player_instruction }}
-          </div>
-          <div v-else class="agp-cockpit-muted">Инструкция пока не задана.</div>
-          <RouterLink
-            v-if="docs?.links.length && game"
-            class="btn btn-sm btn-outline-secondary mt-3"
-            :to="{ name: 'game-docs', params: { gameId: game.game_id }, query: { from: 'task' } }"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Открыть документацию
-          </RouterLink>
-        </article>
-      </aside>
     </transition>
 
     <transition name="agp-drawer-slide">
@@ -382,6 +302,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import CodeEditor from '../components/CodeEditor.vue';
+import GameReference from '../components/GameReference.vue';
+import ReplayInsights from '../components/ReplayInsights.vue';
+import RunOutcome from '../components/RunOutcome.vue';
+import { record, replayMoments } from '../lib/replayInsights';
 import AppIcon from '../components/AppIcon.vue';
 import BotConsole from '../components/BotConsole.vue';
 import ReplayControls from '../components/ReplayControls.vue';
@@ -397,6 +321,7 @@ import {
   getRendererPreview,
   getRun,
   getRunReplay,
+  getRunCode,
   getSingleTaskLeaderboard,
   getWorkspace,
   listSingleTaskAttempts,
@@ -433,6 +358,7 @@ interface BotConsoleLine {
   role: string;
   message: string;
   tone?: 'error';
+  line?: number;
 }
 type WorkspaceViewMode = 'viewer' | 'split' | 'code';
 
@@ -464,10 +390,33 @@ const savedCode = ref('');
 const currentRun = ref<RunDto | null>(null);
 const replay = ref<ReplayDto | null>(null);
 const rendererPreview = ref<RendererPreviewDto | null>(null);
+const repeatPreview = ref<RendererPreviewDto | null>(null);
 const leaderboard = ref<SingleTaskLeaderboardDto | null>(null);
 const attempts = ref<RunDto[]>([]);
 const competitionPanelOpen = ref(false);
 const conditionPanelOpen = ref(false);
+const debugEnabled = ref(false);
+const previousRun = ref<RunDto | null>(null);
+const analysisOpen = ref(false);
+const replacementUndo = ref<string | null>(null);
+const draftSavedAt = ref('');
+const draftStorageFailed = ref(false);
+const reviewingRunCode = ref(false);
+const reviewCode = ref('');
+const reviewLine = ref(1);
+const reviewRevision = ref(0);
+const runRevision = computed(() => currentRun.value?.revisions_by_slot[selectedSlotKey.value] ?? 0);
+const draftStateLabel = computed(() => {
+  if (isSaving.value) return 'Сохраняем…';
+  if (!savedCode.value && editorCode.value === selectedTemplateCode.value) return 'Стартовый шаблон';
+  if (!isDirty.value) return `Сохранено на сервере · v${workspace.value?.slot_states.find(s => s.slot_key === selectedSlotKey.value)?.revision ?? '—'}`;
+  if (draftStorageFailed.value) return 'Черновик не сохранён на устройстве';
+  return draftSavedAt.value ? `Черновик на устройстве · ${draftSavedAt.value}` : 'Черновик';
+});
+const moments = computed(() => replayMoments(replay.value?.events ?? [], replay.value?.frames ?? []));
+const referenceFrame = computed(() => currentReplayFrame.value?.frame ?? repeatPreview.value?.frame ?? rendererPreview.value?.frame ?? {});
+const currentDebugArguments = computed(() => replay.value?.events.find(e => e.type === 'debug_snapshot' && e.tick === currentReplayFrame.value?.tick)?.arguments);
+
 const isViewerFullscreen = ref(false);
 const replayFrameIndex = ref(0);
 const replayIsPlaying = ref(false);
@@ -479,6 +428,8 @@ const isCancelling = ref(false);
 const isRestarting = ref(false);
 const isReplayLoading = ref(false);
 const isRefreshingStats = ref(false);
+const statusNow = ref(Date.now());
+const statusTimer = setInterval(() => { if (isRunActive.value) statusNow.value = Date.now(); }, 1000);
 const victoryCelebrationVisible = ref(false);
 const errorMessage = ref('');
 const replayError = ref('');
@@ -497,13 +448,16 @@ const replayPlaybackClock = createReplayClock(() => {
   if (replayFrameIndex.value >= last) stopReplayPlayback({ completed: true });
 }, () => replayPlaybackDelayMs.value);
 const isMobile = ref(window.matchMedia('(max-width: 900px)').matches);
-const mobilePanel = ref<'code' | 'viewer' | 'console'>('code');
+const mobilePanel = ref<'code' | 'viewer' | 'console' | 'analysis' | 'reference'>('code');
 const mobilePanels = [
   { id: 'code' as const, label: 'Код', icon: 'code' },
   { id: 'viewer' as const, label: 'Игра', icon: 'viewer' },
   { id: 'console' as const, label: 'Консоль', icon: 'console' },
+  { id: 'analysis' as const, label: 'Разбор', icon: 'history' },
+  { id: 'reference' as const, label: 'Задание', icon: 'tasks' },
 ];
 const mobileMedia = window.matchMedia('(max-width: 900px)');
+watch(mobilePanel, panel => { conditionPanelOpen.value = panel === 'reference'; });
 function updateMobileMode(): void { isMobile.value = mobileMedia.matches; }
 let victoryCelebrationHandle: ReturnType<typeof setTimeout> | null = null;
 let isPollingRun = false;
@@ -542,15 +496,15 @@ const runSummary = computed(() => {
   if (isRestarting.value) return 'Отменяем старый запуск и ставим новый в очередь.';
   if (isLaunching.value) return 'Сохраняем код и ставим запуск в очередь.';
   if (isCancelling.value) return 'Останавливаем текущий запуск.';
-  if (!currentRun.value) return isDirty.value ? 'Есть несохраненные изменения. При запуске они сохранятся.' : 'Готово к запуску.';
-  if (isRunActive.value) return 'Запуск уже идет. Его можно остановить кнопкой ■ сверху.';
+  if (!currentRun.value) return `${draftStateLabel.value}. При запуске код сохранится на сервере.`;
+  if (isRunActive.value) return `Выполняется код v${runRevision.value}. Изменения черновика попадут в следующую попытку.`;
   return 'Последняя попытка завершена.';
 });
 const launchHint = computed(() => {
   if (isRestarting.value) return 'Перезапускаем попытку';
   if (isLaunching.value) return 'Сохраняем и запускаем';
   if (isCancelling.value) return 'Останавливаем запуск';
-  if (isRunActive.value) return 'Дождитесь результата или остановите запуск';
+  if (isRunActive.value) return 'Готовьте следующий черновик, пока идёт запуск';
   if (!selectedSlotKey.value) return 'Роль для кода еще не выбрана';
   if (!editorCode.value.trim()) return 'Добавьте код, чтобы запустить';
   if (isDirty.value) return 'При запуске изменения сохранятся';
@@ -607,11 +561,24 @@ const mainColumnsStyle = computed(() => ({
   '--agp-viewer-col': `${splitRatio.value}fr`,
   '--agp-code-col': `${100 - splitRatio.value}fr`,
 }));
-const sidePanelOpen = computed(() => competitionPanelOpen.value || conditionPanelOpen.value);
-const runStatusLabel = computed(() => (currentRun.value ? attemptStatusLabel(currentRun.value.status) : 'готово'));
+const sidePanelOpen = computed(() => competitionPanelOpen.value);
+const hasBotError = computed(() => {
+  const metrics = record(currentRun.value?.result_payload?.metrics ?? (replay.value?.run_id === currentRun.value?.run_id ? replay.value?.summary.metrics : undefined));
+  return Number(metrics.bot_errors) > 0 || Boolean(metrics.compile_error);
+});
+const runStatusLabel = computed(() => {
+  if (hasBotError.value) return 'Ошибка в коде';
+  if (!currentRun.value) return 'Готов к запуску';
+  const label = attemptStatusLabel(currentRun.value.status);
+  if (!isRunActive.value) return label;
+  const started = Date.parse(currentRun.value.started_at || currentRun.value.queued_at || currentRun.value.created_at);
+  const seconds = Math.max(0, Math.floor((statusNow.value - started) / 1000));
+  return `${label} · ${seconds} с`;
+});
 const runStatusTone = computed<'idle' | 'active' | 'success' | 'danger'>(() => {
   if (!currentRun.value) return 'idle';
   if (['created', 'queued', 'running'].includes(currentRun.value.status)) return 'active';
+  if (hasBotError.value) return 'danger';
   if (currentRun.value.status === 'finished') return 'success';
   if (['failed', 'timeout', 'canceled'].includes(currentRun.value.status)) return 'danger';
   return 'idle';
@@ -619,7 +586,7 @@ const runStatusTone = computed<'idle' | 'active' | 'success' | 'danger'>(() => {
 const solvedLabel = computed(() => (myLeaderboardEntry.value?.solved ? 'решено' : 'еще нет'));
 const codeStateLabel = computed(() => {
   if (!selectedSlotKey.value) return 'Сейчас подготовим файл для решения';
-  if (isRunActive.value) return 'Запуск идет, код временно нельзя менять';
+  if (isRunActive.value) return `Выполняется v${runRevision.value}. Черновик можно редактировать.`;
   if (isDirty.value) return 'Есть изменения, при запуске они сохранятся';
   return 'Код сохранен';
 });
@@ -659,6 +626,7 @@ function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fa
     type === 'console' ||
     type === 'compile_error' ||
     type === 'runtime_error' ||
+    type === 'bot_error' ||
     type === 'run_error' ||
     type === 'timeout' ||
     'stdout' in raw;
@@ -671,6 +639,7 @@ function appendConsoleLine(lines: BotConsoleLine[], raw: unknown, id: string, fa
   const roleRaw = raw.role ?? raw.slot ?? raw.slot_key ?? raw.team_id ?? raw.bot;
   const role = typeof roleRaw === 'string' || typeof roleRaw === 'number' ? String(roleRaw) : diagnosticRoleForEvent(type);
   appendConsoleMessage(lines, message, tick, role, id, isDiagnosticConsoleEvent(type) ? 'error' : undefined);
+  if (type === 'bot_error' && typeof raw.line === 'number' && lines.length) lines[lines.length - 1].line = raw.line;
 }
 
 function appendConsoleCollection(
@@ -768,7 +737,7 @@ function diagnosticRoleForEvent(type: string): string {
 }
 
 function isDiagnosticConsoleEvent(type: string): boolean {
-  return ['compile_error', 'runtime_error', 'run_error', 'timeout'].includes(type);
+  return ['compile_error', 'runtime_error', 'bot_error', 'run_error', 'timeout'].includes(type);
 }
 
 function isActiveRun(run: RunDto | null): run is RunDto {
@@ -790,10 +759,12 @@ function closeCompetitionPanel(): void {
 function toggleConditionPanel(): void {
   competitionPanelOpen.value = false;
   conditionPanelOpen.value = !conditionPanelOpen.value;
+  if (conditionPanelOpen.value) { viewMode.value = 'split'; if (isMobile.value) mobilePanel.value = 'reference'; }
 }
 
 function closeConditionPanel(): void {
   conditionPanelOpen.value = false;
+  if (mobilePanel.value === 'reference') mobilePanel.value = 'viewer';
 }
 
 function closeSidePanels(): void {
@@ -813,6 +784,13 @@ function updateHeaderCondensed(): void {
   isHeaderCondensed.value = false;
 }
 
+function onRendererMessage(event: MessageEvent): void {
+  if (event.source !== rendererFrameRef.value?.contentWindow) return;
+  const data = event.data;
+  if (data?.type === 'agp.renderer.ready') { sendRendererInit(); return; }
+  if (data?.type !== 'agp.renderer.shortcut' || !['Space', 'ArrowLeft', 'ArrowRight', 'Digit1', 'Digit2', 'Digit3'].includes(data.payload?.code)) return;
+  handlePageKeydown(new KeyboardEvent('keydown', { key: String(data.payload.key), code: data.payload.code }));
+}
 function handlePageKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     closeViewerFullscreen();
@@ -944,8 +922,38 @@ function syncEditorFromWorkspace(payload: TeamWorkspaceDto): void {
   try {
     const draft = JSON.parse(localStorage.getItem(taskDraftKey()) ?? 'null');
     if (draft && draft.base === savedCode.value && typeof draft.code === 'string') restoredCode = draft.code;
-  } catch { /* A saved server revision remains available when draft storage fails. */ }
+    if (draft?.savedAt) draftSavedAt.value = new Date(draft.savedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  } catch { draftStorageFailed.value = true; }
   editorCode.value = restoredCode;
+}
+
+function undoReplacement(): void {
+  if (replacementUndo.value === null) return;
+  editorCode.value = replacementUndo.value;
+  replacementUndo.value = null;
+}
+function seekReplay(frame: number): void {
+  stopReplayPlayback();
+  replayFrameIndex.value = Math.max(0, Math.min(frame, replayFrames.value.length - 1));
+}
+function seekProblem(frame: number): void {
+  analysisOpen.value = true;
+  closeConditionPanel();
+  seekReplay(frame);
+  if (isMobile.value) mobilePanel.value = 'analysis';
+}
+async function inspectRunLine(location: { line: number; role?: string }, runId = currentRun.value?.run_id): Promise<void> {
+  if (!runId) return;
+  try {
+    const snapshot = await getRunCode(runId);
+    const slot = location.role || selectedSlotKey.value;
+    reviewCode.value = snapshot.codes_by_slot[slot] ?? Object.values(snapshot.codes_by_slot)[0] ?? '';
+    reviewRevision.value = snapshot.revisions_by_slot[slot] ?? Object.values(snapshot.revisions_by_slot)[0] ?? 0;
+    reviewLine.value = location.line;
+    reviewingRunCode.value = true;
+    if (isMobile.value) mobilePanel.value = 'code';
+    else if (viewMode.value === 'viewer') viewMode.value = 'split';
+  } catch (error) { errorMessage.value = error instanceof Error ? error.message : 'Не удалось открыть код запуска'; }
 }
 
 async function loadPage(): Promise<void> {
@@ -979,6 +987,7 @@ async function loadPage(): Promise<void> {
     syncEditorFromWorkspace(workspace.value);
     await refreshStats();
     sendRendererInit();
+    if (typeof route.query.inspect_run === 'string') await inspectRunLine({ line: Number(route.query.line) || 1, role: typeof route.query.role === 'string' ? route.query.role : undefined }, route.query.inspect_run);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось подготовить задачу';
   } finally {
@@ -996,12 +1005,14 @@ async function loadRendererPreview(gameSlug: string): Promise<RendererPreviewDto
 
 function applyTemplate(): void {
   if (!selectedTemplateCode.value) return;
+  replacementUndo.value = editorCode.value;
   editorCode.value = selectedTemplateCode.value;
 }
 
 function applyDemo(): void {
   if (!canUseDemoStrategy.value) return;
   if (!firstDemoCode.value) return;
+  replacementUndo.value = editorCode.value;
   editorCode.value = firstDemoCode.value;
 }
 
@@ -1026,8 +1037,11 @@ async function saveCode(): Promise<void> {
   }
 }
 
-async function launchRun(): Promise<void> {
+async function launchRun(repeatRunId?: string): Promise<void> {
   if (!game.value || !teamId.value || isRunActive.value) return;
+  previousRun.value = repeatRunId && currentRun.value ? { ...currentRun.value, result_payload: currentRun.value.result_payload ?? replay.value?.summary ?? null } : null;
+  const initialFrame = replayFrames.value[0];
+  repeatPreview.value = repeatRunId && initialFrame ? { tick: initialFrame.tick, phase: 'preview', frame: initialFrame.frame } : null;
   isLaunching.value = true;
   errorMessage.value = '';
   launchNotice.value = '';
@@ -1039,7 +1053,11 @@ async function launchRun(): Promise<void> {
       game_id: game.value.game_id,
       team_id: teamId.value,
       requested_by: sessionStore.nickname,
+      repeat_run_id: repeatRunId,
+      debug: debugEnabled.value,
     });
+    reviewingRunCode.value = false;
+    closeConditionPanel();
     startRunPolling(currentRun.value.run_id);
     await refreshStats();
   } catch (error) {
@@ -1203,6 +1221,8 @@ async function refreshStats(): Promise<void> {
         await loadReplay(latestCompletedAttempt.run_id);
       }
     }
+    const repeatId = currentRun.value?.execution_options?.repeat_run_id;
+    if (repeatId && previousRun.value?.run_id !== repeatId) previousRun.value = await getRun(repeatId, { compactPayload: true });
   } finally {
     isRefreshingStats.value = false;
   }
@@ -1230,14 +1250,14 @@ function sendRendererInit(): void {
 
 function sendRendererState(): void {
   const activeFrame = currentReplayFrame.value;
-  const preview = rendererPreview.value;
+  const preview = repeatPreview.value ?? rendererPreview.value;
   sendToRenderer({
     type: 'agp.renderer.state',
     payload: {
       motion: { duration_ms: replayIsPlaying.value ? Math.min(180, replayPlaybackDelayMs.value / 2) : 0 },
       tick: activeFrame?.tick ?? preview?.tick ?? 0,
       phase: activeFrame?.phase ?? currentRun.value?.status ?? preview?.phase ?? 'preview',
-      frame: activeFrame?.frame ?? currentRun.value?.result_payload ?? preview?.frame ?? {},
+      frame: activeFrame?.frame ?? preview?.frame ?? {},
     },
   });
   const canSendTerminalResult = replayFrames.value.length === 0 || replayFrameIndex.value >= replayFrames.value.length - 1;
@@ -1342,7 +1362,7 @@ function attemptStatusLabel(status: RunDto['status']): string {
     created: 'создано',
     queued: 'в очереди',
     running: 'выполняется',
-    finished: 'готово',
+    finished: 'завершено',
     failed: 'ошибка',
     timeout: 'слишком долго',
     canceled: 'остановлено',
@@ -1354,8 +1374,10 @@ watch([editorCode, savedCode], () => {
   if (isBootstrapping.value || !selectedSlotKey.value) return;
   try {
     if (editorCode.value === savedCode.value) localStorage.removeItem(taskDraftKey());
-    else localStorage.setItem(taskDraftKey(), JSON.stringify({ code: editorCode.value, base: savedCode.value }));
-  } catch { /* Editing does not depend on persistent storage. */ }
+    else localStorage.setItem(taskDraftKey(), JSON.stringify({ code: editorCode.value, base: savedCode.value, savedAt: new Date().toISOString() }));
+    draftStorageFailed.value = false;
+    draftSavedAt.value = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  } catch { draftStorageFailed.value = true; }
 });
 
 watch(replayFrameIndex, () => {
@@ -1390,6 +1412,7 @@ watch(viewMode, (nextMode) => {
 
 onMounted(async () => {
   window.addEventListener('keydown', handlePageKeydown);
+  window.addEventListener('message', onRendererMessage);
   window.addEventListener('pointermove', handleSplitPointerMove);
   window.addEventListener('pointerup', stopSplitResize);
   window.addEventListener('pointercancel', stopSplitResize);
@@ -1399,8 +1422,10 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  clearInterval(statusTimer);
   mobileMedia.removeEventListener('change', updateMobileMode);
   window.removeEventListener('keydown', handlePageKeydown);
+  window.removeEventListener('message', onRendererMessage);
   window.removeEventListener('pointermove', handleSplitPointerMove);
   window.removeEventListener('pointerup', stopSplitResize);
   window.removeEventListener('pointercancel', stopSplitResize);

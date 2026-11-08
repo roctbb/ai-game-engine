@@ -58,5 +58,5 @@
     render({ frame: { board: Array.from({ length: 8 }, () => Array(8).fill(0)), position: { x: 0, y: 0 } } });
     window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.0.0" } }, "*");
   </script>
-</body>
+<script src="/game-renderer-ui.js"></script></body>
 </html>

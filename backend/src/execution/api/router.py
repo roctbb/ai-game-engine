@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
@@ -68,6 +67,7 @@ def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunRespo
         snapshot_version_id=run.snapshot_version_id,
         worker_id=run.worker_id,
         revisions_by_slot=run.revisions_by_slot,
+        execution_options=run.execution_options,
         result_payload=result_payload,
         error_message=run.error_message,
         created_at=run.created_at,
@@ -233,6 +233,22 @@ def start_single_task_run(
     _ensure_single_task_available(container=container, session=session, game_id=game_id)
     _ensure_can_use_team(container=container, session=session, team_id=request.team_id)
     requested_by = request.requested_by if session.role in {UserRole.TEACHER, UserRole.ADMIN} else session.nickname
+    options: dict[str, object] = {"debug_trace": request.debug}
+    if request.repeat_run_id:
+        source = container.execution.get_run(request.repeat_run_id)
+        _ensure_can_manage_run(container=container, session=session, run=source)
+        if source.game_id != game_id or source.run_kind is not RunKind.SINGLE_TASK:
+            raise InvariantViolationError("Повтор поля доступен только для попытки этой задачи")
+        if source.status not in _TERMINAL_RUN_STATUSES:
+            raise InvariantViolationError("Дождитесь завершения исходной попытки")
+        game = container.game_catalog.get_game(game_id)
+        if source.snapshot_version_id != game.active_version_id:
+            raise InvariantViolationError("Версия игры обновилась. Запустите новую попытку")
+        options["seed"] = source.execution_options.get("seed") or source.run_id
+        options["repeat_run_id"] = source.run_id
+        for key in ("package_digest", "engine_entrypoint", "renderer_entrypoint", "code_api_mode", "game_package_dir"):
+            if key in source.execution_options:
+                options[key] = source.execution_options[key]
     run = container.execution.create_run(
         data=container.execution_create_run_input(
             team_id=request.team_id,
@@ -241,6 +257,7 @@ def start_single_task_run(
             run_kind=RunKind.SINGLE_TASK,
             lobby_id=None,
             version_id=None,
+            execution_options=options,
         )
     )
     queued = container.execution.queue_run(run_id=run.run_id)
@@ -265,6 +282,25 @@ def stop_single_task_run(
         message="manual_stop_single_task",
     )
     return _run_response(stopped)
+
+
+@router.get("/runs/{run_id}/code")
+def get_run_code(
+    run_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> dict[str, object]:
+    run = container.execution.get_run(run_id)
+    if run.run_kind is RunKind.SINGLE_TASK:
+        ensure_can_view_run(container=container, session=session, run=run)
+    else:
+        _ensure_can_manage_run(container=container, session=session, run=run)
+    if not run.snapshot_id:
+        raise NotFoundError("Код запуска ещё не зафиксирован")
+    snapshot = container.team_workspace.get_snapshot(run.snapshot_id)
+    return {"run_id": run.run_id, "codes_by_slot": snapshot.codes_by_slot,
+            "revisions_by_slot": snapshot.revisions_by_slot}
+
 
 
 @router.get("/single-tasks/{game_id}/attempts", response_model=list[RunResponse])
@@ -293,7 +329,10 @@ def list_single_task_attempts(
         limit=bounded_limit,
         offset=bounded_offset,
     )
-    return [_run_response(run, compact_result_payload=True) for run in runs]
+    return [
+        _run_response(_attach_replay_summary_payload_if_available(container=container, run=run), compact_result_payload=True)
+        for run in runs
+    ]
 
 
 @router.get("/single-task-attempts/{attempt_id}", response_model=RunResponse)
@@ -758,6 +797,8 @@ def get_run_execution_context(
         codes_by_slot=snapshot.codes_by_slot,
         revisions_by_slot=snapshot.revisions_by_slot,
         participants=_execution_context_participants(container=container, current_run_id=run.run_id),
+        seed=str(run.execution_options.get("seed") or run.run_id),
+        debug_trace=run.run_kind is RunKind.SINGLE_TASK and run.execution_options.get("debug_trace") is True,
     )
 
 

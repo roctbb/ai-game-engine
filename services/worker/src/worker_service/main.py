@@ -329,7 +329,7 @@ def _execute_manifest_game_locally(
     env = os.environ.copy()
     env["AGP_RUN_CONTEXT"] = json.dumps(context, ensure_ascii=False)
     completed = subprocess.run(
-        [sys.executable, str(engine_path)],
+        [sys.executable, str(Path(__file__).with_name("game_runtime.py")), str(engine_path)],
         cwd=str(package_dir),
         env=env,
         text=True,
@@ -396,7 +396,7 @@ def _execute_manifest_game_in_docker(
             "mkdir -p /workspace/game; "
             "tar -xzf - -C /workspace/game; "
             "cd /workspace/game; "
-            'python "$1"'
+            'python .agp-runtime/entry.py "$1"'
         ),
         "sh",
         entrypoint,
@@ -482,6 +482,7 @@ def _build_package_archive(package_dir: Path) -> bytes:
             if relative.parts and relative.parts[0].startswith("."):
                 continue
             archive.add(path, arcname=str(relative))
+        archive.add(Path(__file__).with_name("game_runtime.py"), arcname=".agp-runtime/entry.py")
     result = buffer.getvalue()
     _package_archive_cache[cache_key] = result
     return result

@@ -41,7 +41,7 @@ from execution.infrastructure.sqlalchemy_repository import (
     SqlAlchemyWorkerRepository,
 )
 from game_catalog.application.service import GameCatalogService
-from game_catalog.domain.model import CatalogMetadataStatus, SlotDefinition
+from game_catalog.domain.model import CatalogMetadataStatus
 from game_catalog.infrastructure.in_memory_repository import InMemoryGameRepository
 from game_catalog.infrastructure.manifest_loader import GameManifest, load_game_manifests
 from game_catalog.infrastructure.sqlalchemy_repository import SqlAlchemyGameRepository
@@ -121,6 +121,7 @@ class ServiceContainer:
         run_kind: RunKind,
         lobby_id: str | None,
         version_id: str | None = None,
+        execution_options: dict[str, object] | None = None,
     ) -> CreateRunInput:
         return CreateRunInput(
             team_id=team_id,
@@ -129,6 +130,7 @@ class ServiceContainer:
             run_kind=run_kind,
             lobby_id=lobby_id,
             version_id=version_id,
+            execution_options=execution_options or {},
         )
 
     @staticmethod

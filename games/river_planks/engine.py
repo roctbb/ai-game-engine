@@ -122,7 +122,7 @@ def _load_context() -> dict[str, Any]:
 
 
 def _build_map(context: dict[str, Any]) -> dict[str, object]:
-    seed = context.get("run_id")
+    seed = (context.get("seed") or context.get("run_id"))
     if not isinstance(seed, str) or not seed:
         seed = "river_planks_offline"
     rng = random.Random(seed)

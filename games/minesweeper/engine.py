@@ -182,7 +182,7 @@ def _fallback_move(board: list[list[int]], _flags_left: int = 0) -> tuple[int, i
 
 
 def _build_mines(context: dict[str, Any], first_open: tuple[int, int]) -> set[tuple[int, int]]:
-    seed = context.get("run_id")
+    seed = (context.get("seed") or context.get("run_id"))
     if not isinstance(seed, str) or not seed:
         seed = "minesweeper_offline"
     rng = random.Random(seed)

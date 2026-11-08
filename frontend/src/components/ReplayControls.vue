@@ -8,7 +8,10 @@
       <button type="button" class="agp-icon-button agp-icon-button--ghost" :disabled="!canStepForward" title="Следующий кадр (→)" aria-label="Следующий кадр" @click="$emit('step', 1)"><AppIcon name="next" /></button>
     </div>
     <span class="agp-replay-position mono">{{ frameCount ? `${frameIndex + 1} / ${frameCount}` : 'Нет повтора' }}</span>
-    <input class="form-range agp-player-range" type="range" min="0" :max="Math.max(0, frameCount - 1)" :value="frameIndex" :disabled="seekDisabled || frameCount < 2" aria-label="Кадр повтора" :aria-valuetext="frameCount ? `Кадр ${frameIndex + 1} из ${frameCount}` : 'Повтор недоступен'" @input="$emit('update:frameIndex', Number(($event.target as HTMLInputElement).value))" />
+    <div class="agp-replay-track">
+      <input class="form-range agp-player-range" type="range" min="0" :max="Math.max(0, frameCount - 1)" :value="frameIndex" :disabled="seekDisabled || frameCount < 2" aria-label="Кадр повтора" :aria-valuetext="frameCount ? `Кадр ${frameIndex + 1} из ${frameCount}` : 'Повтор недоступен'" @input="$emit('update:frameIndex', Number(($event.target as HTMLInputElement).value))" />
+      <div v-if="markers.length && frameCount > 1" class="agp-replay-markers" aria-label="События на шкале"><button v-for="marker in visibleMarkers" :key="marker.id" type="button" :disabled="seekDisabled" :class="`agp-replay-marker agp-replay-marker--${marker.tone}`" :style="{ left: `${marker.frame * 100 / (frameCount - 1)}%` }" :title="`Ход ${marker.tick}: ${marker.label}`" :aria-label="`Ход ${marker.tick}: ${marker.label}`" @click="$emit('update:frameIndex', marker.frame)"></button></div>
+    </div>
     <label class="agp-speed-control">
       <span class="visually-hidden">Скорость повтора</span>
       <select class="form-select agp-speed-select" :value="delay" @change="$emit('update:delay', Number(($event.target as HTMLSelectElement).value))">
@@ -21,10 +24,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import AppIcon from './AppIcon.vue';
 import { REPLAY_SPEEDS } from '../lib/replayPlayback';
+import { thinReplayMoments, type ReplayMoment } from '../lib/replayInsights';
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   frameIndex: number;
   frameCount: number;
   playing: boolean;
@@ -33,7 +38,10 @@ withDefaults(defineProps<{
   canStepBackward: boolean;
   canStepForward: boolean;
   seekDisabled?: boolean;
-}>(), { seekDisabled: false });
+  markers?: ReplayMoment[];
+}>(), { seekDisabled: false, markers: () => [] });
+
+const visibleMarkers = computed(() => thinReplayMoments(props.markers));
 
 defineEmits<{
   (event: 'update:frameIndex', value: number): void;

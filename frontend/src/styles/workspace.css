@@ -1,0 +1,98 @@
+.agp-task-workspace:not(.agp-watch-page) > .agp-task-header { grid-template-columns: minmax(9rem, 1fr) auto auto; grid-template-areas: 'title reference actions'; gap: .65rem; }
+.agp-task-reference-actions { grid-area: reference; display: flex; gap: .4rem; }
+.agp-task-workspace:not(.agp-watch-page) .agp-viewer-card { grid-template-rows: minmax(0, 1fr) auto auto auto; }
+.agp-task-workspace .agp-viewer-card .agp-viewer-frame iframe { pointer-events: auto; }
+.agp-main-columns--resizing .agp-viewer-frame iframe { pointer-events: none !important; }
+.agp-task-workspace .agp-code-card { grid-template-rows: auto auto minmax(0, 1fr); }
+.agp-task-workspace .agp-code-card > .agp-code-editor { grid-row: 3; min-height: 0; overflow: hidden; }
+.agp-code-state { margin-right: auto; color: var(--agp-text-muted); font-size: .73rem; }
+.agp-code-options { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .45rem .75rem; color: var(--agp-text-muted); font-size: .72rem; border-bottom: 1px solid var(--agp-border); }
+.agp-code-options label, .agp-insight-filter label { display: flex; align-items: center; gap: .4rem; }
+.agp-code-options input, .agp-insight-filter input { accent-color: var(--agp-primary); }
+.agp-viewer-card > .agp-replay-player { padding: .5rem .65rem .7rem; border-top: 1px solid var(--agp-border); border-radius: 0; }
+.agp-replay-track { flex: 1; min-width: 3rem; position: relative; display: grid; align-items: center; }
+.agp-replay-track .agp-player-range { width: 100%; }
+.agp-replay-markers { height: .45rem; position: relative; margin: 0 .4rem; }
+.agp-replay-marker { position: absolute; top: 0; width: .35rem; height: .45rem; padding: 0; border: 0; background: #39c7a8; border-radius: 2px; transform: translateX(-50%); }
+.agp-replay-marker--error { background: #fb927f; }
+.agp-replay-marker:hover, .agp-replay-marker:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; z-index: 2; }
+.agp-analysis-disclosure { border-top: 1px solid var(--agp-border); background: var(--agp-surface); min-height: 0; }
+.agp-analysis-disclosure > summary { padding: .5rem .75rem; color: var(--agp-text-muted); font-size: .75rem; cursor: pointer; }
+.agp-replay-insights { color: var(--agp-text); min-width: 0; }
+.agp-insight-tabs { display: flex; align-items: center; gap: .25rem; padding: .3rem .5rem; border-bottom: 1px solid var(--agp-border); }
+.agp-insight-tabs button { border: 0; padding: .4rem .55rem; border-radius: .4rem; background: transparent; color: var(--agp-text-muted); font-size: .75rem; }
+.agp-insight-tabs button.active { background: var(--agp-primary-soft); color: var(--agp-primary); }
+.agp-insight-tick { margin-left: auto; font-size: .7rem; color: var(--agp-text-muted); white-space: nowrap; }
+.agp-insight-body { padding: .6rem .75rem; max-height: 17rem; overflow: auto; scrollbar-gutter: stable; font-size: .78rem; }
+.agp-insight-filter { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem; align-items: center; margin-bottom: .6rem; color: var(--agp-text-muted); font-size: .72rem; }
+.agp-insight-empty { color: var(--agp-text-muted); font-size: .76rem; margin: .25rem 0 .5rem; }
+.agp-moment-list { display: grid; gap: .3rem; }
+.agp-moment { border-left: 2px solid var(--agp-primary); background: var(--agp-surface-soft); border-radius: .3rem; }
+.agp-moment--error { border-left-color: #ed8c77; }
+.agp-moment--current { outline: 1px solid var(--agp-primary); }
+.agp-moment > button:first-child { display: flex; gap: .6rem; width: 100%; padding: .45rem .55rem; background: transparent; border: 0; color: var(--agp-text); text-align: left; }
+.agp-moment .mono { min-width: 2.5rem; color: var(--agp-text-muted); }
+.agp-moment small { display: block; color: var(--agp-text-muted); overflow-wrap: anywhere; }
+.agp-error-line { background: transparent; color: var(--agp-primary); border: 0; text-decoration: underline; font-size: .72rem; padding: .25rem .55rem; }
+.agp-insight-metrics, .agp-outcome-metrics { display: flex; flex-wrap: wrap; gap: .35rem .9rem; font-size: .73rem; color: var(--agp-text-muted); }
+.agp-insight-metrics strong, .agp-outcome-metrics strong { color: var(--agp-text); margin-left: .3rem; }
+.agp-insight-body details { margin-top: .5rem; }
+.agp-insight-body summary { cursor: pointer; color: var(--agp-text-muted); }
+.agp-insight-body pre, .agp-reference-content pre { padding: .7rem; background: var(--agp-surface-soft); border: 1px solid var(--agp-border); border-radius: .45rem; color: var(--agp-text); max-height: 18rem; overflow: auto; font: .73rem/1.6 'IBM Plex Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agp-game-reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; overflow: hidden; background: var(--agp-surface); color: var(--agp-text); }
+.agp-game-reference > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; padding: .65rem .8rem; font-size: .8rem; border-bottom: 1px solid var(--agp-border); }
+.agp-reference-content { overflow: auto; padding: 1rem; font-size: .88rem; line-height: 1.7; }
+.agp-reference-content h2 { font-size: 1.15rem; margin: 0 0 .7rem; }
+.agp-reference-content .agp-markdown, .agp-reference-content .agp-markdown :is(h1,h2,h3,h4) { color: inherit; }
+.agp-reference-callout { border-left: 3px solid var(--agp-primary); padding: .6rem .75rem; background: var(--agp-primary-soft); border-radius: .3rem; }
+.agp-outcome { padding: .55rem 1rem; background: var(--agp-surface); border-bottom: 1px solid var(--agp-border); }
+.agp-outcome-main { display: flex; align-items: center; gap: .55rem 1rem; flex-wrap: wrap; font-size: .78rem; }
+.agp-outcome-main > span { color: var(--agp-text-muted); font-size: .73rem; }
+.agp-outcome p { margin: .3rem 0; color: var(--agp-text-muted); font-size: .75rem; }
+.agp-outcome-metrics { margin-top: .3rem; }
+.lobby-head-actions .lobby-action-icon { width: auto; min-width: 2.25rem; padding: .45rem .65rem; gap: .35rem; border-radius: .5rem; font-size: .75rem; white-space: nowrap; }
+.lobby-history-filters { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .65rem 0; font-size: .78rem; }
+.lobby-history-filters label { display: flex; align-items: center; gap: .4rem; }
+.lobby-history-filters input { accent-color: var(--agp-primary); }
+.lobby-history-filters input[type=search] { border: 1px solid var(--agp-border); border-radius: .45rem; padding: .4rem .55rem; background: var(--agp-surface); color: var(--agp-text); min-width: 9rem; }
+.lobby-match-card details { margin-top: .45rem; font-size: .76rem; }
+.lobby-match-card details summary { color: var(--agp-text-muted); cursor: pointer; }
+@media (max-width: 1150px) {
+  .agp-task-workspace:not(.agp-watch-page) > .agp-task-header { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'title actions' 'reference reference'; }
+  .agp-task-reference-actions .agp-panel-toggle { padding: .3rem .5rem; }
+}
+@media (max-width: 900px) {
+  .agp-task-workspace--mobile-reference .agp-main-columns > .agp-viewer-card, .agp-task-workspace--mobile-analysis .agp-main-columns > .agp-viewer-card { display: grid !important; grid-template-rows: minmax(0, 1fr); }
+  .agp-task-workspace--mobile-reference .agp-main-columns > .agp-code-card, .agp-task-workspace--mobile-analysis .agp-main-columns > .agp-code-card { display: none !important; }
+  .agp-task-workspace--mobile-analysis .agp-viewer-card { grid-template-rows: auto minmax(0, 1fr) !important; }
+  .agp-task-workspace--mobile-analysis .agp-viewer-card > :not(.agp-analysis-disclosure):not(.agp-replay-player) { display: none !important; }
+  .agp-task-workspace--mobile-analysis .agp-analysis-disclosure { display: flex; flex-direction: column; overflow: hidden; }
+  .agp-task-workspace--mobile-analysis .agp-replay-insights { min-height: 0; display: flex; flex-direction: column; flex: 1; }
+  .agp-task-workspace--mobile-analysis .agp-insight-body { max-height: none; flex: 1; min-height: 0; }
+  .agp-task-workspace--mobile-reference .agp-viewer-card > :not(.agp-game-reference) { display: none !important; }
+  .agp-workspace-tabs button { min-width: 0; flex: 1; padding: .5rem .2rem; gap: .25rem; font-size: .72rem; }
+  .agp-outcome { padding: .45rem .65rem; max-height: 10rem; overflow: auto; }
+  .agp-code-toolbar { flex-wrap: wrap; }
+  .agp-code-state { flex-basis: 100%; }
+  .agp-code-options { padding: .4rem .55rem; }
+  .agp-task-workspace:not(.agp-watch-page) .agp-viewer-card { grid-template-rows: minmax(0, 1fr) auto auto auto; }
+}
+.agp-viewer-card--fullscreen > :is(.agp-replay-player, .agp-analysis-disclosure, .agp-bot-console) { display: none; }
+@media (prefers-reduced-motion: reduce) { .agp-replay-insights *, .agp-game-reference * { transition: none !important; } }
+
+.agp-debug-values { display: grid; gap: .35rem; }
+.agp-debug-values > div { display: grid; grid-template-columns: minmax(4rem, 8rem) minmax(0, 1fr); gap: .5rem; align-items: start; border-bottom: 1px solid var(--agp-border); padding: .3rem 0; }
+.agp-debug-values details { margin: 0; }
+.agp-debug-values code { color: var(--agp-text); overflow-wrap: anywhere; }
+.agp-debug-exception { margin-top: .6rem; padding: .5rem .65rem; border-left: 2px solid #e58b7d; background: var(--agp-surface-soft); color: #e5a395; overflow-wrap: anywhere; }
+
+.agp-outcome-toggle { display: none; border: 0; background: transparent; color: var(--agp-primary); font-size: .75rem; padding: .25rem; }
+.lobby-match-group { padding: .65rem .8rem; }
+.lobby-match-group details { margin-top: .45rem; font-size: .75rem; }
+.lobby-match-group details summary { cursor: pointer; color: var(--agp-text-muted); }
+@media (max-width: 900px) {
+  .agp-outcome-toggle { display: inline-block; margin-left: auto; }
+  .agp-outcome:not(.agp-outcome--expanded) .agp-outcome-detail { display: none; }
+  .agp-task-workspace .agp-outcome .agp-panel-toggle { min-height: 1.9rem; padding: .3rem .5rem; font-size: .72rem; }
+  .agp-outcome-main { gap: .3rem .55rem; }
+}

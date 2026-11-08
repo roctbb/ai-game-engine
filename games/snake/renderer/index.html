@@ -53,5 +53,5 @@ window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")
 draw({board:Array.from({length:12},()=>Array(12).fill(0)),head:{x:3,y:3},food_eaten:0,alive:true});
 window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
 </script>
-</body>
+<script src="/game-renderer-ui.js"></script></body>
 </html>

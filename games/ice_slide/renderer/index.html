@@ -31,5 +31,5 @@ window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")
 draw({board:Array.from({length:10},()=>Array(10).fill(0)),position:{x:1,y:1},turns:0});
 window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
 </script>
-</body>
+<script src="/game-renderer-ui.js"></script></body>
 </html>

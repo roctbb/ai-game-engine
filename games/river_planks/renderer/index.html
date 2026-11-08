@@ -13,4 +13,4 @@ for(let y=0;y<h;y++)for(let x=0;x<w;x++){const v=grid[x]?.[y]??0;boardEl.appendC
 const p=frame.position||{};if(Number.isFinite(p.x)&&Number.isFinite(p.y)){const cx=p.x*C+C/2,cy=p.y*C+C/2;boardEl.appendChild(el("circle",{cx,cy,r:C*0.3,fill:"#2563eb"}));drawMiniBadge(cx,cy,C,frame.planks??0,"#92400e")}hudEl.textContent=`planks=${frame.planks??0} collected=${frame.planks_collected||0} escaped=${frame.escaped===true} score=${frame.score??"-"}`;}
 window.addEventListener("message",e=>{const m=e.data;if(!m||typeof m!=="object")return;if(m.type==="agp.renderer.state")draw(m.payload?.frame||{});});
 draw({board:Array.from({length:22},()=>Array(18).fill(0)),position:{x:1,y:1},planks:0});window.parent.postMessage({type:"agp.renderer.ready",payload:{version:"1.0.0"}},"*");
-</script></body></html>
+</script><script src="/game-renderer-ui.js"></script></body></html>
