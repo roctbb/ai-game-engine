@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import builtins
 from contextlib import redirect_stdout
+import dis
 import io
 from itertools import islice
 import json
@@ -127,7 +128,10 @@ def execute(entrypoint: str) -> None:
             call = calls.pop(key, None)
             if call is None:
                 return trace
-            if arg is None and "exception" in call:
+            failed = arg is None and "exception" in call and (
+                not bot or dis.opname[frame.f_code.co_code[frame.f_lasti]] not in ("RETURN_VALUE", "RETURN_CONST")
+            )
+            if failed:
                 exc, line = call["exception"]
                 add_error(call["slot"], call["tick"], exc, line)
             if debug and call["top"]:
@@ -136,7 +140,7 @@ def execute(entrypoint: str) -> None:
                             "arguments": call["arguments"], "locals": {
                                 name: preview(value) for name, value in islice(frame.f_locals.items(), 24)
                                 if name not in call["arguments"] and not name.startswith("__") and not callable(value)}, "returned": preview(arg)}
-                if arg is None and "exception" in call:
+                if failed:
                     snapshot["exception"] = f"{type(call['exception'][0]).__name__}: {str(call['exception'][0])[:300]}"
                 size = len(json.dumps(snapshot, ensure_ascii=False))
                 if debug_count < 500 and debug_bytes + size <= 1_000_000:

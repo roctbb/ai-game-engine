@@ -79,3 +79,16 @@ def test_debug_recording_is_bounded_without_stopping_the_engine(tmp_path):
     assert payload["debug_recorded"] == 500
     assert payload["debug_truncated"] is True
     assert sum(e["type"] == "debug_limit" for e in payload["events"]) == 1
+
+
+def test_handled_exception_returning_none_is_not_a_python_failure():
+    result = execute('def make_move(x, y, board, keys):\n    try:\n        1/0\n    except:\n        return None\n', debug=True)
+    assert not any(e["type"] == "bot_error" for e in result["events"])
+    snapshots = [e for e in result["events"] if e["type"] == "debug_snapshot"]
+    assert snapshots and "exception" not in snapshots[0]
+    assert "bot_errors" not in result["metrics"]
+
+
+def test_wrong_entrypoint_signature_is_reported_even_when_engine_handles_it():
+    result = execute('def make_move(state):\n    return "stay"\n')
+    assert any(e["type"] == "bot_error" and "TypeError" in e["message"] for e in result["events"])
