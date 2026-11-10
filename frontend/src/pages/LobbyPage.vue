@@ -217,16 +217,10 @@
               <button class="btn btn-outline-secondary" type="button" :disabled="isSavingLobbySettings" @click="showLobbySettingsDialog = false">
                 Закрыть
               </button>
-              <button class="btn btn-outline-secondary" type="button" :disabled="!canSaveLobbySettings" @click="saveLobbySettings">
+              <button class="btn btn-primary" type="button" :disabled="!canSaveLobbySettings" @click="saveLobbySettings">
                 {{ isSavingLobbySettings ? 'Сохраняем...' : 'Сохранить' }}
               </button>
-              <button class="btn btn-outline-danger" type="button" :disabled="!canDeleteLobby || isBusy" @click="deleteLobbyByTeacher">
-                Удалить
-              </button>
             </footer>
-            <p v-if="canManage && !canDeleteLobby" class="small text-muted mt-3 mb-0">
-              Удаление доступно только после остановки лобби.
-            </p>
           </article>
         </div>
       </Teleport>
@@ -3200,6 +3194,7 @@ const lobbyMenuItems = computed<ActionMenuItem[]>(() => {
   if (!hasPlayerInLobby.value) items.push({ id: 'join', label: 'Участвовать как игрок', disabled: !canJoinAsPlayer.value || isBusy.value });
   if (!activeCompetition.value && canPauseLobby.value) items.push({ id: 'pause', label: 'Приостановить тренировку', disabled: isBusy.value });
   if (!activeCompetition.value && canStopLobbyByTeacher.value) items.push({ id: 'stop', label: 'Остановить тренировку', danger: true, disabled: isBusy.value });
+  if (canDeleteLobby.value) items.push({ id: 'delete', label: 'Удалить лобби', danger: true, disabled: isBusy.value });
   if (canLeaveAsPlayer.value) items.push({ id: 'leave', label: 'Выйти из лобби', danger: true, disabled: isBusy.value });
   return items;
 });
@@ -3208,6 +3203,7 @@ function handleLobbyMenu(action: string): void {
   if (action === 'join') void joinAsPlayer();
   if (action === 'pause') void pauseLobbyByTeacher();
   if (action === 'stop') void stopLobbyByTeacher();
+  if (action === 'delete') void deleteLobbyByTeacher();
   if (action === 'leave') void leaveAsPlayer();
 }
 </script>
@@ -3484,6 +3480,8 @@ function handleLobbyMenu(action: string): void {
 .lobby-dialog-actions {
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-top: 1rem;
 }
 
