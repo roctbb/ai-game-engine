@@ -33,6 +33,7 @@ class SlotStateResponse(BaseModel):
 
 
 class TeamWorkspaceResponse(BaseModel):
+    team_name: str = ""
     team_id: str
     game_id: str
     captain_user_id: str

@@ -1,32 +1,6 @@
 <template>
   <section class="agp-grid lc-page">
-    <header class="agp-card p-4 lc-head">
-      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
-        <div>
-          <RouterLink to="/lobbies" class="lc-back-link">← К списку лобби</RouterLink>
-          <p class="lc-kicker">Новое лобби</p>
-          <h1 class="h3 mb-1">Создать лобби</h1>
-          <p class="text-muted mb-0">Выберите игру и настройте параметры перед запуском.</p>
-        </div>
-        <button class="btn btn-sm btn-outline-secondary" :disabled="isLoading" @click="loadData">
-          {{ isLoading ? 'Обновление...' : 'Обновить игры' }}
-        </button>
-      </div>
-      <div class="lc-head-stats">
-        <div>
-          <span>Игр</span>
-          <strong class="mono">{{ lobbyGames.length }}</strong>
-        </div>
-        <div>
-          <span>Доступ</span>
-          <strong>{{ accessLabel }}</strong>
-        </div>
-        <div>
-          <span>Лимит</span>
-          <strong class="mono">{{ form.max_teams }}</strong>
-        </div>
-      </div>
-    </header>
+    <header class="lc-head"><div><RouterLink to="/lobbies" class="lc-back-link">← К лобби</RouterLink><h1>Создать лобби</h1></div><button class="btn btn-outline-secondary" :disabled="isLoading" @click="loadData">Обновить игры</button></header>
 
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
 
@@ -46,21 +20,9 @@
       :class="{ 'lc-body--single': !selectedGame }"
     >
       <article class="agp-card p-4 lc-form-card">
-        <div class="lc-steps">
-          <div class="agp-task-step" :class="{ 'agp-task-step--active': !form.game_id, 'agp-task-step--done': !!form.game_id }">
-            <strong>1</strong><span>Игра</span>
-          </div>
-          <div class="agp-task-step" :class="{ 'agp-task-step--active': !!form.game_id && !form.title.trim(), 'agp-task-step--done': !!form.game_id && !!form.title.trim() }">
-            <strong>2</strong><span>Настройки</span>
-          </div>
-          <div class="agp-task-step" :class="{ 'agp-task-step--active': canCreate }">
-            <strong>3</strong><span>Запуск</span>
-          </div>
-        </div>
-
         <div class="lc-fields">
           <div class="lc-field">
-            <label class="form-label small fw-bold">Игра</label>
+            <label class="form-label small">Игра</label>
             <select v-model="form.game_id" class="form-select" :disabled="!canManage || isCreating">
               <option value="">Выберите игру</option>
               <option v-for="game in lobbyGames" :key="game.game_id" :value="game.game_id">{{ game.title }}</option>
@@ -68,11 +30,11 @@
           </div>
 
           <div class="lc-field">
-            <label class="form-label small fw-bold">Название лобби</label>
+            <label class="form-label small">Название лобби</label>
             <input
               v-model.trim="form.title"
               class="form-control"
-              placeholder="Например: Тренировка 8А / Графы"
+              placeholder="Название лобби"
               :disabled="!canManage || isCreating"
               @input="titleTouched = true"
             />
@@ -80,7 +42,7 @@
 
           <div class="lc-field-row">
             <div class="lc-field">
-              <label class="form-label small fw-bold">Доступ</label>
+              <label class="form-label small">Доступ</label>
               <div class="lc-access-toggle">
                 <button
                   type="button"
@@ -89,7 +51,7 @@
                   @click="setAccess('public')"
                 >
                   <strong>Открытое</strong>
-                  <span>видно всем</span>
+
                 </button>
                 <button
                   type="button"
@@ -98,13 +60,13 @@
                   @click="setAccess('code')"
                 >
                   <strong>По коду</strong>
-                  <span>для класса</span>
+
                 </button>
               </div>
             </div>
 
             <div class="lc-field">
-              <label class="form-label small fw-bold">Лимит игроков</label>
+              <label class="form-label small">Лимит игроков</label>
               <input
                 v-model.number="form.max_teams"
                 type="number"
@@ -119,12 +81,12 @@
           </div>
 
           <div v-if="form.access === 'code'" class="lc-field">
-            <label class="form-label small fw-bold">Код входа</label>
+            <label class="form-label small">Код входа</label>
             <div class="input-group">
               <input
                 v-model.trim="form.access_code"
                 class="form-control mono"
-                placeholder="например CLASS-2026"
+                placeholder="Например, ARENA-2026"
                 :disabled="!canManage || isCreating"
               />
               <button
@@ -144,7 +106,6 @@
             {{ isCreating ? 'Создание...' : 'Создать лобби' }}
           </button>
           <RouterLink class="btn btn-outline-secondary" to="/lobbies">Отмена</RouterLink>
-          <span class="small text-muted lc-hint">{{ createHint }}</span>
         </div>
       </article>
 
@@ -214,7 +175,6 @@ const selectedRequiredSlots = computed(
       ?.required_slot_keys ?? [],
 );
 const defaultLobbyTitle = computed(() => (selectedGame.value ? `Лобби / ${selectedGame.value.title}` : ''));
-const accessLabel = computed(() => (form.access === 'code' ? 'по коду' : 'открыто'));
 const playerLimitHint = computed(() => {
   if (!selectedGame.value) return 'Сколько учеников сможет участвовать в этом лобби.';
   return `Матчи стартуют от ${selectedGame.value.min_players_per_match ?? 2} игроков, максимум ${selectedGame.value.max_players_per_match ?? 2}.`;
@@ -231,16 +191,7 @@ const canCreate = computed(() => {
   if (form.access === 'code' && !form.access_code.trim()) return false;
   return true;
 });
-const createHint = computed(() => {
-  if (!canManage.value) return 'Создавать лобби может только преподаватель или администратор.';
-  if (isCreating.value) return 'Создаем лобби...';
-  if (!lobbyGames.value.length) return 'Нет доступных игр для лобби.';
-  if (!form.game_id) return 'Выберите игру для лобби.';
-  if (!form.title.trim()) return 'Добавьте понятное название для учеников.';
-  if (!Number.isFinite(form.max_teams) || form.max_teams < 2 || form.max_teams > 512) return 'Укажите от 2 до 512 игроков.';
-  if (form.access === 'code' && !form.access_code.trim()) return 'Для закрытого лобби нужен код входа.';
-  return form.access === 'code' ? 'Ученики смогут войти только по коду.' : 'Лобби будет видно всем ученикам.';
-});
+
 
 function applyDefaultTitle(): void {
   if (!titleTouched.value) {
@@ -345,239 +296,30 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.lc-page {
-  max-width: 64rem;
-}
-
-.lc-head {
-  position: relative;
-  overflow: hidden;
-  background: var(--agp-surface);
-}
-
-.lc-head::before {
-  content: none;
-}
-
-.lc-head-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.lc-head-stats > div {
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 0.6rem;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 0.52rem 0.68rem;
-  backdrop-filter: blur(8px);
-}
-
-.lc-head-stats span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-}
-
-.lc-head-stats strong {
-  color: var(--agp-text);
-  font-size: 0.92rem;
-}
-
-.lc-kicker {
-  margin: 0 0 0.25rem;
-  color: var(--agp-primary);
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.lc-back-link {
-  display: inline-block;
-  margin-bottom: 0.55rem;
-  color: var(--agp-text-muted);
-  font-size: 0.82rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.lc-back-link:hover {
-  color: var(--agp-primary);
-}
-
-.lc-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 0.6fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.lc-body--single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.lc-form-card {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 1.25rem;
-}
-
-.lc-form-card::before {
-  content: none;
-}
-
-.lc-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.6rem;
-}
-
-.lc-fields {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.lc-field-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.85rem;
-}
-
-.lc-field {
-  min-width: 0;
-}
-
-.lc-field .form-label {
-  color: var(--agp-text);
-}
-
-.lc-access-toggle {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.lc-access-toggle button {
-  border: 1px solid rgba(148, 163, 184, 0.38);
-  border-radius: 0.58rem;
-  display: grid;
-  gap: 0.08rem;
-  min-height: 4.35rem;
-  align-content: center;
-  padding: 0.55rem 0.65rem;
-  background: rgba(255, 255, 255, 0.78);
-  color: var(--agp-text);
-  text-align: left;
-}
-
-.lc-access-toggle button:disabled {
-  opacity: 0.55;
-}
-
-.lc-access-toggle strong {
-  font-size: 0.92rem;
-}
-
-.lc-access-toggle span {
-  color: var(--agp-text-muted);
-  font-size: 0.75rem;
-}
-
-.lc-access-toggle button.active {
-  border-color: rgba(20, 184, 166, 0.62);
-  background: var(--agp-surface);
-  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
-}
-
-.lc-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  align-items: center;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--agp-border);
-}
-
-.lc-hint {
-  margin-left: auto;
-}
-
-.lc-preview {
-  position: sticky;
-  top: 4.5rem;
-  overflow: hidden;
-  border-left: 0;
-  background: var(--agp-surface);
-}
-
-.lc-preview::before {
-  content: none;
-}
-
-.lc-preview-pills {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.lc-role-preview {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 1rem;
-}
-
-.lc-role-preview > span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.lc-role-preview > div {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.lc-role-preview strong {
-  border: 1px solid rgba(15, 118, 110, 0.22);
-  border-radius: 999px;
-  background: var(--agp-primary-soft);
-  color: var(--agp-primary);
-  padding: 0.25rem 0.58rem;
-  font-size: 0.78rem;
-}
-
-@media (max-width: 860px) {
-  .lc-body {
-    grid-template-columns: 1fr;
-  }
-
-  .lc-preview {
-    position: static;
-  }
-
-  .lc-field-row {
-    grid-template-columns: 1fr;
-  }
-
-  .lc-steps {
-    grid-template-columns: 1fr;
-  }
-
-  .lc-head-stats,
-  .lc-access-toggle {
-    grid-template-columns: 1fr;
-  }
-
-  .lc-hint {
-    margin-left: 0;
-    width: 100%;
-  }
-}
+.lc-page { max-width: 1120px; margin-inline: auto; gap: 16px; }
+.lc-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 8px; }
+.lc-head h1 { margin: 8px 0 0; }
+.lc-back-link { color: var(--agp-text-muted); text-decoration: none; font-size: 13px; }
+.lc-back-link:hover { color: var(--agp-primary); }
+.lc-body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
+.lc-body--single { grid-template-columns: 1fr; }
+.lc-fields, .lc-field { display: grid; gap: 20px; min-width: 0; }
+.lc-field { gap: 8px; align-content: start; }
+.lc-field .form-label, .lc-field .form-text { margin: 0; }
+.lc-field .form-text { color: var(--agp-text-muted); font-size: 12px; }
+.lc-field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.lc-access-toggle { display: flex; gap: 8px; }
+.lc-access-toggle button { flex: 1; min-height: 36px; padding: 7px 12px; border: 1px solid var(--agp-border); border-radius: 6px; background: var(--agp-surface); color: var(--agp-text-muted); font: inherit; }
+.lc-access-toggle strong { font-weight: 500; }
+.lc-access-toggle button.active { border-color: var(--agp-primary); color: var(--agp-primary); background: var(--agp-primary-soft); }
+.lc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 20px; margin-top: 20px; border-top: 1px solid var(--agp-border); }
+.lc-preview { display: grid; gap: 12px; }
+.lc-preview p, .lc-preview h2 { margin: 0 !important; }
+.lc-kicker { color: var(--agp-text-muted); font-size: 12px; }
+.lc-preview-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.lc-role-preview { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--agp-border); font-size: 12px; color: var(--agp-text-muted); }
+.lc-role-preview > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.lc-role-preview strong { font-family: "JetBrains Mono", monospace; color: var(--agp-text); font-weight: 500; }
+@media (max-width: 767px) { .lc-head { align-items: flex-start; } .lc-body { grid-template-columns: 1fr; } .lc-access-toggle button { min-height: 44px; } }
+@media (max-width: 480px) { .lc-field-row { grid-template-columns: 1fr; } }
 </style>

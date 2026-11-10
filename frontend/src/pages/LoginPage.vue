@@ -37,7 +37,6 @@
             @click="role = option.value"
           >
             <strong>{{ option.label }}</strong>
-            <span>{{ option.badge }}</span>
           </button>
         </div>
 
@@ -154,221 +153,31 @@ async function reloadAuthOptions(): Promise<void> {
 </script>
 
 <style scoped>
-
-.agp-login-page {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background-color: #07101f;
-  background-image: none;
-  background-size: 160px 160px, auto, auto, auto;
+.agp-login-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--agp-bg); color: var(--agp-text); }
+.agp-login-shell { width: min(100%, 960px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.agp-login-hero, .agp-login-panel { display: grid; align-content: center; gap: 24px; min-width: 0; padding: 32px; border: 1px solid var(--agp-border); border-radius: 10px; }
+.agp-login-hero { min-height: 400px; background: var(--agp-primary-soft); }
+.arena-login-bot { font-size: 112px; margin-bottom: 16px; }
+.agp-login-hero-content { display: grid; gap: 12px; }
+.agp-login-hero-content p, .agp-login-kicker { margin: 0; font-size: 14px; font-weight: 500; color: var(--agp-primary); }
+.agp-login-hero-content h1 { margin: 0; max-width: 360px; font-size: 36px; line-height: 40px; font-weight: 600; }
+.agp-login-panel { background: var(--agp-surface); }
+.agp-login-panel h1 { margin: 8px 0 0; }
+.agp-login-form { display: grid; gap: 12px; }
+.agp-login-form .form-label { margin: 0; }
+.agp-login-role-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.agp-login-role-button { min-height: 44px; padding: 8px; border: 1px solid var(--agp-border); border-radius: 6px; color: var(--agp-text); background: var(--agp-surface); font: inherit; }
+.agp-login-role-button strong { font-size: 12px; font-weight: 500; }
+.agp-login-role-button.active { border-color: var(--agp-primary); background: var(--agp-primary-soft); color: var(--agp-primary); }
+.agp-login-geekclass-btn { justify-self: start; }
+@media (max-width: 767px) {
+ .agp-login-page { padding: 16px; }
+ .agp-login-shell { max-width: 440px; grid-template-columns: 1fr; gap: 12px; }
+ .agp-login-hero, .agp-login-panel { padding: 24px; }
+ .agp-login-hero { min-height: 0; grid-template-columns: auto 1fr; align-items: center; gap: 24px; }
+ .arena-login-bot { font-size: 64px; margin: 0; }
+ .agp-login-hero-content { gap: 8px; }
+ .agp-login-hero-content h1 { font-size: 24px; line-height: 28px; }
 }
-
-.agp-login-shell {
-  width: min(100%, 62rem);
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(22rem, 0.8fr);
-  align-items: stretch;
-  gap: 1rem;
-}
-
-.agp-login-hero,
-.agp-login-panel {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  border: 1px solid rgba(125, 211, 252, 0.24);
-  border-radius: 0.75rem;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
-}
-
-.agp-login-hero {
-  min-height: 34rem;
-  align-content: end;
-  padding: 1.3rem;
-  background: #131e2f;
-  color: #f8fbff;
-}
-
-.agp-login-orbit {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.agp-login-orbit span {
-  position: absolute;
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 50%;
-  background: #facc15;
-  box-shadow: 0 0 22px rgba(250, 204, 21, 0.72);
-}
-
-.agp-login-orbit span:nth-child(1) {
-  left: 16%;
-  top: 24%;
-}
-
-.agp-login-orbit span:nth-child(2) {
-  right: 18%;
-  top: 52%;
-  background: #67e8f9;
-}
-
-.agp-login-orbit span:nth-child(3) {
-  left: 48%;
-  bottom: 28%;
-  background: #5eead4;
-}
-
-.agp-login-hero-content {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 1rem;
-}
-
-.agp-login-hero-content > p {
-  margin: 0;
-  color: #b7f4ff;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.agp-login-hero-content h1 {
-  max-width: 32rem;
-  margin: 0;
-  font-size: clamp(2.35rem, 5vw, 4.25rem);
-  font-weight: 700;
-  line-height: 0.98;
-}
-
-.agp-login-hero-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-}
-
-.agp-login-hero-grid div {
-  min-height: 6.4rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 0.65rem;
-  display: grid;
-  align-content: end;
-  gap: 0.15rem;
-  padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.09);
-  backdrop-filter: blur(10px);
-}
-
-.agp-login-hero-grid strong {
-  font-size: 1rem;
-}
-
-.agp-login-hero-grid span {
-  color: rgba(248, 251, 255, 0.72);
-  font-size: 0.78rem;
-  line-height: 1.25;
-}
-
-.agp-login-panel {
-  align-content: center;
-  gap: 1rem;
-  background: var(--agp-surface);
-  padding: 2rem 1.5rem;
-}
-
-.agp-login-geekclass-btn {
-  justify-self: start;
-  padding: 0.5rem 1.5rem;
-}
-
-.agp-login-kicker {
-  margin-bottom: 0.35rem;
-  color: #0f766e;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.agp-login-panel h1 {
-  margin-bottom: 0.35rem;
-  font-weight: 700;
-}
-
-.agp-login-form {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.agp-login-role-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.agp-login-role-button {
-  border: 1px solid rgba(148, 163, 184, 0.42);
-  border-radius: 0.55rem;
-  display: grid;
-  gap: 0.08rem;
-  min-height: 4.2rem;
-  align-content: center;
-  padding: 0.55rem;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--agp-text);
-  text-align: left;
-}
-
-.agp-login-role-button strong {
-  font-size: 0.92rem;
-}
-
-.agp-login-role-button span {
-  color: var(--agp-text-muted);
-  font-size: 0.72rem;
-}
-
-.agp-login-role-button.active {
-  border-color: rgba(20, 184, 166, 0.62);
-  background: var(--agp-surface);
-  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
-}
-
-.agp-login-role-hint {
-  border: 1px solid rgba(15, 118, 110, 0.14);
-  border-radius: 0.55rem;
-  background: rgba(223, 247, 244, 0.74);
-  color: #31565a;
-  padding: 0.65rem;
-  font-size: 0.86rem;
-}
-
-@media (max-width: 860px) {
-  .agp-login-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .agp-login-hero {
-    min-height: auto;
-  }
-
-  .agp-login-hero-content h1 {
-    font-size: 2.2rem;
-  }
-}
-
-@media (max-width: 520px) {
-  .agp-login-hero-grid,
-  .agp-login-role-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.agp-login-hero{background:var(--agp-primary-soft);color:var(--agp-text)}.arena-login-bot{font-size:120px;margin:48px 0}.agp-login-hero-content{position:static;padding:0}.agp-login-hero-content p,.agp-login-hero-content h1{color:var(--agp-text)}.agp-login-panel{background:var(--agp-surface)}.agp-login-role-button{background:var(--agp-surface);border-color:var(--agp-border);color:var(--agp-text)}.agp-login-role-button.active{background:var(--agp-primary-soft);border-color:var(--agp-primary);color:var(--agp-primary)}.agp-login-role-button span{display:none}
+@media (max-width: 400px) { .agp-login-role-grid { grid-template-columns: 1fr; } }
 </style>

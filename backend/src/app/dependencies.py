@@ -66,6 +66,7 @@ from team_workspace.infrastructure.sqlalchemy_repository import (
 from training_lobby.application.service import TrainingLobbyService
 from training_lobby.infrastructure.in_memory_repository import InMemoryLobbyRepository
 from training_lobby.infrastructure.sqlalchemy_repository import SqlAlchemyLobbyRepository
+from training_lobby.infrastructure.redis_presence import RedisLobbyViewerPresence
 from shared.config.settings import settings
 from shared.db.base import Base
 from shared.db.session import create_sqlalchemy_engine
@@ -261,6 +262,7 @@ def _build_container() -> ServiceContainer:
         team_workspace=team_workspace,
         execution=execution,
         matchmaking_lock_client=matchmaking_lock_client,
+        viewer_presence=RedisLobbyViewerPresence(matchmaking_lock_client) if matchmaking_lock_client is not None else None,
     )
     competition = CompetitionService(
         repository=competition_repo,

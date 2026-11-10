@@ -418,6 +418,8 @@ class ExecutionService:
                     and run.completion_pending
                 ):
                     self._complete_run(run)
+            except ConflictError:
+                logger.debug("Run %s was updated by another delivery worker", run.run_id)
             except Exception:
                 logger.exception("Deferred run delivery failed for %s", run.run_id)
 

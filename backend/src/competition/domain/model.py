@@ -189,6 +189,15 @@ class Competition:
         self.status = CompetitionStatus.PAUSED
         self.updated_at = utc_now()
 
+    def resume_after_tiebreak(self) -> None:
+        if self.status is not CompetitionStatus.PAUSED:
+            return
+        current = self.get_current_round()
+        if current is None or any(match.status is CompetitionMatchStatus.AWAITING_TIEBREAK for match in current.matches):
+            raise InvariantViolationError("В раунде остались матчи, ожидающие решения")
+        self.status = CompetitionStatus.RUNNING
+        self.updated_at = utc_now()
+
     def finish(self) -> None:
         if self.status is not CompetitionStatus.COMPLETED:
             raise InvariantViolationError("Завершение доступно только после определения победителя")

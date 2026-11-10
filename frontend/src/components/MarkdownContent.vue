@@ -132,8 +132,8 @@ function renderMarkdown(source: string): string {
 <style scoped>
 .agp-markdown {
   color: var(--agp-text);
-  font-size: 0.95rem;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .agp-markdown :deep(h1),
@@ -143,7 +143,7 @@ function renderMarkdown(source: string): string {
   margin: 1rem 0 0.45rem;
   color: var(--agp-text);
   line-height: 1.2;
-  font-weight: 850;
+  font-weight: 600;
 }
 
 .agp-markdown :deep(h1) {
@@ -175,35 +175,34 @@ function renderMarkdown(source: string): string {
 }
 
 .agp-markdown :deep(a) {
-  color: #0f766e;
-  font-weight: 750;
-  text-decoration-color: rgba(15, 118, 110, 0.35);
+  color: var(--agp-primary);
+  font-weight: 500;
   text-underline-offset: 0.18em;
 }
 
 .agp-markdown :deep(code) {
   border-radius: 0.3rem;
-  background: #e8f4f2;
+  background: var(--agp-primary-soft);
   padding: 0.05rem 0.25rem;
-  color: #0f766e;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--agp-primary);
+  font-family: "JetBrains Mono", monospace;
   font-size: 0.88em;
 }
 
 .agp-markdown :deep(pre) {
   overflow-x: auto;
-  border: 1px solid rgba(125, 211, 252, 0.22);
-  border-radius: 0.45rem;
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98)),
-    #0f172a;
-  padding: 0.75rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--agp-border);
+  border-radius: 8px;
+  background: var(--agp-surface-soft);
+  color: var(--agp-text);
+  padding: 12px;
+  font: 13px/22px "JetBrains Mono", monospace;
 }
 
 .agp-markdown :deep(pre code) {
   background: transparent;
   padding: 0;
-  color: #e2e8f0;
+  color: inherit;
+  font: inherit;
 }
 </style>

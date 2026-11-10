@@ -705,21 +705,9 @@ def test_competition_advance_manual_tie_requires_resolution(client, teacher_head
         headers=teacher_headers,
     ).json()
     assert resolved["rounds"][0]["matches"][0]["status"] == "finished"
-
-    resumed = client.post(
-        f"/api/v1/competitions/{competition['competition_id']}/start",
-        json={"requested_by": "teacher-tie"},
-        headers=teacher_headers,
-    ).json()
-    assert resumed["status"] == "running"
-
-    completed = client.post(
-        f"/api/v1/competitions/{competition['competition_id']}/advance",
-        json={"requested_by": "teacher-tie"},
-        headers=teacher_headers,
-    ).json()
-    assert completed["status"] == "completed"
-    assert completed["winner_team_ids"] == [team_a["team_id"]]
+    assert resolved["rounds"][0]["status"] == "finished"
+    assert resolved["status"] == "completed"
+    assert resolved["winner_team_ids"] == [team_a["team_id"]]
 
     finished = client.post(
         f"/api/v1/competitions/{competition['competition_id']}/finish",

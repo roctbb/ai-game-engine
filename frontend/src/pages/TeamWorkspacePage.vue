@@ -4,7 +4,7 @@
       <RouterLink class="agp-back-link" :to="backTarget" aria-label="Назад"
         >←</RouterLink
       >
-      <h1>{{ workspace?.captain_user_id || "Код игрока" }}</h1>
+      <h1 :title="workspace?.team_name || workspace?.captain_user_id">{{ workspace?.team_name || workspace?.captain_user_id || "Код игрока" }}</h1>
       <span class="small text-muted">{{
         isEditorDirty ? "Черновик" : formatTime(selectedSlot?.updated_at)
       }}</span
@@ -114,7 +114,6 @@ import { RouterLink, useRoute } from "vue-router";
 import { formatTime } from "../lib/attemptPresentation";
 
 import CodeEditor from "../components/CodeEditor.vue";
-import SlotStateBadge from "../components/SlotStateBadge.vue";
 import {
   getRun,
   getRunCode,
@@ -172,43 +171,10 @@ const canInspectTechnicalDetails = computed(
   () => sessionStore.role === "teacher" || sessionStore.role === "admin",
 );
 const canUseDemoStrategy = computed(() => canInspectTechnicalDetails.value);
-const slotCount = computed(() => workspace.value?.slot_states.length ?? 0);
-const emptySlotCount = computed(
-  () =>
-    workspace.value?.slot_states.filter((slot) => slot.state === "empty")
-      .length ?? 0,
-);
-const filledSlotCount = computed(
-  () =>
-    workspace.value?.slot_states.filter(
-      (slot) => slot.state !== "empty" && slot.state !== "incompatible",
-    ).length ?? 0,
-);
-const workspaceReadyPercent = computed(() =>
-  slotCount.value > 0
-    ? Math.round((filledSlotCount.value / slotCount.value) * 100)
-    : 0,
-);
-const incompatibleSlotCount = computed(
-  () =>
-    workspace.value?.slot_states.filter((slot) => slot.state === "incompatible")
-      .length ?? 0,
-);
 const savedSelectedSlotCode = computed(() => selectedSlot.value?.code ?? "");
 const isEditorDirty = computed(
   () => editorCode.value !== savedSelectedSlotCode.value,
 );
-
-function slotStateLabel(state: string): string {
-  const labels: Record<string, string> = {
-    filled: "заполнен",
-    empty: "пустой",
-    dirty: "изменен",
-    locked: "заблокирован",
-    incompatible: "несовместим",
-  };
-  return labels[state] ?? state;
-}
 
 async function loadWorkspace(): Promise<void> {
   const teamId = String(route.params.teamId || "").trim();
@@ -473,7 +439,12 @@ onMounted(async () => {
   line-height: 24px;
   margin: 0;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.arena-player-workspace > header > :not(h1) { flex-shrink: 0; }
 .arena-player-editor {
   flex: 1;
   min-height: 0;
@@ -496,6 +467,7 @@ onMounted(async () => {
   border-radius: 6px;
   padding: 4px;
   max-width: 220px;
+  min-height: 32px;
 }
 .arena-player-editor details {
   position: relative;
@@ -505,6 +477,10 @@ onMounted(async () => {
   font-size: 22px;
   cursor: pointer;
   list-style: none;
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  min-width: 32px;
 }
 .arena-player-editor details > div {
   position: absolute;
@@ -542,14 +518,17 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 @media (max-width: 767px) {
   .arena-player-workspace {
     height: calc(100dvh - 16px);
   }
   .arena-player-workspace > header {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
+  .arena-player-editor select, .arena-player-editor summary { min-height: 44px; }
+  .arena-player-editor summary { min-width: 44px; }
   .arena-player-workspace > header > .small {
     display: none;
   }

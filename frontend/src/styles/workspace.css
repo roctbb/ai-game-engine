@@ -84,7 +84,7 @@
 .agp-debug-values > div { display: grid; grid-template-columns: minmax(4rem, 8rem) minmax(0, 1fr); gap: .5rem; align-items: start; border-bottom: 1px solid var(--agp-border); padding: .3rem 0; }
 .agp-debug-values details { margin: 0; }
 .agp-debug-values code { color: var(--agp-text); overflow-wrap: anywhere; }
-.agp-debug-exception { margin-top: .6rem; padding: .5rem .65rem; border-left: 2px solid #e58b7d; background: var(--agp-surface-soft); color: #e5a395; overflow-wrap: anywhere; }
+.agp-debug-exception { margin-top: .6rem; padding: .5rem .65rem; border-left: 2px solid #e58b7d; background: var(--agp-surface-soft); color: var(--agp-danger); overflow-wrap: anywhere; }
 
 .agp-outcome-toggle { display: none; border: 0; background: transparent; color: var(--agp-primary); font-size: .75rem; padding: .25rem; }
 .lobby-match-group { padding: .65rem .8rem; }

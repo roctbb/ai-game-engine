@@ -27,13 +27,122 @@ def _setup(client, container, *, count=4, access="public", builtin=False):
     return lobby, teams
 
 
-def test_teacher_presence_does_not_start_offline_training(client, container):
+def test_teacher_viewing_starts_queued_bots_without_joining_queue(client, container):
     lobby, teams = _setup(client, container)
     for team in teams:
         container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
     container.training_lobby.mark_viewer_online(lobby["lobby_id"], "test-teacher")
     result = container.training_lobby.run_matchmaking_cycle(lobby["lobby_id"], "system")
+    assert len(result.last_scheduled_run_ids) == len(teams)
+
+
+def test_offline_queued_bots_wait_without_any_viewer(client, container):
+    lobby, teams = _setup(client, container)
+    for team in teams:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    result = container.training_lobby.run_matchmaking_cycle(lobby["lobby_id"], "system")
     assert result.last_scheduled_run_ids == ()
+
+
+def test_unqueued_player_viewing_starts_offline_queued_bots(client, container):
+    lobby, teams = _setup(client, container)
+    for team in teams[1:]:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    container.training_lobby.mark_viewer_online(lobby["lobby_id"], teams[0]["captain_user_id"])
+    result = container.training_lobby.run_matchmaking_cycle(lobby["lobby_id"], "system")
+    runs = container.execution.list_runs(lobby_id=lobby["lobby_id"])
+    assert len(result.last_scheduled_run_ids) == 3
+    assert teams[0]["team_id"] not in {run.team_id for run in runs}
+
+
+def test_opening_lobby_starts_one_queued_bot_with_offline_opponent(client, container):
+    lobby, teams = _setup(client, container)
+    container.training_lobby.set_ready(lobby["lobby_id"], teams[0]["team_id"], True)
+    response = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}")
+    assert response.status_code == 200
+    runs = container.execution.list_runs(lobby_id=lobby["lobby_id"])
+    assert len(runs) == 2
+    assert teams[0]["team_id"] in {run.team_id for run in runs}
+
+
+def test_viewer_timeout_stops_new_offline_matches(client, container, monkeypatch):
+    lobby, teams = _setup(client, container)
+    for team in teams:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    container.training_lobby.mark_viewer_online(lobby["lobby_id"], "spectator")
+    later = utc_now() + timedelta(seconds=21)
+    monkeypatch.setattr("training_lobby.application.service.utc_now", lambda: later)
+    assert container.training_lobby.run_due_matchmaking_cycles() == ()
+
+
+def test_viewer_presence_is_shared_with_a_separate_matchmaker(client, container):
+    from training_lobby.application.service import TrainingLobbyService
+    from training_lobby.infrastructure.redis_presence import RedisLobbyViewerPresence
+
+    class SharedRedis:
+        def __init__(self):
+            self.values = {}
+
+        def set(self, key, value, *, ex):
+            self.values[key] = (value, ex)
+
+        def exists(self, key):
+            return key in self.values
+
+    shared = SharedRedis()
+    container.training_lobby._viewer_presence = RedisLobbyViewerPresence(shared)
+    matchmaker = TrainingLobbyService(
+        repository=container.training_lobby._repository,
+        game_catalog=container.game_catalog,
+        team_workspace=container.team_workspace,
+        execution=container.execution,
+        viewer_presence=RedisLobbyViewerPresence(shared),
+    )
+    lobby, teams = _setup(client, container)
+    for team in teams:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    assert matchmaker.run_due_matchmaking_cycles() == ()
+    container.training_lobby.mark_viewer_online(lobby["lobby_id"], "spectator")
+    assert len(matchmaker.run_due_matchmaking_cycles()[0].last_scheduled_run_ids) == len(teams)
+    assert next(iter(shared.values.values()))[1] == 20
+
+
+def test_unauthorized_private_lobby_view_cannot_wake_bots(client, container):
+    lobby, teams = _setup(client, container, access="code")
+    for team in teams:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    session = client.post("/api/v1/auth/dev-login", json={"nickname": "outsider", "role": "student"}).json()
+    response = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers={"X-Session-Id": session["session_id"]})
+    assert response.status_code == 403
+    assert container.training_lobby.run_due_matchmaking_cycles() == ()
+
+
+def test_admin_bots_remain_queued_but_only_play_when_watched(client, container, monkeypatch):
+    lobby, _ = _setup(client, container, builtin=True)
+    admin = client.post("/api/v1/auth/dev-login", json={"nickname": "demo-admin", "role": "admin"}).json()
+    headers = {"X-Session-Id": admin["session_id"]}
+    for _ in range(2):
+        response = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/admin-bots", headers=headers)
+        assert response.status_code == 200, response.text
+    later = utc_now() + timedelta(minutes=20)
+    monkeypatch.setattr("training_lobby.application.service.utc_now", lambda: later)
+    assert container.training_lobby.run_due_matchmaking_cycles() == ()
+    response = client.get(f"/api/v1/lobbies/{lobby['lobby_id']}", headers=headers)
+    assert response.status_code == 200
+    bots = [state for state in response.json()["teams"] if state["is_bot"]]
+    assert len(bots) == 2 and all(state["ready"] for state in bots)
+    assert len(container.execution.list_runs(lobby_id=lobby["lobby_id"])) == 2
+
+
+def test_requeueing_an_offline_player_starts_a_fresh_grace_period(client, container):
+    lobby, teams = _setup(client, container)
+    team_id = teams[0]["team_id"]
+    model = container.training_lobby.get_lobby(lobby["lobby_id"])
+    model.teams[team_id].last_seen_at = utc_now() - timedelta(hours=1)
+    container.training_lobby._repository.save(model)
+    container.training_lobby.set_ready(lobby["lobby_id"], team_id, True)
+    container.training_lobby.mark_viewer_online(lobby["lobby_id"], "spectator")
+    assert container.training_lobby.get_lobby(lobby["lobby_id"]).teams[team_id].ready
 
 
 def test_online_queue_fills_only_minimum_with_offline_code(client, container):
@@ -61,6 +170,7 @@ def test_reconnect_after_ten_minutes_does_not_requeue(client, container):
     container.training_lobby.set_ready(lobby["lobby_id"], team_id, True)
     model = container.training_lobby.get_lobby(lobby["lobby_id"])
     model.teams[team_id].last_seen_at = utc_now() - timedelta(minutes=10, seconds=1)
+    model.teams[team_id].queued_at = model.teams[team_id].last_seen_at
     container.training_lobby._repository.save(model)
     container.training_lobby.mark_viewer_online(lobby["lobby_id"], teams[0]["captain_user_id"])
     state = container.training_lobby.get_lobby(lobby["lobby_id"]).teams[team_id]
@@ -106,7 +216,8 @@ def test_student_can_watch_other_tournament_match_but_not_source(client, contain
     assert client.get(f"/api/v1/runs/{run_id}/code", headers=headers).status_code == 403
 
 
-def test_round_results_do_not_automatically_launch_next_round(client, container):
+@pytest.mark.parametrize("tie", [False, True])
+def test_round_results_do_not_automatically_launch_next_round(client, container, tie):
     lobby, _ = _setup(client, container)
     started = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={"title": "Турнир", "match_size": 2}).json()
     competition_id = started["competition_id"]
@@ -115,10 +226,26 @@ def test_round_results_do_not_automatically_launch_next_round(client, container)
         run_id = next(iter(match["run_ids_by_team"].values()))
         response = client.post(f"/api/v1/internal/runs/{run_id}/finished", json={"payload": {
             "status": "ok", "metrics": {},
-            "placements": {team_id: index + 1 for index, team_id in enumerate(match["team_ids"])},
-            "scores": {team_id: 100 - index for index, team_id in enumerate(match["team_ids"])},
+            "placements": {team_id: 1 if tie else index + 1 for index, team_id in enumerate(match["team_ids"])},
+            "scores": {team_id: 100 if tie else 100 - index for index, team_id in enumerate(match["team_ids"])},
+            **({"tie_resolution": "explicit_tie"} if tie else {}),
         }})
         assert response.status_code == 200
+    if tie:
+        paused = client.get(f"/api/v1/competitions/{competition_id}").json()
+        assert paused["status"] == "paused"
+        matches = paused["rounds"][0]["matches"]
+        for index, match in enumerate(matches):
+            resolved = client.post(f"/api/v1/competitions/{competition_id}/matches/resolve", json={
+                "round_index": 1, "match_id": match["match_id"], "advanced_team_ids": [match["team_ids"][0]],
+            })
+            assert resolved.status_code == 200, resolved.text
+            result = resolved.json()
+            assert len(result["rounds"]) == 1
+            if index < len(matches) - 1:
+                assert result["status"] == "paused" and result["pending_reason"]
+            else:
+                assert result["status"] == "running" and not result["pending_reason"]
     for _ in range(2):
         result = client.get(f"/api/v1/competitions/{competition_id}").json()
         assert len(result["rounds"]) == 1

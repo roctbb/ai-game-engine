@@ -21,14 +21,14 @@
 .section-card-grid, .games-card-grid, .lobbies-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 .section-card { display: grid; gap: 1rem; min-height: 13rem; color: inherit; text-decoration: none; transition: border-color var(--agp-motion-fast), box-shadow var(--agp-motion-fast); }
 .section-card:hover { border-color: var(--agp-primary); box-shadow: var(--agp-shadow-hover); color: inherit; }
-.section-card--done { border-color: #b4d9c9; }
+.section-card--done { border-color: var(--agp-border); }
 .section-card-top, .section-card-foot { display: flex; justify-content: space-between; align-items: center; gap: .75rem; }
 .section-index { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .6rem; background: var(--agp-surface-soft); color: var(--agp-text-muted); font-size: .85rem; }
 .section-card--done .section-index, .section-card--started .section-index { background: var(--agp-primary-soft); color: var(--agp-primary); }
 .section-status, .task-state { width: fit-content; border-radius: 999px; padding: .2rem .55rem; font-size: .72rem; font-weight: 500; white-space: nowrap; }
 .section-status--idle, .task-state--pending { background: var(--agp-surface-soft); color: var(--agp-text-muted); }
 .section-status--started { color: var(--agp-primary); background: var(--agp-primary-soft); }
-.section-status--done, .task-state--solved { color: var(--agp-success); background: #e9f5ee; }
+.section-status--done, .task-state--solved { color: var(--agp-success); background: var(--arena-success-soft); }
 .section-card h2 { margin: 0 0 .5rem; font-size: 1rem; font-weight: 700; line-height: 1.4; }
 .section-card p { margin: 0; color: var(--agp-text-muted); font-size: .84rem; line-height: 1.6; }
 .section-card-foot { color: var(--agp-text-muted); font-size: .76rem; }
@@ -50,7 +50,7 @@
 .task-description, .game-description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.6; }
 .task-meta-row { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .75rem; }
 .task-row-action { width: 7rem; }
-.current-user-summary, .leaderboard-row--mine { border-color: #b4d9c9; background: var(--agp-primary-soft); }
+.current-user-summary, .leaderboard-row--mine { border-color: var(--agp-border); background: var(--agp-primary-soft); }
 .games-head { grid-template-columns: 1fr auto; }
 .games-head-stats { grid-column: 1 / -1; }
 .games-head-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: start; }

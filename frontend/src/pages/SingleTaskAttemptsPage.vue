@@ -1,15 +1,14 @@
 <template>
   <section class="agp-grid attempts-page">
-    <header class="agp-card p-4 attempts-hero">
+    <header class="attempts-hero">
       <div>
-        <p class="attempts-kicker mb-1">Разбор попыток</p>
-        <h1 class="h3 mb-1">История попыток задачи</h1>
-        <p class="text-muted mb-0">
-          {{ game?.title || (canManage ? 'Разбор попыток учеников и ошибок выполнения.' : 'Ваши прошлые запуски и повторы.') }}
+        <h1 class="h3 mb-1">История попыток</h1>
+        <p v-if="game" class="text-muted mb-0">
+          {{ game.title }}
         </p>
       </div>
       <div class="attempts-hero-actions">
-        <RouterLink v-if="game" :to="`/tasks/${game.game_id}`" class="btn btn-dark">К задаче</RouterLink>
+        <RouterLink v-if="game" :to="`/tasks/${game.game_id}`" class="btn btn-outline-secondary">К задаче</RouterLink>
         <button class="btn btn-outline-secondary" :disabled="isLoading" @click="loadAttempts">
           {{ isLoading ? 'Обновление...' : 'Обновить' }}
         </button>
@@ -20,12 +19,8 @@
     <article v-else-if="gameError" class="agp-card p-3 text-danger">{{ gameError }}</article>
 
     <article v-if="game" class="agp-card p-3 attempts-filter-panel">
-      <div class="attempts-filter-copy">
-        <div class="small text-muted text-uppercase fw-semibold">Фильтр</div>
-        <div class="fw-semibold">Найдите нужный запуск по статусу и странице</div>
-      </div>
       <div class="attempts-filter-grid">
-        <div v-if="canManage">
+        <div v-if="canManage" class="attempts-user-filter">
           <label class="form-label small">Пользователь</label>
           <input v-model.trim="requestedBy" class="form-control mono" placeholder="Имя пользователя" />
         </div>
@@ -53,24 +48,9 @@
       </div>
     </article>
 
-    <article v-if="game" class="attempts-metrics" aria-label="Сводка попыток">
-      <div class="agp-card-soft p-3 attempts-metric-card">
-        <span>На странице</span>
-        <strong class="mono">{{ attempts.length }}</strong>
-      </div>
-      <div class="agp-card-soft p-3 attempts-metric-card attempts-metric-card--solved">
-        <span>Решено</span>
-        <strong class="mono">{{ solvedCount }}</strong>
-      </div>
-      <div class="agp-card-soft p-3 attempts-metric-card attempts-metric-card--active">
-        <span>В работе</span>
-        <strong class="mono">{{ activeCount }}</strong>
-      </div>
-      <div class="agp-card-soft p-3 attempts-metric-card attempts-metric-card--score">
-        <span>Лучший счет</span>
-        <strong class="mono">{{ bestScore ?? '—' }}</strong>
-      </div>
-    </article>
+    <div v-if="game" class="attempts-summary" aria-label="Сводка попыток">
+      <span>На странице <strong>{{ attempts.length }}</strong></span><span>Решено <strong>{{ solvedCount }}</strong></span><span>В работе <strong>{{ activeCount }}</strong></span><span>Лучший результат <strong>{{ bestScore ?? '—' }}</strong></span>
+    </div>
 
     <article v-if="attemptsError" class="agp-card p-3 text-danger">{{ attemptsError }}</article>
 
@@ -86,7 +66,8 @@
 
       <LoadingSkeleton v-if="isLoading && attempts.length === 0" :count="3" layout="list" label="Загрузка попыток…" />
       <div v-else-if="attempts.length === 0" class="agp-empty-state agp-empty-state--compact">Попытки не найдены.</div>
-      <div v-else class="table-responsive">
+      <template v-else>
+      <div class="table-responsive attempts-desktop-list">
         <table class="table table-sm align-middle mb-0 attempts-table">
           <thead>
             <tr>
@@ -104,10 +85,10 @@
           <tbody>
             <tr v-for="attempt in attempts" :key="attempt.run_id">
               <td class="arena-attempt-state"><span class="arena-status-icon" :class="attemptPresentation(attempt).tone" :title="attemptPresentation(attempt).label">{{ attemptPresentation(attempt).icon }}</span></td>
-              <td v-if="canManage" class="mono small">{{ attempt.requested_by }}</td>
+              <td v-if="canManage" class="small">{{ attempt.requested_by }}</td>
               <td>
-                <span class="attempt-status" :class="statusClass(attempt.status)">
-                  {{ statusLabel(attempt.status) }}
+                <span class="attempt-status" :class="attemptPresentation(attempt).tone === 'error' ? 'attempt-status--danger' : statusClass(attempt.status)">
+                  {{ attemptPresentation(attempt).label }}
                 </span>
               </td>
               <td v-if="canManage"><RunReasonBadge :reason="attempt.error_message" /></td>
@@ -117,7 +98,7 @@
                   {{ attemptSolved(attempt) }}
                 </span>
               </td>
-              <td class="small">{{ formatIso(attempt.finished_at || attempt.created_at) }}</td>
+              <td class="small">{{ formatTime(attempt.finished_at || attempt.created_at) }}</td>
               <td v-if="canManage">
                 <details class="small">
                   <summary class="text-muted">Технический ID</summary>
@@ -125,7 +106,7 @@
                 </details>
               </td>
               <td class="text-end d-flex gap-1 justify-content-end">
-                <RouterLink :to="{ name: 'task-run', params: { gameId: attempt.game_id }, query: { inspect_run: attempt.run_id, back: route.fullPath, attempt_user: requestedBy || undefined, attempt_offset: offset || undefined } }" class="btn btn-sm btn-outline-secondary">Повтор</RouterLink>
+                <RouterLink :to="attemptLink(attempt)" class="btn btn-sm btn-outline-secondary">Разобрать</RouterLink>
                 <button
                   v-if="canManage"
                   class="btn btn-sm btn-outline-dark"
@@ -139,8 +120,26 @@
           </tbody>
         </table>
       </div>
+      <ol class="attempts-mobile-list">
+        <li v-for="attempt in attempts" :key="attempt.run_id" class="attempts-mobile-row">
+          <span class="arena-status-icon" :class="attemptPresentation(attempt).tone" aria-hidden="true">{{ attemptPresentation(attempt).icon }}</span>
+          <div class="attempts-mobile-main">
+            <strong v-if="canManage">{{ attempt.requested_by }}</strong>
+            <time :datetime="attempt.finished_at || attempt.created_at">{{ formatTime(attempt.finished_at || attempt.created_at) }}</time>
+            <span :class="attemptPresentation(attempt).tone === 'error' ? 'text-danger' : 'text-muted'">{{ attemptPresentation(attempt).label }}</span>
+          </div>
+          <div class="attempts-mobile-actions">
+            <strong class="mono">{{ attemptScore(attempt) }}</strong>
+            <RouterLink :to="attemptLink(attempt)" class="btn btn-sm btn-outline-secondary">Разобрать</RouterLink>
+            <ActionMenu v-if="canManage" label="Действия попытки" :items="[{ id: 'logs', label: 'Логи', disabled: logsLoadingRunId === attempt.run_id }]" @select="showLogs(attempt.run_id)" />
+          </div>
+        </li>
+      </ol>
+      </template>
 
-      <section v-if="selectedLogs" class="attempts-log-panel mt-3">
+      <Teleport to="body">
+      <div v-if="selectedLogs" class="attempts-log-overlay" @click.self="closeLogs">
+      <section class="attempts-log-panel" role="dialog" aria-label="Логи попытки" v-dialog-focus="closeLogs">
         <div class="attempts-log-head mb-2">
           <div>
             <div class="fw-semibold">Логи попытки</div>
@@ -150,12 +149,15 @@
         </div>
         <pre class="mono small mb-0">{{ selectedLogs }}</pre>
       </section>
+      </div>
+      </Teleport>
     </article>
   </section>
 </template>
 
 <script setup lang="ts">
-import { attemptPresentation } from '../lib/attemptPresentation';
+import { attemptPresentation, formatTime } from '../lib/attemptPresentation';
+import ActionMenu from '../components/ActionMenu.vue';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
@@ -172,6 +174,9 @@ import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
 const router = useRouter();
+function attemptLink(attempt: RunDto) {
+  return { name: 'task-run', params: { gameId: attempt.game_id }, query: { inspect_run: attempt.run_id, back: route.fullPath, attempt_user: requestedBy.value || undefined, attempt_offset: offset.value || undefined } };
+}
 const sessionStore = useSessionStore();
 
 const game = ref<GameDto | null>(null);
@@ -321,18 +326,6 @@ function attemptSolved(run: RunDto): string {
   return '—';
 }
 
-function statusLabel(status: RunDto['status']): string {
-  const labels: Record<RunDto['status'], string> = {
-    created: 'Создан',
-    queued: 'В очереди',
-    running: 'Выполняется',
-    finished: 'Завершен',
-    failed: 'Ошибка',
-    timeout: 'Таймаут',
-    canceled: 'Остановлен',
-  };
-  return labels[status] ?? status;
-}
 
 function statusClass(status: RunDto['status']): string {
   if (status === 'finished') return 'attempt-status--finished';
@@ -348,11 +341,6 @@ function attemptSolvedClass(run: RunDto): string {
   return 'attempt-solved--unknown';
 }
 
-function formatIso(value: string): string {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return value;
-  return new Date(parsed).toLocaleString('ru-RU');
-}
 
 onMounted(async () => {
   await loadGame();
@@ -385,13 +373,6 @@ onMounted(async () => {
   position: relative;
 }
 
-.attempts-kicker {
-  color: #0f766e;
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
 .attempts-hero-actions {
   display: flex;
@@ -402,14 +383,14 @@ onMounted(async () => {
 
 .attempts-filter-panel {
   display: grid;
-  grid-template-columns: minmax(14rem, 0.8fr) minmax(0, 1.8fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: end;
 }
 
 .attempts-filter-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.8fr) 90px auto;
   gap: 0.75rem;
   align-items: end;
 }
@@ -420,55 +401,21 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
-.attempts-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
-}
 
-.attempts-metric-card {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 0.1rem;
-  border-color: rgba(148, 163, 184, 0.34);
-  background: var(--agp-surface);
-}
 
-.attempts-metric-card::after {
-  content: '';
-  position: absolute;
-  right: -1.25rem;
-  bottom: -1.4rem;
-  width: 4.6rem;
-  height: 4.6rem;
-  border-radius: 1.1rem;
-  background: rgba(37, 99, 235, 0.08);
-  transform: rotate(18deg);
-}
 
-.attempts-metric-card span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
 
-.attempts-metric-card strong {
-  color: var(--agp-text);
-  font-size: 1.45rem;
-}
 
-.attempts-metric-card--solved::after {
-  background: rgba(34, 197, 94, 0.12);
-}
 
-.attempts-metric-card--active::after {
-  background: rgba(20, 184, 166, 0.12);
-}
 
-.attempts-metric-card--score::after {
-  background: rgba(245, 158, 11, 0.16);
-}
+
+
+
+
+
+
+
+
 
 .attempts-pager {
   display: flex;
@@ -481,7 +428,7 @@ onMounted(async () => {
 .attempts-table {
   --bs-table-bg: transparent;
   --bs-table-striped-bg: rgba(248, 250, 252, 0.78);
-  border-color: rgba(148, 163, 184, 0.24);
+  border-color: var(--agp-border);
 }
 
 .attempts-table thead th {
@@ -507,29 +454,29 @@ onMounted(async () => {
 
 .attempt-status--finished,
 .attempt-solved--yes {
-  border-color: #86efac;
-  background: #dcfce7;
-  color: #166534;
+  border-color: var(--agp-border);
+  background: var(--arena-success-soft);
+  color: var(--agp-success);
 }
 
 .attempt-status--active {
-  border-color: #99f6e4;
-  background: #ccfbf1;
-  color: #0f766e;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .attempt-status--danger,
 .attempt-solved--no {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
+  border-color: var(--agp-border);
+  background: var(--arena-error-soft);
+  color: var(--agp-danger);
 }
 
 .attempt-status--muted,
 .attempt-solved--unknown {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-  color: #475569;
+  border-color: var(--agp-border);
+  background: var(--agp-surface-soft);
+  color: var(--agp-text-muted);
 }
 
 .attempts-log-panel {
@@ -537,7 +484,10 @@ onMounted(async () => {
   background: var(--agp-surface);
   border-radius: 8px;
   padding: 0.85rem;
+  width: min(620px, 100%);
+  color: var(--agp-text);
 }
+.attempts-log-overlay { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px; background: #10182766; }
 
 .attempts-log-head {
   display: flex;
@@ -557,8 +507,7 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
-  .attempts-filter-grid,
-  .attempts-metrics {
+  .attempts-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -574,16 +523,31 @@ onMounted(async () => {
   }
 
   .attempts-hero-actions .btn {
-    flex: 1 1 12rem;
+    flex: 1 1 0;
   }
 
-  .attempts-filter-grid,
-  .attempts-metrics {
-    grid-template-columns: 1fr;
+  .attempts-filter-grid {
+    grid-template-columns: minmax(0, 1fr) 88px;
   }
+  .attempts-user-filter, .attempts-filter-actions { grid-column: 1 / -1; }
 
   .attempts-filter-actions .btn {
     flex: 1 1 8rem;
   }
+}
+.attempts-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; font-size: 13px; color: var(--agp-text-muted); }
+.attempts-summary strong { margin-left: 4px; color: var(--agp-text); font-variant-numeric: tabular-nums; font-weight: 500; }
+.attempts-hero { padding-block: 0 8px; align-items: flex-start; background: transparent; }
+.attempts-hero h1 { margin-bottom: 4px !important; }
+.attempts-mobile-list { display: none; }
+@media (max-width: 767px) {
+  .attempts-desktop-list { display: none; }
+  .attempts-mobile-list { display: grid; list-style: none; margin: 0; padding: 0; }
+  .attempts-mobile-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 12px 0; border-top: 1px solid var(--agp-border); }
+  .attempts-mobile-main { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+  .attempts-mobile-main strong { font-weight: 500; }
+  .attempts-mobile-main time { color: var(--agp-text-muted); font-size: 12px; }
+  .attempts-mobile-actions { display: grid; grid-template-columns: auto auto; align-items: center; justify-content: end; gap: 4px 8px; }
+  .attempts-mobile-actions strong { grid-column: 1 / -1; text-align: right; font-size: 13px; }
 }
 </style>

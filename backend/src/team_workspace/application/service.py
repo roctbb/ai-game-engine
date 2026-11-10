@@ -25,6 +25,7 @@ class TeamWorkspaceView:
     captain_user_id: str
     version_id: str
     slot_states: tuple[TeamSlotState, ...]
+    team_name: str = ""
 
 
 class TeamWorkspaceService:
@@ -150,6 +151,7 @@ class TeamWorkspaceService:
                 )
 
         return TeamWorkspaceView(
+            team_name=team.name,
             team_id=team.team_id,
             game_id=team.game_id,
             captain_user_id=team.captain_user_id,

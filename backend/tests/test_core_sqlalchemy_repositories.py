@@ -4,9 +4,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from execution.domain.model import RunKind, RunStatus
 from game_catalog.domain.model import Game, GameMode, SlotDefinition
 from game_catalog.infrastructure.sqlalchemy_repository import SqlAlchemyGameRepository
 from shared.db.base import Base
+from spectator_replay.domain.model import ReplayRecord, ReplayVisibility
+from spectator_replay.infrastructure.sqlalchemy_repository import SqlAlchemyReplayRepository
 from team_workspace.domain.model import Team
 from team_workspace.infrastructure.sqlalchemy_repository import (
     SqlAlchemyTeamRepository,
@@ -44,6 +47,23 @@ def test_sqlalchemy_game_repository_roundtrip() -> None:
     assert loaded.slug == 'maze_test'
     assert loaded.active_version.semver == '1.0.0'
     assert loaded.active_version.required_slot_keys == ('agent',)
+
+
+def test_sqlalchemy_replay_repository_preserves_identity_when_writers_overlap() -> None:
+    repository = SqlAlchemyReplayRepository(_build_session_factory())
+    first = ReplayRecord.create('run-1', 'game-1', RunKind.TRAINING_MATCH, RunStatus.FINISHED,
+                                ReplayVisibility.PRIVATE, [{'tick': 0}], [], {})
+    other = ReplayRecord.create('run-1', 'game-1', RunKind.TRAINING_MATCH, RunStatus.FINISHED,
+                                ReplayVisibility.PUBLIC, [{'tick': 1}], [], {})
+    repository.save(first)
+    original = repository.get_by_run_id('run-1')
+    repository.save(other)
+    repository.save(first)  # a stale retry must not replace the newer frames
+    replay = repository.get_by_run_id('run-1')
+    assert replay.replay_id == first.replay_id
+    assert replay.created_at == original.created_at
+    assert replay.frames == [{'tick': 1}]
+    assert replay.visibility is ReplayVisibility.PRIVATE
 
 
 def test_sqlalchemy_team_and_snapshot_repository_roundtrip() -> None:

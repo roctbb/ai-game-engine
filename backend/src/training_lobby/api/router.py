@@ -74,6 +74,7 @@ def _ensure_can_control_team(container: ServiceContainer, session: AppSession, t
 
 def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> LobbyResponse:
     typed = live_view.lobby
+    bot_team_ids = {item.team_id for item in live_view.participant_stats if item.captain_user_id.startswith("bot:")}
     return LobbyResponse(
         lobby_id=typed.lobby_id,
         game_id=typed.game_id,
@@ -90,6 +91,7 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
                 "blocker_reason": team_state.blocker_reason,
                 "online": TrainingLobbyService.is_team_online(team_state),
                 "last_seen_at": team_state.last_seen_at,
+                "is_bot": team_state.team_id in bot_team_ids,
             }
             for team_state in ([] if redact_private else typed.teams.values())
         ],
@@ -177,6 +179,7 @@ def _to_summary_response(
                 "blocker_reason": team_state.blocker_reason,
                 "online": TrainingLobbyService.is_team_online(team_state),
                 "last_seen_at": team_state.last_seen_at,
+                "is_bot": container.training_lobby.is_demo_bot(team_state.team_id),
             }
             for team_state in ([] if redact_private else lobby.teams.values())
         ],
@@ -311,12 +314,7 @@ def _kick_training_matchmaking_from_live_view_if_needed(
         return live_view
     if live_view.current_run_ids or live_view.cycle_phase in {"simulation", "replay", "result"}:
         return live_view
-    try:
-        game = container.game_catalog.get_game(lobby.game_id)
-    except (InvariantViolationError, NotFoundError):
-        return live_view
-    min_players = game.match_player_bounds[0] if game.is_multiplayer else 2
-    if len(live_view.queued_team_ids) < min_players:
+    if not live_view.queued_team_ids:
         return live_view
     if _has_lobby_locking_competition(container=container, lobby_id=lobby.lobby_id):
         return live_view

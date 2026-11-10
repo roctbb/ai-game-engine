@@ -1,12 +1,8 @@
 <template>
   <section class="agp-grid">
-    <header class="agp-card replay-catalog-head">
+    <header class="replay-catalog-head">
       <div>
-        <p class="replay-catalog-kicker mb-1">Архив матчей</p>
         <h1 class="h3 mb-1">Каталог повторов</h1>
-        <p class="mb-0">
-          Повторы завершенных запусков для преподавателя и администратора.
-        </p>
       </div>
       <button v-if="canManage" class="btn btn-outline-dark" :disabled="isLoading" @click="refreshReplays">
         {{ isLoading ? 'Обновление...' : 'Обновить' }}
@@ -87,7 +83,6 @@
               <td>
                 <div class="replay-row-title">
                   <strong>{{ gameTitle(item.game_id) }}</strong>
-                  <span class="mono">{{ item.run_id }}</span>
                 </div>
                 <details class="small mt-1">
                   <summary class="text-muted">Технические детали</summary>
@@ -331,9 +326,9 @@ onUnmounted(() => {
   align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem;
-  background: var(--agp-surface);
-  color: #f8fbff;
+  padding: 0 0 8px;
+  background: transparent;
+  color: var(--agp-text);
 }
 
 .replay-catalog-head h1,
@@ -343,11 +338,11 @@ onUnmounted(() => {
 }
 
 .replay-catalog-head p {
-  color: rgba(248, 251, 255, 0.78);
+  color: var(--agp-text-muted);
 }
 
 .replay-catalog-kicker {
-  color: rgba(204, 251, 241, 0.9) !important;
+  color: var(--agp-primary);
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -357,9 +352,9 @@ onUnmounted(() => {
 .replay-catalog-head .btn {
   position: relative;
   z-index: 1;
-  border-color: rgba(255, 255, 255, 0.52);
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
+  color: var(--agp-text);
   backdrop-filter: blur(8px);
 }
 
@@ -409,7 +404,7 @@ onUnmounted(() => {
 }
 
 .replay-table tbody tr {
-  border-color: rgba(148, 163, 184, 0.24);
+  border-color: var(--agp-border);
 }
 
 .replay-row-title {
@@ -438,7 +433,7 @@ onUnmounted(() => {
 .replay-metric-pill {
   border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--agp-surface);
   color: var(--agp-text-muted);
   font-size: 0.78rem;
   font-weight: 700;

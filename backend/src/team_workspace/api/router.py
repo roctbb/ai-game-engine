@@ -119,6 +119,7 @@ def get_workspace(
     if workspace.captain_user_id != session.nickname and session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
         raise ForbiddenError("Просматривать workspace может только капитан, преподаватель или админ")
     return TeamWorkspaceResponse(
+        team_name=workspace.team_name,
         team_id=workspace.team_id,
         game_id=workspace.game_id,
         captain_user_id=workspace.captain_user_id,

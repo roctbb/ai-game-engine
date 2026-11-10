@@ -1740,13 +1740,13 @@ onUnmounted(() => {
 .agp-watch-winner-banner strong,
 .agp-watch-replay-lock strong {
   display: block;
-  color: #fef3c7;
+  color: var(--agp-warning);
   font-size: clamp(1.3rem, 2vw, 2rem);
   line-height: 1.1;
 }
 
 .agp-watch-replay-lock {
-  border-color: rgba(34, 211, 238, 0.34);
+  border-color: var(--agp-border);
 }
 
 .agp-watch-replay-lock strong {
@@ -1759,7 +1759,7 @@ onUnmounted(() => {
   align-self: stretch;
   overflow: hidden;
   border-width: 0 0 0 1px;
-  border-color: rgba(34, 211, 238, 0.24);
+  border-color: var(--agp-border);
   border-radius: 0;
   background: var(--agp-surface);
   color: var(--agp-text);
@@ -1780,7 +1780,7 @@ onUnmounted(() => {
 }
 
 .agp-watch-side-card hr {
-  border-color: rgba(148, 163, 184, 0.22);
+  border-color: var(--agp-border);
   opacity: 1;
 }
 
@@ -1803,26 +1803,26 @@ onUnmounted(() => {
 
 .agp-watch-side-winner strong {
   display: block;
-  color: #fef3c7;
+  color: var(--agp-warning);
   font-size: 1.25rem;
 }
 
 .agp-watch-side-lock {
-  border-color: rgba(34, 211, 238, 0.24);
+  border-color: var(--agp-border);
   color: var(--agp-text-muted);
   font-size: 0.86rem;
 }
 
 .agp-watch-side-card .btn-outline-secondary {
-  border-color: rgba(148, 163, 184, 0.38);
+  border-color: var(--agp-border);
   color: var(--agp-text);
-  background: rgba(15, 23, 42, 0.72);
+  background: var(--agp-surface);
 }
 
 .agp-watch-side-card .btn-outline-secondary:hover:not(:disabled) {
-  border-color: rgba(125, 211, 252, 0.65);
-  background: rgba(14, 116, 144, 0.42);
-  color: #fff;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-text);
 }
 
 .agp-watch-side-card .form-select,
@@ -1831,14 +1831,14 @@ onUnmounted(() => {
 }
 
 .agp-watch-side-card .form-select {
-  border-color: rgba(148, 163, 184, 0.36);
+  border-color: var(--agp-border);
   background-color: var(--agp-surface-soft);
   color: var(--agp-text);
 }
 
 .agp-watch-side-card .agp-card-soft {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.72);
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
   color: var(--agp-text);
 }
 
@@ -1865,7 +1865,7 @@ onUnmounted(() => {
 }
 
 .agp-watch-side-card .list-group-item {
-  border-color: rgba(148, 163, 184, 0.18);
+  border-color: var(--agp-border);
   background: transparent;
   color: var(--agp-text);
 }
@@ -1905,21 +1905,21 @@ onUnmounted(() => {
 }
 
 .agp-run-pill--active {
-  border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(251, 191, 36, 0.16);
-  color: #fde68a;
+  border-color: var(--agp-border);
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
 }
 
 .agp-run-pill--success {
-  border-color: rgba(45, 212, 191, 0.36);
-  background: rgba(20, 184, 166, 0.16);
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
   color: var(--agp-success);
 }
 
 .agp-run-pill--danger {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(127, 29, 29, 0.22);
-  color: #fecaca;
+  border-color: var(--agp-border);
+  background: var(--arena-error-soft);
+  color: var(--agp-danger);
 }
 
 .agp-match-scoreboard {
@@ -1945,7 +1945,7 @@ onUnmounted(() => {
 }
 
 .agp-match-player--self {
-  border-color: rgba(45, 212, 191, 0.5);
+  border-color: var(--agp-border);
   background: var(--agp-surface);
 }
 
@@ -2013,7 +2013,7 @@ onUnmounted(() => {
   height: 0.3rem;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.22);
+  background: var(--agp-border);
 }
 
 .agp-match-bars i {
@@ -2076,7 +2076,7 @@ onUnmounted(() => {
   gap: 0.75rem;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 0.45rem;
-  background: rgba(15, 23, 42, 0.72);
+  background: var(--agp-surface);
   padding: 0.55rem 0.65rem;
 }
 
@@ -2094,7 +2094,7 @@ onUnmounted(() => {
   gap: 0.1rem 0.55rem;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 0.45rem;
-  background: rgba(15, 23, 42, 0.72);
+  background: var(--agp-surface);
   padding: 0.5rem 0.6rem;
 }
 
@@ -2124,16 +2124,16 @@ onUnmounted(() => {
 }
 
 .agp-watch-move-row--move {
-  border-color: rgba(45, 212, 191, 0.28);
+  border-color: var(--agp-border);
 }
 
 .agp-watch-move-row--event {
-  border-color: rgba(125, 211, 252, 0.24);
+  border-color: var(--agp-border);
 }
 
 .agp-watch-move-row--error {
-  border-color: rgba(248, 113, 113, 0.38);
-  background: rgba(127, 29, 29, 0.18);
+  border-color: var(--agp-border);
+  background: var(--arena-error-soft);
 }
 
 .agp-bot-console {
@@ -2141,7 +2141,7 @@ onUnmounted(() => {
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 8px;
   background: var(--agp-surface);
-  color: #d1d5db;
+  color: var(--agp-text);
 }
 
 .agp-bot-console-head {
@@ -2165,7 +2165,7 @@ onUnmounted(() => {
 }
 
 .agp-bot-console-empty {
-  color: #64748b;
+  color: var(--agp-text-muted);
   font-style: italic;
 }
 
@@ -2192,7 +2192,7 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
-  color: #e5e7eb;
+  color: var(--agp-text);
 }
 
 

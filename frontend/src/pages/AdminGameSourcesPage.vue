@@ -1,12 +1,8 @@
 <template>
   <section class="agp-grid admin-sources-page">
-    <header class="agp-card p-4 admin-sources-hero">
+    <header class="admin-sources-hero">
       <div>
-        <p class="admin-sources-kicker mb-1">{{ canManageWorkers ? 'Системный контур' : 'Библиотека игр' }}</p>
         <h1 class="h3 mb-1">{{ pageTitle }}</h1>
-        <p class="text-muted mb-0">
-          {{ pageSubtitle }}
-        </p>
       </div>
       <div class="d-flex gap-2 align-items-center">
         <span v-if="syncingSourcesCount > 0" class="admin-source-status admin-source-status--syncing">
@@ -27,9 +23,6 @@
         <SnakeLoader />
         <div class="fw-semibold">Есть активные синхронизации</div>
       </div>
-      <div class="small text-muted mt-1">
-        Страница автоматически обновляет статусы каждые {{ pollingIntervalSeconds }} сек.
-      </div>
     </article>
 
     <article class="agp-card p-3" v-if="!canManageSources">
@@ -40,9 +33,6 @@
 
     <article v-if="canManageSources" class="agp-card p-3 admin-source-create-card">
       <h2 class="h6">Добавить игру из Git</h2>
-      <p class="small text-muted mb-3">
-        После добавления источник можно синхронизировать вручную. После успешной сборки новые игры появятся в каталоге игр в меню пользователя.
-      </p>
       <div class="admin-source-create-grid">
         <div>
           <label class="form-label small">Репозиторий</label>
@@ -108,29 +98,8 @@
                 </td>
                 <td>
                   <div class="d-flex gap-2">
-                    <button class="btn btn-sm btn-outline-secondary" @click="selectSource(source.source_id)">
-                      История
-                    </button>
-                    <button
-                      class="btn btn-sm btn-outline-primary"
-                      :disabled="!canManageSources || syncingSourceId === source.source_id || source.status !== 'active' || source.last_sync_status === 'syncing'"
-                      @click="syncSource(source.source_id)"
-                    >
-                      {{ syncingSourceId === source.source_id ? 'Синхронизация...' : 'Синхронизировать' }}
-                    </button>
-                    <button
-                      class="btn btn-sm btn-outline-warning"
-                      :disabled="!canManageSources || statusChangingSourceId === source.source_id || source.last_sync_status === 'syncing'"
-                      @click="toggleSourceStatus(source)"
-                    >
-                      {{
-                        statusChangingSourceId === source.source_id
-                          ? '...'
-                          : source.status === 'active'
-                            ? 'Отключить'
-                            : 'Включить'
-                      }}
-                    </button>
+                    <button class="btn btn-outline-primary" :disabled="!canManageSources || syncingSourceId === source.source_id || source.status !== 'active' || source.last_sync_status === 'syncing'" @click="syncSource(source.source_id)">{{ syncingSourceId === source.source_id ? 'Синхронизация…' : 'Синхронизировать' }}</button>
+                    <ActionMenu :label="`Действия источника ${source.repo_url}`" :items="sourceMenu(source)" @select="handleSourceMenu(source, $event)" />
                   </div>
                 </td>
               </tr>
@@ -320,17 +289,7 @@
                 <span v-else class="text-muted small">без меток</span>
               </td>
               <td>
-                <div class="d-flex gap-1 flex-wrap">
-                  <button
-                    v-for="targetStatus in workerStatusOptions"
-                    :key="`${worker.worker_id}-${targetStatus}`"
-                    class="btn btn-sm btn-outline-secondary"
-                    :disabled="!canManageWorkers || workerStatusChangingId === worker.worker_id || worker.status === targetStatus"
-                    @click="updateWorkerStatus(worker.worker_id, targetStatus)"
-                  >
-                    {{ workerStatusLabel(targetStatus) }}
-                  </button>
-                </div>
+                <ActionMenu :label="`Статус исполнителя ${worker.hostname}`" :items="workerStatusOptions.filter(status => status !== worker.status).map(status => ({ id: status, label: workerStatusLabel(status), disabled: !canManageWorkers || workerStatusChangingId === worker.worker_id, danger: status === 'disabled' }))" @select="updateWorkerStatus(worker.worker_id, $event as WorkerStatus)" />
               </td>
             </tr>
             <tr v-if="workers.length === 0">
@@ -344,6 +303,7 @@
 </template>
 
 <script setup lang="ts">
+import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
 import SnakeLoader from '../components/SnakeLoader.vue';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -388,11 +348,6 @@ const workerStatusOptions: WorkerStatus[] = ['online', 'offline', 'draining', 'd
 const canManageSources = computed(() => sessionStore.role === 'admin');
 const canManageWorkers = computed(() => sessionStore.role === 'admin');
 const pageTitle = computed(() => (canManageWorkers.value ? 'Статус системы' : 'Источники игр'));
-const pageSubtitle = computed(() =>
-  canManageWorkers.value
-    ? 'Источники игр, ручная синхронизация и диагностика исполнителей.'
-    : 'Подключение и обновление игр из Git-репозиториев.'
-);
 const selectedSource = computed(
   () => sources.value.find((source) => source.source_id === selectedSourceId.value) ?? null
 );
@@ -673,6 +628,17 @@ watch(
   },
   { flush: 'post' }
 );
+
+function sourceMenu(source: GameSourceDto): ActionMenuItem[] {
+  return [
+    { id: 'history', label: 'История синхронизации' },
+    { id: 'toggle', label: source.status === 'active' ? 'Отключить источник' : 'Включить источник', disabled: !canManageSources.value || statusChangingSourceId.value === source.source_id || source.last_sync_status === 'syncing', danger: source.status === 'active' },
+  ];
+}
+function handleSourceMenu(source: GameSourceDto, action: string): void {
+  if (action === 'history') void selectSource(source.source_id);
+  if (action === 'toggle') void toggleSourceStatus(source);
+}
 </script>
 
 <style scoped>
@@ -685,8 +651,10 @@ watch(
   overflow: hidden;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  gap: 16px;
   background: var(--agp-surface);
   background-position: center, center, center, right 1rem center;
   background-repeat: no-repeat;
@@ -701,7 +669,7 @@ watch(
 }
 
 .admin-sources-kicker {
-  color: #0f766e;
+  color: var(--agp-primary);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -709,7 +677,7 @@ watch(
 }
 
 .agp-status-card {
-  border-color: rgba(14, 116, 144, 0.22);
+  border-color: var(--agp-border);
   background: var(--agp-surface);
 }
 
@@ -737,7 +705,7 @@ watch(
 .admin-source-table {
   --bs-table-bg: transparent;
   --bs-table-striped-bg: rgba(248, 250, 252, 0.82);
-  border-color: rgba(148, 163, 184, 0.24);
+  border-color: var(--agp-border);
 }
 
 .admin-source-table thead th {
@@ -761,33 +729,33 @@ watch(
 }
 
 .admin-source-status--ok {
-  border-color: #86efac;
-  background: #dcfce7;
-  color: #166534;
+  border-color: var(--agp-border);
+  background: var(--arena-success-soft);
+  color: var(--agp-success);
 }
 
 .admin-source-status--syncing {
-  border-color: #99f6e4;
-  background: #ccfbf1;
-  color: #0f766e;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .admin-source-status--warning {
-  border-color: #fed7aa;
-  background: #fff7ed;
-  color: #9a3412;
+  border-color: var(--agp-border);
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
 }
 
 .admin-source-status--danger {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
+  border-color: var(--agp-border);
+  background: var(--arena-error-soft);
+  color: var(--agp-danger);
 }
 
 .admin-source-status--muted {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-  color: #475569;
+  border-color: var(--agp-border);
+  background: var(--agp-surface-soft);
+  color: var(--agp-text-muted);
 }
 
 .source-sync-summary {
@@ -805,7 +773,7 @@ watch(
 }
 
 .source-sync-row span {
-  color: var(--agp-muted);
+  color: var(--agp-text-muted);
 }
 
 .source-sync-row strong {
@@ -827,7 +795,7 @@ watch(
   height: 0.42rem;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.24);
+  background: var(--agp-border);
 }
 
 .worker-capacity-bar span {

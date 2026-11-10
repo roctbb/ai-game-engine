@@ -9,6 +9,7 @@ from competition.domain.model import (
     CompetitionFormat,
     CompetitionMatch,
     CompetitionMatchStatus,
+    CompetitionRound,
     CompetitionStatus,
     TieBreakPolicy,
 )
@@ -268,6 +269,9 @@ class CompetitionService:
 
     def start_competition(self, competition_id: str, requested_by: str) -> Competition:
         competition = self.get_competition(competition_id)
+        current_round = competition.get_current_round()
+        if current_round is not None and any(match.status is CompetitionMatchStatus.AWAITING_TIEBREAK for match in current_round.matches):
+            raise InvariantViolationError("Сначала разрешите ничьи или повторите матчи со сбоем")
         self._revalidate_all_entrants(competition)
         competition.start()
 
@@ -363,16 +367,9 @@ class CompetitionService:
             self._repository.save(competition)
             return competition
 
-        competition.mark_round_finished(round_index=current_round.round_index)
-        competition.set_pending_reason(None)
         next_seed = [team_id for team_id in next_seed if team_id]
-
-        if len(next_seed) < competition.min_match_size:
-            competition.complete_with_winners(next_seed)
-            self._repository.save(competition)
-            return competition
-
-        if not start_next_round:
+        self._record_round_result(competition, current_round, next_seed)
+        if competition.status is CompetitionStatus.COMPLETED or not start_next_round:
             self._repository.save(competition)
             return competition
         competition.create_next_round(next_seed)
@@ -381,10 +378,19 @@ class CompetitionService:
         self._repository.save(competition)
         return competition
 
+    @staticmethod
+    def _record_round_result(competition: Competition, current_round: CompetitionRound, next_seed: list[str]) -> None:
+        competition.mark_round_finished(round_index=current_round.round_index)
+        competition.set_pending_reason(None)
+        if len(next_seed) < competition.min_match_size:
+            competition.complete_with_winners(next_seed)
+
     def resolve_match_tiebreak(self, competition_id: str, data: ResolveTieInput) -> Competition:
         competition = self.get_competition(competition_id)
         current_round = competition.get_current_round()
-        match = next((item for item in current_round.matches if item.match_id == data.match_id), None) if current_round else None
+        if current_round is None or current_round.round_index != data.round_index:
+            raise InvariantViolationError("Решение доступно только для текущего раунда")
+        match = next((item for item in current_round.matches if item.match_id == data.match_id), None)
         if match and match.tie_break_reason and match.tie_break_reason.startswith("Сбой"):
             raise InvariantViolationError("Матч со сбоем нужно повторить")
         competition.resolve_match_tiebreak(
@@ -392,7 +398,15 @@ class CompetitionService:
             match_id=data.match_id,
             advanced_team_ids=data.advanced_team_ids,
         )
-        competition.set_pending_reason(None)
+        waiting = [item for item in current_round.matches if item.status is CompetitionMatchStatus.AWAITING_TIEBREAK]
+        if waiting:
+            competition.set_pending_reason(waiting[0].tie_break_reason)
+        else:
+            competition.resume_after_tiebreak()
+            competition.set_pending_reason(None)
+            if all(item.status in {CompetitionMatchStatus.FINISHED, CompetitionMatchStatus.AUTO_ADVANCED} for item in current_round.matches):
+                next_seed = [team_id for item in current_round.matches for team_id in item.advanced_team_ids]
+                self._record_round_result(competition, current_round, next_seed)
         self._repository.save(competition)
         return competition
 

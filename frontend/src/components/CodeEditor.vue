@@ -8,6 +8,8 @@ import { history, historyKeymap, indentWithTab, defaultKeymap } from '@codemirro
 import { Compartment, EditorState, RangeSet, type Extension } from '@codemirror/state';
 import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 import {
   drawSelection,
   EditorView,
@@ -97,6 +99,7 @@ function ensureEditor(): void {
     doc: props.modelValue ?? '',
     extensions: [
       basicSetup,
+      syntaxHighlighting(HighlightStyle.define([{ tag: tags.comment, class: 'arena-code-comment' }])),
       history(),
       lineNumbers(),
       drawSelection(),
@@ -187,8 +190,15 @@ watch(
 }
 
 .agp-code-editor--readonly :deep(.cm-content) {
-  opacity: 0.92;
+  opacity: 1;
 }
+.agp-code-editor :deep(.cm-editor),
+.agp-code-editor :deep(.cm-tooltip) { background: var(--agp-surface); color: var(--agp-text); }
+.agp-code-editor :deep(.cm-gutters) { background: var(--agp-surface); color: var(--agp-text-muted); border-color: var(--agp-border); }
+.agp-code-editor :deep(.cm-activeLine) { background: transparent; }
+.agp-code-editor :deep(.cm-activeLineGutter) { background: var(--agp-primary-soft); color: var(--agp-primary); }
+.agp-code-editor :deep(.cm-cursor) { border-left-color: var(--agp-text); }
+.agp-code-editor :deep(.arena-code-comment) { color: var(--agp-text-muted); }
 .agp-code-editor :deep(.arena-code-error) { background: var(--arena-error-soft); box-shadow: inset 3px 0 var(--agp-danger); }
 .agp-code-editor :deep(.arena-error-gutter) { color: var(--agp-danger); background: var(--arena-error-soft); font-weight: 700; }
 </style>

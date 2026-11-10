@@ -57,36 +57,8 @@
         </div>
         <div v-if="competition.status === 'running' && competition.rounds.find(r => r.round_index === competition?.current_round_index)?.status === 'finished'" class="arena-next-round"><button v-if="canModerate" class="btn btn-primary" :disabled="!canAdvance" @click="advanceCurrentCompetition">Запустить следующий раунд</button><span v-else class="text-muted">Ⅱ Ожидаем преподавателя</span></div>
         <button v-if="canModerate && competition.status === 'completed'" class="btn btn-primary" :disabled="!canFinish" @click="finishCurrentCompetition">Завершить турнир</button>
-        <details v-if="canModerate" class="competition-actions">
-          <summary>Управление</summary>
-          <div class="d-flex gap-2">
-            <RouterLink
-              v-if="competition"
-              class="btn btn-sm btn-outline-secondary"
-              :to="`/replays?game_id=${competition.game_id}&run_kind=competition_match`"
-            >
-              Все повторы игры
-            </RouterLink>
-            <button class="btn btn-sm btn-outline-secondary" :disabled="isCreatingTeam" @click="createTeamForCompetitionGame">
-              {{ isCreatingTeam ? 'Создание...' : 'Создать игрока' }}
-            </button>
-            <button class="btn btn-sm btn-dark" :disabled="!canRegister" @click="registerSelectedTeam">
-              Зарегистрировать
-            </button>
-            <button class="btn btn-sm btn-outline-primary" :disabled="!canStart" @click="startCurrentCompetition">
-              {{ isStarting ? 'Запуск...' : 'Начать' }}
-            </button>
-            <button class="btn btn-sm btn-outline-success" :disabled="!canAdvance" @click="advanceCurrentCompetition">
-              {{ isAdvancing ? 'Обработка...' : 'Следующий раунд' }}
-            </button>
-            <button class="btn btn-sm btn-outline-warning" :disabled="!canPause" @click="pauseCurrentCompetition">
-              Пауза
-            </button>
-            <button class="btn btn-sm btn-outline-danger" :disabled="!canFinish" @click="finishCurrentCompetition">
-              Завершить
-            </button>
-          </div>
-        </details>
+        <button v-if="canModerate && ['draft','paused'].includes(competition.status) && !competition.pending_reason" class="btn btn-primary" :disabled="!canStart || isStarting" @click="startCurrentCompetition">{{ competition.status === 'paused' ? 'Продолжить турнир' : 'Начать турнир' }}</button>
+        <ActionMenu v-if="canModerate && competitionMenuItems.length" label="Действия турнира" :items="competitionMenuItems" @select="handleCompetitionMenu" />
       </article>
 
       <article class="agp-card p-3 competition-settings-card" v-if="competition.status === 'draft' && canModerate">
@@ -162,30 +134,7 @@
               <span class="agp-pill" :class="entrantStatusToneClass(entrant)">
                 {{ entrantStatusLabel(entrant) }}
               </span>
-              <div v-if="canModerate" class="competition-entrant-actions">
-                    <button
-                      class="btn btn-sm btn-outline-warning"
-                      :disabled="!canModerate || !entrant.ready || entrant.banned || moderationBusyTeamId === entrant.team_id"
-                      @click="setEntrantNotReady(entrant.team_id)"
-                    >
-                      Снять готовность
-                    </button>
-                    <button
-                      class="btn btn-sm"
-                      :class="entrant.banned ? 'btn-outline-success' : 'btn-outline-danger'"
-                      :disabled="!canModerate || moderationBusyTeamId === entrant.team_id"
-                      @click="toggleEntrantBan(entrant.team_id, !entrant.banned)"
-                    >
-                      {{ entrant.banned ? 'Разрешить' : 'Заблокировать' }}
-                    </button>
-                    <button
-                      class="btn btn-sm btn-outline-secondary"
-                      :disabled="!canModerate || competition.status !== 'draft' || unregisteringTeamId === entrant.team_id"
-                      @click="unregisterEntrant(entrant.team_id)"
-                    >
-                      Убрать
-                    </button>
-              </div>
+              <ActionMenu v-if="canModerate" :label="`Действия участника ${teamName(entrant.team_id)}`" :items="entrantMenu(entrant)" @select="handleEntrantMenu(entrant, $event)" />
             </div>
             <div v-if="competition.entrants.length === 0" class="text-muted small">Пока нет зарегистрированных игроков.</div>
           </div>
@@ -485,6 +434,7 @@
 </template>
 
 <script setup lang="ts">
+import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
 import { competitionMatchScores } from '../lib/competitionPresentation';
 import MatchRoster from '../components/MatchRoster.vue';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
@@ -1092,7 +1042,6 @@ async function applyTieDecision(): Promise<void> {
   try {
     competition.value = await resolveCompetitionMatchTie({ competition_id: competition.value.competition_id, round_index: tieDialog.value.roundIndex, match_id: tieDialog.value.matchId, advanced_team_ids: tieSelected.value });
     tieDialog.value = null;
-    if (competition.value.status === 'paused' && !competition.value.rounds.some(round => round.matches.some(match => match.status === 'awaiting_tiebreak'))) competition.value = await startCompetition({ competition_id: competition.value.competition_id, requested_by: sessionStore.nickname });
     await refreshCompetitionRelatedData();
   } catch (e) { errorMessage.value = e instanceof Error ? e.message : 'Не удалось применить решение'; }
   finally { isAdvancing.value = false; }
@@ -1182,6 +1131,34 @@ onMounted(async () => {
 onUnmounted(() => {
   stopCompetitionLiveUpdates();
 });
+
+const competitionMenuItems = computed<ActionMenuItem[]>(() => {
+  if (!competition.value) return [];
+  const items: ActionMenuItem[] = [];
+  if (competition.value.status === 'draft') {
+    items.push({ id: 'create-player', label: 'Создать игрока', disabled: isCreatingTeam.value });
+    items.push({ id: 'register', label: 'Зарегистрировать выбранного игрока', disabled: !canRegister.value });
+  }
+  if (competition.value.status === 'running') items.push({ id: 'pause', label: 'Приостановить турнир', disabled: !canPause.value });
+  return items;
+});
+function handleCompetitionMenu(action: string): void {
+  if (action === 'create-player') void createTeamForCompetitionGame();
+  if (action === 'register') void registerSelectedTeam();
+  if (action === 'pause') void pauseCurrentCompetition();
+}
+function entrantMenu(entrant: CompetitionDto['entrants'][number]): ActionMenuItem[] {
+  const busy = moderationBusyTeamId.value === entrant.team_id || unregisteringTeamId.value === entrant.team_id;
+  const items: ActionMenuItem[] = [{ id: 'ban', label: entrant.banned ? 'Разрешить участие' : 'Заблокировать участие', danger: !entrant.banned, disabled: busy }];
+  if (entrant.ready && !entrant.banned) items.unshift({ id: 'not-ready', label: 'Снять готовность', disabled: busy });
+  if (competition.value?.status === 'draft') items.push({ id: 'remove', label: 'Убрать из турнира', danger: true, disabled: busy });
+  return items;
+}
+function handleEntrantMenu(entrant: CompetitionDto['entrants'][number], action: string): void {
+  if (action === 'ban') void toggleEntrantBan(entrant.team_id, !entrant.banned);
+  if (action === 'not-ready') void setEntrantNotReady(entrant.team_id);
+  if (action === 'remove') void unregisterEntrant(entrant.team_id);
+}
 </script>
 
 <style scoped>
@@ -1239,7 +1216,7 @@ onUnmounted(() => {
 .competition-view-toggle .btn.active {
   background: var(--agp-action);
   border-color: var(--agp-action);
-  color: #fff;
+  color: var(--arena-on-primary);
 }
 
 .competition-command-center,
@@ -1298,7 +1275,7 @@ onUnmounted(() => {
 .competition-actions summary {
   border: 1px solid var(--agp-border);
   border-radius: 999px;
-  background: #fff;
+  background: var(--agp-surface);
   padding: 0.45rem 0.8rem;
   color: var(--agp-text);
   font-weight: 700;
@@ -1343,7 +1320,7 @@ onUnmounted(() => {
 .competition-match-player {
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--agp-surface);
   padding: 0.65rem;
 }
 
@@ -1383,7 +1360,7 @@ onUnmounted(() => {
 }
 
 .competition-match-player.advanced {
-  border-color: rgba(20, 184, 166, 0.45);
+  border-color: var(--agp-border);
   background: var(--agp-surface);
 }
 
@@ -1413,7 +1390,7 @@ onUnmounted(() => {
 
 .competition-stat span {
   display: block;
-  color: var(--agp-muted);
+  color: var(--agp-text-muted);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -1429,8 +1406,8 @@ onUnmounted(() => {
 .competition-warning {
   border: 1px solid rgba(217, 119, 6, 0.26);
   border-radius: 0.9rem;
-  background: rgba(255, 251, 235, 0.88);
-  color: #8a4b0c;
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
   padding: 0.65rem 0.8rem;
 }
 
@@ -1449,7 +1426,7 @@ onUnmounted(() => {
 .competition-winner-callout {
   border: 1px solid rgba(20, 184, 166, 0.24);
   border-radius: 0.65rem;
-  background: rgba(204, 251, 241, 0.5);
+  background: var(--agp-primary-soft);
   padding: 0.45rem 0.65rem;
   display: grid;
   gap: 0.05rem;
@@ -1485,7 +1462,7 @@ onUnmounted(() => {
 }
 
 .competition-leaderboard-row.winner {
-  border-color: rgba(20, 184, 166, 0.42);
+  border-color: var(--agp-border);
   background: var(--agp-surface);
 }
 
@@ -1528,7 +1505,7 @@ onUnmounted(() => {
 .competition-table {
   --bs-table-bg: transparent;
   --bs-table-striped-bg: rgba(248, 250, 252, 0.82);
-  border-color: rgba(148, 163, 184, 0.24);
+  border-color: var(--agp-border);
 }
 
 .competition-table thead th {
@@ -1557,7 +1534,7 @@ onUnmounted(() => {
 }
 
 .competition-admin-details {
-  background: #131e2f;
+  background: var(--agp-surface);
 }
 
 .competition-admin-details > summary {

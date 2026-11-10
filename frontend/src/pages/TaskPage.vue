@@ -1,25 +1,26 @@
 <template>
   <section class="arena-task-page">
-    <LoadingSkeleton v-if="loading" :count="2" label="Загрузка задачи" />
-    <p v-if="error" role="alert" class="text-danger">{{ error }}</p>
+    <LoadingSkeleton v-if="loading && !game" :count="2" label="Загрузка задачи" />
+    <p v-if="error && !game" role="alert" class="text-danger">{{ error }}</p>
     <template v-if="game">
       <article class="agp-card arena-task-statement">
         <header>
           <h1>{{ game.title }}</h1>
+          <div v-if="canManage" class="arena-task-tools">
           <RouterLink
-            v-if="canManage"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-outline-secondary"
             :to="{ name: 'admin-catalog', query: { game_id: game.game_id } }"
             >Настройки</RouterLink
           >
           <button
-            v-if="canManage"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-outline-secondary"
             @click="copyLink"
           >
             {{ copied ? "Скопировано" : "Ссылка на задачу" }}
           </button>
+          </div>
         </header>
+        <p v-if="error" role="alert" class="text-danger">{{ error }}</p>
         <MarkdownContent v-if="game.description" :source="game.description" />
         <MarkdownContent
           v-if="docs?.player_instruction"
@@ -286,10 +287,11 @@ onUnmounted(() => clearInterval(refreshTimer));
   align-items: start;
 }
 .arena-task-statement {
-  padding: 24px;
+  padding: 16px 24px 24px;
   font-size: 14px;
   line-height: 22px;
 }
+.arena-task-page > .agp-skeleton-region { grid-column: 1 / -1; }
 .arena-task-statement header,
 .arena-task-section header {
   display: flex;
@@ -302,6 +304,25 @@ onUnmounted(() => clearInterval(refreshTimer));
 .arena-task-section h2 {
   margin: 0;
 }
+.arena-task-statement header {
+  flex-wrap: wrap;
+}
+.arena-task-statement h1 {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.arena-task-tools {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+.arena-task-tools .btn {
+  white-space: nowrap;
+}
+.arena-task-tools button { min-width: 145px; }
 .arena-task-results {
   display: grid;
   gap: 16px;
@@ -366,8 +387,14 @@ onUnmounted(() => clearInterval(refreshTimer));
   .arena-task-statement header {
     align-items: flex-start;
   }
-  .arena-task-statement header .btn {
-    font-size: 12px;
+}
+@media (max-width: 480px) {
+  .arena-task-tools {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .arena-task-tools .btn {
+    flex: 1;
   }
 }
 </style>

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import case, delete, desc, select
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, load_only, sessionmaker
 
 from execution.domain.model import RunKind, RunStatus
@@ -14,7 +16,29 @@ class SqlAlchemyReplayRepository:
 
     def save(self, replay: ReplayRecord) -> None:
         with self._session_factory.begin() as session:
-            session.merge(_map_replay_to_orm(replay))
+            insert = {"postgresql": postgres_insert, "sqlite": sqlite_insert}.get(session.get_bind().dialect.name)
+            values = _replay_values(replay)
+            if insert is None:
+                session.merge(ReplayOrm(**values))
+                return
+            statement = insert(ReplayOrm).values(**values)
+            # A terminal callback and the deferred delivery loop can both
+            # record the same run. Keep its original ID and creation time.
+            session.execute(statement.on_conflict_do_update(
+                index_elements=[ReplayOrm.run_id],
+                set_={
+                    "status": statement.excluded.status,
+                    "frames_json": statement.excluded.frames_json,
+                    "events_json": statement.excluded.events_json,
+                    "summary_json": statement.excluded.summary_json,
+                    "updated_at": statement.excluded.updated_at,
+                    "visibility": case(
+                        (ReplayOrm.replay_id == statement.excluded.replay_id, statement.excluded.visibility),
+                        else_=ReplayOrm.visibility,
+                    ),
+                },
+                where=ReplayOrm.updated_at <= statement.excluded.updated_at,
+            ))
 
     def get_by_run_id(self, run_id: str, *, include_content: bool = True) -> ReplayRecord | None:
         with self._session_factory() as session:
@@ -74,20 +98,20 @@ class SqlAlchemyReplayRepository:
             session.execute(delete(ReplayOrm).where(ReplayOrm.run_id.in_(run_ids)))
 
 
-def _map_replay_to_orm(replay: ReplayRecord) -> ReplayOrm:
-    return ReplayOrm(
-        replay_id=replay.replay_id,
-        run_id=replay.run_id,
-        game_id=replay.game_id,
-        run_kind=replay.run_kind.value,
-        status=replay.status.value,
-        visibility=replay.visibility.value,
-        frames_json=list(replay.frames),
-        events_json=list(replay.events),
-        summary_json=dict(replay.summary),
-        created_at=replay.created_at,
-        updated_at=replay.updated_at,
-    )
+def _replay_values(replay: ReplayRecord) -> dict[str, object]:
+    return {
+        "replay_id": replay.replay_id,
+        "run_id": replay.run_id,
+        "game_id": replay.game_id,
+        "run_kind": replay.run_kind.value,
+        "status": replay.status.value,
+        "visibility": replay.visibility.value,
+        "frames_json": list(replay.frames),
+        "events_json": list(replay.events),
+        "summary_json": dict(replay.summary),
+        "created_at": replay.created_at,
+        "updated_at": replay.updated_at,
+    }
 
 
 def _map_replay_from_orm(row: ReplayOrm, *, include_content: bool = True) -> ReplayRecord:

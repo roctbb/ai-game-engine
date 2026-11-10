@@ -29,7 +29,25 @@
     Object.entries(labels).slice(0,8).forEach(([value,label])=>{const item=document.createElement('span');item.textContent=`${value} — ${label}`;legend.append(item)});
     (svg.closest('.wrap')||svg.parentElement).append(legend);
     const tip=document.createElement('div');tip.hidden=true;Object.assign(tip.style,{position:'fixed',top:'8px',left:'8px',zIndex:'20',padding:'5px 8px',borderRadius:'5px',background:'#081524ee',color:'#e8f2ff',font:'12px system-ui,sans-serif',pointerEvents:'none'});document.body.append(tip);
-    svg.addEventListener('pointermove',event=>{const board=Array.isArray(frame.board)?frame.board:frame.maze;if(!Array.isArray(board)||!Array.isArray(board[0]))return;const matrix=svg.getScreenCTM();if(!matrix)return;const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse()),box=svg.viewBox.baseVal,x=Math.floor((point.x-box.x)*board.length/box.width),y=Math.floor((point.y-box.y)*board[0].length/box.height);if(x<0||y<0||x>=board.length||y>=board[0].length){tip.hidden=true;return}const value=board[x][y];tip.textContent=`(${x}, ${y}) · ${labels[String(value)]||`значение ${value}`}`;tip.hidden=false});svg.addEventListener('pointerleave',()=>{tip.hidden=true});
+    svg.addEventListener('pointermove',event=>{
+      tip.hidden=true;
+      const board=Array.isArray(frame.board)?frame.board:frame.maze;
+      if(!Array.isArray(board)||!Array.isArray(board[0]))return;
+      let point={x:event.clientX,y:event.clientY},box=svg.getBoundingClientRect();
+      if(svg instanceof SVGSVGElement && svg.viewBox.baseVal.width && svg.viewBox.baseVal.height){
+        const matrix=svg.getScreenCTM();
+        if(!matrix)return;
+        point=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
+        box=svg.viewBox.baseVal;
+      }
+      if(!box.width||!box.height)return;
+      const x=Math.floor((point.x-box.x)*board.length/box.width),y=Math.floor((point.y-box.y)*board[0].length/box.height);
+      if(x<0||y<0||x>=board.length||y>=board[0].length)return;
+      const value=board[x][y];
+      tip.textContent=`(${x}, ${y}) · ${labels[String(value)]||`значение ${value}`}`;
+      tip.hidden=false;
+    });
+    svg.addEventListener('pointerleave',()=>{tip.hidden=true});
   }
 
   function fit() {

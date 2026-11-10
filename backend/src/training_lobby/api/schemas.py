@@ -60,6 +60,7 @@ class StartLobbyCompetitionRequest(BaseModel):
 
 
 class LobbyTeamStateResponse(BaseModel):
+    is_bot: bool = False
     online: bool = False
     last_seen_at: datetime | None = None
     team_id: str

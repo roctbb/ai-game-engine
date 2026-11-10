@@ -22,7 +22,7 @@ button:disabled { cursor: not-allowed; }
 .agp-view-mode-toggle .agp-icon-button { width: auto; min-width: 2.25rem; gap: .4rem; border-color: transparent; background: transparent; }
 .agp-view-mode-toggle .agp-icon-button span { font-size: .75rem; }
 .agp-view-mode-toggle .agp-icon-button--active { background: var(--agp-primary-soft); color: var(--agp-primary); }
-.agp-launch-button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; padding: .6rem .9rem; border: 1px solid transparent; border-radius: .55rem; background: var(--agp-action); color: #fff; font-weight: 700; font-size: .85rem; transition: background var(--agp-motion-fast), opacity var(--agp-motion-fast); }
+.agp-launch-button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; padding: .6rem .9rem; border: 1px solid transparent; border-radius: .55rem; background: var(--agp-action); color: var(--arena-on-primary); font-weight: 700; font-size: .85rem; transition: background var(--agp-motion-fast), opacity var(--agp-motion-fast); }
 .agp-launch-button:hover:not(:disabled) { background: #096c61; }
 .agp-launch-button:disabled { opacity: .5; }
 .agp-console-resize { height: .35rem; cursor: row-resize; touch-action: none; background: var(--agp-border); }
@@ -33,9 +33,9 @@ button:disabled { cursor: not-allowed; }
 .agp-bot-console--expanded { display: flex; flex-direction: column; min-height: 0; }
 .agp-bot-console--expanded .agp-bot-console-body { flex: 1; max-height: none; }
 .agp-task-workspace .agp-pill--neutral { color: var(--agp-text-muted); background: var(--agp-surface-soft); }
-.agp-task-workspace .agp-pill--success { color: #9ce5bb; background: #183b2c; }
-.agp-task-workspace .agp-pill--warning { color: #f6d89d; background: #46361b; }
-.agp-task-workspace .agp-pill--danger { color: #ffb4ab; background: #482628; }
+.agp-task-workspace .agp-pill--success { color: var(--agp-success); background: var(--arena-success-soft); }
+.agp-task-workspace .agp-pill--warning { color: var(--agp-warning); background: var(--arena-warning-soft); }
+.agp-task-workspace .agp-pill--danger { color: var(--agp-danger); background: var(--arena-error-soft); }
 .agp-task-workspace .text-muted { color: var(--agp-text-muted) !important; }
 .agp-task-workspace .text-danger { color: #ffb4ab !important; }
 .agp-task-workspace .agp-main-columns--resizing iframe { pointer-events: none; }

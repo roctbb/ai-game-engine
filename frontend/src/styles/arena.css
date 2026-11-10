@@ -3,7 +3,7 @@
   --agp-surface: #fff;
   --agp-surface-soft: #eef1f5;
   --agp-text: #202a3a;
-  --agp-text-muted: #667184;
+  --agp-text-muted: #606c7e;
   --agp-primary: #345bd1;
   --agp-primary-soft: #edf1fe;
   --agp-action: #3158c9;
@@ -11,13 +11,25 @@
   --agp-border: #dfe4eb;
   --agp-danger: #ad3547;
   --agp-success: #237052;
+  --agp-warning: #856014;
   --agp-blue: #345bd1;
   --agp-radius: 10px;
   --arena-yellow: #c4981f;
   --arena-error-soft: #fff0f2;
   --arena-success-soft: #edf8f1;
+  --arena-warning-soft: #fff5da;
+  --agp-shadow: none;
+  --agp-shadow-hover: none;
   --arena-on-primary: #fff;
   --bs-body-bg: var(--agp-bg);
+  --bs-body-color: var(--agp-text);
+  --bs-link-color-rgb: 52, 91, 209;
+  --bs-link-hover-color-rgb: 52, 91, 209;
+  --bs-primary-rgb: 52, 91, 209;
+  --bs-secondary-color: var(--agp-text-muted);
+  --bs-emphasis-color: var(--agp-text);
+  --bs-secondary-bg: var(--agp-surface-soft);
+  --bs-tertiary-bg: var(--agp-surface-soft);
   --bs-body-font-family: "Golos Text", sans-serif;
   --bs-border-color: var(--agp-border);
 }
@@ -96,11 +108,20 @@ h2,
   justify-content: center;
   gap: 6px;
   padding: 7px 12px;
+  font-weight: 500;
+  box-shadow: none;
 }
 .btn-sm {
   font-size: 13px;
   padding: 5px 10px;
   min-height: 32px;
+}
+.btn:disabled,
+.btn.disabled {
+  opacity: 1;
+  color: var(--agp-text-muted);
+  background: var(--agp-surface-soft);
+  border-color: var(--agp-border);
 }
 .btn-dark,
 .btn-primary {
@@ -124,6 +145,10 @@ h2,
   --bs-table-bg: transparent;
   --bs-table-color: var(--agp-text);
   --bs-table-border-color: var(--agp-border);
+  --bs-table-active-bg: var(--agp-primary-soft);
+  --bs-table-active-color: var(--agp-text);
+  --bs-table-striped-bg: var(--agp-surface-soft);
+  --bs-table-striped-color: var(--agp-text);
   font-size: 13px;
   line-height: 20px;
 }
@@ -141,6 +166,18 @@ h2,
   font-size: 12px;
   padding: 2px 8px;
 }
+.agp-pill--success {
+  color: var(--agp-success);
+  background: var(--arena-success-soft);
+}
+.agp-pill--warning {
+  color: var(--agp-warning);
+  background: var(--arena-warning-soft);
+}
+.agp-pill--danger {
+  color: var(--agp-danger);
+  background: var(--arena-error-soft);
+}
 .agp-panel-toggle {
   min-height: 32px;
   border-radius: 6px;
@@ -150,6 +187,39 @@ h2,
 }
 .text-muted {
   color: var(--agp-text-muted) !important;
+}
+.text-warning,
+.text-warning-emphasis {
+  color: var(--agp-warning) !important;
+}
+.form-control::placeholder {
+  color: var(--agp-text-muted);
+  opacity: 1;
+}
+.form-control:focus,
+.form-select:focus {
+  color: var(--agp-text);
+  background: var(--agp-surface);
+  border-color: var(--agp-primary);
+  box-shadow: 0 0 0 2px var(--agp-primary-soft);
+}
+.btn-outline-warning,
+.btn-outline-danger,
+.btn-outline-success {
+  --bs-btn-border-color: var(--agp-border);
+  --bs-btn-color: var(--agp-text-muted);
+  --bs-btn-hover-color: var(--agp-text);
+  --bs-btn-hover-bg: var(--agp-surface-soft);
+  --bs-btn-hover-border-color: var(--agp-text-muted);
+}
+.btn-outline-danger {
+  --bs-btn-color: var(--agp-danger);
+  --bs-btn-hover-color: var(--agp-danger);
+  --bs-btn-hover-bg: var(--arena-error-soft);
+  --bs-btn-hover-border-color: var(--agp-danger);
+}
+.btn-link {
+  color: var(--agp-primary);
 }
 .agp-navbar {
   background: var(--agp-surface);
@@ -236,10 +306,15 @@ h2,
     --arena-yellow: #eec650;
     --agp-success: #9bdbbc;
     --agp-danger: #ffafbd;
+    --agp-warning: #f2cf75;
     --arena-success-soft: #203e34;
     --arena-error-soft: #432b35;
+    --arena-warning-soft: #403723;
     --arena-on-primary: #142347;
     --bs-body-color: var(--agp-text);
+    --bs-link-color-rgb: 169, 189, 255;
+    --bs-link-hover-color-rgb: 169, 189, 255;
+    --bs-primary-rgb: 169, 189, 255;
     --bs-secondary-color: var(--agp-text-muted);
   }
   .form-control,
@@ -298,24 +373,6 @@ h2,
   }
 }
 
-.agp-shell .agp-main .agp-markdown pre {
-  background: var(--agp-surface-soft);
-  color: var(--agp-text);
-  border: 1px solid var(--agp-border);
-  font:
-    13px/22px "JetBrains Mono",
-    monospace;
-  border-radius: 8px;
-  padding: 12px;
-}
-.agp-shell .agp-main .agp-markdown :not(pre) > code {
-  background: var(--agp-primary-soft);
-  color: var(--agp-primary);
-  border-radius: 4px;
-}
-.agp-markdown {
-  line-height: 22px;
-}
 .agp-skeleton {
   animation: none;
   background: var(--agp-surface-soft);

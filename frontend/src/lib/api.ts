@@ -137,6 +137,7 @@ export interface SlotStateDto {
 }
 
 export interface TeamWorkspaceDto {
+  team_name: string;
   team_id: string;
   game_id: string;
   captain_user_id: string;
@@ -202,6 +203,7 @@ export type LobbyAccess = 'public' | 'code';
 export type LobbyStatus = 'draft' | 'open' | 'running' | 'paused' | 'stopped' | 'updating' | 'closed';
 
 export interface LobbyTeamStateDto {
+  is_bot: boolean;
   online: boolean;
   last_seen_at: string | null;
   team_id: string;

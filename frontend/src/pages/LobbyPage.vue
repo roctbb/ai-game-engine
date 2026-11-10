@@ -6,6 +6,7 @@
         <div class="lobby-title-line">
           <RouterLink class="agp-back-link" to="/lobbies" aria-label="К списку лобби"><AppIcon name="back" /></RouterLink>
           <h1 class="h4 mb-0">{{ lobby?.title || 'Лобби' }}</h1>
+          <span v-if="lobby && (hasPlayerInLobby || canManage)" class="agp-pill agp-pill--neutral lobby-head-status">{{ hasPlayerInLobby ? readyStatusLabel : managerCycleStatusLabel }}</span>
         </div>
       </div>
       <nav v-if="lobby" class="lobby-tabs" aria-label="Разделы лобби">
@@ -28,155 +29,13 @@
           Архив
         </button>
       </nav>
-      <div v-if="lobby && hasPlayerInLobby" class="lobby-head-actions">
-        <div class="lobby-ready-summary">
-          <strong>{{ readyStatusLabel }}</strong>
-          <span>{{ queueReadinessLabel }} · {{ readyStatusHint }}</span>
-        </div>
-        <button
-          v-if="showPlayAction"
-          class="lobby-ready-icon lobby-ready-icon--play"
-          :disabled="!canPlay || isBusy"
-          :title="isBusy ? 'Обновляем статус' : 'Готов играть'"
-          aria-label="Готов играть"
-          @click="play"
-        >
-          <AppIcon name="play" /> <span>{{ isBusy ? 'Обновляем…' : 'Готов играть' }}</span>
-        </button>
-        <button
-          v-if="showStopAction"
-          class="lobby-ready-icon lobby-ready-icon--stop"
-          :disabled="!canStop || isBusy"
-          title="Не готов"
-          aria-label="Не готов"
-          @click="stop"
-        >
-          <AppIcon name="stop" /><span>Остановить</span>
-        </button>
-        <button
-          v-if="canLeaveAsPlayer"
-          class="lobby-action-icon lobby-action-icon--leave"
-          :disabled="isBusy"
-          title="Прекратить участие"
-          aria-label="Прекратить участие"
-          @click="leaveAsPlayer"
-        >
-          <span>Выйти из игры</span>
-        </button>
-        <button
-          v-if="canManage && !activeCompetition"
-          class="lobby-action-icon"
-          :disabled="isBusy"
-          title="Начать соревнование"
-          aria-label="Начать соревнование"
-          @click="showCompetitionDialog = true"
-        >
-          <AppIcon name="trophy" /><span>Соревнование</span>
-        </button>
-        <button
-          v-if="canManage"
-          class="lobby-action-icon"
-          :disabled="isBusy"
-          title="Настройки лобби"
-          aria-label="Настройки лобби"
-          @click="showLobbySettingsDialog = true"
-        >
-          <AppIcon name="settings" /><span>Настройки</span>
-        </button>
-        <button
-          v-if="canManage && !activeCompetition && canPauseLobby"
-          class="lobby-action-icon"
-          :disabled="isBusy"
-          title="Пауза"
-          aria-label="Пауза"
-          @click="pauseLobbyByTeacher"
-        >
-          <AppIcon name="pause" /><span>Пауза</span>
-        </button>
-        <button
-          v-if="canManage && !activeCompetition && canStartLobby"
-          class="lobby-action-icon lobby-action-icon--play"
-          :disabled="isBusy"
-          title="Запустить"
-          aria-label="Запустить"
-          @click="startLobbyByTeacher"
-        >
-          <AppIcon name="play" /><span>Запустить</span>
-        </button>
-        <button
-          v-if="canManage && !activeCompetition && canStopLobbyByTeacher"
-          class="lobby-action-icon lobby-action-icon--danger"
-          :disabled="isBusy"
-          title="Остановить"
-          aria-label="Остановить"
-          @click="stopLobbyByTeacher"
-        >
-          <AppIcon name="stop" /><span>Остановить</span>
-        </button>
-      </div>
-      <div v-else-if="lobby && canManage" class="lobby-head-actions">
-        <div class="lobby-ready-summary">
-          <strong>{{ managerCycleStatusLabel }}</strong>
-          <span>{{ queueReadinessLabel }} · {{ managerCycleStatusHint }}</span>
-        </div>
-        <button
-          class="lobby-action-icon lobby-action-icon--join"
-          :disabled="!canJoinAsPlayer || isBusy"
-          title="Участвовать как игрок"
-          aria-label="Участвовать как игрок"
-          @click="joinAsPlayer"
-        >
-          <span>{{ isBusy ? 'Обновляем…' : 'Участвовать' }}</span>
-        </button>
-        <button
-          v-if="!activeCompetition"
-          class="lobby-action-icon"
-          :disabled="isBusy"
-          title="Начать соревнование"
-          aria-label="Начать соревнование"
-          @click="showCompetitionDialog = true"
-        >
-          <AppIcon name="trophy" /><span>Соревнование</span>
-        </button>
-        <button
-          class="lobby-action-icon"
-          :disabled="isBusy"
-          title="Настройки лобби"
-          aria-label="Настройки лобби"
-          @click="showLobbySettingsDialog = true"
-        >
-          <AppIcon name="settings" /><span>Настройки</span>
-        </button>
-        <button
-          v-if="!activeCompetition && canPauseLobby"
-          class="lobby-action-icon"
-          :disabled="isBusy"
-          title="Пауза"
-          aria-label="Пауза"
-          @click="pauseLobbyByTeacher"
-        >
-          <AppIcon name="pause" /><span>Пауза</span>
-        </button>
-        <button
-          v-if="!activeCompetition && canStartLobby"
-          class="lobby-action-icon lobby-action-icon--play"
-          :disabled="isBusy"
-          title="Запустить"
-          aria-label="Запустить"
-          @click="startLobbyByTeacher"
-        >
-          <AppIcon name="play" /><span>Запустить</span>
-        </button>
-        <button
-          v-if="!activeCompetition && canStopLobbyByTeacher"
-          class="lobby-action-icon lobby-action-icon--danger"
-          :disabled="isBusy"
-          title="Остановить"
-          aria-label="Остановить"
-          @click="stopLobbyByTeacher"
-        >
-          <AppIcon name="stop" /><span>Остановить</span>
-        </button>
+      <div v-if="lobby && (hasPlayerInLobby || canManage)" class="lobby-head-actions">
+        <button v-if="showPlayAction" class="btn btn-primary" :disabled="!canPlay || isBusy" @click="play">В очередь</button>
+        <button v-if="showStopAction" class="btn btn-outline-secondary" :disabled="!canStop || isBusy" aria-label="Выйти из очереди" @click="stop"><span class="lobby-action-wide">Выйти из очереди</span><span class="lobby-action-compact">Не готов</span></button>
+        <button v-if="canManage && !activeCompetition" class="btn btn-outline-secondary" :disabled="isBusy" aria-label="Начать соревнование" @click="showCompetitionDialog = true"><AppIcon name="trophy" /><span class="lobby-action-wide">Соревнование</span><span class="lobby-action-compact">Турнир</span></button>
+        <button v-if="canManage && !activeCompetition && canStartLobby" class="btn btn-primary" :disabled="isBusy" aria-label="Продолжить тренировку" @click="startLobbyByTeacher"><span class="lobby-action-wide">Продолжить тренировку</span><span class="lobby-action-compact">Продолжить</span></button>
+        <ActionMenu v-if="canManage" label="Действия лобби" :items="lobbyMenuItems" @select="handleLobbyMenu" />
+        <button v-else-if="canLeaveAsPlayer" class="btn btn-outline-secondary" :disabled="isBusy" @click="leaveAsPlayer">Выйти из лобби</button>
       </div>
     </header>
 
@@ -234,7 +93,7 @@
               </button>
             </header>
 
-            <fieldset class="arena-roster-picker"><legend>Участники</legend><label><input v-model="competitionRosterMode" type="radio" value="queue" />Все в очереди · {{ lobby.teams.filter(t => t.ready).length }}</label><label><input v-model="competitionRosterMode" type="radio" value="selected" />Выбрать игроков</label><div v-if="competitionRosterMode === 'selected'"><button class="btn btn-sm btn-outline-secondary" type="button" @click="competitionSelectedTeams = lobby.teams.map(t => t.team_id)">Выбрать всех</button><label v-for="player in lobby.teams" :key="player.team_id"><input v-model="competitionSelectedTeams" type="checkbox" :value="player.team_id" />{{ teamLabel(player.team_id) }}<span class="text-muted">{{ player.online ? 'Онлайн' : 'Офлайн' }}</span></label></div></fieldset>
+            <fieldset class="arena-roster-picker"><legend>Участники</legend><label><input v-model="competitionRosterMode" type="radio" value="queue" />Все в очереди · {{ lobby.teams.filter(t => t.ready).length }}</label><label><input v-model="competitionRosterMode" type="radio" value="selected" />Выбрать игроков</label><div v-if="competitionRosterMode === 'selected'"><button class="btn btn-sm btn-outline-secondary" type="button" @click="competitionSelectedTeams = lobby.teams.map(t => t.team_id)">Выбрать всех</button><label v-for="player in lobby.teams" :key="player.team_id"><input v-model="competitionSelectedTeams" type="checkbox" :value="player.team_id" />{{ teamLabel(player.team_id) }}<span class="text-muted">{{ player.is_bot ? 'Бот' : player.online ? 'Онлайн' : 'Офлайн' }}</span></label></div></fieldset>
             <div class="lobby-competition-settings-grid">
               <label class="lobby-competition-setting">
                 <span>{{ competitionMatchSizeLabel }}</span>
@@ -297,8 +156,7 @@
           <article class="lobby-settings-dialog" v-dialog-focus="() => showLobbySettingsDialog = false" role="dialog" aria-modal="true" aria-labelledby="lobby-settings-dialog-title">
             <header class="lobby-dialog-head">
               <div>
-                <h2 id="lobby-settings-dialog-title" class="h5 mb-1">Настройки лобби</h2>
-                <p class="small text-muted mb-0">Доступ, лимит игроков и автоочистка тренировочных матчей.</p>
+                <h2 id="lobby-settings-dialog-title" class="h5 mb-0">Настройки лобби</h2>
               </div>
               <button
                 class="lobby-dialog-close"
@@ -800,6 +658,7 @@
 </template>
 
 <script setup lang="ts">
+import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
 import { competitionMatchScores } from '../lib/competitionPresentation';
 import AppIcon from '../components/AppIcon.vue';
 import { statusPillClass } from '../lib/statusTone';
@@ -1200,8 +1059,9 @@ function lobbyStatusClass(status: LobbyDto['status']): string {
 
 function teamStatusLabel(teamId: string): string {
   const state = lobby.value?.teams.find(team => team.team_id === teamId);
-  if (state && !state.online) return state.ready ? 'Офлайн · в очереди' : 'Офлайн';
   if (lobby.value?.playing_team_ids.includes(teamId)) return 'играет';
+  if (state?.is_bot) return state.ready ? 'Бот · в очереди' : 'Бот';
+  if (state && !state.online) return state.ready ? 'Офлайн · в очереди' : 'Офлайн';
   if (lobby.value?.queued_team_ids.includes(teamId)) return 'в очереди';
   return 'готовится';
 }
@@ -3334,6 +3194,22 @@ onUnmounted(() => {
   stopLiveUpdates();
   stopCompetitionPolling();
 });
+
+const lobbyMenuItems = computed<ActionMenuItem[]>(() => {
+  const items: ActionMenuItem[] = [{ id: 'settings', label: 'Настройки лобби', disabled: isBusy.value }];
+  if (!hasPlayerInLobby.value) items.push({ id: 'join', label: 'Участвовать как игрок', disabled: !canJoinAsPlayer.value || isBusy.value });
+  if (!activeCompetition.value && canPauseLobby.value) items.push({ id: 'pause', label: 'Приостановить тренировку', disabled: isBusy.value });
+  if (!activeCompetition.value && canStopLobbyByTeacher.value) items.push({ id: 'stop', label: 'Остановить тренировку', danger: true, disabled: isBusy.value });
+  if (canLeaveAsPlayer.value) items.push({ id: 'leave', label: 'Выйти из лобби', danger: true, disabled: isBusy.value });
+  return items;
+});
+function handleLobbyMenu(action: string): void {
+  if (action === 'settings') showLobbySettingsDialog.value = true;
+  if (action === 'join') void joinAsPlayer();
+  if (action === 'pause') void pauseLobbyByTeacher();
+  if (action === 'stop') void stopLobbyByTeacher();
+  if (action === 'leave') void leaveAsPlayer();
+}
 </script>
 
 <style scoped>
@@ -3352,7 +3228,7 @@ onUnmounted(() => {
 
 .lobby-page--game {
   gap: 0;
-  background-color: #020617;
+  background-color: var(--agp-surface);
   background-image: none;
 }
 
@@ -3396,6 +3272,13 @@ onUnmounted(() => {
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lobby-head-status { flex: none; white-space: nowrap; }
+.lobby-action-compact { display: none; }
+@media (max-width: 480px) {
+  .lobby-action-wide { display: none; }
+  .lobby-action-compact { display: inline; }
+  .lobby-head-actions .arena-menu-trigger { margin-left: auto; }
 }
 
 .lobby-head-actions,
@@ -3451,15 +3334,15 @@ onUnmounted(() => {
 }
 
 .lobby-ready-icon--play {
-  background: #0f9f8e;
-  box-shadow: 0 8px 18px rgba(15, 159, 142, 0.22);
-  color: #fff;
+  background: var(--agp-action);
+  box-shadow: none;
+  color: var(--arena-on-primary);
 }
 
 .lobby-ready-icon--stop {
-  border-color: #d4dde7;
-  background: #fff;
-  color: #8b98a8;
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
+  color: var(--agp-text-muted);
 }
 
 .lobby-action-icon {
@@ -3474,17 +3357,17 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.82);
-  color: #334155;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   font-size: .75rem;
   font-weight: 700;
   line-height: 1;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
 }
 
 .lobby-action-icon:hover:not(:disabled) {
-  border-color: rgba(20, 184, 166, 0.7);
-  color: #0f766e;
+  border-color: var(--agp-border);
+  color: var(--agp-primary);
 }
 
 .lobby-action-icon:disabled {
@@ -3493,30 +3376,30 @@ onUnmounted(() => {
 
 .lobby-action-icon--play {
   border-color: transparent;
-  background: #0f9f8e;
-  color: #fff;
+  background: var(--agp-action);
+  color: var(--arena-on-primary);
 }
 
 .lobby-action-icon--join {
-  border-color: rgba(20, 184, 166, 0.3);
-  background: rgba(220, 252, 231, 0.86);
-  color: #0f766e;
+  border-color: var(--agp-border);
+  background: var(--arena-success-soft);
+  color: var(--agp-primary);
 }
 
 .lobby-action-icon--leave {
-  border-color: rgba(245, 158, 11, 0.42);
-  background: rgba(255, 251, 235, 0.9);
-  color: #b45309;
+  border-color: var(--agp-border);
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
 }
 
 .lobby-action-icon--danger {
-  border-color: rgba(244, 63, 94, 0.36);
-  color: #be123c;
+  border-color: var(--agp-border);
+  color: var(--agp-danger);
 }
 
 .lobby-access-card {
   justify-content: space-between;
-  background: #f8fafc;
+  background: var(--agp-surface-soft);
 }
 
 .lobby-access-form {
@@ -3532,8 +3415,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  border-color: rgba(217, 119, 6, 0.35);
-  background: #fff7ed;
+  border-color: var(--agp-border);
+  background: var(--arena-warning-soft);
 }
 
 .lobby-modal-backdrop {
@@ -3541,7 +3424,9 @@ onUnmounted(() => {
   inset: 0;
   z-index: 120;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: start end;
+  overflow-y: auto;
   padding: 4.2rem 1rem 1rem;
   background: rgba(15, 23, 42, 0.32);
   backdrop-filter: blur(3px);
@@ -3583,13 +3468,14 @@ onUnmounted(() => {
 }
 
 .lobby-dialog-close {
+  flex: none;
   width: 2rem;
   height: 2rem;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: #fff;
+  background: var(--agp-surface);
   color: var(--agp-text-muted);
   font-size: 1.2rem;
   line-height: 1;
@@ -3697,9 +3583,9 @@ onUnmounted(() => {
 .lobby-editor {
   position: relative;
   overflow: hidden;
-  border-color: rgba(34, 211, 238, 0.24);
-  background: #131e2f;
-  color: #e5f3ff;
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
+  color: var(--agp-text);
   box-shadow: none;
 }
 
@@ -3724,7 +3610,7 @@ onUnmounted(() => {
 }
 
 .lobby-roles-head span {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.78rem;
 }
 
@@ -3732,7 +3618,7 @@ onUnmounted(() => {
   height: 0.42rem;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.22);
+  background: var(--agp-border);
 }
 
 .lobby-role-progress i {
@@ -3748,8 +3634,8 @@ onUnmounted(() => {
   z-index: 1;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 0.55rem;
-  background: rgba(15, 23, 42, 0.64);
-  color: #dbeafe;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   padding: 0.55rem 0.65rem;
   display: grid;
   gap: 0.1rem;
@@ -3757,9 +3643,9 @@ onUnmounted(() => {
 }
 
 .lobby-role-button.active {
-  border-color: rgba(45, 212, 191, 0.72);
-  background: #131e2f;
-  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
+  box-shadow: none;
 }
 
 .lobby-role-button span {
@@ -3773,12 +3659,12 @@ onUnmounted(() => {
   height: 0.58rem;
   border-radius: 50%;
   background: #f59e0b;
-  box-shadow: 0 0 0 0.18rem rgba(245, 158, 11, 0.12);
+  box-shadow: none;
 }
 
 .lobby-role-button.filled span i {
   background: #14b8a6;
-  box-shadow: 0 0 0 0.18rem rgba(20, 184, 166, 0.14);
+  box-shadow: none;
 }
 
 .lobby-role-button span,
@@ -3793,7 +3679,7 @@ onUnmounted(() => {
 }
 
 .lobby-role-button small {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
 }
 
 .lobby-competition-panel,
@@ -3835,7 +3721,7 @@ onUnmounted(() => {
   width: fit-content;
   border: 1px solid rgba(15, 118, 110, 0.22);
   border-radius: 0.45rem;
-  background: #edf8f6;
+  background: var(--agp-primary-soft);
   padding: 0.55rem 0.65rem;
 }
 
@@ -3860,7 +3746,7 @@ onUnmounted(() => {
   border: 1px solid var(--agp-border);
   border-radius: 0.45rem;
   padding: 0.65rem;
-  background: #f8fafc;
+  background: var(--agp-surface-soft);
 }
 
 .lobby-competition-stat-list {
@@ -3872,7 +3758,7 @@ onUnmounted(() => {
 .lobby-competition-team-row {
   border: 1px solid var(--agp-border);
   border-radius: 0.45rem;
-  background: #fff;
+  background: var(--agp-surface);
   padding: 0.5rem 0.6rem;
   display: grid;
   gap: 0.05rem;
@@ -3894,18 +3780,18 @@ onUnmounted(() => {
 }
 
 .lobby-competition-team-row.winner {
-  border-color: rgba(15, 118, 110, 0.28);
-  background: #edf8f6;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
 }
 
 .lobby-competition-team-row.loser {
-  background: #fff;
+  background: var(--agp-surface);
 }
 
 .lobby-competition-setting {
   display: grid;
   gap: 0.15rem;
-  min-width: 7.2rem;
+  min-width: 0;
   font-size: 0.78rem;
   color: var(--agp-text-muted);
 }
@@ -3919,30 +3805,30 @@ onUnmounted(() => {
 
 .lobby-editor-toolbar h2,
 .lobby-editor-toolbar h3 {
-  color: #e5f3ff;
+  color: var(--agp-text);
 }
 
 .lobby-editor-toolbar p {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
 }
 
 .lobby-editor-toolbar .btn-outline-secondary {
-  border-color: rgba(125, 211, 252, 0.34);
-  background: rgba(15, 23, 42, 0.62);
-  color: #cfe6f5;
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
+  color: var(--agp-text-muted);
 }
 
 .lobby-editor-toolbar .btn-outline-secondary:hover:not(:disabled) {
-  border-color: rgba(45, 212, 191, 0.68);
-  background: rgba(20, 184, 166, 0.18);
-  color: #ffffff;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-text);
 }
 
 .lobby-editor-toolbar .btn-dark {
   border: 0;
   background: var(--agp-action);
-  color: #ffffff;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+  color: var(--arena-on-primary);
+  box-shadow: none;
 }
 
 .lobby-participant-columns {
@@ -3975,25 +3861,25 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #e2f7f4;
-  color: #0f766e;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
   font-weight: 700;
   font-size: 0.78rem;
 }
 
 .lobby-participant-column--playing .lobby-participant-column-head span {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .lobby-participant-column--queued .lobby-participant-column-head span {
-  background: #ccfbf1;
-  color: #0f766e;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .lobby-participant-column--preparing .lobby-participant-column-head span {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
 }
 
 .lobby-column-empty {
@@ -4060,7 +3946,7 @@ onUnmounted(() => {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.55rem;
-  background: #ffffff;
+  background: var(--agp-surface);
   min-width: 0;
   overflow: hidden;
 }
@@ -4072,20 +3958,20 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #e2f7f4;
-  color: #0f766e;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
   font-size: 0.72rem;
   font-weight: 700;
 }
 
 .lobby-participant-column--playing .lobby-player-avatar {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .lobby-participant-column--preparing .lobby-player-avatar {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
 }
 
 .lobby-player-main {
@@ -4113,7 +3999,7 @@ onUnmounted(() => {
   font-style: normal;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 999px;
-  background: #f8fafc;
+  background: var(--agp-surface-soft);
   padding: 0.08rem 0.4rem;
   white-space: nowrap;
 }
@@ -4134,7 +4020,7 @@ onUnmounted(() => {
 }
 
 .lobby-match-row.muted {
-  background: #f8fafc;
+  background: var(--agp-surface-soft);
 }
 
 .lobby-match-group {
@@ -4158,7 +4044,7 @@ onUnmounted(() => {
 }
 
 .lobby-match-group.muted {
-  background: #f8fafc;
+  background: var(--agp-surface-soft);
 }
 
 .lobby-match-group header,
@@ -4230,7 +4116,7 @@ onUnmounted(() => {
   max-width: 16rem;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.84);
+  background: var(--agp-surface);
   color: var(--agp-text-muted);
   padding: 0.14rem 0.55rem;
   font-size: 0.78rem;
@@ -4251,16 +4137,16 @@ onUnmounted(() => {
 }
 
 .lobby-match-player-chip.winner {
-  border-color: rgba(20, 184, 166, 0.34);
-  background: rgba(204, 251, 241, 0.78);
-  color: #0f766e;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .lobby-match-replay-badge {
   border: 1px solid rgba(245, 158, 11, 0.28);
   border-radius: 999px;
-  background: #fffbeb;
-  color: #b45309;
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
   padding: 0.12rem 0.5rem;
   font-weight: 700;
 }
@@ -4279,7 +4165,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  background: #fff;
+  background: var(--agp-surface);
 }
 
 .lobby-leaderboard-row > div {
@@ -4302,16 +4188,16 @@ onUnmounted(() => {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(204, 251, 241, 0.76);
-  color: #0f766e;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
   font-size: 0.98rem;
   font-weight: 700;
   line-height: 1;
 }
 
 .lobby-mini-icon:hover:not(:disabled) {
-  border-color: rgba(20, 184, 166, 0.54);
-  background: rgba(153, 246, 228, 0.92);
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
 }
 
 .lobby-mini-icon:disabled {
@@ -4319,9 +4205,9 @@ onUnmounted(() => {
 }
 
 .lobby-mini-icon--code {
-  border-color: rgba(59, 130, 246, 0.24);
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.78rem;
 }
@@ -4359,7 +4245,7 @@ onUnmounted(() => {
   flex: none;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 999px;
-  background: #f8fafc;
+  background: var(--agp-surface-soft);
   color: var(--agp-text-muted);
   padding: 0.12rem 0.45rem;
   font-size: 0.7rem;
@@ -4368,21 +4254,21 @@ onUnmounted(() => {
 }
 
 .lobby-status-badge--playing {
-  border-color: rgba(37, 99, 235, 0.2);
-  background: #dbeafe;
-  color: #1d4ed8;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .lobby-status-badge--queued {
-  border-color: rgba(15, 118, 110, 0.2);
-  background: #ccfbf1;
-  color: #0f766e;
+  border-color: var(--agp-border);
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
 }
 
 .lobby-status-badge--preparing {
-  border-color: rgba(146, 64, 14, 0.18);
-  background: #fef3c7;
-  color: #92400e;
+  border-color: var(--agp-border);
+  background: var(--arena-warning-soft);
+  color: var(--agp-warning);
 }
 
 .lobby-remove-player {
@@ -4392,16 +4278,16 @@ onUnmounted(() => {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: #fff7f7;
-  color: #b91c1c;
+  background: var(--arena-error-soft);
+  color: var(--agp-danger);
   font-size: 1rem;
   font-weight: 700;
   line-height: 1;
 }
 
 .lobby-remove-player:hover:not(:disabled) {
-  border-color: rgba(220, 38, 38, 0.4);
-  background: #fee2e2;
+  border-color: var(--agp-border);
+  background: var(--arena-error-soft);
 }
 
 .lobby-remove-player:disabled {
@@ -4427,7 +4313,7 @@ onUnmounted(() => {
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  background: #020617;
+  background: var(--agp-surface);
   box-shadow: none;
 }
 
@@ -4445,7 +4331,7 @@ onUnmounted(() => {
   z-index: 5;
   display: grid;
   place-items: center;
-  background: rgba(2, 6, 23, 0.6);
+  background: var(--agp-surface);
   backdrop-filter: blur(4px);
   pointer-events: none;
 }
@@ -4456,9 +4342,9 @@ onUnmounted(() => {
   text-align: center;
   padding: 1rem 1.5rem;
   border-radius: 0.6rem;
-  background: rgba(15, 23, 42, 0.92);
+  background: var(--agp-surface);
   border: 1px solid rgba(135, 226, 255, 0.3);
-  color: #e9f7ff;
+  color: var(--agp-text);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 }
 
@@ -4467,7 +4353,7 @@ onUnmounted(() => {
 }
 
 .lobby-game-finished-card small {
-  color: #9bb3c9;
+  color: var(--agp-text-muted);
 }
 
 .lobby-game-stats {
@@ -4477,13 +4363,13 @@ onUnmounted(() => {
   border: 0;
   border-left: 1px solid rgba(34, 211, 238, 0.24);
   border-radius: 0;
-  background: #131e2f;
-  color: #dbeafe;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   box-shadow: none;
 }
 
 .lobby-game-stats .text-muted {
-  color: #8ea7c1 !important;
+  color: var(--agp-text-muted) !important;
 }
 
 .lobby-game-stats-head {
@@ -4496,11 +4382,11 @@ onUnmounted(() => {
 
 .lobby-game-stats-head h2,
 .lobby-game-stats-head strong {
-  color: #e5f3ff;
+  color: var(--agp-text);
 }
 
 .lobby-game-stats-head span {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.78rem;
 }
 
@@ -4511,7 +4397,7 @@ onUnmounted(() => {
 }
 
 .lobby-game-run-select span {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.74rem;
   font-weight: 700;
 }
@@ -4523,16 +4409,16 @@ onUnmounted(() => {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.05rem 0.55rem;
   align-items: center;
-  background: rgba(15, 23, 42, 0.68);
-  color: #dbeafe;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   padding: 0.5rem 0.6rem;
   text-align: left;
 }
 
 .lobby-game-run-card:hover,
 .lobby-game-run-card.active {
-  border-color: rgba(45, 212, 191, 0.55);
-  background: #131e2f;
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
 }
 
 .lobby-game-run-card i {
@@ -4542,8 +4428,8 @@ onUnmounted(() => {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(45, 212, 191, 0.16);
-  color: #99f6e4;
+  background: var(--agp-primary-soft);
+  color: var(--agp-primary);
   font-style: normal;
   font-weight: 700;
   font-size: 0.78rem;
@@ -4558,7 +4444,7 @@ onUnmounted(() => {
 }
 
 .lobby-game-run-card small {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
 }
 
 .lobby-game-mini-stats {
@@ -4572,18 +4458,18 @@ onUnmounted(() => {
 .lobby-game-empty-stat {
   border: 1px solid rgba(34, 211, 238, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.66);
+  background: var(--agp-surface);
   padding: 0.55rem 0.65rem;
 }
 
 .lobby-game-mini-stats span {
   display: block;
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.72rem;
 }
 
 .lobby-game-mini-stats strong {
-  color: #e5f3ff;
+  color: var(--agp-text);
 }
 
 .lobby-game-scoreboard {
@@ -4593,16 +4479,16 @@ onUnmounted(() => {
 .lobby-game-layout .lobby-stat-row {
   grid-template-columns: minmax(0, 1fr);
   gap: 0.3rem;
-  border-color: rgba(34, 211, 238, 0.18);
+  border-color: var(--agp-border);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.68);
-  color: #dbeafe;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   min-width: 0;
 }
 
 .lobby-game-layout .lobby-stat-row--self {
-  border-color: rgba(45, 212, 191, 0.5);
-  background: #131e2f;
+  border-color: var(--agp-border);
+  background: var(--agp-surface);
 }
 
 .lobby-stat-title {
@@ -4613,13 +4499,13 @@ onUnmounted(() => {
 
 .lobby-stat-title strong {
   overflow: hidden;
-  color: #e5f3ff;
+  color: var(--agp-text);
   overflow-wrap: anywhere;
   line-height: 1.15;
 }
 
 .lobby-stat-score {
-  color: #fef3c7;
+  color: var(--agp-warning);
   font-weight: 700;
   line-height: 1.22;
   overflow-wrap: anywhere;
@@ -4636,7 +4522,7 @@ onUnmounted(() => {
   height: 0.32rem;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.24);
+  background: var(--agp-border);
 }
 
 .lobby-stat-bars i {
@@ -4654,12 +4540,12 @@ onUnmounted(() => {
 }
 
 .lobby-game-layout .lobby-stat-row small {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   overflow-wrap: anywhere;
 }
 
 .lobby-game-empty-stat {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.86rem;
 }
 
@@ -4670,13 +4556,13 @@ onUnmounted(() => {
   place-content: center;
   gap: 0.25rem;
   border: 1px solid rgba(34, 211, 238, 0.12);
-  background: #131e2f;
-  color: #e5f3ff;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   text-align: center;
 }
 
 .lobby-empty .text-muted {
-  color: #8ea7c1 !important;
+  color: var(--agp-text-muted) !important;
 }
 
 @media (max-width: 980px) {
