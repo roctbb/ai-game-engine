@@ -9,7 +9,7 @@
         </p>
       </div>
       <div class="attempts-hero-actions">
-        <RouterLink v-if="game" :to="`/tasks/${game.game_id}/run`" class="btn btn-dark">К запуску задачи</RouterLink>
+        <RouterLink v-if="game" :to="`/tasks/${game.game_id}`" class="btn btn-dark">К задаче</RouterLink>
         <button class="btn btn-outline-secondary" :disabled="isLoading" @click="loadAttempts">
           {{ isLoading ? 'Обновление...' : 'Обновить' }}
         </button>
@@ -90,6 +90,7 @@
         <table class="table table-sm align-middle mb-0 attempts-table">
           <thead>
             <tr>
+              <th aria-label="Результат"></th>
               <th v-if="canManage">Пользователь</th>
               <th>Статус</th>
               <th v-if="canManage">Причина</th>
@@ -102,6 +103,7 @@
           </thead>
           <tbody>
             <tr v-for="attempt in attempts" :key="attempt.run_id">
+              <td class="arena-attempt-state"><span class="arena-status-icon" :class="attemptPresentation(attempt).tone" :title="attemptPresentation(attempt).label">{{ attemptPresentation(attempt).icon }}</span></td>
               <td v-if="canManage" class="mono small">{{ attempt.requested_by }}</td>
               <td>
                 <span class="attempt-status" :class="statusClass(attempt.status)">
@@ -123,7 +125,7 @@
                 </details>
               </td>
               <td class="text-end d-flex gap-1 justify-content-end">
-                <RouterLink :to="`/runs/${attempt.run_id}/watch`" class="btn btn-sm btn-outline-secondary">Повтор</RouterLink>
+                <RouterLink :to="{ name: 'task-run', params: { gameId: attempt.game_id }, query: { inspect_run: attempt.run_id, back: route.fullPath, attempt_user: requestedBy || undefined, attempt_offset: offset || undefined } }" class="btn btn-sm btn-outline-secondary">Повтор</RouterLink>
                 <button
                   v-if="canManage"
                   class="btn btn-sm btn-outline-dark"
@@ -153,9 +155,10 @@
 </template>
 
 <script setup lang="ts">
+import { attemptPresentation } from '../lib/attemptPresentation';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, ref } from 'vue';
-import { RouterLink, useRoute } from 'vue-router';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 
 import RunReasonBadge from '../components/RunReasonBadge.vue';
 import {
@@ -168,6 +171,7 @@ import {
 import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
+const router = useRouter();
 const sessionStore = useSessionStore();
 
 const game = ref<GameDto | null>(null);
@@ -178,10 +182,10 @@ const attempts = ref<RunDto[]>([]);
 const attemptsError = ref('');
 const isLoading = ref(false);
 
-const requestedBy = ref('');
-const statusFilter = ref<'' | 'created' | 'queued' | 'running' | 'finished' | 'failed' | 'timeout' | 'canceled'>('');
-const limit = ref(20);
-const offset = ref(0);
+const requestedBy = ref(typeof route.query.requested_by === 'string' ? route.query.requested_by : '');
+const statusFilter = ref<'' | 'created' | 'queued' | 'running' | 'finished' | 'failed' | 'timeout' | 'canceled'>(typeof route.query.status === 'string' && ['created','queued','running','finished','failed','timeout','canceled'].includes(route.query.status) ? route.query.status as RunDto['status'] : '');
+const limit = ref(Math.min(100, Math.max(5, Number(route.query.limit) || 20)));
+const offset = ref(Math.max(0, Number(route.query.offset) || 0));
 
 const selectedLogs = ref('');
 const selectedLogsRunId = ref('');
@@ -229,6 +233,7 @@ async function loadGame(): Promise<void> {
 async function loadAttempts(): Promise<void> {
   const gameId = gameIdFromRoute();
   if (!gameId) return;
+  await router.replace({ query: { requested_by: requestedBy.value || undefined, status: statusFilter.value || undefined, limit: limit.value, offset: offset.value || undefined } });
   isLoading.value = true;
   attemptsError.value = '';
   selectedLogs.value = '';

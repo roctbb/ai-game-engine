@@ -3,9 +3,9 @@ import { internalNextPath, primaryNavigation, profileNavigation, roleLandingPath
 
 describe('role-based user journeys', () => {
   it('starts each role at its main workflow', () => {
-    expect(roleLandingPath('student')).toBe('/tasks');
+    expect(roleLandingPath('student')).toBe('/lobbies');
     expect(roleLandingPath('teacher')).toBe('/lobbies');
-    expect(roleLandingPath('admin')).toBe('/admin/game-sources');
+    expect(roleLandingPath('admin')).toBe('/lobbies');
   });
 
   it('keeps the game catalog in the admin profile, outside primary navigation', () => {
@@ -18,7 +18,7 @@ describe('role-based user journeys', () => {
 
   it('keeps infrastructure exclusively in the admin profile', () => {
     for (const role of ['student', 'teacher', 'admin'] as const) {
-      expect(primaryNavigation(role).map((item) => item.path)).toEqual(['/tasks', '/lobbies']);
+      expect(primaryNavigation(role).map((item) => item.path)).toEqual(role === 'student' ? ['/lobbies'] : ['/lobbies', '/tasks']);
       expect(profileNavigation(role).some((item) => item.path === '/admin/game-sources')).toBe(role === 'admin');
     }
     expect(profileNavigation('student')).toEqual([]);

@@ -31,7 +31,7 @@ from execution.api.schemas import (
     WorkerHeartbeatRequest,
     WorkerResponse,
 )
-from execution.api.access import ensure_can_view_run
+from execution.api.access import ensure_can_view_run, visible_result_payload
 from execution.domain.model import BuildJob, Run, RunKind, RunStatus, WorkerNode
 from execution.domain.result_payload import compact_result_payload as compact_run_result_payload
 from game_catalog.domain.model import GameMode
@@ -80,6 +80,12 @@ def _run_response(run: Run, *, compact_result_payload: bool = False) -> RunRespo
         started_at=run.started_at,
         finished_at=run.finished_at,
     )
+
+
+def _visible_run(container: ServiceContainer, session: AppSession, run: Run) -> Run:
+    if run.result_payload is None:
+        return run
+    return replace(run, result_payload=visible_result_payload(container, session, run, run.result_payload))
 
 
 def _attach_replay_summary_payload_if_available(
@@ -206,6 +212,7 @@ def _advance_competition_for_terminal_run(container: ServiceContainer, run: Run)
         container.competition.advance_competition(
             competition_id=run.lobby_id,
             requested_by="system",
+            start_next_round=False,
         )
     except NotFoundError:
         return
@@ -329,6 +336,7 @@ def get_run_code(
         "run_id": run.run_id,
         "codes_by_slot": snapshot.codes_by_slot,
         "revisions_by_slot": snapshot.revisions_by_slot,
+        "captured_at": snapshot.created_at,
     }
 
 
@@ -490,7 +498,7 @@ def list_runs(
             visible_runs.append(run)
             continue
 
-    return [_run_response(run, compact_result_payload=True) for run in visible_runs]
+    return [_run_response(_visible_run(container, session, run), compact_result_payload=True) for run in visible_runs]
 
 
 @router.post("/runs/{run_id}/queue", response_model=RunResponse)
@@ -535,7 +543,7 @@ def get_run(
     ensure_can_view_run(container=container, session=session, run=run)
     if compact_payload:
         run = _attach_replay_summary_payload_if_available(container=container, run=run)
-    return _run_response(run, compact_result_payload=compact_payload)
+    return _run_response(_visible_run(container, session, run), compact_result_payload=compact_payload)
 
 
 @router.get("/runs/{run_id}/watch-context", response_model=RunWatchContextResponse)
@@ -748,7 +756,7 @@ def stream_run(
             ensure_can_view_run(container=container, session=session, run=run)
             run = _attach_replay_summary_payload_if_available(container=container, run=run)
             return (
-                _run_response(run, compact_result_payload=True).model_dump(mode="json"),
+                _run_response(_visible_run(container, session, run), compact_result_payload=True).model_dump(mode="json"),
                 run.status.value,
                 run.run_id,
             )

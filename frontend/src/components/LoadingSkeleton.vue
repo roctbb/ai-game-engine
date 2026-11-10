@@ -1,6 +1,6 @@
 <template>
   <div class="agp-skeleton-region" :class="`agp-skeleton-region--${layout}`" role="status" aria-live="polite" :aria-label="label" aria-busy="true">
-    <span class="visually-hidden">{{ label }}</span>
+    <SnakeLoader :label="label" />
     <div v-for="index in count" :key="index" class="agp-skeleton-card" aria-hidden="true">
       <span class="agp-skeleton agp-skeleton--eyebrow"></span>
       <span class="agp-skeleton agp-skeleton--title"></span>
@@ -12,6 +12,7 @@
 </template>
 
 <script setup lang="ts">
+import SnakeLoader from './SnakeLoader.vue';
 withDefaults(defineProps<{ count?: number; layout?: 'cards' | 'list' | 'workspace'; label?: string }>(), {
   count: 6,
   layout: 'cards',

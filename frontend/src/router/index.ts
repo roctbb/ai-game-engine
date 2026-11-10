@@ -8,15 +8,15 @@ export const router = createRouter({
     return savedPosition ?? { top: 0 };
   },
   routes: [
-    { path: '/', name: 'home', component: () => import('../pages/TasksCatalogPage.vue') },
+    { path: '/', name: 'home', component: () => import('../pages/LobbiesPage.vue') },
     {
       path: '/login',
       name: 'login',
       meta: { public: true },
       component: () => import('../pages/LoginPage.vue'),
     },
-    { path: '/tasks', name: 'tasks', component: () => import('../pages/TasksCatalogPage.vue') },
-    { path: '/tasks/sections/:section', name: 'tasks-section', component: () => import('../pages/TasksSectionPage.vue') },
+    { path: '/tasks', name: 'tasks', meta: { roles: ROUTE_ROLES.tasks }, component: () => import('../pages/TasksCatalogPage.vue') },
+    { path: '/tasks/sections/:section', name: 'tasks-section', meta: { roles: ROUTE_ROLES['tasks-section'] }, component: () => import('../pages/TasksSectionPage.vue') },
     { path: '/lobbies', name: 'lobbies', component: () => import('../pages/LobbiesPage.vue') },
     { path: '/games', name: 'games', meta: { roles: ROUTE_ROLES.games }, component: () => import('../pages/GamesPage.vue') },
     { path: '/games/:gameId/docs', name: 'game-docs', component: () => import('../pages/GameDocsPage.vue') },
@@ -24,6 +24,7 @@ export const router = createRouter({
     { path: '/competitions', redirect: '/lobbies' },
     { path: '/workspace/:teamId', redirect: (to) => ({ name: 'player-code', params: to.params }) },
     { path: '/players/:teamId/code', name: 'player-code', component: () => import('../pages/TeamWorkspacePage.vue') },
+    { path: '/tasks/:gameId', name: 'task', component: () => import('../pages/TaskPage.vue') },
     { path: '/tasks/:gameId/run', name: 'task-run', component: () => import('../pages/TaskRunPage.vue') },
     { path: '/tasks/:gameId/attempts', name: 'task-attempts', component: () => import('../pages/SingleTaskAttemptsPage.vue') },
     {

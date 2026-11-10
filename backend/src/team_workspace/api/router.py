@@ -130,6 +130,7 @@ def get_workspace(
                 "required": state.required,
                 "code": state.code,
                 "revision": state.revision,
+                "updated_at": state.updated_at,
             }
             for state in workspace.slot_states
         ],

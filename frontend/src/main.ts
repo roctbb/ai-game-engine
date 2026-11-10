@@ -11,6 +11,7 @@ import './styles/catalog.css';
 import './styles/interaction.css';
 import './styles/responsive.css';
 import './styles/workspace.css';
+import './styles/arena.css';
 import { dialogFocus } from './lib/dialogFocus';
 import { internalNextPath, roleLandingPath } from './lib/roleNavigation';
 

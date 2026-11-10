@@ -91,7 +91,7 @@ def list_games(
 ) -> list[GameResponse]:
     games = container.game_catalog.list_games()
     if not _can_manage_catalog(session):
-        games = [game for game in games if _is_visible_catalog_game(game)]
+        games = [game for game in games if _is_visible_catalog_game(game) and game.is_multiplayer]
     return [_map_game(item) for item in games]
 
 
@@ -363,7 +363,7 @@ def update_catalog_metadata(
     return _map_game(game)
 
 
-@progress_router.get("/catalog/single-tasks", response_model=list[SingleTaskCatalogItemResponse])
+@progress_router.get("/catalog/single-tasks", response_model=list[SingleTaskCatalogItemResponse], dependencies=[Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN))])
 def list_single_task_catalog(container: ServiceContainer = Depends(get_container)) -> list[SingleTaskCatalogItemResponse]:
     items = _progress(container).build_single_task_catalog_items()
     return [
@@ -385,7 +385,7 @@ def list_single_task_catalog(container: ServiceContainer = Depends(get_container
     ]
 
 
-@progress_router.get("/catalog/single-tasks/grouped", response_model=list[SingleTaskCatalogGroupResponse])
+@progress_router.get("/catalog/single-tasks/grouped", response_model=list[SingleTaskCatalogGroupResponse], dependencies=[Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN))])
 def list_single_task_catalog_grouped(
     container: ServiceContainer = Depends(get_container),
 ) -> list[SingleTaskCatalogGroupResponse]:
@@ -407,7 +407,7 @@ def list_single_task_catalog_grouped(
     return payload
 
 
-@progress_router.get("/catalog/single-tasks/solved-summary", response_model=SingleTaskSolvedSummaryResponse)
+@progress_router.get("/catalog/single-tasks/solved-summary", response_model=SingleTaskSolvedSummaryResponse, dependencies=[Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN))])
 def get_single_task_solved_summary(
     limit: int = 20,
     container: ServiceContainer = Depends(get_container),

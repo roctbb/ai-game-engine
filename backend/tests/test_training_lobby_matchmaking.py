@@ -189,6 +189,7 @@ def test_multiplayer_matchmaking_schedules_only_full_pairs(
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         ready_responses.append(
             client.post(
                 f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
@@ -256,6 +257,7 @@ def test_matchmaking_cycle_uses_distributed_lock(client, teacher_headers, contai
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         container.training_lobby.set_ready(
             lobby_id=lobby["lobby_id"], team_id=team["team_id"], ready=True
         )
@@ -325,6 +327,7 @@ def test_multiplayer_matchmaking_continues_after_finished_match(
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
             json={"ready": True},
@@ -417,7 +420,7 @@ def test_multiplayer_matchmaking_continues_after_finished_match(
     assert {item["team_id"] for item in active_runs} == {team_a["team_id"], team_b["team_id"]}
 
 
-def test_multiplayer_matchmaking_uses_match_bounds(client, teacher_headers) -> None:
+def test_multiplayer_matchmaking_uses_match_bounds(client, teacher_headers, container) -> None:
     game = _create_game(
         client,
         slug="bounded_multiplayer_mm_game",
@@ -440,6 +443,7 @@ def test_multiplayer_matchmaking_uses_match_bounds(client, teacher_headers) -> N
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         ready_responses.append(
             client.post(
                 f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
@@ -1300,6 +1304,7 @@ def test_finishing_primary_match_uses_match_execution_to_finish_shadow_run(
             headers=teacher_headers,
         )
         assert joined.status_code == 200
+        container.training_lobby.mark_viewer_online(lobby["lobby_id"], team["captain_user_id"])
         container.training_lobby.set_ready(
             lobby_id=lobby["lobby_id"], team_id=team["team_id"], ready=True
         )
@@ -1357,6 +1362,7 @@ def test_reconcile_finishes_orphaned_shadow_run_when_primary_is_finished(
             headers=teacher_headers,
         )
         assert joined.status_code == 200
+        container.training_lobby.mark_viewer_online(lobby["lobby_id"], team["captain_user_id"])
         container.training_lobby.set_ready(
             lobby_id=lobby["lobby_id"], team_id=team["team_id"], ready=True
         )
@@ -1492,6 +1498,7 @@ def test_matchmaking_queue_failure_preserves_batch_for_redelivery(
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
             json={"ready": True},
@@ -1549,6 +1556,7 @@ def test_matchmaking_cycle_recovers_stale_queued_batch_when_workers_are_idle(
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
             json={"ready": True},
@@ -1616,6 +1624,7 @@ def test_matchmaking_cycle_does_not_recover_stale_queued_batch_when_worker_is_bu
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
             json={"ready": True},
@@ -1659,7 +1668,7 @@ def test_matchmaking_cycle_does_not_recover_stale_queued_batch_when_worker_is_bu
         assert run.status is RunStatus.QUEUED
 
 
-def test_stopped_lobby_is_not_matchmade_by_due_tick(client, teacher_headers) -> None:
+def test_stopped_lobby_is_not_matchmade_by_due_tick(client, teacher_headers, container) -> None:
     game = _create_game(
         client,
         slug="multiplayer_mm_stopped_no_tick",
@@ -1679,6 +1688,7 @@ def test_stopped_lobby_is_not_matchmade_by_due_tick(client, teacher_headers) -> 
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby['lobby_id'], team['captain_user_id'])
         client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
             json={"ready": True},

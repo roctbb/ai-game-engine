@@ -1,6 +1,6 @@
 <template>
   <section class="agp-grid admin-catalog-page">
-    <header class="agp-card p-4 admin-catalog-hero">
+    <header class="agp-card p-4 admin-catalog-hero"><RouterLink v-if="focusedGameId" class="btn btn-outline-secondary" :to="`/tasks/${focusedGameId}`">← К задаче</RouterLink>
       <div>
         <p class="admin-catalog-kicker mb-1">Учебный каталог</p>
         <h1 class="h3 mb-1">Каталог задач</h1>
@@ -147,7 +147,7 @@
                     <button class="btn btn-sm btn-outline-secondary" @click="toggleExpanded(game.game_id)">
                       {{ isExpanded(game.game_id) ? 'Свернуть' : 'Редактировать' }}
                     </button>
-                    <RouterLink class="btn btn-sm btn-outline-secondary" :to="`/tasks/${game.game_id}/run`">Открыть</RouterLink>
+                    <RouterLink class="btn btn-sm btn-outline-secondary" :to="`/tasks/${game.game_id}`">Открыть</RouterLink>
                   </div>
                 </td>
               </tr>
@@ -267,7 +267,7 @@
 <script setup lang="ts">
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, ref, watch } from 'vue';
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRoute } from 'vue-router';
 
 import { listGames, type CatalogMetadataStatus, type GameDto, updateGameCatalogMetadata } from '../lib/api';
 import { useSessionStore } from '../stores/session';
@@ -288,6 +288,8 @@ const canManage = computed(() => sessionStore.role === 'teacher' || sessionStore
 
 const isLoading = ref(false);
 const errorMessage = ref('');
+const route = useRoute();
+const focusedGameId = computed(() => typeof route.query.game_id === 'string' ? route.query.game_id : '');
 const games = ref<GameDto[]>([]);
 const expandedGameIds = ref<Set<string>>(new Set());
 const editorByGameId = ref<Record<string, CatalogEditorState>>({});
@@ -301,6 +303,7 @@ const rows = computed(() => {
   const query = searchQuery.value.toLowerCase();
   return games.value
     .filter((game) => game.mode === 'single_task')
+    .filter((game) => !focusedGameId.value || game.game_id === focusedGameId.value)
     .filter((game) => (statusFilter.value ? game.catalog_metadata_status === statusFilter.value : true))
     .filter((game) => {
       if (visibilityFilter.value === 'visible') return !game.is_hidden;
@@ -485,6 +488,7 @@ async function loadGames(): Promise<void> {
       };
     }
     editorByGameId.value = nextEditors;
+    if (focusedGameId.value) expandedGameIds.value.add(focusedGameId.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить каталог задач';
   } finally {

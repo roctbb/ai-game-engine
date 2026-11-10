@@ -3,16 +3,18 @@
     <header class="agp-card p-3 competition-hero">
       <div>
         <p class="competition-kicker mb-1">Соревнование</p>
+        <RouterLink v-if="competition?.lobby_id" :to="`/lobbies/${competition.lobby_id}`" class="small">← Лобби</RouterLink>
         <h1 class="h4 mb-1">{{ competition?.title || 'Турнир' }}</h1>
-        <p class="text-muted mb-0">Сетка, результаты и победители.</p>
+
       </div>
       <div class="btn-group competition-view-toggle">
-        <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'rounds' }" @click="view = 'rounds'">
-          Раунды
+        <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'rounds' && detailPane === 'matches' }" @click="view = 'rounds'; detailPane = 'matches'">
+          Матчи
         </button>
-        <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'bracket' }" @click="view = 'bracket'">
+        <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'bracket' && detailPane === 'matches' }" @click="view = 'bracket'; detailPane = 'matches'">
           Сетка
         </button>
+        <button class="btn btn-outline-dark btn-sm" :class="{ active: detailPane === 'table' }" @click="detailPane = 'table'">Таблица</button>
       </div>
     </header>
 
@@ -24,7 +26,7 @@
         <div class="competition-command-main">
           <div class="competition-status-line">
             <span class="agp-pill" :class="competitionStatusToneClass">{{ competitionStatusLabel }}</span>
-            <span v-if="canModerate" class="agp-pill agp-pill--neutral">{{ competition.format }}</span>
+
             <span v-if="canModerate" class="agp-pill agp-pill--neutral">код: {{ competitionCodePolicyLabel(competition.code_policy) }}</span>
           </div>
           <div v-if="competition.pending_reason" class="competition-warning mt-2">
@@ -53,6 +55,8 @@
             <span class="mono">{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</span>
           </div>
         </div>
+        <div v-if="competition.status === 'running' && competition.rounds.find(r => r.round_index === competition?.current_round_index)?.status === 'finished'" class="arena-next-round"><button v-if="canModerate" class="btn btn-primary" :disabled="!canAdvance" @click="advanceCurrentCompetition">Запустить следующий раунд</button><span v-else class="text-muted">Ⅱ Ожидаем преподавателя</span></div>
+        <button v-if="canModerate && competition.status === 'completed'" class="btn btn-primary" :disabled="!canFinish" @click="finishCurrentCompetition">Завершить турнир</button>
         <details v-if="canModerate" class="competition-actions">
           <summary>Управление</summary>
           <div class="d-flex gap-2">
@@ -137,8 +141,9 @@
         </div>
       </article>
 
-      <div class="competition-focus-layout">
-        <article class="agp-card p-3 competition-section-card competition-participants-card">
+      <div class="agp-card p-3 arena-tournament-filters"><label><span class="visually-hidden">Показать матчи</span><select v-model="matchScope" class="form-select"><option value="all">Все матчи</option><option value="mine">Мои матчи</option></select></label><label><span class="visually-hidden">Участник</span><select v-model="matchParticipant" class="form-select"><option value="">Все участники</option><option v-for="entrant in competition.entrants" :key="entrant.team_id" :value="entrant.team_id">{{ teamName(entrant.team_id) }}</option></select></label></div>
+      <div class="competition-focus-layout" :class="{ 'competition-focus-layout--matches': detailPane === 'matches' && competition.status !== 'draft' }">
+        <article v-show="detailPane === 'table' || competition.status === 'draft'" class="agp-card p-3 competition-section-card competition-participants-card">
           <h2 class="h6">Участники</h2>
           <label v-if="canModerate" class="form-label small">Игрок для регистрации</label>
           <select v-if="canModerate" v-model="selectedTeamId" class="form-select mb-3">
@@ -186,7 +191,7 @@
           </div>
         </article>
 
-        <article v-if="competitionLeaderboard.length" class="agp-card p-3 competition-leaderboard competition-side-card">
+        <article v-if="competitionLeaderboard.length" class="agp-card p-3 competition-leaderboard competition-side-card" v-show="detailPane === 'table'">
           <div class="competition-leaderboard-head">
             <div>
               <h2 class="h6 mb-1">Лидерборд</h2>
@@ -215,14 +220,14 @@
           </div>
         </article>
 
-        <article class="agp-card p-3 competition-section-card competition-rounds-card" v-if="view === 'rounds'">
+        <article class="agp-card p-3 competition-section-card competition-rounds-card" v-if="view === 'rounds'" v-show="detailPane === 'matches'">
           <div class="competition-section-title">
             <h2 class="h6 mb-0">Раунды и матчи</h2>
             <span class="small text-muted">{{ competition.rounds.length }} раундов</span>
           </div>
           <div class="d-flex flex-column gap-3">
             <article
-              v-for="round in competition.rounds"
+              v-for="round in filteredRounds"
               :key="round.round_index"
               class="agp-card-soft p-3"
             >
@@ -246,12 +251,13 @@
                       <RouterLink
                         v-if="matchPrimaryRunId(match)"
                         class="btn btn-sm btn-outline-secondary"
-                        :to="`/runs/${matchPrimaryRunId(match)}/watch`"
+                        :to="{ name: 'run-watch', params: { runId: matchPrimaryRunId(match) }, query: { back: route.fullPath } }"
                       >
                         Открыть матч
                       </RouterLink>
+                      <button v-if="canModerate && match.tie_break_reason?.startsWith('Сбой')" class="btn btn-sm btn-primary" :disabled="isAdvancing" @click="retryMatch(match.match_id)">Повторить матч</button>
                       <button
-                        v-if="canModerate"
+                        v-if="canModerate && match.status === 'awaiting_tiebreak' && !match.tie_break_reason?.startsWith('Сбой')"
                         class="btn btn-sm btn-outline-dark"
                         :disabled="!canModerate || match.status !== 'awaiting_tiebreak'"
                         @click="resolveTieByFirstTeam(round.round_index, match.match_id, match.team_ids)"
@@ -260,24 +266,7 @@
                       </button>
                     </div>
                   </div>
-                  <div class="competition-match-players">
-                    <div
-                      v-for="teamId in match.team_ids"
-                      :key="`${match.match_id}-${teamId}`"
-                      class="competition-match-player"
-                      :class="{ advanced: match.advanced_team_ids.includes(teamId) }"
-                    >
-                      <div>
-                        <strong>{{ teamName(teamId) }}</strong>
-                        <span>
-                          счет {{ match.scores_by_team[teamId] ?? '—' }}
-                          · место {{ match.placements_by_team[teamId] ?? '—' }}
-                        </span>
-                      </div>
-                      <span v-if="match.advanced_team_ids.includes(teamId)" class="competition-advanced-badge">прошел</span>
-                    </div>
-                    <div v-if="match.team_ids.length === 0" class="text-muted small">В матче пока нет участников.</div>
-                  </div>
+                  <MatchRoster :team-ids="match.team_ids" :name-for="teamName" :scores="competitionMatchScores(match, competitionRuns)" :advanced="match.advanced_team_ids" :my-team-id="teamsByGame.find(team => team.captain_user_id === sessionStore.nickname)?.team_id" />
                   <div class="small text-muted mt-2" v-if="match.tie_break_reason">
                     Требуется решение: <span>{{ match.tie_break_reason }}</span>
                   </div>
@@ -290,14 +279,14 @@
           </div>
         </article>
 
-        <article class="agp-card p-3 competition-section-card competition-rounds-card" v-else>
+        <article class="agp-card p-3 competition-section-card competition-rounds-card" v-else v-show="detailPane === 'matches'">
           <div class="competition-section-title">
             <h2 class="h6 mb-0">Сетка</h2>
             <span class="small text-muted">{{ competition.rounds.length }} раундов</span>
           </div>
           <div v-if="isBracketPrimaryCompatible" class="d-flex gap-3 flex-wrap">
             <article
-              v-for="round in competition.rounds"
+              v-for="round in filteredRounds"
               :key="`bracket-${round.round_index}`"
               class="competition-bracket-round p-3"
             >
@@ -318,7 +307,7 @@
                   <RouterLink
                     v-if="matchPrimaryRunId(match)"
                     class="btn btn-sm btn-outline-secondary mt-2"
-                    :to="`/runs/${matchPrimaryRunId(match)}/watch`"
+                    :to="{ name: 'run-watch', params: { runId: matchPrimaryRunId(match) }, query: { back: route.fullPath } }"
                   >
                     Открыть матч
                   </RouterLink>
@@ -333,7 +322,7 @@
             </div>
             <div class="d-flex flex-column gap-2">
               <div
-                v-for="round in competition.rounds"
+                v-for="round in filteredRounds"
                 :key="`multi-round-${round.round_index}`"
                 class="competition-bracket-node"
               >
@@ -341,16 +330,14 @@
                 <div v-for="(match, matchIndex) in round.matches" :key="`multi-node-${match.match_id}`" class="competition-bracket-node-inner">
                   <div class="small fw-semibold">Матч {{ matchIndex + 1 }}</div>
                   <div class="small text-muted">Проходят дальше: {{ competition.advancement_top_k }}</div>
-                  <div class="small" v-for="teamId in match.team_ids" :key="`multi-node-team-${match.match_id}-${teamId}`">
-                    {{ teamName(teamId) }}
-                  </div>
+                  <MatchRoster :team-ids="match.team_ids" :name-for="teamName" :scores="competitionMatchScores(match, competitionRuns)" :advanced="match.advanced_team_ids" :my-team-id="teamsByGame.find(team => team.captain_user_id === sessionStore.nickname)?.team_id" />
                   <div class="small text-muted">
                     прошли дальше: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
                   </div>
                   <RouterLink
                     v-if="matchPrimaryRunId(match)"
                     class="btn btn-sm btn-outline-secondary mt-2"
-                    :to="`/runs/${matchPrimaryRunId(match)}/watch`"
+                    :to="{ name: 'run-watch', params: { runId: matchPrimaryRunId(match) }, query: { back: route.fullPath } }"
                   >
                     Открыть матч
                   </RouterLink>
@@ -493,13 +480,16 @@
         </section>
       </details>
     </template>
+    <Teleport to="body"><div v-if="tieDialog" class="arena-modal-backdrop" @click.self="tieDialog = null"><form class="agp-card arena-tie-dialog" role="dialog" aria-modal="true" aria-labelledby="arena-tie-title" v-dialog-focus="() => tieDialog = null" @submit.prevent="applyTieDecision"><h2 id="arena-tie-title">Кто проходит дальше?</h2><label v-for="id in tieDialog.teamIds" :key="id"><input v-model="tieSelected" type="checkbox" :value="id" />{{ teamName(id) }}</label><footer><button class="btn btn-outline-secondary" type="button" @click="tieDialog = null">Отмена</button><button class="btn btn-primary" :disabled="!tieSelected.length || isAdvancing">Подтвердить</button></footer></form></div></Teleport>
   </section>
 </template>
 
 <script setup lang="ts">
+import { competitionMatchScores } from '../lib/competitionPresentation';
+import MatchRoster from '../components/MatchRoster.vue';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { statusPillClass } from '../lib/statusTone';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import RunReasonBadge from '../components/RunReasonBadge.vue';
@@ -509,6 +499,7 @@ import {
   createTeam,
   patchCompetition,
   resolveCompetitionMatchTie,
+  retryCompetitionMatch,
   setCompetitionEntrantBan,
   setCompetitionEntrantNotReady,
   getCompetition,
@@ -549,6 +540,11 @@ const sessionStore = useSessionStore();
 const view = ref<'rounds' | 'bracket'>('rounds');
 const competition = ref<CompetitionDto | null>(null);
 const teamsByGame = ref<TeamDto[]>([]);
+const detailPane = ref<'matches' | 'table'>('matches');
+const matchScope = ref('all');
+const matchParticipant = ref('');
+const filteredRounds = computed(() => (competition.value?.rounds ?? []).map(round => ({ ...round, matches: round.matches.filter(match => (!matchParticipant.value || match.team_ids.includes(matchParticipant.value)) && (matchScope.value !== 'mine' || match.team_ids.some(id => teamsByGame.value.some(team => team.team_id === id && team.captain_user_id === sessionStore.nickname)))) })).filter(round => round.matches.length));
+watch([matchScope, matchParticipant], () => { view.value = 'rounds'; });
 const selectedTeamId = ref('');
 const competitionRuns = ref<CompetitionRunItemDto[]>([]);
 const inspectedRunId = ref('');
@@ -610,7 +606,7 @@ const canStart = computed(() => {
   return ready.length >= 2;
 });
 const canPause = computed(() => canModerate.value && competition.value?.status === 'running' && !isChangingStatus.value);
-const canAdvance = computed(() => canModerate.value && competition.value?.status === 'running' && !isAdvancing.value);
+const canAdvance = computed(() => canModerate.value && competition.value?.status === 'running' && competition.value.rounds.find(r => r.round_index === competition.value?.current_round_index)?.status === 'finished' && !isAdvancing.value);
 const canFinish = computed(
   () =>
     canModerate.value &&
@@ -691,7 +687,7 @@ const competitionLiveLabel = computed(() => {
 });
 function teamName(teamId: string): string {
   const found = teamsByGame.value.find((item) => item.team_id === teamId);
-  return found?.name ?? teamId;
+  return competition.value?.participant_names?.[teamId] ?? found?.name ?? teamId;
 }
 
 function scoreLabel(value: number): string {
@@ -1085,20 +1081,28 @@ async function advanceCurrentCompetition(): Promise<void> {
   }
 }
 
-async function resolveTieByFirstTeam(roundIndex: number, matchId: string, teamIds: string[]): Promise<void> {
-  if (!competition.value || teamIds.length === 0 || !canModerate.value) return;
-  errorMessage.value = '';
+const tieDialog = ref<{ roundIndex: number; matchId: string; teamIds: string[] } | null>(null);
+const tieSelected = ref<string[]>([]);
+function resolveTieByFirstTeam(roundIndex: number, matchId: string, teamIds: string[]): void {
+  tieSelected.value = []; tieDialog.value = { roundIndex, matchId, teamIds };
+}
+async function applyTieDecision(): Promise<void> {
+  if (!competition.value || !tieDialog.value || !tieSelected.value.length) return;
+  isAdvancing.value = true;
   try {
-    competition.value = await resolveCompetitionMatchTie({
-      competition_id: competition.value.competition_id,
-      round_index: roundIndex,
-      match_id: matchId,
-      advanced_team_ids: [teamIds[0]],
-    });
+    competition.value = await resolveCompetitionMatchTie({ competition_id: competition.value.competition_id, round_index: tieDialog.value.roundIndex, match_id: tieDialog.value.matchId, advanced_team_ids: tieSelected.value });
+    tieDialog.value = null;
+    if (competition.value.status === 'paused' && !competition.value.rounds.some(round => round.matches.some(match => match.status === 'awaiting_tiebreak'))) competition.value = await startCompetition({ competition_id: competition.value.competition_id, requested_by: sessionStore.nickname });
     await refreshCompetitionRelatedData();
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось применить решение по ничьей';
-  }
+  } catch (e) { errorMessage.value = e instanceof Error ? e.message : 'Не удалось применить решение'; }
+  finally { isAdvancing.value = false; }
+}
+async function retryMatch(matchId: string): Promise<void> {
+  if (!competition.value || isAdvancing.value) return;
+  isAdvancing.value = true;
+  try { competition.value = await retryCompetitionMatch(competition.value.competition_id, matchId); await refreshCompetitionRelatedData(); }
+  catch (e) { errorMessage.value = e instanceof Error ? e.message : 'Не удалось повторить матч'; }
+  finally { isAdvancing.value = false; }
 }
 
 async function pauseCurrentCompetition(): Promise<void> {
@@ -1181,6 +1185,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+
+
 .competition-page {
   gap: 0.75rem;
 }
@@ -1214,7 +1220,7 @@ onUnmounted(() => {
 }
 
 .competition-kicker {
-  color: #0f766e;
+  color: var(--agp-primary);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1231,8 +1237,8 @@ onUnmounted(() => {
 }
 
 .competition-view-toggle .btn.active {
-  background: #0f766e;
-  border-color: #0f766e;
+  background: var(--agp-action);
+  border-color: var(--agp-action);
   color: #fff;
 }
 
@@ -1654,4 +1660,10 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 }
+
+.arena-tournament-filters{display:flex;gap:12px}.arena-tournament-filters label{min-width:180px}.competition-stat-grid{margin-top:12px!important}.competition-stat{padding:8px 12px}.arena-next-round{align-self:center}@media(max-width:600px){.arena-tournament-filters label{min-width:0;flex:1}}
+.arena-modal-backdrop{position:fixed;inset:0;background:#10182766;z-index:300;display:grid;place-items:center;padding:16px}.arena-tie-dialog{padding:24px;width:min(420px,100%);display:grid;gap:12px;max-height:85dvh;overflow:auto}.arena-tie-dialog label{display:flex;align-items:center;gap:8px;min-height:36px}.arena-tie-dialog footer{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+
+.competition-focus-layout--matches{grid-template-columns:minmax(0,1fr)}.competition-focus-layout--matches .competition-rounds-card{grid-column:1;grid-row:auto}.competition-focus-layout:not(.competition-focus-layout--matches) .competition-participants-card,.competition-focus-layout:not(.competition-focus-layout--matches) .competition-leaderboard-card{grid-column:auto;grid-row:auto}.competition-actions summary{background:var(--agp-surface);border-radius:6px}
+.competition-view-toggle .btn{border-radius:6px}.competition-view-toggle .btn.active{color:var(--arena-on-primary)}.competition-stat{border-radius:8px;background:var(--agp-surface-soft);border-color:var(--agp-border)}.competition-stat-grid{gap:8px}.competition-hero{padding:16px!important}.competition-match-card{border-radius:8px;box-shadow:none;background:var(--agp-surface);border-color:var(--agp-border)}.competition-rounds-card>div>article{background:var(--agp-surface-soft);border-radius:8px}.competition-match-card .badge{font-weight:500}
 </style>

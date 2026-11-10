@@ -4,6 +4,7 @@ from typing import Protocol
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from threading import Lock
+from random import SystemRandom
 
 from execution.application.service import CreateRunInput, ExecutionService
 from execution.domain.model import Run, RunKind, RunStatus, WorkerStatus
@@ -11,7 +12,7 @@ from game_catalog.application.service import GameCatalogService
 from game_catalog.domain.model import CatalogMetadataStatus
 from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
-from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
+from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus, LobbyTeamState
 from shared.config.settings import settings
 from shared.kernel import ExternalServiceError, InvariantViolationError, NotFoundError, utc_now
 
@@ -36,7 +37,6 @@ _LOBBY_LIVE_CACHE_TTL_SECONDS = 0.75
 _TRAINING_LOBBY_ARCHIVED_MATCH_LIMIT = 30
 _TRAINING_LOBBY_STALE_ACTIVE_RUN_TIMEOUT = timedelta(seconds=90)
 _TRAINING_LOBBY_STALE_WORKER_HEARTBEAT_TIMEOUT = timedelta(seconds=30)
-_LOBBY_VIEWER_PRESENCE_KEY_PREFIX = "ai-game:training-lobby:viewer-presence:"
 
 
 class _DistributedLock(Protocol):
@@ -275,7 +275,6 @@ class TrainingLobbyService:
         ] = {}
         self._finished_runs_payload_cache: dict[str, tuple[object, list[Run]]] = {}
         self._live_state_cache: dict[str, _CachedLobbyLiveState] = {}
-        self._viewer_last_seen_by_lobby: dict[str, dict[str, datetime]] = {}
 
     def create_lobby(self, data: CreateLobbyInput) -> Lobby:
         game = self._game_catalog.get_game(data.game_id)
@@ -318,12 +317,14 @@ class TrainingLobbyService:
 
     def mark_viewer_online(self, lobby_id: str, user_id: str) -> None:
         now = utc_now()
-        if self._mark_viewer_online_in_redis(lobby_id=lobby_id, user_id=user_id, now=now):
-            return
-        viewers = self._viewer_last_seen_by_lobby.setdefault(lobby_id, {})
-        viewers[user_id] = now
-        self._prune_online_viewers(lobby_id=lobby_id, now=now)
-
+        lobby = self.get_lobby(lobby_id)
+        self._expire_offline_queue(lobby, now)
+        for state in lobby.teams.values():
+            if self._team_workspace.get_team(state.team_id).captain_user_id == user_id:
+                if state.last_seen_at is None or (now - state.last_seen_at).total_seconds() >= 10:
+                    state.last_seen_at = now
+                    self._repository.save(lobby)
+                break
     def ensure_user_joined(self, lobby_id: str, user_id: str, access_code: str | None, *, bypass_access_code: bool = False) -> tuple[Lobby, str]:
         lobby = self.get_lobby(lobby_id)
         existing_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
@@ -620,7 +621,6 @@ class TrainingLobbyService:
         lobby = self.get_lobby(lobby_id)
         self._cancel_active_training_runs(lobby_id=lobby_id, message="lobby_deleted")
         self._execution.delete_lobby_runs(lobby_id=lobby.lobby_id, run_kind=RunKind.TRAINING_MATCH)
-        self._viewer_last_seen_by_lobby.pop(lobby_id, None)
         self._clear_lobby_derived_caches(lobby_id)
         self._repository.delete(lobby_id)
 
@@ -794,6 +794,7 @@ class TrainingLobbyService:
         lobby = self.get_lobby(lobby_id)
         if lobby.kind is not LobbyKind.TRAINING:
             raise InvariantViolationError("Matchmaking cycle доступен только для training лобби")
+        self._expire_offline_queue(lobby, utc_now())
         if lobby.status in {LobbyStatus.PAUSED, LobbyStatus.STOPPED, LobbyStatus.UPDATING, LobbyStatus.CLOSED, LobbyStatus.DRAFT}:
             raise InvariantViolationError("В текущем статусе лобби матчмейкинг недоступен")
 
@@ -831,7 +832,7 @@ class TrainingLobbyService:
         ready_team_ids = [
             state.team_id
             for state in lobby.teams.values()
-            if state.ready
+            if state.ready and self.is_team_online(state)
         ]
         ready_team_ids = [team_id for team_id in ready_team_ids if team_id not in busy_team_ids]
 
@@ -845,6 +846,21 @@ class TrainingLobbyService:
                 max_players=max_players,
                 recent_pair_counts=self._recent_training_match_pair_counts(runs=runs),
             )
+            scheduled = {team_id for group in scheduled_team_groups for team_id in group}
+            tail = [team_id for team_id in ready_team_ids if team_id not in scheduled]
+            if tail:
+                offline = [
+                    state.team_id for state in lobby.teams.values()
+                    if not self.is_team_online(state) and state.team_id not in busy_team_ids
+                    and self._team_workspace.evaluate_compatibility(
+                        team_id=state.team_id, game_id=lobby.game_id,
+                        version_id=lobby.game_version_id,
+                    ).compatible
+                ]
+                SystemRandom().shuffle(offline)
+                missing = min_players - len(tail)
+                if len(offline) >= missing:
+                    scheduled_team_groups.append(tail + offline[:missing])
         else:
             # single_task не должен работать через lobby matchmaking.
             raise InvariantViolationError("single_task игра не поддерживает lobby matchmaking")
@@ -1586,56 +1602,26 @@ class TrainingLobbyService:
         return self._execution.get_run(run.run_id)
 
     def _has_online_ready_viewer(self, lobby: Lobby) -> bool:
-        now = utc_now()
-        redis_count = self._online_viewer_count_from_redis(lobby_id=lobby.lobby_id, now=now)
-        if redis_count is not None:
-            return redis_count > 0
-        self._prune_online_viewers(lobby_id=lobby.lobby_id, now=now)
-        return bool(self._viewer_last_seen_by_lobby.get(lobby.lobby_id, {}))
-
-    def _prune_online_viewers(self, *, lobby_id: str, now: datetime) -> None:
-        viewers = self._viewer_last_seen_by_lobby.get(lobby_id)
-        if not viewers:
-            return
-        cutoff = now - timedelta(seconds=_LOBBY_ONLINE_VIEWER_TTL_SECONDS)
-        stale = [user_id for user_id, seen_at in viewers.items() if seen_at < cutoff]
-        for user_id in stale:
-            viewers.pop(user_id, None)
-        if not viewers:
-            self._viewer_last_seen_by_lobby.pop(lobby_id, None)
-
-    def _mark_viewer_online_in_redis(self, *, lobby_id: str, user_id: str, now: datetime) -> bool:
-        client = self._matchmaking_lock_client
-        zadd = getattr(client, "zadd", None)
-        expire = getattr(client, "expire", None)
-        if not callable(zadd):
-            return False
-        key = self._viewer_presence_key(lobby_id)
-        try:
-            zadd(key, {user_id: now.timestamp()})
-            if callable(expire):
-                expire(key, _LOBBY_ONLINE_VIEWER_TTL_SECONDS * 2)
-        except Exception:
-            return False
-        return True
-
-    def _online_viewer_count_from_redis(self, *, lobby_id: str, now: datetime) -> int | None:
-        client = self._matchmaking_lock_client
-        zremrangebyscore = getattr(client, "zremrangebyscore", None)
-        zcard = getattr(client, "zcard", None)
-        if not callable(zremrangebyscore) or not callable(zcard):
-            return None
-        key = self._viewer_presence_key(lobby_id)
-        cutoff = now.timestamp() - _LOBBY_ONLINE_VIEWER_TTL_SECONDS
-        try:
-            zremrangebyscore(key, "-inf", cutoff)
-            return int(zcard(key))
-        except Exception:
-            return None
+        return any(state.ready and self.is_team_online(state) for state in lobby.teams.values())
 
     @staticmethod
-    def _viewer_presence_key(lobby_id: str) -> str:
-        return f"{_LOBBY_VIEWER_PRESENCE_KEY_PREFIX}{lobby_id}"
+    def is_team_online(state: LobbyTeamState) -> bool:
+        return state.last_seen_at is not None and (utc_now() - state.last_seen_at).total_seconds() <= _LOBBY_ONLINE_VIEWER_TTL_SECONDS
+
+    def _expire_offline_queue(self, lobby: Lobby, now: datetime) -> None:
+        changed = False
+        for state in lobby.teams.values():
+            seen = state.last_seen_at or state.queued_at
+            if state.ready and seen is None:
+                state.queued_at = now
+                changed = True
+            if state.ready and seen is not None and (now - seen).total_seconds() >= 600:
+                state.ready = False
+                state.blocker_reason = "Выведен из очереди: 10 минут офлайн"
+                state.queued_at = None
+                changed = True
+        if changed:
+            self._repository.save(lobby)
 
     def _winner_team_ids(self, runs: list[Run]) -> tuple[str, ...]:
         winner = self._single_winner_team_id(runs)

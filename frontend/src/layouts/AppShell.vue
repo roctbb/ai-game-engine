@@ -3,10 +3,9 @@
     <nav v-if="!isChromeHiddenRoute" class="agp-navbar">
       <div class="agp-topbar">
         <RouterLink class="agp-brand" :to="homePath">
-          <span class="agp-brand-mark" aria-hidden="true"></span>
+          <ArenaBot />
           <span class="agp-brand-copy">
-            <strong>Игровая платформа</strong>
-            <small>AI Arena</small>
+            <strong>Арена</strong>
           </span>
         </RouterLink>
 
@@ -77,13 +76,12 @@
       </RouterView>
     </main>
 
-    <nav v-if="!isChromeHiddenRoute" class="agp-mobile-nav" aria-label="Главная навигация на мобильном устройстве">
-      <RouterLink v-for="item in navigation" :key="item.path" :to="item.path"><AppIcon :name="item.icon" /><span>{{ item.shortLabel || item.label }}</span></RouterLink>
-    </nav>
+
   </div>
 </template>
 
 <script setup lang="ts">
+import ArenaBot from '../components/ArenaBot.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
@@ -115,7 +113,7 @@ const userInitial = computed(() => {
 });
 const isEmbeddedRoute = computed(() => route.query.embed === '1');
 const isChromeHiddenRoute = computed(() =>
-  ['login', 'task-run', 'run-watch', 'lobby'].includes(String(route.name ?? '')) || isEmbeddedRoute.value
+  ['login', 'task-run', 'run-watch', 'player-code'].includes(String(route.name ?? '')) || (route.name === 'lobby' && ['code', 'game'].includes(String(route.query.tab))) || isEmbeddedRoute.value
 );
 const isWorkspaceRoute = computed(() =>
   ['login', 'task-run', 'run-watch', 'competition', 'player-code', 'lobby'].includes(String(route.name ?? ''))

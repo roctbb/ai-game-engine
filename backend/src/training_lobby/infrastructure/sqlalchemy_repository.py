@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -38,6 +40,8 @@ def _map_lobby_to_orm(lobby: Lobby) -> LobbyOrm:
         teams_json[team_id] = {
             "ready": state.ready,
             "blocker_reason": state.blocker_reason,
+            "last_seen_at": state.last_seen_at.isoformat() if state.last_seen_at else None,
+            "queued_at": state.queued_at.isoformat() if state.queued_at else None,
         }
 
     return LobbyOrm(
@@ -68,6 +72,8 @@ def _map_lobby_from_orm(row: LobbyOrm) -> Lobby:
             team_id=team_id,
             ready=bool(raw.get("ready", False)),
             blocker_reason=(str(raw["blocker_reason"]) if raw.get("blocker_reason") else None),
+            last_seen_at=datetime.fromisoformat(str(raw["last_seen_at"])) if raw.get("last_seen_at") else None,
+            queued_at=datetime.fromisoformat(str(raw["queued_at"])) if raw.get("queued_at") else None,
         )
 
     raw_groups = row.last_scheduled_match_groups_json or []

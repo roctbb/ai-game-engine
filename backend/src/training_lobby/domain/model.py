@@ -31,6 +31,8 @@ class LobbyTeamState:
     team_id: str
     ready: bool = False
     blocker_reason: str | None = None
+    last_seen_at: datetime | None = None
+    queued_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -101,6 +103,7 @@ class Lobby:
             raise NotFoundError("Команда не состоит в лобби")
         team_state = self.teams[team_id]
         team_state.ready = ready
+        team_state.queued_at = utc_now() if ready else None
         team_state.blocker_reason = blocker_reason
 
     def start_updating(self) -> None:

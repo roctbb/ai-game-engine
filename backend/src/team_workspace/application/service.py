@@ -15,6 +15,7 @@ class TeamSlotState:
     required: bool
     code: str | None
     revision: int | None
+    updated_at: object | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +132,7 @@ class TeamWorkspaceService:
                     required=slot_def.required,
                     code=code,
                     revision=revision,
+                    updated_at=slot.updated_at if slot else None,
                 )
             )
 
@@ -143,6 +145,7 @@ class TeamWorkspaceService:
                         required=False,
                         code=slot.code,
                         revision=slot.revision,
+                        updated_at=slot.updated_at,
                     )
                 )
 

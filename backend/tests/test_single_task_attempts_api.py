@@ -11,7 +11,8 @@ def _auth_headers(client, nickname: str, role: str = 'student') -> dict[str, str
 
 
 def _find_game_id(client, slug: str, headers: dict[str, str]) -> str:
-    games = client.get('/api/v1/games', headers=headers).json()
+    # Resolve the teacher-provided task link before entering the student workflow.
+    games = client.get('/api/v1/games').json()
     game = next(item for item in games if item['slug'] == slug)
     return game['game_id']
 

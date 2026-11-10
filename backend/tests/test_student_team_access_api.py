@@ -11,8 +11,10 @@ def _student_headers(client, nickname: str) -> dict[str, str]:
 
 
 def _maze_game(client, headers: dict[str, str]) -> dict:
-    games = client.get("/api/v1/games", headers=headers).json()
-    return next(item for item in games if item["slug"] == "maze_escape_v1")
+    # The teacher supplies a direct task link; students do not browse the catalog.
+    games = client.get("/api/v1/games").json()
+    game = next(item for item in games if item["slug"] == "maze_escape_v1")
+    return client.get(f"/api/v1/games/{game['game_id']}", headers=headers).json()
 
 
 def _multiplayer_game(client, headers: dict[str, str]) -> dict:

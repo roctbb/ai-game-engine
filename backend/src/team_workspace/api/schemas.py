@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -22,6 +24,7 @@ class TeamResponse(BaseModel):
 
 
 class SlotStateResponse(BaseModel):
+    updated_at: datetime | None = None
     slot_key: str
     state: str
     required: bool

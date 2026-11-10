@@ -9,7 +9,8 @@ def _auth_headers(client, nickname: str) -> dict[str, str]:
 
 def _create_maze_team(client, captain_user_id: str, name: str) -> dict:
     headers = _auth_headers(client, captain_user_id)
-    games = client.get("/api/v1/games", headers=headers).json()
+    # Students receive this task by link rather than through the game catalog.
+    games = client.get("/api/v1/games").json()
     game = next(item for item in games if item["slug"] == "maze_escape_v1")
     team = client.post(
         "/api/v1/teams",

@@ -34,7 +34,7 @@ from training_lobby.api.schemas import (
     SetLobbyStatusRequest,
     SwitchGameVersionRequest,
 )
-from training_lobby.application.service import CreateLobbyInput, LobbyLiveView, LobbyMatchGroupView
+from training_lobby.application.service import CreateLobbyInput, LobbyLiveView, LobbyMatchGroupView, TrainingLobbyService
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus
 
 router = APIRouter(prefix="/lobbies", tags=["training_lobby"])
@@ -88,6 +88,8 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
                 "team_id": team_state.team_id,
                 "ready": team_state.ready,
                 "blocker_reason": team_state.blocker_reason,
+                "online": TrainingLobbyService.is_team_online(team_state),
+                "last_seen_at": team_state.last_seen_at,
             }
             for team_state in ([] if redact_private else typed.teams.values())
         ],
@@ -173,6 +175,8 @@ def _to_summary_response(
                 "team_id": team_state.team_id,
                 "ready": team_state.ready,
                 "blocker_reason": team_state.blocker_reason,
+                "online": TrainingLobbyService.is_team_online(team_state),
+                "last_seen_at": team_state.last_seen_at,
             }
             for team_state in ([] if redact_private else lobby.teams.values())
         ],
@@ -690,6 +694,7 @@ def start_lobby_competition(
     session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyCompetitionResponse:
+    container.training_lobby.mark_viewer_online(lobby_id, session.nickname)
     lobby = container.training_lobby.get_lobby(lobby_id=lobby_id)
     if lobby.kind.value != "training":
         raise InvariantViolationError("Соревнование можно запускать только в training-лобби")
@@ -704,17 +709,31 @@ def start_lobby_competition(
     )
     if active_competition is not None:
         raise InvariantViolationError("В лобби уже есть активное соревнование")
+    if request.participant_selection == "selected":
+        selected = set(request.team_ids)
+        if not selected or not selected.issubset(lobby.teams):
+            raise InvariantViolationError("Выберите участников этого лобби")
+    elif request.participant_selection == "queue":
+        selected = {state.team_id for state in lobby.teams.values() if state.ready}
+    else:
+        selected = set(lobby.teams)
     ready_team_ids = [
         team_id
         for team_id in sorted(lobby.teams.keys())
-        if container.team_workspace.evaluate_compatibility(
+        if team_id in selected and container.team_workspace.evaluate_compatibility(
             team_id=team_id,
             game_id=lobby.game_id,
             version_id=lobby.game_version_id,
         ).compatible
     ]
-    if len(ready_team_ids) < 2:
-        raise InvariantViolationError("Для старта соревнования нужны минимум 2 игрока с заполненным кодом")
+    if set(ready_team_ids) != selected:
+        raise InvariantViolationError("У выбранных участников должен быть заполнен код")
+    game = container.game_catalog.get_game(lobby.game_id)
+    minimum, maximum = game.match_player_bounds
+    if not minimum <= request.match_size <= maximum or request.advancement_top_k > request.match_size:
+        raise InvariantViolationError("Проверьте размер матча и число проходящих участников")
+    if len(ready_team_ids) < minimum:
+        raise InvariantViolationError("Недостаточно участников с заполненным кодом для матча")
 
     lobby = container.training_lobby.stop_current_training_games_for_competition(lobby_id=lobby_id)
     competition = container.competition.create_competition(
@@ -729,7 +748,7 @@ def start_lobby_competition(
             match_size=request.match_size,
         )
     )
-    for team_id in sorted(lobby.teams.keys()):
+    for team_id in ready_team_ids:
         container.competition.register_team(competition_id=competition.competition_id, team_id=team_id)
     competition = container.competition.start_competition(
         competition_id=competition.competition_id,
@@ -745,6 +764,17 @@ def start_lobby_competition(
         status=competition.status.value,
         winner_team_ids=list(competition.winner_team_ids),
     )
+
+
+@router.post("/{lobby_id}/presence", status_code=204)
+def heartbeat_lobby(
+    lobby_id: str,
+    session: AppSession = Depends(get_current_session),
+    container: ServiceContainer = Depends(get_container),
+) -> Response:
+    _ensure_lobby_detail_access(container=container, session=session, lobby_id=lobby_id)
+    container.training_lobby.mark_viewer_online(lobby_id=lobby_id, user_id=session.nickname)
+    return Response(status_code=204)
 
 
 @router.post("/{lobby_id}/competitions/{competition_id}/finish", response_model=LobbyCompetitionResponse)
@@ -789,6 +819,8 @@ def list_lobby_competition_archive(
         items=[
             LobbyCompetitionResponse(
                 competition_id=item.competition_id,
+                created_at=item.created_at,
+                participant_count=len(item.entrants),
                 title=item.title,
                 status=item.status.value,
                 winner_team_ids=list(item.winner_team_ids),
@@ -902,6 +934,8 @@ def set_lobby_status(
     _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> LobbyResponse:
+    if request.status in {LobbyStatus.OPEN, LobbyStatus.RUNNING} and _has_lobby_locking_competition(container, lobby_id):
+        raise InvariantViolationError("Тренировка недоступна до завершения соревнования")
     lobby = container.training_lobby.set_status(lobby_id=lobby_id, status=request.status)
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=_session.nickname))
 

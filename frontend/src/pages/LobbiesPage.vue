@@ -3,11 +3,7 @@
     <header class="agp-page-heading lobbies-simple-head">
       <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
         <div>
-          <p class="lobbies-kicker mb-1">Матчи и соревнования</p>
-          <h1 class="h3 mb-1">{{ canManage ? 'Занятия и лобби' : 'Лобби' }}</h1>
-          <p class="text-muted mb-0">
-            {{ canManage ? 'Создайте лобби, пригласите участников и запустите тренировку или соревнование.' : 'Войдите в лобби, подготовьте код и нажмите «Готов играть».' }}
-          </p>
+          <h1 class="h3 mb-0">{{ canManage && route.query.all === '1' ? 'Управление лобби' : 'Открытые лобби' }}</h1>
         </div>
         <div class="lobbies-controls">
           <div class="lobbies-filter-wrap">
@@ -29,24 +25,6 @@
         </div>
       </div>
 
-      <div class="lobbies-head-stats">
-        <div>
-          <span>Показано</span>
-          <strong class="mono">{{ filteredLobbies.length }}/{{ sortedLobbies.length }}</strong>
-        </div>
-        <div>
-          <span>Открыто</span>
-          <strong class="mono">{{ openLobbyCount }}</strong>
-        </div>
-        <div>
-          <span>Идет игра</span>
-          <strong class="mono">{{ runningLobbyCount }}</strong>
-        </div>
-        <div>
-          <span>По коду</span>
-          <strong class="mono">{{ codeLobbyCount }}</strong>
-        </div>
-      </div>
       <div v-if="selectedGameId" class="lobbies-active-filter mt-2">
         <span>Фильтр:</span>
         <strong>{{ selectedGameTitle }}</strong>
@@ -83,6 +61,7 @@
             </div>
             <h2 class="h5 mb-1">{{ lobby.title }}</h2>
             <p class="small text-muted mb-0">{{ gameTitle(lobby.game_id) }}</p>
+            <div class="small text-muted mt-2">Онлайн {{ lobby.teams.filter(t => t.online).length }} · в очереди {{ lobby.teams.filter(t => t.ready).length }}</div>
             <div class="lobby-card-meter mt-3">
               <div>
                 <span>Игроки</span>
@@ -177,7 +156,7 @@ const sortedLobbies = computed(() => {
     updating: 5,
     closed: 6,
   };
-  return [...lobbies.value].sort((a, b) => weight[a.status] - weight[b.status] || a.title.localeCompare(b.title));
+  return lobbies.value.filter(lobby => (canManage.value && route.query.all === '1') || (lobby.access === 'public' && !['closed', 'stopped', 'draft'].includes(lobby.status))).sort((a, b) => weight[a.status] - weight[b.status] || a.title.localeCompare(b.title));
 });
 const filteredLobbies = computed(() => {
   if (!selectedGameId.value) return sortedLobbies.value;
@@ -216,7 +195,7 @@ function isLobbyCatalogGame(game: GameDto): boolean {
 function canEnterLobby(lobby: LobbyDto): boolean {
   if (lobby.status === 'closed' || lobby.status === 'updating' || lobby.status === 'stopped') return canManage.value;
   if (canManage.value) return true;
-  if (lobby.status === 'paused') return Boolean(lobby.my_team_id);
+  if (lobby.status === 'paused') return lobby.access === 'public' || Boolean(lobby.my_team_id);
   if (needsAccessCode(lobby)) return Boolean((accessCodeByLobbyId[lobby.lobby_id] ?? '').trim());
   return lobby.teams.length < lobby.max_teams || Boolean(lobby.my_team_id);
 }
@@ -225,6 +204,7 @@ function enterButtonText(lobby: LobbyDto): string {
   if (busyLobbyId.value === lobby.lobby_id) return 'Входим...';
   if (canManage.value && !lobby.my_team_id) return 'Управлять';
   if (lobby.my_team_id) return 'Вернуться';
+  if (lobby.status === 'paused' && lobby.access === 'public') return 'Смотреть';
   if (needsAccessCode(lobby)) return 'Войти по коду';
   return 'Войти';
 }
@@ -257,7 +237,7 @@ async function enterLobby(lobby: LobbyDto): Promise<void> {
       await router.push(`/lobbies/${lobby.lobby_id}`);
       return;
     }
-    if (!lobby.my_team_id) {
+    if (!lobby.my_team_id && lobby.status !== 'paused') {
       await joinLobbyAsUser({
         lobby_id: lobby.lobby_id,
         access_code: lobby.access === 'code' ? accessCodeByLobbyId[lobby.lobby_id] : null,

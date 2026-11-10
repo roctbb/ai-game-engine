@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 
 from competition.application.repositories import CompetitionRepository
 from competition.domain.model import (
@@ -65,16 +64,6 @@ _ACTIVE_COMPETITION_STATUSES = {
     CompetitionStatus.PAUSED,
     CompetitionStatus.COMPLETED,
 }
-_COMPETITION_REPLAY_FRAME_MS = 500
-_COMPETITION_RESULT_SECONDS = 5
-
-
-def _datetime_or_none(value: object | None) -> datetime | None:
-    if not isinstance(value, datetime):
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=utc_now().tzinfo)
-    return value
 
 
 def _ensure_competition_match_size_is_allowed(
@@ -303,7 +292,7 @@ class CompetitionService:
         self._repository.save(competition)
         return competition
 
-    def advance_competition(self, competition_id: str, requested_by: str) -> Competition:
+    def advance_competition(self, competition_id: str, requested_by: str, *, start_next_round: bool = True) -> Competition:
         competition = self.get_competition(competition_id)
         if competition.status is CompetitionStatus.PAUSED:
             current_round = competition.get_current_round()
@@ -324,8 +313,10 @@ class CompetitionService:
             run_kind=RunKind.COMPETITION_MATCH,
         )
         runs_by_id = {run.run_id: run for run in runs}
-        if self._is_waiting_for_round_replay(current_round.matches, runs_by_id):
-            return competition
+        for match in current_round.matches:
+            if match.status in {CompetitionMatchStatus.PENDING, CompetitionMatchStatus.RUNNING}:
+                if any(run_id not in runs_by_id or runs_by_id[run_id].status not in _TERMINAL_STATUSES for run_id in match.run_ids_by_team.values()):
+                    return competition
 
         next_seed: list[str] = []
         found_tiebreak = False
@@ -346,6 +337,8 @@ class CompetitionService:
                 competition=competition, match=match, runs=match_runs
             )
             if outcome.requires_manual_tiebreak:
+                match.scores_by_team = dict(outcome.scores_by_team)
+                match.placements_by_team = dict(outcome.placements_by_team)
                 competition.mark_match_awaiting_tiebreak(
                     round_index=current_round.round_index,
                     match_id=match.match_id,
@@ -366,9 +359,7 @@ class CompetitionService:
         if found_tiebreak:
             if competition.status is CompetitionStatus.RUNNING:
                 competition.pause()
-            competition.set_pending_reason(
-                "Найдено неоднозначное определение прохода в следующий раунд. Требуется ручное решение."
-            )
+            competition.set_pending_reason(next((match.tie_break_reason for match in current_round.matches if match.tie_break_reason), "Требуется решение по матчу"))
             self._repository.save(competition)
             return competition
 
@@ -381,6 +372,9 @@ class CompetitionService:
             self._repository.save(competition)
             return competition
 
+        if not start_next_round:
+            self._repository.save(competition)
+            return competition
         competition.create_next_round(next_seed)
         run_ids = self._schedule_current_round(competition=competition, requested_by=requested_by)
         competition.set_last_scheduled_runs(run_ids)
@@ -389,12 +383,38 @@ class CompetitionService:
 
     def resolve_match_tiebreak(self, competition_id: str, data: ResolveTieInput) -> Competition:
         competition = self.get_competition(competition_id)
+        current_round = competition.get_current_round()
+        match = next((item for item in current_round.matches if item.match_id == data.match_id), None) if current_round else None
+        if match and match.tie_break_reason and match.tie_break_reason.startswith("Сбой"):
+            raise InvariantViolationError("Матч со сбоем нужно повторить")
         competition.resolve_match_tiebreak(
             round_index=data.round_index,
             match_id=data.match_id,
             advanced_team_ids=data.advanced_team_ids,
         )
         competition.set_pending_reason(None)
+        self._repository.save(competition)
+        return competition
+
+    def retry_failed_match(self, competition_id: str, match_id: str, requested_by: str) -> Competition:
+        competition = self.get_competition(competition_id)
+        current_round = competition.get_current_round()
+        if current_round is None or competition.status not in {CompetitionStatus.RUNNING, CompetitionStatus.PAUSED}:
+            raise InvariantViolationError("Нет активного раунда")
+        match = next((item for item in current_round.matches if item.match_id == match_id), None)
+        if match is None or match.status is not CompetitionMatchStatus.AWAITING_TIEBREAK:
+            raise InvariantViolationError("Повтор доступен для матча со сбоем")
+        previous = {team_id: self._execution.get_run(run_id) for team_id, run_id in match.run_ids_by_team.items()}
+        if not any(run.status in {RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED} for run in previous.values()):
+            raise InvariantViolationError("В матче нет сбоя выполнения")
+        match.status = CompetitionMatchStatus.PENDING
+        match.run_ids_by_team = {}
+        match.tie_break_reason = None
+        if competition.status is CompetitionStatus.PAUSED:
+            competition.start()
+        competition.set_pending_reason(None)
+        run_ids = self._schedule_current_round(competition, requested_by, retry_runs_by_team=previous)
+        competition.set_last_scheduled_runs(run_ids)
         self._repository.save(competition)
         return competition
 
@@ -442,7 +462,7 @@ class CompetitionService:
         ready.sort(key=lambda entrant: (entrant.registered_at, entrant.team_id))
         return [entrant.team_id for entrant in ready]
 
-    def _schedule_current_round(self, competition: Competition, requested_by: str) -> list[str]:
+    def _schedule_current_round(self, competition: Competition, requested_by: str, *, retry_runs_by_team: dict[str, Run] | None = None) -> list[str]:
         current_round = competition.get_current_round()
         if current_round is None:
             return []
@@ -460,6 +480,7 @@ class CompetitionService:
                         run_kind=RunKind.COMPETITION_MATCH,
                         lobby_id=competition.competition_id,
                         version_id=competition.game_version_id,
+                        execution_options=({"seed": retry_runs_by_team[team_id].execution_options.get("seed") or retry_runs_by_team[team_id].run_id} if retry_runs_by_team and team_id in retry_runs_by_team else {}),
                     )
                 )
                 group.append(run.run_id)
@@ -469,7 +490,8 @@ class CompetitionService:
                     team_id=team_id,
                     run_id=run.run_id,
                 )
-            self._execution.queue_match_group(group)
+            frozen = {team_id: run.snapshot_id for team_id, run in (retry_runs_by_team or {}).items() if run.snapshot_id}
+            self._execution.queue_match_group(group, snapshot_ids_by_team=frozen or None)
             run_ids.extend(group)
         return run_ids
 
@@ -493,55 +515,15 @@ class CompetitionService:
             terminal_runs[team_id] = run
         return terminal_runs
 
-    def _is_waiting_for_round_replay(
-        self,
-        matches: list[CompetitionMatch],
-        runs_by_id: dict[str, Run],
-    ) -> bool:
-        runs: list[Run] = []
-        for match in matches:
-            if match.status in {
-                CompetitionMatchStatus.FINISHED,
-                CompetitionMatchStatus.AUTO_ADVANCED,
-            }:
-                continue
-            if not match.run_ids_by_team:
-                return False
-            for run_id in match.run_ids_by_team.values():
-                run = runs_by_id.get(run_id)
-                if run is None or run.status not in _TERMINAL_STATUSES:
-                    return False
-                runs.append(
-                    run if run.result_payload is not None else self._execution.get_run(run.run_id)
-                )
-        if not runs:
-            return False
-        if not any(self._replay_frames_count(run) > 1 for run in runs):
-            return False
-        latest_finished_at = max((_datetime_or_none(run.finished_at) for run in runs), default=None)
-        if latest_finished_at is None:
-            return False
-        frame_count = max((self._replay_frames_count(run) for run in runs), default=1)
-        replay_seconds = max(1.0, frame_count * _COMPETITION_REPLAY_FRAME_MS / 1000)
-        advance_after = latest_finished_at + timedelta(
-            seconds=replay_seconds + _COMPETITION_RESULT_SECONDS
-        )
-        return utc_now() < advance_after
-
-    @staticmethod
-    def _replay_frames_count(run: Run) -> int:
-        payload = run.result_payload if isinstance(run.result_payload, dict) else {}
-        frames = payload.get("frames")
-        if isinstance(frames, list) and frames:
-            return len(frames)
-        return 1
-
     def _build_match_outcome(
         self,
         competition: Competition,
         match: CompetitionMatch,
         runs: dict[str, Run],
     ) -> _MatchOutcome:
+        if any(run.status in {RunStatus.FAILED, RunStatus.TIMEOUT, RunStatus.CANCELED} for run in runs.values()):
+            return _MatchOutcome(scores_by_team={}, placements_by_team={}, advanced_team_ids=[],
+                                 requires_manual_tiebreak=True, tiebreak_reason="Сбой выполнения матча. Требуется повтор.")
         scored: list[tuple[str, int, float]] = []
         provided_placements: dict[str, int] = {}
         provided_scores: dict[str, float] = {}
@@ -585,8 +567,7 @@ class CompetitionService:
                         advanced_team_ids=[],
                         requires_manual_tiebreak=True,
                         tiebreak_reason=(
-                            "Граница top-k имеет одинаковые score/placement, "
-                            f"tie_break_policy={competition.tie_break_policy.value}"
+                            "Одинаковый результат на границе прохода. Требуется решение по ничьей."
                         ),
                     )
 

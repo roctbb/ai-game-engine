@@ -38,7 +38,7 @@
 .agp-insight-metrics strong, .agp-outcome-metrics strong { color: var(--agp-text); margin-left: .3rem; }
 .agp-insight-body details { margin-top: .5rem; }
 .agp-insight-body summary { cursor: pointer; color: var(--agp-text-muted); }
-.agp-insight-body pre, .agp-reference-content pre { padding: .7rem; background: var(--agp-surface-soft); border: 1px solid var(--agp-border); border-radius: .45rem; color: var(--agp-text); max-height: 18rem; overflow: auto; font: .73rem/1.6 'IBM Plex Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agp-insight-body pre, .agp-reference-content pre { padding: .7rem; background: var(--agp-surface-soft); border: 1px solid var(--agp-border); border-radius: .45rem; color: var(--agp-text); max-height: 18rem; overflow: auto; font: .73rem/1.6 'JetBrains Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agp-game-reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; overflow: hidden; background: var(--agp-surface); color: var(--agp-text); }
 .agp-game-reference > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; padding: .65rem .8rem; font-size: .8rem; border-bottom: 1px solid var(--agp-border); }
 .agp-reference-content { overflow: auto; padding: 1rem; font-size: .88rem; line-height: 1.7; }

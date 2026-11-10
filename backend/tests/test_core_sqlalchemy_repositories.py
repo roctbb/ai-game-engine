@@ -1,3 +1,5 @@
+from shared.kernel import utc_now
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -81,12 +83,15 @@ def test_sqlalchemy_lobby_repository_roundtrip() -> None:
     )
     lobby.join_team('team-1')
     lobby.mark_ready(team_id='team-1', ready=True)
+    lobby.teams['team-1'].last_seen_at = utc_now()
 
     repository.save(lobby)
 
     loaded = repository.get(lobby.lobby_id)
     assert loaded is not None
     assert loaded.teams['team-1'].ready is True
+    assert loaded.teams['team-1'].last_seen_at == lobby.teams['team-1'].last_seen_at
+    assert loaded.teams['team-1'].queued_at == lobby.teams['team-1'].queued_at
 
     listed = repository.list()
     assert len(listed) == 1

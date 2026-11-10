@@ -2,32 +2,27 @@ import type { UserRole } from './api';
 
 export interface NavigationItem { path: string; label: string; shortLabel?: string; icon: string }
 
-const learningNavigation: NavigationItem[] = [
-  { path: '/tasks', label: 'Задачи', icon: 'tasks' },
-  { path: '/lobbies', label: 'Лобби и соревнования', shortLabel: 'Лобби', icon: 'trophy' },
-];
-
 export const ROUTE_ROLES: Record<string, UserRole[]> = {
   games: ['admin'],
+  tasks: ['teacher', 'admin'],
+  'tasks-section': ['teacher', 'admin'],
   'admin-game-sources': ['admin'],
   'admin-catalog': ['teacher', 'admin'],
   replays: ['teacher', 'admin'],
   'lobby-create': ['teacher', 'admin'],
 };
 
-export function roleLandingPath(role: UserRole): string {
-  if (role === 'admin') return '/admin/game-sources';
-  if (role === 'teacher') return '/lobbies';
-  return '/tasks';
-}
+export function roleLandingPath(_role: UserRole): string { return '/lobbies'; }
 
-export function primaryNavigation(_role: UserRole): NavigationItem[] {
-  return learningNavigation;
+export function primaryNavigation(role: UserRole): NavigationItem[] {
+  const lobbies = { path: '/lobbies', label: 'Лобби', icon: 'trophy' };
+  return role === 'student' ? [lobbies] : [lobbies, { path: '/tasks', label: 'Материалы', icon: 'tasks' }];
 }
 
 export function profileNavigation(role: UserRole): NavigationItem[] {
   if (role === 'student') return [];
   const teaching = [
+    { path: '/lobbies?all=1', label: 'Управление лобби', icon: 'trophy' },
     { path: '/admin/catalog', label: 'Управление задачами', icon: 'tasks' },
     { path: '/replays', label: 'Повторы матчей', icon: 'history' },
   ];

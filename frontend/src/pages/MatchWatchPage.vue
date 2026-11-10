@@ -1,5 +1,5 @@
 <template>
-  <section class="agp-grid agp-task-workspace agp-watch-page" :class="{ 'agp-watch-page--embedded': isEmbedded }">
+  <section class="agp-grid agp-task-workspace agp-watch-page" :class="{ 'agp-watch-page--embedded': isEmbedded, 'arena-watch--source': sourceOpen, 'arena-watch--stats': statsOpen }">
     <header v-if="!isEmbedded" class="agp-task-header">
       <div class="agp-task-header-main">
         <RouterLink :to="backTarget" class="agp-back-link" :title="backLabel" :aria-label="backLabel"><AppIcon name="back" /></RouterLink>
@@ -22,7 +22,7 @@
         @step="stepReplay"
       />
 
-      <div class="agp-task-header-actions">
+      <div class="agp-task-header-actions"><button class="btn btn-outline-secondary arena-mobile-stats" @click="statsOpen = !statsOpen">Игроки</button><button v-if="sourceParticipants.length" class="btn btn-outline-secondary" :aria-pressed="sourceOpen" @click="toggleSource">{{ sourceOpen ? 'К матчу' : 'Код' }}</button>
         <div class="agp-run-status">
           <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
           <span class="small text-muted">Запуск</span>
@@ -46,6 +46,7 @@
 
     <template v-else-if="watchContext && run">
       <div class="agp-main-columns agp-watch-columns">
+        <article v-if="sourceOpen" class="agp-card arena-watch-source"><header><select v-if="sourceParticipants.length > 1" :value="sourceRunId" aria-label="Код участника" @change="loadSource(($event.target as HTMLSelectElement).value)"><option v-for="p in sourceParticipants" :key="p.run_id" :value="p.run_id">{{ p.display_name }}</option></select><strong v-else>{{ sourceParticipants[0]?.display_name }}</strong><span>{{ formatTime(sourceCapturedAt) }}</span><RouterLink v-if="sourceParticipants.find(p => p.run_id === sourceRunId)?.captain_user_id === sessionStore.nickname" class="agp-panel-toggle" :to="{ name: 'player-code', params: { teamId: sourceParticipants.find(p => p.run_id === sourceRunId)?.team_id }, query: { from_run: sourceRunId, slot: sourceSlot, back: backTarget } }">В черновик</RouterLink><select v-if="Object.keys(sourceCodes).length > 1" v-model="sourceSlot" aria-label="Файл"><option v-for="slot in Object.keys(sourceCodes)" :key="slot">{{ slot }}</option></select></header><p v-if="sourceError" role="alert" class="text-danger p-3">{{ sourceError }}</p><CodeEditor v-else :model-value="sourceCodes[sourceSlot] || ''" readonly :focus-line="sourceLine" /></article>
         <article class="agp-card p-3 agp-viewer-card">
           <div class="agp-viewer-overlay agp-viewer-overlay--status">
             <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
@@ -75,7 +76,7 @@
           <div v-else class="agp-card-soft p-3 text-muted small">
             Для этой игры визуализация не настроена.
           </div>
-          <BotConsole v-if="showBotConsole" :position="replayFrames.length ? `${replayFrameIndex + 1} / ${replayFrames.length}` : ''">
+          <BotConsole initially-collapsed v-if="showBotConsole" :position="replayFrames.length ? `${replayFrameIndex + 1} / ${replayFrames.length}` : ''">
               <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
                 print появится здесь
               </div>
@@ -87,7 +88,7 @@
         </article>
 
         <aside v-if="!isEmbedded" class="agp-card p-3 agp-watch-side-card">
-          <header class="agp-match-panel-head">
+          <header class="agp-match-panel-head"><button class="btn btn-sm btn-outline-secondary arena-mobile-stats" aria-label="Закрыть участников" @click="statsOpen = false">×</button>
             <div>
               <h2 class="h6 mb-1">Статистика матча</h2>
               <span>{{ replayFrames.length ? `кадр ${replayFrameIndex + 1}/${replayFrames.length}` : runStatusLabel }}</span>
@@ -185,6 +186,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import CodeEditor from '../components/CodeEditor.vue';
+import { formatTime } from '../lib/attemptPresentation';
 import AppIcon from '../components/AppIcon.vue';
 import BotConsole from '../components/BotConsole.vue';
 import ReplayControls from '../components/ReplayControls.vue';
@@ -198,6 +201,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router';
 import RunReasonBadge from '../components/RunReasonBadge.vue';
 import {
   getRun,
+  getRunCode,
   getRunReplay,
   getRunWatchContext,
   type ReplayDto,
@@ -266,18 +270,39 @@ function seekMoment(frame: number): void {
 }
 function openRunLine(location: { line: number; role?: string }): void {
   if (!run.value) return;
-  if (run.value.run_kind !== 'single_task') return;
-  void router.push({ name: 'task-run', params: { gameId: run.value.game_id }, query: { inspect_run: run.value.run_id, line: location.line, ...(location.role ? { role: location.role } : {}) } });
+  if (run.value.run_kind === 'single_task') {
+    void router.push({ name: 'task-run', params: { gameId: run.value.game_id }, query: { inspect_run: run.value.run_id, line: location.line, ...(location.role ? { role: location.role } : {}) } });
+  } else if (sourceParticipants.value.length) {
+    sourceLine.value = location.line;
+    sourceOpen.value = true;
+    void loadSource(sourceRunId.value || sourceParticipants.value[0].run_id);
+  }
 }
 const sessionStore = useSessionStore();
 const isEmbedded = computed(() => route.query.embed === '1');
-const showBotConsole = computed(() => route.query.show_print !== '0');
+const showBotConsole = computed(() => route.query.show_print !== '0' && (sessionStore.role !== 'student' || watchContext.value?.participants.some(p => p.captain_user_id === sessionStore.nickname)));
 const canSeeTechnicalDetails = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
 
 const watchContext = ref<RunWatchContextDto | null>(null);
 const run = ref<RunDto | null>(null);
 const replay = ref<ReplayDto | null>(null);
 const replayError = ref('');
+const sourceOpen = ref(false);
+const statsOpen = ref(false);
+const sourceCodes = ref<Record<string, string>>({});
+const sourceSlot = ref('');
+const sourceRunId = ref('');
+const sourceCapturedAt = ref('');
+const sourceLine = ref(1);
+const sourceError = ref('');
+const sourceParticipants = computed(() => (watchContext.value?.participants ?? []).filter(p => sessionStore.role !== 'student' || p.captain_user_id === sessionStore.nickname));
+async function loadSource(runId: string): Promise<void> {
+  sourceError.value = '';
+  try { const snapshot = await getRunCode(runId); sourceRunId.value = runId; sourceCodes.value = snapshot.codes_by_slot; sourceSlot.value = Object.keys(snapshot.codes_by_slot)[0] || ''; sourceCapturedAt.value = snapshot.captured_at; }
+  catch (e) { sourceError.value = e instanceof Error ? e.message : 'Не удалось открыть исходник'; }
+}
+async function toggleSource(): Promise<void> { sourceOpen.value = !sourceOpen.value; if (sourceOpen.value && !sourceRunId.value && sourceParticipants.value[0]) await loadSource(sourceParticipants.value[0].run_id); }
+
 const isReplayLoading = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref('');
@@ -340,12 +365,15 @@ const runKindLabel = computed(() => {
   return 'запуск';
 });
 const backTarget = computed(() => {
-  if (run.value?.run_kind === 'single_task') return `/tasks/${encodeURIComponent(run.value.game_id)}/run`;
+  if (typeof route.query.back === 'string' && /^\/(lobbies|competitions|tasks)\//.test(route.query.back)) return route.query.back;
+  if (run.value?.run_kind === 'single_task') return `/tasks/${encodeURIComponent(run.value.game_id)}`;
+  if (run.value?.run_kind === 'competition_match' && run.value.lobby_id) return `/competitions/${encodeURIComponent(run.value.lobby_id)}`;
   if (run.value?.lobby_id) return `/lobbies/${encodeURIComponent(run.value.lobby_id)}`;
   return '/lobbies';
 });
 const backLabel = computed(() => {
-  if (run.value?.run_kind === 'single_task') return 'К решению задачи';
+  if (run.value?.run_kind === 'single_task') return 'К задаче';
+  if (run.value?.run_kind === 'competition_match') return 'К соревнованию';
   return 'К лобби';
 });
 const rendererStatusLabel = computed(() => {
@@ -496,7 +524,7 @@ const firstReplayAllowedFrameIndex = computed(() => {
 });
 const firstReplayLockActive = computed(() => {
   if (firstReplayStartedAtMs.value === null || replayFrames.value.length <= 1) return false;
-  return firstReplayAllowedFrameIndex.value < replayFrames.value.length - 1;
+  return isEmbedded.value && firstReplayAllowedFrameIndex.value < replayFrames.value.length - 1;
 });
 const canPlayReplay = computed(() => replayFrames.value.length > 1);
 const canStepBackward = computed(() => !firstReplayLockActive.value && replayFrames.value.length > 0 && replayFrameIndex.value > 0);
@@ -1603,6 +1631,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+
+
 .agp-watch-columns {
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
   gap: 0;
@@ -1610,7 +1640,7 @@ onUnmounted(() => {
 
 .agp-watch-page--embedded {
   height: 100dvh;
-  background: #020617;
+  background: var(--agp-surface-soft);
 }
 
 .agp-watch-page {
@@ -1618,11 +1648,11 @@ onUnmounted(() => {
   background-color: var(--agp-bg);
   background-image: none;
   background-size: 180px 180px, auto, auto, auto;
-  color: #dbeafe;
+  color: var(--agp-text);
 }
 
 .agp-watch-page .agp-task-header {
-  background: #131e2f;
+  background: var(--agp-surface);
 }
 
 .agp-watch-page--embedded .agp-watch-columns {
@@ -1637,7 +1667,7 @@ onUnmounted(() => {
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 0;
   padding: 0 !important;
-  background: #020617;
+  background: var(--agp-surface-soft);
   box-shadow: none;
 }
 
@@ -1656,7 +1686,7 @@ onUnmounted(() => {
   overflow: hidden;
   border: 1px solid rgba(34, 211, 238, 0.24);
   border-radius: 0;
-  background: #020617;
+  background: var(--agp-surface-soft);
   box-shadow: none;
   padding: 0 !important;
 }
@@ -1690,8 +1720,8 @@ onUnmounted(() => {
   transform: translateX(-50%);
   border: 1px solid rgba(250, 204, 21, 0.36);
   border-radius: 0.75rem;
-  background: #131e2f;
-  color: #f8fafc;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   padding: 0.8rem 1rem;
   text-align: center;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.32);
@@ -1701,7 +1731,7 @@ onUnmounted(() => {
 .agp-watch-winner-banner span,
 .agp-watch-replay-lock span {
   display: block;
-  color: #a7f3d0;
+  color: var(--agp-success);
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1720,7 +1750,7 @@ onUnmounted(() => {
 }
 
 .agp-watch-replay-lock strong {
-  color: #dff8ff;
+  color: var(--agp-text);
 }
 
 .agp-watch-side-card {
@@ -1731,8 +1761,8 @@ onUnmounted(() => {
   border-width: 0 0 0 1px;
   border-color: rgba(34, 211, 238, 0.24);
   border-radius: 0;
-  background: #131e2f;
-  color: #dbeafe;
+  background: var(--agp-surface);
+  color: var(--agp-text);
   max-height: 100%;
   overflow-y: auto;
   box-shadow: none;
@@ -1742,11 +1772,11 @@ onUnmounted(() => {
 .agp-watch-side-card h3,
 .agp-watch-side-card strong,
 .agp-watch-side-card summary {
-  color: #e5f3ff;
+  color: var(--agp-text);
 }
 
 .agp-watch-side-card .text-muted {
-  color: #8ea7c1 !important;
+  color: var(--agp-text-muted) !important;
 }
 
 .agp-watch-side-card hr {
@@ -1765,7 +1795,7 @@ onUnmounted(() => {
 
 .agp-watch-side-winner span {
   display: block;
-  color: #99f6e4;
+  color: var(--agp-success);
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1779,13 +1809,13 @@ onUnmounted(() => {
 
 .agp-watch-side-lock {
   border-color: rgba(34, 211, 238, 0.24);
-  color: #c6d7ea;
+  color: var(--agp-text-muted);
   font-size: 0.86rem;
 }
 
 .agp-watch-side-card .btn-outline-secondary {
   border-color: rgba(148, 163, 184, 0.38);
-  color: #dbeafe;
+  color: var(--agp-text);
   background: rgba(15, 23, 42, 0.72);
 }
 
@@ -1802,25 +1832,25 @@ onUnmounted(() => {
 
 .agp-watch-side-card .form-select {
   border-color: rgba(148, 163, 184, 0.36);
-  background-color: #0f172a;
-  color: #dbeafe;
+  background-color: var(--agp-surface-soft);
+  color: var(--agp-text);
 }
 
 .agp-watch-side-card .agp-card-soft {
   border-color: rgba(148, 163, 184, 0.22);
   background: rgba(15, 23, 42, 0.72);
-  color: #dbeafe;
+  color: var(--agp-text);
 }
 
 .agp-watch-side-card .table {
   --bs-table-bg: transparent;
-  --bs-table-color: #dbeafe;
+  --bs-table-color: var(--agp-text);
   --bs-table-border-color: rgba(148, 163, 184, 0.22);
   margin-bottom: 0;
 }
 
 .agp-watch-side-card .table th {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-weight: 700;
 }
 
@@ -1829,15 +1859,15 @@ onUnmounted(() => {
   overflow: auto;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 0.35rem;
-  background: #020617;
-  color: #dbeafe;
+  background: var(--agp-surface-soft);
+  color: var(--agp-text);
   padding: 0.65rem;
 }
 
 .agp-watch-side-card .list-group-item {
   border-color: rgba(148, 163, 184, 0.18);
   background: transparent;
-  color: #dbeafe;
+  color: var(--agp-text);
 }
 
 .agp-watch-stat {
@@ -1860,7 +1890,7 @@ onUnmounted(() => {
 }
 
 .agp-match-panel-head span {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.78rem;
 }
 
@@ -1868,7 +1898,7 @@ onUnmounted(() => {
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 999px;
   padding: 0.25rem 0.55rem;
-  color: #dbeafe;
+  color: var(--agp-text);
   font-size: 0.76rem;
   font-weight: 700;
   white-space: nowrap;
@@ -1883,7 +1913,7 @@ onUnmounted(() => {
 .agp-run-pill--success {
   border-color: rgba(45, 212, 191, 0.36);
   background: rgba(20, 184, 166, 0.16);
-  color: #99f6e4;
+  color: var(--agp-success);
 }
 
 .agp-run-pill--danger {
@@ -1906,7 +1936,7 @@ onUnmounted(() => {
   align-items: center;
   border: 1px solid rgba(34, 211, 238, 0.18);
   border-radius: 8px;
-  background: #131e2f;
+  background: var(--agp-surface);
   padding: 0.6rem 0.55rem 0.6rem 0.7rem;
 }
 
@@ -1916,7 +1946,7 @@ onUnmounted(() => {
 
 .agp-match-player--self {
   border-color: rgba(45, 212, 191, 0.5);
-  background: #131e2f;
+  background: var(--agp-surface);
 }
 
 .agp-match-player--out {
@@ -1930,7 +1960,7 @@ onUnmounted(() => {
   place-items: center;
   border-radius: 999px;
   background: var(--agp-surface);
-  color: #a5f3fc;
+  color: var(--agp-primary);
   font-weight: 700;
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.16);
 }
@@ -1944,7 +1974,7 @@ onUnmounted(() => {
 
 .agp-match-player-main strong {
   overflow: hidden;
-  color: #f8fbff;
+  color: var(--agp-text);
   font-size: 0.95rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1952,7 +1982,7 @@ onUnmounted(() => {
 
 .agp-match-player-main span,
 .agp-match-player-score span {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.74rem;
 }
 
@@ -1967,7 +1997,7 @@ onUnmounted(() => {
   border-radius: 999px;
   background: var(--agp-surface);
   padding: 0.16rem 0.5rem;
-  color: #fefce8;
+  color: var(--agp-text);
   font-size: 0.95rem;
   text-align: center;
 }
@@ -2011,18 +2041,18 @@ onUnmounted(() => {
 .agp-match-empty {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 8px;
-  background: #131e2f;
+  background: var(--agp-surface);
   padding: 0.55rem;
 }
 
 .agp-match-mini-stats span {
   display: block;
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.72rem;
 }
 
 .agp-match-empty {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   font-size: 0.86rem;
 }
 
@@ -2069,7 +2099,7 @@ onUnmounted(() => {
 }
 
 .agp-watch-move-row > .mono {
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
 }
 
 .agp-watch-move-row strong,
@@ -2082,14 +2112,14 @@ onUnmounted(() => {
 
 .agp-watch-move-action {
   grid-column: 2;
-  color: #e5f3ff;
+  color: var(--agp-text);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .agp-watch-move-row small {
   grid-column: 2;
-  color: #8ea7c1;
+  color: var(--agp-text-muted);
   overflow-wrap: anywhere;
 }
 
@@ -2121,7 +2151,7 @@ onUnmounted(() => {
   gap: 1rem;
   padding: 0.55rem 0.75rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-  background: #131e2f;
+  background: var(--agp-surface);
   font-size: 0.78rem;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -2152,7 +2182,7 @@ onUnmounted(() => {
   padding: 0.08rem 0.35rem;
   border: 1px solid rgba(45, 212, 191, 0.36);
   border-radius: 999px;
-  color: #99f6e4;
+  color: var(--agp-success);
   font-size: 0.72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2179,4 +2209,14 @@ onUnmounted(() => {
 @media (max-width: 560px) {
   .agp-match-mini-stats { grid-template-columns: 1fr; }
 }
+
+
+.arena-watch--source .agp-watch-columns{grid-template-columns:minmax(0,52fr) minmax(0,48fr);gap:8px}.arena-watch--source .agp-watch-side-card{display:none}.arena-watch-source{display:flex;flex-direction:column;min-height:0;overflow:hidden}.arena-watch-source>header{display:flex;align-items:center;gap:8px;min-height:44px;padding:6px 12px;border-bottom:1px solid var(--agp-border);font-size:12px}.arena-watch-source>header span{color:var(--agp-text-muted);margin-left:auto}.arena-watch-source select{background:var(--agp-surface);color:var(--agp-text);border:1px solid var(--agp-border);border-radius:6px;max-width:55%;padding:4px}.arena-watch-source>.agp-code-editor{flex:1;min-height:0;overflow:hidden}.arena-watch-source :deep(.cm-editor){height:100%;min-height:0!important;border:0!important;border-radius:0!important}.agp-watch-page .agp-viewer-card{background:var(--agp-surface);border-color:var(--agp-border)}
+@media(max-width:900px){.arena-watch--source .agp-watch-columns{grid-template-columns:minmax(0,1fr)}.arena-watch--source .agp-viewer-card{display:none}.arena-watch-source{height:calc(100dvh - 140px)}}
+
+
+
+.agp-watch-page:not(.agp-watch-page--embedded){height:calc(100dvh - 24px);min-height:0;display:flex;flex-direction:column;gap:8px;color:var(--agp-text)}.agp-watch-page .agp-task-header{display:flex;align-items:center;gap:12px;padding:0;min-height:44px;flex:none;background:transparent;border:0}.agp-watch-page .agp-task-header-main{flex:0 1 240px;min-width:0}.agp-watch-page .agp-task-header-main h1{font-size:14px;color:var(--agp-text)}.agp-watch-page .agp-task-header-player{flex:1;min-width:0;flex-wrap:nowrap;padding:0;border:0;background:none}.agp-watch-page .agp-task-header-actions{flex:none}.agp-watch-page .agp-watch-columns{flex:1;min-height:0;height:auto;gap:8px}.agp-watch-page .agp-watch-side-card{position:static;min-height:0;height:100%;border:1px solid var(--agp-border);border-radius:10px;background:var(--agp-surface);color:var(--agp-text)}.agp-watch-page .agp-viewer-card{display:flex;flex-direction:column;min-height:0;border:1px solid var(--agp-border);border-radius:10px}.agp-watch-page .agp-viewer-card:before{content:none}.agp-watch-page .agp-viewer-frame{flex:1;min-height:0;height:auto!important;aspect-ratio:auto}.agp-watch-page :deep(.agp-speed-control select),.agp-watch-page :deep(.agp-icon-button),.agp-watch-page .agp-back-link{background:var(--agp-surface);color:var(--agp-text-muted);border-color:var(--agp-border);border-radius:6px}.agp-watch-page :deep(.agp-run-status){background:var(--agp-surface-soft);color:var(--agp-text)}.agp-watch-page :deep(.agp-run-status strong),.agp-watch-page :deep(.agp-replay-position){color:var(--agp-text-muted)}.agp-watch-page .agp-match-player{background:var(--agp-surface);border-color:var(--agp-border);padding:8px}.agp-watch-page .agp-match-player--self{background:var(--agp-primary-soft);border-color:var(--agp-primary)}.agp-watch-page .agp-match-player-rank{box-shadow:none;color:var(--agp-primary);background:var(--agp-primary-soft);border-radius:6px}.agp-watch-page .agp-match-player-main strong{font-size:13px}.agp-watch-page .agp-match-player-score strong{font-size:13px;border-color:var(--agp-border);color:var(--agp-text);border-radius:6px}.agp-watch-page .agp-run-pill--success{background:var(--arena-success-soft);color:var(--agp-success);border-color:var(--agp-border)}.arena-mobile-stats{display:none}.agp-watch-page--embedded .agp-watch-columns{height:100dvh}.agp-watch-page--embedded .agp-viewer-card{border:0;border-radius:0}
+@media(max-width:900px){.agp-watch-page:not(.agp-watch-page--embedded){height:calc(100dvh - 16px)}.agp-watch-page .agp-task-header{flex-wrap:wrap;gap:8px}.agp-watch-page .agp-task-header-main{flex:1}.agp-watch-page .agp-task-header-player{order:3;flex-basis:100%;min-height:44px}.agp-watch-page .agp-watch-columns{grid-template-columns:minmax(0,1fr);height:auto!important}.agp-watch-page .agp-watch-side-card{display:none}.arena-mobile-stats{display:inline-flex}.arena-watch--stats .agp-watch-side-card{display:block;position:fixed;inset:120px 8px 8px;height:auto;z-index:80;box-shadow:0 0 0 100vmax #1118}.arena-watch--source .arena-watch-source{height:100%}.agp-watch-page .agp-match-player{min-height:56px}}
+
 </style>

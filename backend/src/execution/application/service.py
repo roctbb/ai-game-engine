@@ -131,7 +131,7 @@ class ExecutionService:
         self._dispatch_run(run)
         return run
 
-    def queue_match_group(self, run_ids: list[str]) -> MatchExecution:
+    def queue_match_group(self, run_ids: list[str], *, snapshot_ids_by_team: dict[str, str] | None = None) -> MatchExecution:
         if not run_ids:
             raise InvariantViolationError("Нельзя поставить в очередь пустой матч")
         runs = [require_run(self._run_repository.get(run_id), run_id) for run_id in run_ids]
@@ -153,6 +153,13 @@ class ExecutionService:
         snapshots = []
         for run in runs:
             try:
+                snapshot_id = (snapshot_ids_by_team or {}).get(run.team_id)
+                if snapshot_id:
+                    snapshot = self._workspace_service.get_snapshot(snapshot_id)
+                    if snapshot.team_id != run.team_id or snapshot.game_id != run.game_id or snapshot.version_id != run.target_version_id:
+                        raise InvariantViolationError("Снимок не соответствует участнику и версии матча")
+                    snapshots.append(snapshot)
+                    continue
                 snapshots.append(
                     self._workspace_service.create_snapshot(
                         team_id=run.team_id,

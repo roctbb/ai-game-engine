@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, Depends
 
 from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container
-from execution.api.access import ensure_can_view_run
+from execution.api.access import ensure_can_view_run, visible_result_payload
 from execution.domain.model import Run, RunKind
 from identity.domain.model import AppSession, UserRole
 from spectator_replay.api.schemas import ReplayResponse
@@ -41,13 +43,20 @@ def get_replay_by_run_id(
     ensure_can_view_run(container=container, session=session, run=run)
     try:
         replay = container.spectator_replay.get_by_run_id(run_id)
-        return _to_response(replay)
     except NotFoundError:
         primary_run_id = _shadow_primary_run_id(run)
         if primary_run_id is None:
             raise
         replay = container.spectator_replay.get_by_run_id(primary_run_id)
-        return _to_response(replay, run_id_override=run_id)
+    response = _to_response(replay, run_id_override=run_id)
+    visible = visible_result_payload(container, session, run, {
+        "frames": response.frames, "events": response.events, "metrics": response.summary.get("metrics", {}),
+        "summary": response.summary,
+    })
+    response.frames = cast(list[dict[str, object]], visible["frames"])
+    response.events = cast(list[dict[str, object]], visible["events"])
+    response.summary = cast(dict[str, object], visible["summary"])
+    return response
 
 
 @router.get("", response_model=list[ReplayResponse])

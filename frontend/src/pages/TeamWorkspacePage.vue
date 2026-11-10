@@ -1,277 +1,224 @@
 <template>
-  <section class="agp-grid workspace-page">
-    <header class="agp-card p-4 workspace-hero">
-      <div>
-        <p class="workspace-kicker mb-1">{{ canEditWorkspace ? 'Рабочее место игрока' : 'Просмотр кода игрока' }}</p>
-        <h1 class="h3 mb-1">Код игрока</h1>
-        <p class="text-muted mb-0">
-          <template v-if="canEditWorkspace">
-            Сохраненный код будет использоваться в новых запусках после старта.
-          </template>
-          <template v-else>
-            Режим просмотра кода игрока. Редактировать может владелец.
-          </template>
-        </p>
-      </div>
-      <div class="workspace-hero-stats">
-        <div>
-          <span>Ролей</span>
-          <strong class="mono">{{ slotCount }}</strong>
-        </div>
-        <div>
-          <span>Заполнено</span>
-          <strong class="mono">{{ filledSlotCount }}</strong>
-        </div>
-        <div>
-          <span>Готовность</span>
-          <strong class="mono">{{ workspaceReadyPercent }}%</strong>
-        </div>
-      </div>
+  <section class="arena-player-workspace">
+    <header>
+      <RouterLink class="agp-back-link" :to="backTarget" aria-label="Назад"
+        >←</RouterLink
+      >
+      <h1>{{ workspace?.captain_user_id || "Код игрока" }}</h1>
+      <span class="small text-muted">{{
+        isEditorDirty ? "Черновик" : formatTime(selectedSlot?.updated_at)
+      }}</span
+      ><RouterLink
+        v-if="workspace"
+        class="btn btn-outline-secondary"
+        :to="{ name: 'game-docs', params: { gameId: workspace.game_id } }"
+        >Условие</RouterLink
+      ><button
+        v-if="canEditWorkspace"
+        class="btn btn-primary"
+        :disabled="!selectedSlotKey || isSaving || !isEditorDirty"
+        @click="saveSelectedSlotCode"
+      >
+        Сохранить
+      </button>
     </header>
-
-    <LoadingSkeleton v-if="isLoading" :count="2" layout="workspace" label="Загрузка кода игрока…" />
-    <div v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</div>
-
-    <div v-else class="workspace-layout">
-      <aside class="agp-card p-3 workspace-slots">
-        <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
-          <div>
-            <h2 class="h6 mb-1">Роли игрока</h2>
-            <div class="small text-muted">Роли, которые игра ожидает от участника.</div>
-          </div>
-        </div>
-        <div class="d-flex flex-column gap-2">
-          <button
-            v-for="slot in workspace?.slot_states ?? []"
+    <LoadingSkeleton
+      v-if="isLoading"
+      :count="1"
+      layout="workspace"
+      label="Загрузка кода"
+    />
+    <p v-if="errorMessage" role="alert" class="text-danger">
+      {{ errorMessage }}
+    </p>
+    <article
+      v-if="workspace && !isLoading"
+      class="agp-card arena-player-editor"
+    >
+      <header>
+        <select
+          :value="selectedSlotKey"
+          aria-label="Файл бота"
+          @change="selectSlot(($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="slot in workspace.slot_states"
             :key="slot.slot_key"
-            type="button"
-            class="workspace-slot-button"
-            :class="{ 'slot-selected': selectedSlotKey === slot.slot_key }"
-            @click="selectSlot(slot.slot_key)"
+            :value="slot.slot_key"
           >
-            <div>
-              <div class="fw-semibold">
-                {{ slot.slot_key }}
-                <span v-if="slot.required" class="text-danger">*</span>
-              </div>
-              <div class="small text-muted">{{ slot.required ? 'обязательная роль' : 'необязательная роль' }}</div>
-            </div>
-            <SlotStateBadge :slot-state="slot.state" />
-          </button>
-        </div>
-      </aside>
-
-      <article class="agp-card p-3 workspace-editor">
-        <div class="workspace-editor-head mb-2">
+            {{ slot.slot_key }}
+          </option></select
+        ><span v-if="!canEditWorkspace" class="text-muted small"
+          >Только просмотр</span
+        >
+        <details v-else>
+          <summary aria-label="Меню файла">⋯</summary>
           <div>
-            <p class="workspace-kicker mb-1">Python</p>
-            <h2 class="h6 mb-0">Роль: <span class="mono">{{ selectedSlotKey || '—' }}</span></h2>
-          </div>
-          <div v-if="canEditWorkspace" class="workspace-editor-actions">
-            <button class="btn btn-sm btn-outline-secondary" :disabled="!selectedSlotKey || !isEditorDirty" @click="resetSelectedSlotCode">
-              Сбросить
+            <button v-if="replacementUndo !== null" @click="undoImport">
+              Отменить замену
             </button>
             <button
-              class="btn btn-sm btn-outline-secondary"
-              :disabled="!selectedSlotKey || isTemplateLoading"
+              :disabled="!selectedSlotKey"
               @click="applyTemplateToSelectedSlot"
             >
-              {{ isTemplateLoading ? 'Загрузка шаблона...' : 'Шаблон' }}
-            </button>
-            <select
-              v-if="canUseDemoStrategy"
-              v-model="selectedDemoStrategyId"
-              class="form-select form-select-sm demo-select"
-              :disabled="!selectedSlotKey || selectedSlotDemoStrategies.length === 0 || isTemplateLoading"
-            >
-              <option value="">Демо-стратегия</option>
-              <option
-                v-for="strategy in selectedSlotDemoStrategies"
-                :key="strategy.strategy_id"
-                :value="strategy.strategy_id"
+              Вставить шаблон</button
+            ><button :disabled="!isEditorDirty" @click="resetSelectedSlotCode">
+              Отменить изменения</button
+            ><template v-if="canUseDemoStrategy"
+              ><select
+                v-model="selectedDemoStrategyId"
+                aria-label="Пример стратегии"
               >
-                {{ strategy.title }}
-              </option>
-            </select>
-            <button
-              v-if="canUseDemoStrategy"
-              class="btn btn-sm btn-outline-primary"
-              :disabled="!selectedSlotKey || isTemplateLoading"
-              @click="applyDemoStrategyToSelectedSlot"
+                <option
+                  v-for="strategy in selectedSlotDemoStrategies"
+                  :key="strategy.strategy_id"
+                  :value="strategy.strategy_id"
+                >
+                  {{ strategy.title }}
+                </option></select
+              ><button @click="applyDemoStrategyToSelectedSlot">
+                Вставить пример
+              </button></template
             >
-              Демо
-            </button>
-            <button class="btn btn-sm btn-dark" :disabled="!selectedSlotKey || isSaving || !isEditorDirty" @click="saveSelectedSlotCode">
-              {{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}
-            </button>
           </div>
-          <span v-else class="badge text-bg-light">только просмотр</span>
-        </div>
-        <div v-if="canEditWorkspace && isEditorDirty" class="workspace-editor-notice mb-2">
-          Есть несохраненные изменения. Они попадут в новые запуски только после сохранения.
-        </div>
-        <div v-if="pendingSlotKey" class="workspace-switch-notice mb-2">
-          <div>
-            <div class="fw-semibold">Перейти к роли `{{ pendingSlotKey }}`?</div>
-            <div class="small text-muted">В текущей роли есть несохраненный код.</div>
-          </div>
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-sm btn-dark" :disabled="isSaving" @click="saveAndSwitchSlot">
-              {{ isSaving ? 'Сохраняем...' : 'Сохранить и перейти' }}
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" @click="discardAndSwitchSlot">Перейти без сохранения</button>
-            <button class="btn btn-sm btn-link" @click="pendingSlotKey = ''">Остаться</button>
-          </div>
-        </div>
-        <CodeEditor
-          v-model="editorCode"
-          :readonly="!selectedSlotKey || !canEditWorkspace"
-          language="python"
-        />
-        <div class="small text-muted mt-2">Подсветка синтаксиса Python доступна в редакторе.</div>
-        <div v-if="canEditWorkspace" class="small text-muted mt-1">
-          <template v-if="canUseDemoStrategy">
-            Кнопки «Шаблон» и «Демо» подставляют стартовый код или готовую демо-стратегию.
-          </template>
-          <template v-else>
-            Кнопка «Шаблон» подставляет стартовый код для выбранной роли.
-          </template>
-        </div>
-        <div class="small text-muted mt-1">
-          <template v-if="canEditWorkspace">
-            Изменения здесь попадут только в новые запуски.
-          </template>
-          <template v-else>
-            Это безопасный просмотр текущего кода. Новые запуски не создаются.
-          </template>
-        </div>
-      </article>
-
-      <aside class="agp-card p-3 workspace-inspector">
-        <div class="workspace-inspector-head mb-2">
-          <p class="workspace-kicker mb-1">Сводка</p>
-          <h2 class="h6 mb-0">Состояние игрока</h2>
-        </div>
-        <div class="workspace-progress" role="progressbar" :aria-valuenow="workspaceReadyPercent" aria-valuemin="0" aria-valuemax="100">
-          <i :style="{ width: `${workspaceReadyPercent}%` }"></i>
-        </div>
-        <div class="workspace-inspector-row">
-          <span>Режим</span>
-          <strong>{{ canEditWorkspace ? 'редактирование' : 'просмотр' }}</strong>
-        </div>
-        <div class="workspace-inspector-row">
-          <span>Владелец</span>
-          <strong class="mono">{{ workspace?.captain_user_id }}</strong>
-        </div>
-        <div class="workspace-inspector-row">
-          <span>Выбранная роль</span>
-          <strong class="mono">{{ selectedSlotKey || '—' }}</strong>
-        </div>
-        <div class="workspace-inspector-row">
-          <span>Состояние роли</span>
-          <strong>{{ selectedSlot ? slotStateLabel(selectedSlot.state) : '—' }}</strong>
-        </div>
-        <div v-if="canEditWorkspace" class="workspace-inspector-row">
-          <span>Изменения</span>
-          <strong :class="isEditorDirty ? 'text-warning-emphasis' : ''">
-            {{ isEditorDirty ? 'не сохранены' : 'сохранены' }}
-          </strong>
-        </div>
-        <div class="workspace-callout mt-3">
-          <div class="fw-semibold mb-1">Что попадет в матч?</div>
-          <div class="small text-muted">
-            Если запуск создать сейчас, платформа возьмет текущие сохраненные версии кода. Несохраненный текст в редакторе в матч не попадет.
-          </div>
-        </div>
-        <div v-if="incompatibleSlotCount > 0" class="workspace-callout workspace-callout--warning mt-2">
-          <div class="fw-semibold mb-1">Есть несовместимые роли</div>
-          <div class="small">
-            {{ incompatibleSlotCount }} роль(ей) больше не требуется текущей версией игры. Код виден, но не участвует в новых матчах.
-          </div>
-        </div>
-        <details v-if="canInspectTechnicalDetails" class="workspace-technical mt-3">
-          <summary class="small text-muted">Технические детали</summary>
-          <div class="mono small mt-2">version: {{ workspace?.version_id }}</div>
-          <div class="mono small text-muted">player_id: {{ workspace?.team_id }}</div>
         </details>
-      </aside>
-    </div>
+      </header>
+      <div v-if="pendingSlotKey" class="arena-player-pending">
+        <span>Сохранить изменения?</span
+        ><button class="btn btn-sm btn-primary" @click="saveAndSwitchSlot">
+          Сохранить</button
+        ><button
+          class="btn btn-sm btn-outline-secondary"
+          @click="discardAndSwitchSlot"
+        >
+          Сбросить</button
+        ><button
+          class="btn btn-sm btn-outline-secondary"
+          @click="pendingSlotKey = ''"
+        >
+          Остаться
+        </button>
+      </div>
+      <CodeEditor
+        v-model="editorCode"
+        :readonly="!canEditWorkspace"
+        @run="saveSelectedSlotCode"
+      />
+    </article>
   </section>
 </template>
-
 <script setup lang="ts">
-import LoadingSkeleton from '../components/LoadingSkeleton.vue';
-import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute } from "vue-router";
+import { formatTime } from "../lib/attemptPresentation";
 
-import CodeEditor from '../components/CodeEditor.vue';
-import SlotStateBadge from '../components/SlotStateBadge.vue';
+import CodeEditor from "../components/CodeEditor.vue";
+import SlotStateBadge from "../components/SlotStateBadge.vue";
 import {
+  getRun,
+  getRunCode,
   getGameTemplates,
   getWorkspace,
   updateSlotCode,
   type GameDemoStrategyDto,
   type TeamWorkspaceDto,
-} from '../lib/api';
-import { useSessionStore } from '../stores/session';
+} from "../lib/api";
+import { useSessionStore } from "../stores/session";
 
 const route = useRoute();
 const sessionStore = useSessionStore();
+const backTarget = computed(() =>
+  typeof route.query.back === "string" &&
+  route.query.back.startsWith("/") &&
+  !route.query.back.startsWith("//")
+    ? route.query.back
+    : "/lobbies",
+);
 
 const workspace = ref<TeamWorkspaceDto | null>(null);
-const selectedSlotKey = ref('');
-const pendingSlotKey = ref('');
-const editorCode = ref('');
+const selectedSlotKey = ref("");
+const pendingSlotKey = ref("");
+const editorCode = ref("");
 const isLoading = ref(false);
 const isSaving = ref(false);
 const isTemplateLoading = ref(false);
-const errorMessage = ref('');
+const errorMessage = ref("");
+const replacementUndo = ref<string | null>(null);
+function undoImport(): void {
+  if (replacementUndo.value !== null) {
+    editorCode.value = replacementUndo.value;
+    replacementUndo.value = null;
+  }
+}
 const templatesBySlot = ref<Record<string, string>>({});
 const demoStrategiesBySlot = ref<Record<string, GameDemoStrategyDto[]>>({});
-const templatesGameId = ref('');
-const selectedDemoStrategyId = ref('');
+const templatesGameId = ref("");
+const selectedDemoStrategyId = ref("");
 
-const selectedSlot = computed(() =>
-  workspace.value?.slot_states.find((slot) => slot.slot_key === selectedSlotKey.value) ?? null
+const selectedSlot = computed(
+  () =>
+    workspace.value?.slot_states.find(
+      (slot) => slot.slot_key === selectedSlotKey.value,
+    ) ?? null,
 );
-const canEditWorkspace = computed(() => workspace.value?.captain_user_id === sessionStore.nickname);
-const selectedSlotDemoStrategies = computed(() => demoStrategiesBySlot.value[selectedSlotKey.value] ?? []);
-const canInspectTechnicalDetails = computed(() => sessionStore.role === 'teacher' || sessionStore.role === 'admin');
+const canEditWorkspace = computed(
+  () => workspace.value?.captain_user_id === sessionStore.nickname,
+);
+const selectedSlotDemoStrategies = computed(
+  () => demoStrategiesBySlot.value[selectedSlotKey.value] ?? [],
+);
+const canInspectTechnicalDetails = computed(
+  () => sessionStore.role === "teacher" || sessionStore.role === "admin",
+);
 const canUseDemoStrategy = computed(() => canInspectTechnicalDetails.value);
 const slotCount = computed(() => workspace.value?.slot_states.length ?? 0);
-const emptySlotCount = computed(() => workspace.value?.slot_states.filter((slot) => slot.state === 'empty').length ?? 0);
-const filledSlotCount = computed(() =>
-  workspace.value?.slot_states.filter((slot) => slot.state !== 'empty' && slot.state !== 'incompatible').length ?? 0
+const emptySlotCount = computed(
+  () =>
+    workspace.value?.slot_states.filter((slot) => slot.state === "empty")
+      .length ?? 0,
+);
+const filledSlotCount = computed(
+  () =>
+    workspace.value?.slot_states.filter(
+      (slot) => slot.state !== "empty" && slot.state !== "incompatible",
+    ).length ?? 0,
 );
 const workspaceReadyPercent = computed(() =>
-  slotCount.value > 0 ? Math.round((filledSlotCount.value / slotCount.value) * 100) : 0
+  slotCount.value > 0
+    ? Math.round((filledSlotCount.value / slotCount.value) * 100)
+    : 0,
 );
 const incompatibleSlotCount = computed(
-  () => workspace.value?.slot_states.filter((slot) => slot.state === 'incompatible').length ?? 0
+  () =>
+    workspace.value?.slot_states.filter((slot) => slot.state === "incompatible")
+      .length ?? 0,
 );
-const savedSelectedSlotCode = computed(() => selectedSlot.value?.code ?? '');
-const isEditorDirty = computed(() => editorCode.value !== savedSelectedSlotCode.value);
+const savedSelectedSlotCode = computed(() => selectedSlot.value?.code ?? "");
+const isEditorDirty = computed(
+  () => editorCode.value !== savedSelectedSlotCode.value,
+);
 
 function slotStateLabel(state: string): string {
   const labels: Record<string, string> = {
-    filled: 'заполнен',
-    empty: 'пустой',
-    dirty: 'изменен',
-    locked: 'заблокирован',
-    incompatible: 'несовместим',
+    filled: "заполнен",
+    empty: "пустой",
+    dirty: "изменен",
+    locked: "заблокирован",
+    incompatible: "несовместим",
   };
   return labels[state] ?? state;
 }
 
 async function loadWorkspace(): Promise<void> {
-  const teamId = String(route.params.teamId || '').trim();
+  const teamId = String(route.params.teamId || "").trim();
   if (!teamId) {
-    errorMessage.value = 'Не найден игрок для просмотра кода';
+    errorMessage.value = "Не найден игрок для просмотра кода";
     return;
   }
 
   isLoading.value = true;
-  errorMessage.value = '';
+  errorMessage.value = "";
   try {
     const payload = await getWorkspace(teamId);
     workspace.value = payload;
@@ -280,14 +227,34 @@ async function loadWorkspace(): Promise<void> {
       demoStrategiesBySlot.value = {};
       templatesGameId.value = payload.game_id;
     }
-    if (!selectedSlotKey.value || !payload.slot_states.some((item) => item.slot_key === selectedSlotKey.value)) {
-      selectedSlotKey.value = payload.slot_states[0]?.slot_key ?? '';
+    if (
+      !selectedSlotKey.value ||
+      !payload.slot_states.some(
+        (item) => item.slot_key === selectedSlotKey.value,
+      )
+    ) {
+      selectedSlotKey.value = payload.slot_states[0]?.slot_key ?? "";
     }
-    editorCode.value = selectedSlot.value?.code ?? '';
-    selectedDemoStrategyId.value = selectedSlotDemoStrategies.value[0]?.strategy_id ?? '';
+    editorCode.value = selectedSlot.value?.code ?? "";
+    try {
+      const draft = JSON.parse(
+        localStorage.getItem(
+          `agp_player_code_draft:${sessionStore.nickname}:${teamId}:${selectedSlotKey.value}`,
+        ) || "null",
+      );
+      if (draft?.base === editorCode.value && typeof draft.code === "string")
+        editorCode.value = draft.code;
+    } catch {
+      /* Server code stays available. */
+    }
+    selectedDemoStrategyId.value =
+      selectedSlotDemoStrategies.value[0]?.strategy_id ?? "";
     await ensureGameTemplates(payload.game_id);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить код игрока';
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : "Не удалось загрузить код игрока";
   } finally {
     isLoading.value = false;
   }
@@ -304,9 +271,12 @@ function selectSlot(slotKey: string): void {
 
 function switchToSlot(slotKey: string): void {
   selectedSlotKey.value = slotKey;
-  pendingSlotKey.value = '';
-  editorCode.value = workspace.value?.slot_states.find((slot) => slot.slot_key === slotKey)?.code ?? '';
-  selectedDemoStrategyId.value = selectedSlotDemoStrategies.value[0]?.strategy_id ?? '';
+  pendingSlotKey.value = "";
+  editorCode.value =
+    workspace.value?.slot_states.find((slot) => slot.slot_key === slotKey)
+      ?.code ?? "";
+  selectedDemoStrategyId.value =
+    selectedSlotDemoStrategies.value[0]?.strategy_id ?? "";
 }
 
 async function saveAndSwitchSlot(): Promise<void> {
@@ -324,13 +294,13 @@ function discardAndSwitchSlot(): void {
 }
 
 function resetSelectedSlotCode(): void {
-  editorCode.value = selectedSlot.value?.code ?? '';
+  editorCode.value = selectedSlot.value?.code ?? "";
 }
 
 async function applyTemplateToSelectedSlot(): Promise<void> {
   if (!workspace.value || !selectedSlotKey.value) return;
   isTemplateLoading.value = true;
-  errorMessage.value = '';
+  errorMessage.value = "";
   try {
     await ensureGameTemplates(workspace.value.game_id);
     const templateCode = templatesBySlot.value[selectedSlotKey.value];
@@ -340,7 +310,8 @@ async function applyTemplateToSelectedSlot(): Promise<void> {
     }
     editorCode.value = templateCode;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить шаблон';
+    errorMessage.value =
+      error instanceof Error ? error.message : "Не удалось загрузить шаблон";
   } finally {
     isTemplateLoading.value = false;
   }
@@ -350,12 +321,16 @@ async function applyDemoStrategyToSelectedSlot(): Promise<void> {
   if (!canUseDemoStrategy.value) return;
   if (!workspace.value || !selectedSlotKey.value) return;
   isTemplateLoading.value = true;
-  errorMessage.value = '';
+  errorMessage.value = "";
   try {
     await ensureGameTemplates(workspace.value.game_id);
     const strategies = selectedSlotDemoStrategies.value;
     const strategy =
-      strategies.find((item) => item.strategy_id === selectedDemoStrategyId.value) ?? strategies[0] ?? null;
+      strategies.find(
+        (item) => item.strategy_id === selectedDemoStrategyId.value,
+      ) ??
+      strategies[0] ??
+      null;
     if (!strategy) {
       errorMessage.value = `Для роли ${selectedSlotKey.value} демо-стратегия не найдена`;
       return;
@@ -363,19 +338,27 @@ async function applyDemoStrategyToSelectedSlot(): Promise<void> {
     selectedDemoStrategyId.value = strategy.strategy_id;
     editorCode.value = strategy.code;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить демо-стратегию';
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : "Не удалось загрузить демо-стратегию";
   } finally {
     isTemplateLoading.value = false;
   }
 }
 
 async function ensureGameTemplates(gameId: string): Promise<void> {
-  if (templatesGameId.value === gameId && Object.keys(templatesBySlot.value).length > 0) {
+  if (
+    templatesGameId.value === gameId &&
+    Object.keys(templatesBySlot.value).length > 0
+  ) {
     return;
   }
 
   const payload = await getGameTemplates(gameId);
-  templatesBySlot.value = Object.fromEntries(payload.templates.map((item) => [item.slot_key, item.code]));
+  templatesBySlot.value = Object.fromEntries(
+    payload.templates.map((item) => [item.slot_key, item.code]),
+  );
 
   const strategiesBySlot: Record<string, GameDemoStrategyDto[]> = {};
   for (const strategy of payload.demo_strategies ?? []) {
@@ -386,7 +369,8 @@ async function ensureGameTemplates(gameId: string): Promise<void> {
   }
   demoStrategiesBySlot.value = strategiesBySlot;
   templatesGameId.value = gameId;
-  selectedDemoStrategyId.value = selectedSlotDemoStrategies.value[0]?.strategy_id ?? '';
+  selectedDemoStrategyId.value =
+    selectedSlotDemoStrategies.value[0]?.strategy_id ?? "";
 }
 
 async function saveSelectedSlotCode(): Promise<void> {
@@ -394,7 +378,7 @@ async function saveSelectedSlotCode(): Promise<void> {
     return;
   }
   isSaving.value = true;
-  errorMessage.value = '';
+  errorMessage.value = "";
   try {
     await updateSlotCode({
       team_id: workspace.value.team_id,
@@ -403,9 +387,10 @@ async function saveSelectedSlotCode(): Promise<void> {
       code: editorCode.value,
     });
     await loadWorkspace();
-    pendingSlotKey.value = '';
+    pendingSlotKey.value = "";
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось сохранить код';
+    errorMessage.value =
+      error instanceof Error ? error.message : "Не удалось сохранить код";
   } finally {
     isSaving.value = false;
   }
@@ -415,258 +400,158 @@ watch(
   () => route.params.teamId,
   async () => {
     await loadWorkspace();
-  }
+  },
 );
 
+watch([editorCode, savedSelectedSlotCode], () => {
+  if (
+    isLoading.value ||
+    !workspace.value ||
+    !selectedSlotKey.value ||
+    !canEditWorkspace.value
+  )
+    return;
+  try {
+    const key = `agp_player_code_draft:${sessionStore.nickname}:${workspace.value.team_id}:${selectedSlotKey.value}`;
+    if (isEditorDirty.value)
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          code: editorCode.value,
+          base: savedSelectedSlotCode.value,
+        }),
+      );
+    else localStorage.removeItem(key);
+  } catch {
+    /* Explicit server saving remains available. */
+  }
+});
 onMounted(async () => {
   await loadWorkspace();
+  if (
+    typeof route.query.from_run === "string" &&
+    workspace.value &&
+    canEditWorkspace.value
+  ) {
+    try {
+      const run = await getRun(route.query.from_run);
+      if (run.team_id !== workspace.value.team_id)
+        throw new Error("Код относится к другому игроку");
+      const snapshot = await getRunCode(run.run_id);
+      const slot =
+        typeof route.query.slot === "string"
+          ? route.query.slot
+          : Object.keys(snapshot.codes_by_slot)[0];
+      if (slot && snapshot.codes_by_slot[slot] !== undefined) {
+        selectedSlotKey.value = slot;
+        replacementUndo.value = editorCode.value;
+        editorCode.value = snapshot.codes_by_slot[slot];
+      }
+    } catch (e) {
+      errorMessage.value =
+        e instanceof Error ? e.message : "Не удалось взять код";
+    }
+  }
 });
 </script>
 
 <style scoped>
-.workspace-page {
-  gap: 0.9rem;
-}
-
-.workspace-hero {
-  position: relative;
-  overflow: hidden;
+.arena-player-workspace {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+  height: calc(100dvh - 24px);
+}
+.arena-player-workspace > header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+}
+.arena-player-workspace h1 {
+  font-size: 16px;
+  line-height: 24px;
+  margin: 0;
+  flex: 1;
+}
+.arena-player-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.arena-player-editor > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--agp-border);
+}
+.arena-player-editor select {
   background: var(--agp-surface);
-  background-position: center, center, center, right 1rem center;
-  background-repeat: no-repeat;
-}
-
-.workspace-hero::before {
-  content: none;
-}
-
-.workspace-hero > * {
-  position: relative;
-}
-
-.workspace-kicker {
-  color: #0f766e;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.workspace-hero-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(5.5rem, 1fr));
-  gap: 0.55rem;
-  min-width: min(100%, 24rem);
-}
-
-.workspace-hero-stats div {
-  display: grid;
-  gap: 0.05rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
-}
-
-.workspace-hero-stats span {
-  color: var(--agp-text-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.workspace-hero-stats strong {
   color: var(--agp-text);
-  font-size: 1.16rem;
+  border: 1px solid var(--agp-border);
+  border-radius: 6px;
+  padding: 4px;
+  max-width: 220px;
 }
-
-.workspace-layout {
-  display: grid;
-  grid-template-columns: minmax(14rem, 0.55fr) minmax(0, 1.35fr) minmax(18rem, 0.7fr);
-  gap: 0.9rem;
-  align-items: start;
-}
-
-.workspace-slots,
-.workspace-inspector {
-  position: sticky;
-  top: 0.85rem;
-}
-
-.workspace-editor {
-  overflow: hidden;
-  min-width: 0;
-}
-
-.workspace-slots,
-.workspace-inspector,
-.workspace-editor {
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
-}
-
-.workspace-slot-button {
+.arena-player-editor details {
   position: relative;
-  overflow: hidden;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 0.75rem;
+  margin-left: auto;
+}
+.arena-player-editor summary {
+  font-size: 22px;
+  cursor: pointer;
+  list-style: none;
+}
+.arena-player-editor details > div {
+  position: absolute;
+  right: 0;
+  width: 220px;
   background: var(--agp-surface);
-  color: inherit;
-  padding: 0.7rem;
+  border: 1px solid var(--agp-border);
+  padding: 8px;
+  z-index: 10;
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+}
+.arena-player-editor details button {
+  background: none;
+  border: 0;
   text-align: left;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  color: var(--agp-text);
+  font-size: 13px;
+  padding: 8px;
 }
-
-.workspace-slot-button:hover {
-  border-color: rgba(20, 184, 166, 0.45);
-  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
-  transform: translateY(-1px);
-}
-
-.workspace-editor-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.15rem 0 0.65rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-}
-
-.workspace-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.workspace-editor-notice {
-  border: 1px solid rgba(217, 119, 6, 0.26);
-  border-radius: 8px;
-  background: rgba(255, 251, 235, 0.88);
-  color: #8a4b0c;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.86rem;
-}
-
-.workspace-switch-notice {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 8px;
-  background: #f8fafc;
-  padding: 0.65rem 0.75rem;
-}
-
-.slot-selected {
-  border-color: rgba(15, 118, 110, 0.6);
-  outline: 2px solid rgba(20, 184, 166, 0.18);
-  background: var(--agp-surface);
-}
-
-.demo-select {
-  min-width: 190px;
-}
-
-.workspace-inspector-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-  font-size: 0.86rem;
-}
-
-.workspace-inspector-row span {
-  color: var(--agp-muted);
-}
-
-.workspace-inspector-row strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  text-align: right;
-}
-
-.workspace-progress {
-  height: 0.55rem;
+.arena-player-editor > .agp-code-editor {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  border-radius: 999px;
-  background: #dbeafe;
-  margin-bottom: 0.75rem;
 }
-
-.workspace-progress i {
-  display: block;
+.arena-player-editor :deep(.cm-editor) {
   height: 100%;
-  border-radius: inherit;
-  background: var(--agp-primary);
-  transition: width 0.2s ease;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
 }
-
-.workspace-callout {
-  border: 1px solid rgba(15, 118, 110, 0.18);
-  border-radius: 1rem;
-  background: rgba(240, 253, 250, 0.76);
-  padding: 0.8rem;
+.arena-player-pending {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-
-.workspace-callout--warning {
-  border-color: rgba(217, 119, 6, 0.26);
-  background: rgba(255, 251, 235, 0.88);
-  color: #8a4b0c;
-}
-
-@media (max-width: 1180px) {
-  .workspace-layout {
-    grid-template-columns: minmax(13rem, 0.55fr) minmax(0, 1fr);
+@media (max-width: 767px) {
+  .arena-player-workspace {
+    height: calc(100dvh - 16px);
   }
-
-  .workspace-inspector {
-    grid-column: 1 / -1;
-    position: static;
+  .arena-player-workspace > header {
+    flex-wrap: wrap;
   }
-}
-
-@media (max-width: 820px) {
-  .workspace-hero {
-    flex-direction: column;
-  }
-
-  .workspace-hero-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    min-width: 0;
-    width: 100%;
-  }
-
-  .workspace-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-slots {
-    position: static;
-  }
-
-  .workspace-editor-head {
-    flex-direction: column;
-  }
-
-  .workspace-editor-actions {
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 560px) {
-  .workspace-hero-stats {
-    grid-template-columns: 1fr;
+  .arena-player-workspace > header > .small {
+    display: none;
   }
 }
 </style>

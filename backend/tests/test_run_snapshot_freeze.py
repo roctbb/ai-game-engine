@@ -151,7 +151,7 @@ def test_snapshot_boundary_is_queue_transition_for_each_run(client):
     assert context_b["codes_by_slot"]["agent"] == "print('v3')\n"
 
 
-def test_snapshot_boundary_is_independent_for_same_team_in_multiple_lobbies(client, teacher_headers):
+def test_snapshot_boundary_is_independent_for_same_team_in_multiple_lobbies(client, teacher_headers, container):
     games = client.get("/api/v1/games").json()
     game = next(item for item in games if item["slug"] == "ttt_connect5_v1")
 
@@ -200,6 +200,7 @@ def test_snapshot_boundary_is_independent_for_same_team_in_multiple_lobbies(clie
             headers=teacher_headers,
         )
         assert join_response.status_code == 200, join_response.json()
+        container.training_lobby.mark_viewer_online(lobby_id, container.team_workspace.get_team(team_id).captain_user_id)
         ready_response = client.post(
             f"/api/v1/lobbies/{lobby_id}/teams/{team_id}/ready",
             json={"ready": True},

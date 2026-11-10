@@ -2,24 +2,18 @@
   <section class="agp-login-page">
     <div class="agp-login-shell">
       <aside class="agp-login-hero" aria-hidden="true">
-        <div class="agp-login-orbit">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
+        <ArenaBot class="arena-login-bot" />
         <div class="agp-login-hero-content">
-          <p>Игровая платформа</p>
+          <p>Арена</p>
           <h1>Код. Матчи. Турниры.</h1>
         </div>
       </aside>
 
       <div class="agp-login-panel">
       <div>
-        <p class="agp-login-kicker">Игровая платформа</p>
-        <h1>Вход в систему</h1>
-        <p class="text-muted mb-0">
-          Каталог задач, лобби, соревнования и просмотр матчей доступны только участникам.
-        </p>
+        <p class="agp-login-kicker">Арена</p>
+        <h1>Войти в Арену</h1>
+
       </div>
 
       <div v-if="sessionStore.options?.dev_login_enabled" class="agp-login-form">
@@ -46,9 +40,7 @@
             <span>{{ option.badge }}</span>
           </button>
         </div>
-        <div class="agp-login-role-hint">
-          {{ roleHint }}
-        </div>
+
 
         <button class="btn btn-primary w-100" :disabled="isSubmitting || !nickname" @click="loginAsDev">
           {{ isSubmitting ? 'Входим...' : 'Войти' }}
@@ -67,7 +59,7 @@
         v-if="!sessionStore.isBootstrapped"
         class="alert alert-secondary mb-0 d-flex align-items-center gap-2"
       >
-        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <SnakeLoader />
         Проверяем доступные способы входа...
       </div>
 
@@ -90,6 +82,8 @@
 </template>
 
 <script setup lang="ts">
+import ArenaBot from '../components/ArenaBot.vue';
+import SnakeLoader from '../components/SnakeLoader.vue';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -160,6 +154,7 @@ async function reloadAuthOptions(): Promise<void> {
 </script>
 
 <style scoped>
+
 .agp-login-page {
   min-height: 100dvh;
   display: grid;
@@ -374,4 +369,6 @@ async function reloadAuthOptions(): Promise<void> {
     grid-template-columns: 1fr;
   }
 }
+
+.agp-login-hero{background:var(--agp-primary-soft);color:var(--agp-text)}.arena-login-bot{font-size:120px;margin:48px 0}.agp-login-hero-content{position:static;padding:0}.agp-login-hero-content p,.agp-login-hero-content h1{color:var(--agp-text)}.agp-login-panel{background:var(--agp-surface)}.agp-login-role-button{background:var(--agp-surface);border-color:var(--agp-border);color:var(--agp-text)}.agp-login-role-button.active{background:var(--agp-primary-soft);border-color:var(--agp-primary);color:var(--agp-primary)}.agp-login-role-button span{display:none}
 </style>

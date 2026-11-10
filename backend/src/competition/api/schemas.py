@@ -88,6 +88,7 @@ class CompetitionRoundResponse(BaseModel):
 
 
 class CompetitionResponse(BaseModel):
+    participant_names: dict[str, str] = Field(default_factory=dict)
     competition_id: str
     game_id: str
     game_version_id: str

@@ -35,7 +35,7 @@ body,
 
 body {
 margin: 0;
-  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Golos Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: .9375rem;
   line-height: 1.6;
   color: var(--agp-text);
@@ -45,7 +45,7 @@ margin: 0;
 code,
 pre,
 .mono {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
 }
 
 .agp-shell {
@@ -627,11 +627,8 @@ border-color: var(--agp-primary); background: var(--agp-primary-soft); color: va
 }
 
 .agp-task-workspace {
---agp-bg: #0c1422; --agp-surface: #131e2f; --agp-surface-soft: #1a283b;
-  --agp-text: #e6edf5; --agp-text-muted: #a3b2c6; --agp-border: #2b394d;
-  --agp-primary: #63d6c1; --agp-primary-soft: #183b3c; --agp-success: #85dca7;
-  height: 100dvh; display: flex; flex-direction: column; gap: 0; overflow: hidden;
-  background: var(--agp-bg); color: var(--agp-text); color-scheme: dark;
+height: 100dvh; display: flex; flex-direction: column; gap: 0; overflow: hidden;
+  background: var(--agp-bg); color: var(--agp-text);
 }
 
 .agp-shortcuts-bar {
@@ -662,7 +659,7 @@ border-color: var(--agp-primary); background: var(--agp-primary-soft); color: va
   background: #f8fafc;
   color: #4c5e72;
   font-size: 0.69rem;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   line-height: 1;
   padding: 0.1rem 0.25rem;
 }

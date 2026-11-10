@@ -8,10 +8,12 @@ from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from app.auth import get_current_session, require_roles
+from execution.api.access import visible_result_payload
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
 from shared.kernel import ForbiddenError, InvariantViolationError
+from training_lobby.domain.model import LobbyAccess
 from competition.api.schemas import (
     AdvanceCompetitionRequest,
     BanEntrantRequest,
@@ -55,8 +57,9 @@ def _round_response(round_item) -> CompetitionRoundResponse:
     )
 
 
-def _to_response(competition: Competition) -> CompetitionResponse:
+def _to_response(competition: Competition, *, container: ServiceContainer) -> CompetitionResponse:
     return CompetitionResponse(
+        participant_names={team.team_id: team.name or team.captain_user_id for team in container.team_workspace.list_teams_by_game(competition.game_id) if team.team_id in competition.entrants},
         competition_id=competition.competition_id,
         game_id=competition.game_id,
         game_version_id=competition.game_version_id,
@@ -101,6 +104,8 @@ def _can_view_competition(
     if any(team.team_id in competition.entrants for team in user_teams):
         return True
     if competition.lobby_id:
+        if container.training_lobby.get_lobby(competition.lobby_id).access is LobbyAccess.PUBLIC:
+            return True
         return (
             container.training_lobby.find_user_team_in_lobby(
                 lobby_id=competition.lobby_id,
@@ -132,6 +137,7 @@ def _reconcile_competition_if_ready(
         return container.competition.advance_competition(
             competition_id=competition.competition_id,
             requested_by="system",
+            start_next_round=False,
         )
     except InvariantViolationError:
         return competition
@@ -147,7 +153,7 @@ def list_competitions(
     for item in container.competition.list_competitions(lobby_id=lobby_id):
         if not _can_view_competition(container=container, session=session, competition=item):
             continue
-        visible.append(_to_response(_reconcile_competition_if_ready(container=container, competition=item)))
+        visible.append(_to_response(_reconcile_competition_if_ready(container=container, competition=item), container=container))
     return visible
 
 
@@ -171,7 +177,7 @@ def create_competition(
             match_size=request.match_size,
         )
     )
-    return _to_response(competition)
+    return _to_response(competition, container=container)
 
 
 @router.get("/{competition_id}", response_model=CompetitionResponse)
@@ -183,7 +189,7 @@ def get_competition(
     competition = container.competition.get_competition(competition_id)
     _ensure_can_view_competition(container=container, session=session, competition=competition)
     competition = _reconcile_competition_if_ready(container=container, competition=competition)
-    return _to_response(competition)
+    return _to_response(competition, container=container)
 
 
 @router.patch("/{competition_id}", response_model=CompetitionResponse)
@@ -201,7 +207,7 @@ def patch_competition(
         advancement_top_k=request.advancement_top_k,
         match_size=request.match_size,
     )
-    return _to_response(competition)
+    return _to_response(competition, container=container)
 
 
 @router.get("/{competition_id}/stream")
@@ -225,7 +231,7 @@ def stream_competition(
         def _build_payload() -> dict[str, object]:
             competition = container.competition.get_competition(competition_id)
             _ensure_can_view_competition(container=container, session=session, competition=competition)
-            return _to_response(competition).model_dump(mode="json")
+            return _to_response(competition, container=container).model_dump(mode="json")
 
         while True:
             if await request.is_disconnected():
@@ -289,7 +295,8 @@ def register_team(
         container.competition.register_team(
             competition_id=competition_id,
             team_id=request.team_id,
-        )
+        ),
+        container=container,
     )
 
 
@@ -304,7 +311,8 @@ def unregister_team(
         container.competition.unregister_team(
             competition_id=competition_id,
             team_id=request.team_id,
-        )
+        ),
+        container=container,
     )
 
 
@@ -319,7 +327,8 @@ def start_competition(
         container.competition.start_competition(
             competition_id=competition_id,
             requested_by=request.requested_by,
-        )
+        ),
+        container=container,
     )
 
 
@@ -329,7 +338,7 @@ def pause_competition(
     _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> CompetitionResponse:
-    return _to_response(container.competition.pause_competition(competition_id))
+    return _to_response(container.competition.pause_competition(competition_id), container=container)
 
 
 @router.post("/{competition_id}/finish", response_model=CompetitionResponse)
@@ -338,7 +347,7 @@ def finish_competition(
     _session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> CompetitionResponse:
-    return _to_response(container.competition.finish_competition(competition_id))
+    return _to_response(container.competition.finish_competition(competition_id), container=container)
 
 
 @router.post("/{competition_id}/advance", response_model=CompetitionResponse)
@@ -352,8 +361,19 @@ def advance_competition(
         container.competition.advance_competition(
             competition_id=competition_id,
             requested_by=request.requested_by,
-        )
+        ),
+        container=container,
     )
+
+
+@router.post("/{competition_id}/matches/{match_id}/retry", response_model=CompetitionResponse)
+def retry_failed_match(
+    competition_id: str,
+    match_id: str,
+    session: AppSession = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN)),
+    container: ServiceContainer = Depends(get_container),
+) -> CompetitionResponse:
+    return _to_response(container.competition.retry_failed_match(competition_id, match_id, session.nickname), container=container)
 
 
 @router.post("/{competition_id}/matches/resolve", response_model=CompetitionResponse)
@@ -371,7 +391,8 @@ def resolve_match_tie(
                 match_id=request.match_id,
                 advanced_team_ids=request.advanced_team_ids,
             ),
-        )
+        ),
+        container=container,
     )
 
 
@@ -387,7 +408,8 @@ def set_entrant_not_ready(
             competition_id=competition_id,
             team_id=request.team_id,
             reason=request.reason,
-        )
+        ),
+        container=container,
     )
 
 
@@ -404,7 +426,8 @@ def set_entrant_ban(
             team_id=request.team_id,
             banned=request.banned,
             reason=request.reason,
-        )
+        ),
+        container=container,
     )
 
 
@@ -416,10 +439,13 @@ def list_competition_runs(
 ) -> list[CompetitionRunItemResponse]:
     competition = container.competition.get_competition(competition_id)
     _ensure_can_view_competition(container=container, session=session, competition=competition)
-    return [
-        CompetitionRunItemResponse(**item)
-        for item in container.competition.list_competition_runs(competition_id=competition_id)
-    ]
+    items = container.competition.list_competition_runs(competition_id=competition_id)
+    for item in items:
+        payload = item.get("result_payload")
+        if isinstance(payload, dict):
+            run = container.execution.get_run(str(item["run_id"]), include_result_payload=False)
+            item["result_payload"] = visible_result_payload(container, session, run, payload)
+    return [CompetitionRunItemResponse(**item) for item in items]
 
 
 @router.get("/{competition_id}/bracket", response_model=list[CompetitionRoundResponse])

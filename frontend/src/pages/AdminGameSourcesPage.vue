@@ -24,7 +24,7 @@
 
     <article class="agp-card p-3 agp-status-card" v-if="syncingSourcesCount > 0">
       <div class="d-flex align-items-center gap-2">
-        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        <SnakeLoader />
         <div class="fw-semibold">Есть активные синхронизации</div>
       </div>
       <div class="small text-muted mt-1">
@@ -344,6 +344,7 @@
 </template>
 
 <script setup lang="ts">
+import SnakeLoader from '../components/SnakeLoader.vue';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 

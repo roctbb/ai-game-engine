@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from shared.kernel import utc_now
+
 from datetime import UTC, datetime, timedelta
 
 
@@ -755,7 +757,7 @@ def test_start_finish_lobby_competition_and_archive(client, teacher_headers) -> 
     assert archived_item["winner_team_ids"]
 
 
-def test_allowed_between_matches_blocks_code_updates_during_first_replay(
+def test_allowed_between_matches_allows_draft_updates_after_match_result(
     client, teacher_headers
 ) -> None:
     game = _create_game(client, teacher_headers)
@@ -815,7 +817,7 @@ def test_allowed_between_matches_blocks_code_updates_during_first_replay(
         assert finished.status_code == 200
 
     student_team = teams[0]
-    blocked = client.put(
+    updated = client.put(
         f"/api/v1/teams/{student_team['team_id']}/slots/bot",
         json={
             "actor_user_id": student_team["captain_user_id"],
@@ -824,8 +826,7 @@ def test_allowed_between_matches_blocks_code_updates_during_first_replay(
         headers=_student_headers(client, student_team["captain_user_id"]),
     )
 
-    assert blocked.status_code == 422
-    assert "между матчами" in blocked.json()["error"]["message"]
+    assert updated.status_code == 200
 
 
 def test_direct_finished_lobby_competition_reopens_lobby(
@@ -901,6 +902,7 @@ def test_direct_finished_lobby_competition_reopens_lobby(
     lobby_model = container.training_lobby.get_lobby(lobby_id)
     for team_id in team_ids:
         lobby_model.mark_ready(team_id=team_id, ready=True)
+        lobby_model.teams[team_id].last_seen_at = utc_now()
     container.training_lobby._repository.save(lobby_model)
 
     lobby = client.get(f"/api/v1/lobbies/{lobby_id}", headers=teacher_headers)

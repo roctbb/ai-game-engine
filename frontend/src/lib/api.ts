@@ -128,6 +128,7 @@ export interface SingleTaskAttemptLogsDto {
 }
 
 export interface SlotStateDto {
+  updated_at?: string | null;
   slot_key: string;
   state: 'filled' | 'empty' | 'dirty' | 'locked' | 'incompatible';
   required: boolean;
@@ -201,6 +202,8 @@ export type LobbyAccess = 'public' | 'code';
 export type LobbyStatus = 'draft' | 'open' | 'running' | 'paused' | 'stopped' | 'updating' | 'closed';
 
 export interface LobbyTeamStateDto {
+  online: boolean;
+  last_seen_at: string | null;
   team_id: string;
   ready: boolean;
   blocker_reason: string | null;
@@ -272,6 +275,8 @@ export interface LobbyCurrentRunDto {
 }
 
 export interface LobbyCompetitionDto {
+  created_at?: string | null;
+  participant_count?: number;
   competition_id: string;
   title: string;
   status: string;
@@ -324,6 +329,7 @@ export interface CompetitionRoundDto {
 }
 
 export interface CompetitionDto {
+  participant_names?: Record<string, string>;
   competition_id: string;
   game_id: string;
   game_version_id: string;
@@ -1031,6 +1037,8 @@ export function runLobbyMatchmakingTick(payload: {
 }
 
 export function startLobbyCompetition(payload: {
+  participant_selection?: 'queue' | 'selected' | 'all';
+  team_ids?: string[];
   lobby_id: string;
   title: string;
   format?: CompetitionFormat;
@@ -1043,6 +1051,8 @@ export function startLobbyCompetition(payload: {
     method: 'POST',
     body: JSON.stringify({
       title: payload.title,
+      participant_selection: payload.participant_selection ?? 'queue',
+      team_ids: payload.team_ids ?? [],
       format: payload.format ?? 'single_elimination',
       tie_break_policy: payload.tie_break_policy ?? 'manual',
       code_policy: payload.code_policy ?? 'locked_on_start',
@@ -1229,6 +1239,14 @@ export function checkCompetitionAntiplagiarism(payload: {
   );
 }
 
-export function getRunCode(runId: string): Promise<{ run_id: string; codes_by_slot: Record<string, string>; revisions_by_slot: Record<string, number> }> {
+export function getRunCode(runId: string): Promise<{ run_id: string; codes_by_slot: Record<string, string>; revisions_by_slot: Record<string, number>; captured_at: string }> {
   return request(`/runs/${encodeURIComponent(runId)}/code`);
+}
+
+export function heartbeatLobby(lobbyId: string): Promise<void> {
+  return request<void>(`/lobbies/${encodeURIComponent(lobbyId)}/presence`, { method: 'POST' });
+}
+
+export function retryCompetitionMatch(competitionId: string, matchId: string): Promise<CompetitionDto> {
+  return request<CompetitionDto>(`/competitions/${encodeURIComponent(competitionId)}/matches/${encodeURIComponent(matchId)}/retry`, { method: 'POST' });
 }

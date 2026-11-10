@@ -49,6 +49,8 @@ class SetLobbyStatusRequest(BaseModel):
 
 
 class StartLobbyCompetitionRequest(BaseModel):
+    participant_selection: Literal["queue", "selected", "all"] = "all"
+    team_ids: list[str] = Field(default_factory=list, max_length=512)
     title: str = Field(min_length=2, max_length=160)
     format: Literal["single_elimination"] = "single_elimination"
     tie_break_policy: Literal["manual", "shared_advancement"] = "manual"
@@ -58,6 +60,8 @@ class StartLobbyCompetitionRequest(BaseModel):
 
 
 class LobbyTeamStateResponse(BaseModel):
+    online: bool = False
+    last_seen_at: datetime | None = None
     team_id: str
     ready: bool
     blocker_reason: str | None
@@ -129,6 +133,8 @@ class LobbyCurrentRunResponse(BaseModel):
 
 
 class LobbyCompetitionResponse(BaseModel):
+    created_at: datetime | None = None
+    participant_count: int = 0
     competition_id: str
     title: str
     status: str

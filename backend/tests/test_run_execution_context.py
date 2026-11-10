@@ -103,7 +103,7 @@ def test_worker_execution_context_requires_queued_run(client) -> None:
     assert response.json()["error"]["code"] == "invariant_violation"
 
 
-def test_lobby_execution_context_contains_scheduled_participants(client, teacher_headers) -> None:
+def test_lobby_execution_context_contains_scheduled_participants(client, teacher_headers, container) -> None:
     games = client.get("/api/v1/games").json()
     game = next(item for item in games if item["slug"] == "tanks_ai_legacy_v1")
     lobby = client.post(
@@ -138,6 +138,7 @@ def test_lobby_execution_context_contains_scheduled_participants(client, teacher
             json={},
             headers=teacher_headers,
         )
+        container.training_lobby.mark_viewer_online(lobby["lobby_id"], captain)
         ready = client.post(
             f"/api/v1/lobbies/{lobby['lobby_id']}/teams/{team['team_id']}/ready",
             json={"ready": True},
