@@ -25,7 +25,7 @@
     const labels=legends[gameSlug],svg=document.getElementById('board');
     if(!labels||!svg||document.getElementById('agp-renderer-legend'))return;
     const legend=document.createElement('div');legend.id='agp-renderer-legend';legend.setAttribute('aria-label','Обозначения карты');
-    Object.assign(legend.style,{display:'flex',flexWrap:'wrap',gap:'4px 12px',font:'11px/1.5 system-ui,sans-serif',color:'#b6c5d8',marginTop:'8px'});
+    Object.assign(legend.style,{display:'flex',flexWrap:'wrap',gap:'4px 12px',font:'12px/1.5 system-ui,sans-serif',marginTop:'8px'});
     Object.entries(labels).slice(0,8).forEach(([value,label])=>{const item=document.createElement('span');item.textContent=`${value} — ${label}`;legend.append(item)});
     (svg.closest('.wrap')||svg.parentElement).append(legend);
     const tip=document.createElement('div');tip.hidden=true;Object.assign(tip.style,{position:'fixed',top:'8px',left:'8px',zIndex:'20',padding:'5px 8px',borderRadius:'5px',background:'#081524ee',color:'#e8f2ff',font:'12px system-ui,sans-serif',pointerEvents:'none'});document.body.append(tip);
