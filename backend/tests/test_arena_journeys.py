@@ -250,6 +250,21 @@ def test_student_can_watch_other_tournament_match_but_not_source(client, contain
     assert client.get(f"/api/v1/runs/{run_id}/code", headers=headers).status_code == 403
 
 
+@pytest.mark.parametrize("access,expected", [("public", 200), ("code", 403)])
+def test_training_spectator_needs_lobby_access_and_cannot_read_source(client, container, access, expected):
+    lobby, teams = _setup(client, container, access=access, builtin=True)
+    for team in teams:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    container.training_lobby.mark_viewer_online(lobby["lobby_id"], "test-teacher")
+    current = container.training_lobby.run_matchmaking_cycle(lobby["lobby_id"], "system")
+    run_id = current.last_scheduled_run_ids[0]
+    login = client.post("/api/v1/auth/dev-login", json={"nickname": "spectator", "role": "student"}).json()
+    headers = {"X-Session-Id": login["session_id"]}
+    assert container.training_lobby.find_user_team_in_lobby(lobby["lobby_id"], "spectator") is None
+    assert client.get(f"/api/v1/runs/{run_id}/watch-context", headers=headers).status_code == expected
+    assert client.get(f"/api/v1/runs/{run_id}/code", headers=headers).status_code == 403
+
+
 @pytest.mark.parametrize("tie", [False, True])
 def test_round_results_do_not_automatically_launch_next_round(client, container, tie):
     lobby, _ = _setup(client, container)

@@ -62,6 +62,6 @@
   }
   window.addEventListener('message',e=>{if(e.source!==parent)return;if(e.data?.type==='agp.renderer.init'){gameSlug=String(e.data.payload?.gameSlug||'');addLegend();fit();return}if(e.data?.type!=='agp.renderer.state')return;frame=e.data.payload?.frame||{};updateHUD();addLegend();fit()});
   window.addEventListener('resize',fit);
-  window.addEventListener('keydown',event=>{if(['Space','ArrowLeft','ArrowRight','Digit1','Digit2','Digit3'].includes(event.code)&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();parent.postMessage({type:'agp.renderer.shortcut',payload:{code:event.code,key:event.key}},'*')}});
+  window.addEventListener('keydown',event=>{if(['Space','ArrowLeft','ArrowRight','Digit1','Digit2','Digit3','Escape'].includes(event.code)&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();parent.postMessage({type:'agp.renderer.shortcut',payload:{code:event.code,key:event.key}},'*')}});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',updateHUD);else updateHUD();
 })();

@@ -99,7 +99,7 @@
                 <td>
                   <div class="d-flex gap-2">
                     <button class="btn btn-outline-primary" :disabled="!canManageSources || syncingSourceId === source.source_id || source.status !== 'active' || source.last_sync_status === 'syncing'" @click="syncSource(source.source_id)">{{ syncingSourceId === source.source_id ? 'Синхронизация…' : 'Синхронизировать' }}</button>
-                    <ActionMenu :label="`Действия источника ${source.repo_url}`" :items="sourceMenu(source)" @select="handleSourceMenu(source, $event)" />
+                    <ActionMenu compact :label="`Действия источника ${source.repo_url}`" :items="sourceMenu(source)" @select="handleSourceMenu(source, $event)" />
                   </div>
                 </td>
               </tr>
@@ -289,7 +289,7 @@
                 <span v-else class="text-muted small">без меток</span>
               </td>
               <td>
-                <ActionMenu :label="`Статус исполнителя ${worker.hostname}`" :items="workerStatusOptions.filter(status => status !== worker.status).map(status => ({ id: status, label: workerStatusLabel(status), disabled: !canManageWorkers || workerStatusChangingId === worker.worker_id, danger: status === 'disabled' }))" @select="updateWorkerStatus(worker.worker_id, $event as WorkerStatus)" />
+                <ActionMenu compact :label="`Статус исполнителя ${worker.hostname}`" :items="workerStatusOptions.filter(status => status !== worker.status).map(status => ({ id: status, label: workerStatusLabel(status), disabled: !canManageWorkers || workerStatusChangingId === worker.worker_id, danger: status === 'disabled' }))" @select="updateWorkerStatus(worker.worker_id, $event as WorkerStatus)" />
               </td>
             </tr>
             <tr v-if="workers.length === 0">

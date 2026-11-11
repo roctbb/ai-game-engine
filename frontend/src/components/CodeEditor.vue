@@ -200,5 +200,6 @@ watch(
 .agp-code-editor :deep(.cm-cursor) { border-left-color: var(--agp-text); }
 .agp-code-editor :deep(.arena-code-comment) { color: var(--agp-text-muted); }
 .agp-code-editor :deep(.arena-code-error) { background: var(--arena-error-soft); box-shadow: inset 3px 0 var(--agp-danger); }
+.agp-code-editor :deep(.arena-code-error span) { color: var(--agp-text); }
 .agp-code-editor :deep(.arena-error-gutter) { color: var(--agp-danger); background: var(--arena-error-soft); font-weight: 700; }
 </style>

@@ -14,8 +14,9 @@
       place-items: center;
       min-height: 100vh;
     }
-    .wrap { width: min(760px, 96vw); }
-    .board { background: #fff; border: 1px solid #cad5e6; border-radius: 12px; overflow: hidden; }
+    .wrap { width: min(760px, calc(100vw - 24px), calc(100dvh - 24px)); }
+    .board { display: block; width: 100%; height: auto; box-sizing: border-box; background: #fff; border: 1px solid #cad5e6; border-radius: 8px; overflow: hidden; }
+    .status, .details { display: none; }
     .status { margin-top: 8px; font-size: 13px; color: #355073; }
     .details { margin-top: 4px; font-size: 12px; color: #56739a; min-height: 16px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
@@ -91,8 +92,6 @@
       info.setAttribute("y", "24");
       info.setAttribute("font-size", "13");
       info.setAttribute("fill", "#152033");
-      info.textContent = `winner_role=${winnerRole}`;
-      boardEl.appendChild(info);
 
       const xName = svg("text");
       xName.setAttribute("x", "250");
@@ -147,5 +146,6 @@
     window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "1.1.0" } }, "*");
     setStatus("Renderer: ready");
   </script>
+  <script src="/game-renderer-ui.js"></script>
 </body>
 </html>

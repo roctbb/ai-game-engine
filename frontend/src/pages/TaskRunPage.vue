@@ -3,50 +3,27 @@
     class="arena-workspace"
     :class="{
       'arena-workspace--field': mobilePanel === 'viewer' || conditionPanelOpen,
+      'arena-workspace--fullscreen': isViewerFullscreen,
     }"
   >
     <header class="arena-workbar">
-      <RouterLink
-        :to="taskBackTarget"
-        class="agp-back-link"
-        aria-label="К задаче"
-        ><AppIcon name="back"
-      /></RouterLink>
-      <h1>{{ game?.title || "Задача" }}</h1>
-      <span class="arena-save-time" role="status">{{ draftStateLabel }}</span>
-      <SnakeLoader v-if="!isBootstrapping && (isRunActive || isLaunching)" :label="runStatusLabel" />
-      <button
-        class="btn btn-outline-secondary"
-        :aria-pressed="conditionPanelOpen"
-        :disabled="isBootstrapping"
-        @click="toggleConditionPanel"
-      >
-        Условие
-      </button>
-      <button
-        v-if="isRunActive"
-        class="btn btn-outline-danger"
-        :disabled="!canStop"
-        @click="stopRun"
-      >
-        <AppIcon name="stop" />Стоп
-      </button>
-      <button
-        v-else-if="reviewingRunCode"
-        class="btn btn-primary"
-        @click="resumeDraft"
-      >
-        К черновику
-      </button>
-      <button
-        v-else
-        class="btn btn-primary"
-        :disabled="!canLaunch || isSaving"
-        title="⌘ / Ctrl + Enter"
-        @click="launchRun()"
-      >
-        <AppIcon name="play" />Запустить
-      </button>
+      <RouterLink :to="taskBackTarget" class="agp-back-link" :aria-label="reviewBackLabel" @click="onReviewBack"><AppIcon name="back" /></RouterLink>
+      <h1 :title="isReviewMode ? reviewTitle : game?.title">{{ isReviewMode ? reviewTitle : game?.title || 'Задача' }}</h1>
+      <span class="arena-save-time" role="status">{{ isReviewMode ? formatTime(currentRun?.created_at) : draftStateLabel }}</span>
+      <template v-if="isReviewMode">
+        <div v-if="canUseDemoStrategy" class="arena-review-navigation">
+          <button class="btn btn-outline-secondary" aria-label="Новее" :disabled="isInspecting || inspectionIndex <= 0" @click="inspectAdjacent(-1)">←<span>Новее</span></button>
+          <button class="btn btn-outline-secondary" aria-label="Старее" :disabled="isInspecting || inspectionIndex < 0 || inspectionIndex >= inspectionAttempts.length - 1" @click="inspectAdjacent(1)"><span>Старее</span>→</button>
+        </div>
+        <button v-if="canTakeSnapshot" class="btn btn-primary arena-review-own-action" aria-label="Взять код в работу" @click="takeSnapshot"><span class="arena-review-action-wide">Взять код в работу</span><span class="arena-review-action-compact">Взять код</span></button>
+        <ActionMenu label="Действия с попыткой" :items="reviewMenuItems" @select="handleReviewAction" />
+      </template>
+      <template v-else>
+        <SnakeLoader v-if="!isBootstrapping && (isRunActive || isLaunching)" :label="runStatusLabel" />
+        <button class="btn btn-outline-secondary" :aria-pressed="conditionPanelOpen" :disabled="isBootstrapping" @click="toggleConditionPanel">Условие</button>
+        <button v-if="isRunActive" class="btn btn-outline-danger" :disabled="!canStop" @click="stopRun"><AppIcon name="stop" />Стоп</button>
+        <button v-else class="btn btn-primary" :disabled="!canLaunch || isSaving" title="⌘ / Ctrl + Enter" @click="launchRun()"><AppIcon name="play" />Запустить</button>
+      </template>
     </header>
     <p v-if="errorMessage" class="text-danger mb-0" role="alert">
       {{ errorMessage }}
@@ -87,37 +64,8 @@
     >
       <article class="arena-code-pane agp-card">
         <header class="arena-pane-head">
-          <strong>{{
-            reviewingRunCode
-              ? `Код · ${formatTime(reviewCapturedAt)}`
-              : "strategy.py"
-          }}</strong
-          ><template v-if="reviewingRunCode"
-            ><button
-              class="agp-panel-toggle"
-              aria-label="Новее"
-              :disabled="inspectionIndex <= 0"
-              @click="inspectAdjacent(-1)"
-            >
-              ←</button
-            ><button
-              class="agp-panel-toggle"
-              aria-label="Старее"
-              :disabled="
-                inspectionIndex < 0 ||
-                inspectionIndex >= inspectionAttempts.length - 1
-              "
-              @click="inspectAdjacent(1)"
-            >
-              →</button
-            ><button
-              v-if="canTakeSnapshot"
-              class="agp-panel-toggle"
-              @click="takeSnapshot"
-            >
-              Взять код
-            </button></template
-          >
+          <strong>strategy.py<span v-if="reviewingRunCode && diagnostic" class="arena-review-file-error" role="img" :aria-label="'Ошибка кода' + (diagnostic.line ? ', строка ' + diagnostic.line : '')">×</span></strong>
+          <span v-if="reviewingRunCode" class="arena-review-code-meta"><time>Код {{ formatTime(reviewCapturedAt) }}</time><span>только чтение</span></span>
           <details v-if="!reviewingRunCode" class="arena-file-menu">
             <summary aria-label="Меню файла">⋯</summary>
             <div>
@@ -192,21 +140,23 @@
           @close="closeConditionPanel"
         />
         <template v-if="!conditionPanelOpen">
-          <header class="arena-pane-head">
-            <strong>{{
+          <header v-if="!reviewingRunCode || !diagnostic" class="arena-pane-head">
+            <strong v-if="reviewingRunCode && currentRun" :class="'arena-review-outcome--' + attemptPresentation(currentRun).tone">{{ attemptPresentation(currentRun).icon }} {{ attemptPresentation(currentRun).label }} · {{ attemptPresentation(currentRun).score }}</strong>
+            <strong v-else>{{
               isRunActive ? runStatusLabel : currentRun ? "Результат" : "Поле"
             }}</strong
-            ><span v-if="currentRun" class="small text-muted">{{
+            ><span v-if="currentRun && !reviewingRunCode" class="small text-muted">{{
               formatTime(currentRun.created_at)
             }}</span
             ><button
-              v-if="currentRun && !isRunActive"
+              v-if="currentRun && !isRunActive && !reviewingRunCode"
               class="agp-panel-toggle"
               :disabled="!canLaunch"
               @click="launchRun(currentRun.run_id)"
             >
               Повторить поле
             </button>
+            <button v-if="reviewingRunCode" class="agp-panel-toggle" @click="isViewerFullscreen ? closeViewerFullscreen() : openViewerFullscreen()">{{ isViewerFullscreen ? 'Вернуть код' : 'На весь экран' }}</button>
           </header>
           <div v-if="diagnostic" class="arena-diagnostic" role="alert">
             <strong>× {{ diagnostic.title }}</strong
@@ -218,7 +168,7 @@
             >
               Строка {{ diagnostic.line }}
             </button>
-            <details>
+            <details v-if="!reviewingRunCode">
               <summary>Подробности</summary>
               <pre>{{ diagnostic.message }}</pre>
             </details>
@@ -275,9 +225,10 @@
               @line="inspectRunLine"
             />
           </details>
-          <BotConsole initially-collapsed
-            ><div
-              v-for="line in currentConsoleLines"
+          <BotConsole initially-collapsed :label="reviewingRunCode ? (diagnostic ? 'Подробности ошибки' : 'Консоль и события') : 'Вывод запуска'">
+            <pre v-if="reviewingRunCode && diagnostic" class="arena-review-error-details">{{ diagnostic.message }}</pre>
+            <div
+              v-for="line in (reviewingRunCode && diagnostic ? [] : currentConsoleLines)"
               :key="line.id"
               class="agp-bot-console-line"
               :class="{ 'agp-bot-console-line--error': line.tone === 'error' }"
@@ -302,6 +253,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import ActionMenu, { type ActionMenuItem } from '../components/ActionMenu.vue';
+import { attemptPresentation } from '../lib/attemptPresentation';
 import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import SnakeLoader from "../components/SnakeLoader.vue";
@@ -381,16 +334,23 @@ const contextQuery = computed(() =>
     ),
   ),
 );
-function resumeDraft(): void {
+async function resumeDraft(): Promise<void> {
+  inspectionToken += 1;
+  isInspecting.value = false;
+  stopRunPolling();
   reviewingRunCode.value = false;
-  void router.replace({ query: contextQuery.value });
+  await router.replace({ query: contextQuery.value });
+  await refreshStats();
 }
 const sessionStore = useSessionStore();
 const SPLIT_RATIO_STORAGE_KEY = "agp_task_workspace_split_ratio";
 const VIEW_MODE_STORAGE_KEY = "agp_task_workspace_view_mode";
 const game = ref<GameDto | null>(null);
+const reviewReturnToEditor = ref(false);
 const taskBackTarget = computed(() =>
-  typeof route.query.back === "string" &&
+  reviewReturnToEditor.value && reviewingRunCode.value
+    ? { name: 'task-run', params: { gameId: String(route.params.gameId) }, query: contextQuery.value }
+    : typeof route.query.back === "string" &&
   route.query.back.startsWith(
     `/tasks/${game.value?.game_id || String(route.params.gameId)}`,
   )
@@ -426,6 +386,33 @@ const reviewCode = ref("");
 const reviewLine = ref(1);
 const reviewCapturedAt = ref("");
 const inspectionAttempts = ref<RunDto[]>([]);
+const isInspecting = ref(false);
+let inspectionToken = 0;
+const isReviewMode = computed(() => reviewingRunCode.value || typeof route.query.inspect_run === 'string');
+const reviewTitle = computed(() => {
+  const author = currentRun.value?.requested_by;
+  return author ? 'Попытка · ' + author : 'Разбор запуска';
+});
+const reviewBackLabel = computed(() => reviewReturnToEditor.value && reviewingRunCode.value ? 'К редактору' : typeof route.query.back === 'string' && route.query.back.includes('/attempts') ? 'К истории попыток' : 'К задаче');
+function onReviewBack(event: MouseEvent): void {
+  if (reviewReturnToEditor.value && reviewingRunCode.value) { event.preventDefault(); resumeDraft(); }
+}
+const reviewMenuItems = computed<ActionMenuItem[]>(() => [
+  { id: 'condition', label: 'Условие и API', disabled: isBootstrapping.value },
+  { id: 'draft', label: 'Мой редактор', disabled: isBootstrapping.value || isInspecting.value },
+  { id: 'repeat', label: 'Повторить поле с моим кодом', disabled: !canLaunch.value || isInspecting.value || !reviewingRunCode.value || !currentRun.value },
+]);
+async function handleReviewAction(action: string): Promise<void> {
+  if (action === 'condition') toggleConditionPanel();
+  if (action === 'draft') resumeDraft();
+  if (action === 'repeat' && currentRun.value) {
+    const repeatRunId = currentRun.value.run_id;
+    reviewingRunCode.value = false;
+    await router.replace({ query: contextQuery.value });
+    await launchRun(repeatRunId);
+  }
+}
+
 const inspectionIndex = computed(() =>
   inspectionAttempts.value.findIndex(
     (run) => run.run_id === currentRun.value?.run_id,
@@ -434,6 +421,7 @@ const inspectionIndex = computed(() =>
 const canTakeSnapshot = computed(
   () =>
     reviewingRunCode.value &&
+    !isBootstrapping.value && !isInspecting.value &&
     currentRun.value?.requested_by === sessionStore.nickname,
 );
 function takeSnapshot(): void {
@@ -560,6 +548,7 @@ const canLaunch = computed(
         editorCode.value.trim(),
     ) &&
     !isLaunching.value &&
+    !isBootstrapping.value &&
     !isRestarting.value &&
     !isRunActive.value,
 );
@@ -979,6 +968,7 @@ function onRendererMessage(event: MessageEvent): void {
       "Digit1",
       "Digit2",
       "Digit3",
+      "Escape",
     ].includes(data.payload?.code)
   )
     return;
@@ -1188,15 +1178,22 @@ async function inspectRunLine(
   runId = currentRun.value?.run_id,
 ): Promise<void> {
   if (!runId) return;
+  const token = ++inspectionToken;
+  isInspecting.value = true;
+  stopRunPolling();
+  stopReplayPlayback();
+  if (!reviewingRunCode.value && !route.query.inspect_run) reviewReturnToEditor.value = true;
   try {
     const inspectedRun = await getRun(runId);
     if (inspectedRun.game_id !== game.value?.game_id)
       throw new Error("Попытка относится к другой задаче");
     const snapshot = await getRunCode(runId);
+    if (token !== inspectionToken) return;
     if (currentRun.value?.run_id !== runId) {
       currentRun.value = inspectedRun;
       await loadReplay(runId);
     }
+    if (token !== inspectionToken) return;
     const slot = location.role || selectedSlotKey.value;
     reviewCode.value =
       snapshot.codes_by_slot[slot] ??
@@ -1205,7 +1202,7 @@ async function inspectRunLine(
     reviewCapturedAt.value = snapshot.captured_at;
     reviewLine.value = location.line;
     reviewingRunCode.value = true;
-    inspectionAttempts.value = await listSingleTaskAttempts({
+    const relatedAttempts = await listSingleTaskAttempts({
       game_id: inspectedRun.game_id,
       requested_by:
         typeof route.query.attempt_user === "string"
@@ -1214,13 +1211,20 @@ async function inspectRunLine(
       limit: 100,
       offset: Math.max(0, Number(route.query.attempt_offset) || 0),
     });
+    if (token !== inspectionToken) return;
+    inspectionAttempts.value = relatedAttempts;
     if (route.query.inspect_run !== runId)
       await router.replace({ query: { ...route.query, inspect_run: runId } });
+    if (token !== inspectionToken) return;
+    if (isActiveRun(inspectedRun)) startRunPolling(runId);
     if (isMobile.value) mobilePanel.value = "code";
     else if (viewMode.value === "viewer") viewMode.value = "split";
   } catch (error) {
+    if (token !== inspectionToken) return;
     errorMessage.value =
       error instanceof Error ? error.message : "Не удалось открыть код запуска";
+  } finally {
+    if (token === inspectionToken) isInspecting.value = false;
   }
 }
 
@@ -1511,6 +1515,7 @@ async function refreshStats(): Promise<void> {
       limit: 12,
     });
     attempts.value = freshAttempts;
+    if (reviewingRunCode.value || typeof route.query.inspect_run === 'string') return;
     const currentRunId = currentRun.value?.run_id ?? "";
     const currentAttempt: RunDto | null = currentRunId
       ? (freshAttempts.find((attempt) => attempt.run_id === currentRunId) ??
@@ -1736,6 +1741,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  inspectionToken += 1;
   clearInterval(statusTimer);
   mobileMedia.removeEventListener("change", updateMobileMode);
   window.removeEventListener("keydown", handlePageKeydown);
@@ -1940,4 +1946,14 @@ onUnmounted(() => {
     display: flex;
   }
 }
+
+.arena-review-navigation { display: flex; align-items: center; gap: 8px; }
+.arena-review-code-meta { display: flex; gap: 8px; font-size: 11px; color: var(--agp-text-muted); white-space: nowrap; margin-left: auto; }
+.arena-review-action-compact { display: none; }
+.arena-review-file-error { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 8px; border-radius: 4px; color: var(--agp-danger); background: var(--arena-error-soft); font-weight: 600; }
+.arena-review-outcome--error { color: var(--agp-danger); }
+.arena-review-outcome--success { color: var(--agp-success); }
+.arena-review-error-details { margin: 0; white-space: pre-wrap; color: var(--agp-danger); font: inherit; }
+.arena-workspace--fullscreen .arena-field-pane { display: flex; position: fixed; inset: 8px; z-index: 150; height: auto; }
+@media (max-width: 900px) { .arena-review-navigation span { display: none; } .arena-review-code-meta { flex-direction: column; align-items: flex-end; gap: 0; font-size: 10px; line-height: 14px; } .arena-review-action-wide { display: none; } .arena-review-action-compact { display: inline; } }
 </style>

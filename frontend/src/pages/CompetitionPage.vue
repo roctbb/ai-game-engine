@@ -1,21 +1,7 @@
 <template>
   <section class="agp-grid competition-page">
-    <header class="agp-card p-3 competition-hero">
-      <div>
-        <p class="competition-kicker mb-1">Соревнование</p>
-        <RouterLink v-if="competition?.lobby_id" :to="`/lobbies/${competition.lobby_id}`" class="small">← Лобби</RouterLink>
-        <h1 class="h4 mb-1">{{ competition?.title || 'Турнир' }}</h1>
-
-      </div>
-      <div class="btn-group competition-view-toggle">
-        <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'rounds' && detailPane === 'matches' }" @click="view = 'rounds'; detailPane = 'matches'">
-          Матчи
-        </button>
-        <button class="btn btn-outline-dark btn-sm" :class="{ active: view === 'bracket' && detailPane === 'matches' }" @click="view = 'bracket'; detailPane = 'matches'">
-          Сетка
-        </button>
-        <button class="btn btn-outline-dark btn-sm" :class="{ active: detailPane === 'table' }" @click="detailPane = 'table'">Таблица</button>
-      </div>
+    <header class="competition-page-heading">
+      <div><RouterLink v-if="competition?.lobby_id" :to="`/lobbies/${competition.lobby_id}`" class="small">← К лобби</RouterLink><h1>{{ competition?.title || 'Турнир' }}</h1><p v-if="competition" class="text-muted mb-0">{{ competition.entrants.length }} участников · {{ competitionMatchBoundsLabel }} в матче · проходят {{ competition.advancement_top_k }}</p></div>
     </header>
 
     <LoadingSkeleton v-if="isLoading" :count="2" layout="list" label="Загрузка соревнования…" />
@@ -32,24 +18,7 @@
           <div v-if="competition.pending_reason" class="competition-warning mt-2">
             <span class="fw-semibold">Ожидает решения:</span> {{ competition.pending_reason }}
           </div>
-          <div class="competition-stat-grid mt-3">
-            <div class="competition-stat">
-              <span>участники</span>
-              <strong>{{ competition.entrants.length }}</strong>
-            </div>
-            <div class="competition-stat">
-              <span>готовы</span>
-              <strong>{{ readyEntrantsCount }}</strong>
-            </div>
-            <div class="competition-stat">
-              <span>ограничены</span>
-              <strong>{{ bannedEntrantsCount }}</strong>
-            </div>
-            <div class="competition-stat">
-              <span>матч</span>
-              <strong>{{ competitionMatchBoundsLabel }} · проходят {{ competition.advancement_top_k }}</strong>
-            </div>
-          </div>
+          <p class="competition-progress mb-0">{{ competitionProgressLabel }}<span v-if="competition.status === 'draft'"> · готовы {{ readyEntrantsCount }}<template v-if="bannedEntrantsCount"> · ограничены {{ bannedEntrantsCount }}</template></span></p>
           <div class="small mt-2" v-if="competition.winner_team_ids.length">
             Победители:
             <span class="mono">{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</span>
@@ -60,6 +29,13 @@
         <button v-if="canModerate && ['draft','paused'].includes(competition.status) && !competition.pending_reason" class="btn btn-primary" :disabled="!canStart || isStarting" @click="startCurrentCompetition">{{ competition.status === 'paused' ? 'Продолжить турнир' : 'Начать турнир' }}</button>
         <ActionMenu v-if="canModerate && competitionMenuItems.length" label="Действия турнира" :items="competitionMenuItems" @select="handleCompetitionMenu" />
       </article>
+
+      <nav class="competition-tabs" aria-label="Соревнование">
+        <button :class="{ active: view === 'rounds' && detailPane === 'matches' }" @click="view = 'rounds'; detailPane = 'matches'">Матчи</button>
+        <button :class="{ active: view === 'bracket' && detailPane === 'matches' }" @click="view = 'bracket'; detailPane = 'matches'">Сетка</button>
+        <button :class="{ active: detailPane === 'table' }" @click="detailPane = 'table'">Таблица</button>
+        <RouterLink v-if="competition.lobby_id" :to="{ name: 'lobby', params: { lobbyId: competition.lobby_id }, query: { tab: 'archive' } }">Архив</RouterLink>
+      </nav>
 
       <article class="agp-card p-3 competition-settings-card" v-if="competition.status === 'draft' && canModerate">
         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -113,9 +89,9 @@
         </div>
       </article>
 
-      <div class="agp-card p-3 arena-tournament-filters"><label><span class="visually-hidden">Показать матчи</span><select v-model="matchScope" class="form-select"><option value="all">Все матчи</option><option value="mine">Мои матчи</option></select></label><label><span class="visually-hidden">Участник</span><select v-model="matchParticipant" class="form-select"><option value="">Все участники</option><option v-for="entrant in competition.entrants" :key="entrant.team_id" :value="entrant.team_id">{{ teamName(entrant.team_id) }}</option></select></label></div>
-      <div class="competition-focus-layout" :class="{ 'competition-focus-layout--matches': detailPane === 'matches' && competition.status !== 'draft' }">
-        <article v-show="detailPane === 'table' || competition.status === 'draft'" class="agp-card p-3 competition-section-card competition-participants-card">
+      <div v-if="detailPane === 'matches'" class="arena-tournament-filters"><label><span class="visually-hidden">Показать матчи</span><select v-model="matchScope" class="form-select"><option value="all">Все матчи</option><option value="mine">Мои матчи</option></select></label><label><span class="visually-hidden">Участник</span><select v-model="matchParticipant" class="form-select"><option value="">Все участники</option><option v-for="entrant in competition.entrants" :key="entrant.team_id" :value="entrant.team_id">{{ teamName(entrant.team_id) }}</option></select></label></div>
+      <div class="competition-focus-layout" :class="{ 'competition-focus-layout--matches': detailPane === 'matches' && competition.status !== 'draft', 'competition-focus-layout--table': detailPane === 'table' }">
+        <article v-if="competition.status === 'draft'" class="agp-card p-3 competition-section-card competition-participants-card">
           <h2 class="h6">Участники</h2>
           <label v-if="canModerate" class="form-label small">Игрок для регистрации</label>
           <select v-if="canModerate" v-model="selectedTeamId" class="form-select mb-3">
@@ -140,33 +116,10 @@
           </div>
         </article>
 
-        <article v-if="competitionLeaderboard.length" class="agp-card p-3 competition-leaderboard competition-side-card" v-show="detailPane === 'table'">
-          <div class="competition-leaderboard-head">
-            <div>
-              <h2 class="h6 mb-1">Лидерборд</h2>
-              <div class="small text-muted">Победы, поражения и очки.</div>
-            </div>
-            <div v-if="competition.winner_team_ids.length" class="competition-winner-callout">
-              <span>Победитель</span>
-              <strong>{{ competition.winner_team_ids.map((teamId) => teamName(teamId)).join(', ') }}</strong>
-            </div>
-          </div>
-          <div class="competition-leaderboard-list">
-            <div
-              v-for="(stat, index) in competitionLeaderboard"
-              :key="stat.team_id"
-              class="competition-leaderboard-row"
-              :class="{ winner: competition.winner_team_ids.includes(stat.team_id) }"
-            >
-              <span class="competition-leaderboard-place">{{ index + 1 }}</span>
-              <div>
-                <strong>{{ stat.name }}</strong>
-                <span>
-                  побед {{ stat.wins }} · поражений {{ stat.losses }} · очков {{ scoreLabel(stat.points) }}
-                </span>
-              </div>
-            </div>
-          </div>
+        <article v-if="competitionLeaderboard.length" v-show="detailPane === 'table'" class="agp-card competition-leaderboard competition-results-table">
+          <table class="table align-middle mb-0"><thead><tr><th>#</th><th>Участник</th><th class="text-end">Победы</th><th class="text-end">Поражения</th><th class="text-end">Очки</th><th v-if="canModerate"></th></tr></thead><tbody>
+            <tr v-for="(stat, index) in competitionLeaderboard" :key="stat.team_id" :class="{ 'competition-result-winner': competition.winner_team_ids.includes(stat.team_id) }"><td>{{ index + 1 }}</td><td>{{ stat.name }}<span v-if="competition.winner_team_ids.includes(stat.team_id)" class="small text-muted"> · победитель</span></td><td class="text-end">{{ stat.wins }}</td><td class="text-end">{{ stat.losses }}</td><td class="text-end font-monospace">{{ scoreLabel(stat.points) }}</td><td v-if="canModerate"><ActionMenu v-for="entrant in competition.entrants.filter(e => e.team_id === stat.team_id)" :key="entrant.team_id" compact :label="`Действия участника ${stat.name}`" :items="entrantMenu(entrant)" @select="handleEntrantMenu(entrant, $event)" /></td></tr>
+          </tbody></table>
         </article>
 
         <article class="agp-card p-3 competition-section-card competition-rounds-card" v-if="view === 'rounds'" v-show="detailPane === 'matches'">
@@ -579,6 +532,12 @@ const canSaveDraftSettings = computed(() => {
   return titleOk && matchSizeOk && topKOk;
 });
 const inspectedReplaySummary = computed(() => JSON.stringify(inspectedReplay.value?.summary ?? {}, null, 2));
+const competitionProgressLabel = computed(() => {
+  const c = competition.value;
+  if (!c || !c.rounds.length) return 'Ожидание первого раунда';
+  const round = c.rounds.find(r => r.round_index === c.current_round_index) || c.rounds[c.rounds.length - 1];
+  return 'Раунд ' + round.round_index + ' · ' + round.matches.filter(isResolvedCompetitionMatch).length + ' / ' + round.matches.length + ' матчей завершено';
+});
 const readyEntrantsCount = computed(() => competition.value?.entrants.filter((entrant) => entrant.ready && !entrant.banned).length ?? 0);
 const bannedEntrantsCount = computed(() => competition.value?.entrants.filter((entrant) => entrant.banned).length ?? 0);
 const competitionLeaderboard = computed<CompetitionTeamStatRow[]>(() => {
@@ -1643,4 +1602,17 @@ function handleEntrantMenu(entrant: CompetitionDto['entrants'][number], action: 
 
 .competition-focus-layout--matches{grid-template-columns:minmax(0,1fr)}.competition-focus-layout--matches .competition-rounds-card{grid-column:1;grid-row:auto}.competition-focus-layout:not(.competition-focus-layout--matches) .competition-participants-card,.competition-focus-layout:not(.competition-focus-layout--matches) .competition-leaderboard-card{grid-column:auto;grid-row:auto}.competition-actions summary{background:var(--agp-surface);border-radius:6px}
 .competition-view-toggle .btn{border-radius:6px}.competition-view-toggle .btn.active{color:var(--arena-on-primary)}.competition-stat{border-radius:8px;background:var(--agp-surface-soft);border-color:var(--agp-border)}.competition-stat-grid{gap:8px}.competition-hero{padding:16px!important}.competition-match-card{border-radius:8px;box-shadow:none;background:var(--agp-surface);border-color:var(--agp-border)}.competition-rounds-card>div>article{background:var(--agp-surface-soft);border-radius:8px}.competition-match-card .badge{font-weight:500}
+
+.competition-page-heading h1 { margin: 8px 0 4px; font-size: 24px; line-height: 32px; font-weight: 600; }
+.competition-page-heading p { font-size: 13px; }
+.competition-command-center { gap: 12px; }
+.competition-progress { margin-top: 8px; font-size: 13px; color: var(--agp-text-muted); }
+.competition-tabs { display: flex; gap: 24px; align-items: center; border-bottom: 1px solid var(--agp-border); }
+.competition-tabs button, .competition-tabs a { border: 0; border-radius: 0; background: none; padding: 12px 0; min-height: 44px; color: var(--agp-text-muted); font-size: 13px; text-decoration: none; border-bottom: 2px solid transparent; }
+.competition-tabs .active { border-bottom-color: var(--agp-primary); color: var(--agp-primary); font-weight: 600; }
+.competition-focus-layout--table { grid-template-columns: minmax(0,1fr); }
+.competition-results-table { grid-column: 1; overflow-x: auto; }
+.competition-result-winner > td { background: var(--arena-success-soft); }
+.competition-result-winner td:nth-child(2) { font-weight: 600; }
+@media(max-width:600px) { .competition-command-center { flex-wrap: wrap; } .competition-command-main { flex-basis: 100%; } .competition-tabs { gap: 20px; } }
 </style>

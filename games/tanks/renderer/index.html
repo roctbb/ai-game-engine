@@ -36,6 +36,7 @@
       pointer-events: none;
       max-width: min(560px, calc(100vw - 24px));
     }
+    .hud[hidden], .hud .mono { display: none; }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       color: #bfdbfe;
@@ -139,10 +140,8 @@
     };
 
     function setStatus(text) {
-      statusEl.textContent = text;
-      const width = frame?.width || 0;
-      const height = frame?.height || 0;
-      detailsEl.textContent = `run=${runId || "-"} tick=${tick} phase=${phase} map=${width}x${height} zoom=${zoom.toFixed(2)}`;
+      statusEl.parentElement.hidden = imagesReady;
+      statusEl.textContent = `Загрузка поля · ${loaded}/${total}`;
     }
 
     function resizeCanvas() {
@@ -162,6 +161,7 @@
           imagesReady = true;
           setStatus("Renderer: ready");
           drawFrame();
+          window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "2.0.0" } }, "*");
         }
       };
       img.onerror = () => {
@@ -170,6 +170,7 @@
           imagesReady = true;
           setStatus("Renderer: ready with missing assets");
           drawFrame();
+          window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "2.0.0" } }, "*");
         }
       };
       img.src = url;
@@ -443,6 +444,10 @@
 
     window.addEventListener("resize", resizeCanvas);
     window.addEventListener("keydown", (event) => {
+      if (event.key === 'Escape') {
+        window.parent.postMessage({ type: 'agp.renderer.shortcut', payload: { key: event.key, code: event.code } }, '*');
+        return;
+      }
       const key = event.key.toLowerCase();
       if (["arrowup", "w"].includes(key)) {
         event.preventDefault();
@@ -478,7 +483,6 @@
 
     resizeCanvas();
     loadAssets();
-    window.parent.postMessage({ type: "agp.renderer.ready", payload: { version: "2.0.0" } }, "*");
   </script>
 </body>
 </html>

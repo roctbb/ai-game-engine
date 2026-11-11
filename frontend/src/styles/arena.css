@@ -75,6 +75,7 @@ h2,
   padding: 12px;
   max-width: none;
 }
+.agp-main.agp-main--embedded { padding: 0; max-width: none; }
 .agp-card {
   border-radius: 10px;
   box-shadow: none;
@@ -111,11 +112,15 @@ h2,
   font-weight: 500;
   box-shadow: none;
 }
-.btn-sm {
+.btn-sm,
+.form-control-sm,
+.form-select-sm {
   font-size: 13px;
+  line-height: 20px;
   padding: 5px 10px;
   min-height: 32px;
 }
+.form-select-sm { padding-right: 32px; }
 .btn:disabled,
 .btn.disabled {
   opacity: 1;
@@ -185,6 +190,10 @@ h2,
 .text-danger {
   color: var(--agp-danger) !important;
 }
+.alert-danger { --bs-alert-color: var(--agp-danger); --bs-alert-bg: var(--arena-error-soft); --bs-alert-border-color: var(--agp-border); }
+.alert-warning { --bs-alert-color: var(--agp-warning); --bs-alert-bg: var(--arena-warning-soft); --bs-alert-border-color: var(--agp-border); }
+.alert-success { --bs-alert-color: var(--agp-success); --bs-alert-bg: var(--arena-success-soft); --bs-alert-border-color: var(--agp-border); }
+.alert-secondary, .alert-info { --bs-alert-color: var(--agp-text); --bs-alert-bg: var(--agp-surface-soft); --bs-alert-border-color: var(--agp-border); }
 .text-muted {
   color: var(--agp-text-muted) !important;
 }

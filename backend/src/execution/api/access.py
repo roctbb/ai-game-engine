@@ -84,6 +84,9 @@ def ensure_can_view_run(container: ServiceContainer, session: AppSession, run: R
 
     if run.run_kind is RunKind.TRAINING_MATCH and run.lobby_id:
         try:
+            lobby = container.training_lobby.get_lobby(run.lobby_id)
+            if lobby.access is LobbyAccess.PUBLIC:
+                return
             if container.training_lobby.find_user_team_in_lobby(
                 lobby_id=run.lobby_id,
                 user_id=session.nickname,

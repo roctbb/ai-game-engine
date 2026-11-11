@@ -10,7 +10,7 @@ export interface ActionMenuItem {
 </script>
 
 <template>
-  <button ref="trigger" class="btn btn-outline-secondary arena-menu-trigger" type="button" :aria-label="label" aria-haspopup="menu" :aria-expanded="open" @click="toggle" @keydown.down.prevent="show(true)" @keydown.up.prevent="show(true, true)">⋯</button>
+  <button ref="trigger" class="btn btn-outline-secondary arena-menu-trigger" :class="{ 'arena-menu-trigger--compact': compact }" type="button" :aria-label="label" aria-haspopup="menu" :aria-expanded="open" @click="toggle" @keydown.down.prevent="show(true)" @keydown.up.prevent="show(true, true)">⋯</button>
   <Teleport to="body">
     <div v-if="open" ref="menu" class="arena-action-menu" role="menu" :aria-label="label" tabindex="-1" @keydown="navigate">
       <template v-for="item in items" :key="item.id">
@@ -25,7 +25,7 @@ export interface ActionMenuItem {
 import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 
-withDefaults(defineProps<{ items: ActionMenuItem[]; label?: string }>(), { label: 'Действия' });
+withDefaults(defineProps<{ items: ActionMenuItem[]; label?: string; compact?: boolean }>(), { label: 'Действия', compact: false });
 const emit = defineEmits<{ select: [id: string] }>();
 const trigger = ref<HTMLButtonElement | null>(null);
 const menu = ref<HTMLElement | null>(null);
@@ -86,6 +86,7 @@ onBeforeUnmount(() => close(false));
 
 <style scoped>
 .arena-menu-trigger { flex: none; padding: 0; width: 36px; min-width: 36px; height: 36px; font-size: 22px; line-height: 20px; }
+.arena-menu-trigger--compact { width: 32px; min-width: 32px; height: 32px; min-height: 32px; }
 .arena-action-menu { position: fixed; z-index: 500; display: grid; gap: 4px; width: min(240px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 4px; background: var(--agp-surface); color: var(--agp-text); border: 1px solid var(--agp-border); border-radius: 8px; box-shadow: 0 8px 24px #10182718; }
 .arena-action-menu > :is(button,a) { display: flex; align-items: center; min-height: 36px; padding: 8px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--agp-text); font: inherit; font-size: 13px; line-height: 20px; text-align: left; text-decoration: none; }
 .arena-action-menu > :is(button,a):is(:hover,:focus-visible) { color: var(--agp-primary); background: var(--agp-primary-soft); outline-offset: -2px; }

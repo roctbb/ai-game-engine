@@ -1,193 +1,62 @@
 <template>
-  <section class="agp-grid agp-task-workspace agp-watch-page" :class="{ 'agp-watch-page--embedded': isEmbedded, 'arena-watch--source': sourceOpen, 'arena-watch--stats': statsOpen }">
-    <header v-if="!isEmbedded" class="agp-task-header">
-      <div class="agp-task-header-main">
-        <RouterLink :to="backTarget" class="agp-back-link" :title="backLabel" :aria-label="backLabel"><AppIcon name="back" /></RouterLink>
-        <h1>{{ watchContext?.game_title || watchContext?.game_slug || 'Просмотр запуска' }}</h1>
-      </div>
-
-      <ReplayControls
-        v-if="!isLoading"
-        v-model:frame-index="replayFrameIndex"
-        v-model:delay="replaySpeedMs"
-        class="agp-task-header-player"
-        :frame-count="replayFrames.length"
-        :playing="replayIsPlaying"
-        :can-play="canPlayReplay"
-        :can-step-backward="canStepBackward"
-        :can-step-forward="canStepForward"
-        :seek-disabled="firstReplayLockActive"
-        :markers="watchMoments"
-        @toggle="toggleReplayPlay"
-        @step="stepReplay"
-      />
-      <div v-else class="agp-task-header-player arena-playback-loading" aria-hidden="true"><span></span></div>
-
-      <div class="agp-task-header-actions"><button class="btn btn-outline-secondary arena-mobile-stats" @click="statsOpen = !statsOpen">Игроки</button><button v-if="sourceParticipants.length" class="btn btn-outline-secondary" :aria-pressed="sourceOpen" @click="toggleSource">{{ sourceOpen ? 'К матчу' : 'Код' }}</button>
-        <div class="agp-run-status">
-          <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
-          <span class="small text-muted">Запуск</span>
-          <strong>{{ runStatusLabel }}</strong>
-        </div>
-        <button
-          v-if="canSeeTechnicalDetails"
-          class="agp-icon-button agp-icon-button--restart"
-          :disabled="!canRestartRenderer"
-          title="Перезапустить визуализацию"
-          aria-label="Перезапустить визуализацию"
-          @click="restartRenderer"
-        >
-          <AppIcon name="refresh" />
-        </button>
-      </div>
+  <section class="arena-match-review" :class="{ 'arena-match-review--embedded': isEmbedded, 'arena-match-review--source': sourceOpen, 'arena-match-review--fullscreen': fieldFullscreen }">
+    <header v-if="!isEmbedded" class="arena-match-bar">
+      <RouterLink :to="backTarget" class="agp-back-link" :aria-label="backLabel"><AppIcon name="back" /></RouterLink>
+      <h1 :title="watchContext?.game_title">{{ watchContext?.game_title || 'Разбор запуска' }}</h1>
+      <time v-if="run">{{ formatTime(run.created_at) }}</time>
+      <button class="btn btn-outline-secondary arena-match-mobile-players" @click="statsOpen = true">Игроки</button>
+      <button v-if="sourceParticipants.length" class="btn btn-outline-secondary" :aria-pressed="sourceOpen" @click="toggleSource">{{ sourceOpen ? 'Скрыть код' : 'Код' }}</button>
+      <ActionMenu v-if="canSeeTechnicalDetails" label="Действия с визуализацией" :items="[{ id: 'restart', label: 'Перезапустить визуализацию', disabled: !canRestartRenderer }]" @select="restartRenderer" />
     </header>
-
-    <LoadingSkeleton v-if="isLoading" :count="isEmbedded ? 1 : 2" layout="workspace" :style="{ '--agp-skeleton-workspace-columns': isEmbedded ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(18rem, 23rem)' }" label="Загрузка матча…" />
-    <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
-
-    <template v-else-if="watchContext && run">
-      <div class="agp-main-columns agp-watch-columns">
-        <article v-if="sourceOpen" class="agp-card arena-watch-source"><header><select v-if="sourceParticipants.length > 1" :value="sourceRunId" aria-label="Код участника" @change="loadSource(($event.target as HTMLSelectElement).value)"><option v-for="p in sourceParticipants" :key="p.run_id" :value="p.run_id">{{ p.display_name }}</option></select><strong v-else>{{ sourceParticipants[0]?.display_name }}</strong><span>{{ formatTime(sourceCapturedAt) }}</span><RouterLink v-if="sourceParticipants.find(p => p.run_id === sourceRunId)?.captain_user_id === sessionStore.nickname" class="agp-panel-toggle" :to="{ name: 'player-code', params: { teamId: sourceParticipants.find(p => p.run_id === sourceRunId)?.team_id }, query: { from_run: sourceRunId, slot: sourceSlot, back: backTarget } }">В черновик</RouterLink><select v-if="Object.keys(sourceCodes).length > 1" v-model="sourceSlot" aria-label="Файл"><option v-for="slot in Object.keys(sourceCodes)" :key="slot">{{ slot }}</option></select></header><p v-if="sourceError" role="alert" class="text-danger p-3">{{ sourceError }}</p><CodeEditor v-else :model-value="sourceCodes[sourceSlot] || ''" readonly :focus-line="sourceLine" /></article>
-        <article class="agp-card p-3 agp-viewer-card">
-          <div class="agp-viewer-overlay agp-viewer-overlay--status">
-            <span class="agp-run-state-badge" :class="`agp-run-state-badge--${runStatusTone}`"></span>
-            {{ runStatusLabel }}
-          </div>
-          <div v-if="!rendererReady && safeRendererUrl" class="agp-viewer-overlay agp-viewer-overlay--message agp-watch-renderer-state">
-            <SnakeLoader label="Загрузка визуализации" />
-          </div>
-          <div v-if="showWinnerBanner" class="agp-watch-winner-banner">
-            <span>Победитель</span>
-            <strong>{{ finalWinnerLabel }}</strong>
-          </div>
-          <div v-else-if="firstReplayLockActive && isEmbedded" class="agp-watch-replay-lock">
-            <strong>Идет первый показ</strong>
-            <span>Перемотка откроется после реплея.</span>
-          </div>
-          <div v-if="safeRendererUrl" class="agp-viewer-frame">
-            <iframe
-              ref="rendererFrameRef"
-              :key="rendererKey"
-              :src="safeRendererUrl"
-              title="Визуализация игры"
-              sandbox="allow-scripts"
-              @load="onRendererLoad"
-            ></iframe>
-          </div>
-          <div v-else class="agp-card-soft p-3 text-muted small">
-            Для этой игры визуализация не настроена.
-          </div>
-          <BotConsole initially-collapsed v-if="showBotConsole" :position="replayFrames.length ? `${replayFrameIndex + 1} / ${replayFrames.length}` : ''">
-              <div v-if="currentConsoleLines.length === 0" class="agp-bot-console-empty">
-                print появится здесь
-              </div>
-              <div v-for="line in currentConsoleLines" :key="line.id" class="agp-bot-console-line">
-                <span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span>
-                <span class="mono agp-bot-console-message">{{ line.message }}</span>
-              </div>
-          </BotConsole>
-        </article>
-
-        <aside v-if="!isEmbedded" class="agp-card p-3 agp-watch-side-card">
-          <header class="agp-match-panel-head"><button class="btn btn-sm btn-outline-secondary arena-mobile-stats" aria-label="Закрыть участников" @click="statsOpen = false">×</button>
-            <div>
-              <h2 class="h6 mb-1">Статистика матча</h2>
-              <span>{{ replayFrames.length ? `кадр ${replayFrameIndex + 1}/${replayFrames.length}` : runStatusLabel }}</span>
-            </div>
-            <span class="agp-run-pill" :class="`agp-run-pill--${runStatusTone}`">{{ runStatusLabel }}</span>
-          </header>
-
-          <div v-if="showWinnerBanner" class="agp-watch-side-winner">
-            <span>Победитель</span>
-            <strong>{{ finalWinnerLabel }}</strong>
-          </div>
-          <div v-else-if="firstReplayLockActive" class="agp-watch-side-lock">
-            Первый показ идет синхронно. Перемотка временно закрыта.
-          </div>
-
-          <div v-if="matchPlayerStats.length" class="agp-match-scoreboard">
-            <article
-              v-for="player in matchPlayerStats"
-              :key="player.id"
-              class="agp-match-player"
-              :class="{ 'agp-match-player--self': player.isSelf, 'agp-match-player--out': !player.alive }"
-            >
-              <div class="agp-match-player-rank">{{ player.placeLabel }}</div>
-              <div class="agp-match-player-main">
-                <strong>{{ player.name }}</strong>
-                <span v-if="player.detailLabel">{{ player.detailLabel }}</span>
-                <div class="agp-match-bars">
-                  <span v-if="player.life !== null" title="Здоровье">
-                    <i :style="{ width: `${player.lifePercent}%` }"></i>
-                  </span>
-                  <span v-if="player.shield !== null" title="Щит">
-                    <i :style="{ width: `${player.shieldPercent}%` }"></i>
-                  </span>
-                </div>
-              </div>
-              <div class="agp-match-player-score">
-                <strong>{{ player.scoreLabel }}</strong>
-                <span>{{ player.alive ? 'в игре' : 'выбыл' }}</span>
-              </div>
-            </article>
-          </div>
-          <div v-else class="agp-match-empty">
-            Статистика появится вместе с кадрами матча.
-          </div>
-
-          <section class="agp-match-mini-stats" aria-label="Показатели матча">
-            <div>
-              <span>Лидер</span>
-              <strong>{{ matchLeaderLabel }}</strong>
-            </div>
-            <div>
-              <span>Ходов</span>
-              <strong>{{ replayFrameTick }}</strong>
-            </div>
-            <div>
-              <span>Игроков</span>
-              <strong>{{ matchPlayerStats.length || '—' }}</strong>
-            </div>
-          </section>
-
-          <ReplayInsights @pause="stopReplayPlayback()" :frames="replay?.frames ?? []" :events="replay?.events ?? []" :frame-index="replayFrameIndex" :locked="firstReplayLockActive" :actor-names="eventActorNames" @seek="seekMoment" @line="openRunLine" />
-          <details v-if="canSeeTechnicalDetails" class="agp-tech-details mt-3">
-            <summary class="agp-details-summary">Технические детали</summary>
-            <div class="agp-watch-stat mt-2">
-              <span class="text-muted small">Визуализация</span>
-              <strong>{{ rendererStatusLabel }}</strong>
-            </div>
-            <div class="agp-watch-stat">
-              <span class="text-muted small">Тип</span>
-              <strong>{{ runKindLabel }}</strong>
-            </div>
-            <div class="agp-watch-stat">
-              <span class="text-muted small">Обновления</span>
-              <strong class="mono">{{ liveMode }}</strong>
-            </div>
-            <div v-if="run.error_message" class="mt-3">
-              <RunReasonBadge :reason="run.error_message" :show-raw="false" />
-            </div>
-          </details>
-
-          <div class="agp-replay-foot">
-            <div v-if="isReplayLoading" class="text-muted small">Загрузка повтора...</div>
-            <div v-else-if="replayError" class="text-danger small">{{ replayError }}</div>
-            <div v-else-if="!replay" class="text-muted small">Повтор появится после завершения запуска.</div>
-            <div v-else class="agp-watch-replay-summary">
-              <span class="text-muted small">Кадр</span>
-              <strong class="mono">{{ replayFrameIndex + 1 }}/{{ replayFrames.length }}</strong>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </template>
+    <LoadingSkeleton v-if="isLoading" :count="isEmbedded ? 1 : 2" layout="workspace" :style="{ '--agp-skeleton-workspace-columns': isEmbedded ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(18rem, 20rem)' }" label="Загрузка матча…" />
+    <article v-else-if="errorMessage" class="agp-card p-4 text-danger" role="alert">{{ errorMessage }}</article>
+    <div v-else-if="watchContext && run" class="arena-match-columns">
+      <article v-if="sourceOpen && !isEmbedded" class="agp-card arena-match-source">
+        <header class="arena-match-pane-head arena-match-source-head">
+          <select v-if="sourceParticipants.length > 1" :value="sourceRunId" class="form-select form-select-sm" aria-label="Код участника" @change="loadSource(($event.target as HTMLSelectElement).value)"><option v-for="p in sourceParticipants" :key="p.run_id" :value="p.run_id">{{ p.display_name }}</option></select>
+          <strong v-else>{{ sourceParticipants[0]?.display_name }}</strong>
+          <span class="arena-match-code-time">Код {{ formatTime(sourceCapturedAt) }} · только чтение</span>
+        </header>
+        <div v-if="Object.keys(sourceCodes).length > 1" class="arena-match-files"><label for="review-source-slot">Файл</label><select id="review-source-slot" v-model="sourceSlot" class="form-select form-select-sm"><option v-for="slot in Object.keys(sourceCodes)" :key="slot">{{ slot }}</option></select></div>
+        <p v-if="sourceError" role="alert" class="text-danger p-3">{{ sourceError }}</p>
+        <CodeEditor v-else :model-value="sourceCodes[sourceSlot] || ''" readonly :focus-line="sourceLine" />
+        <footer v-if="sourceParticipants.find(p => p.run_id === sourceRunId)?.captain_user_id === sessionStore.nickname" class="arena-match-source-foot"><RouterLink class="btn btn-primary" :to="{ name: 'player-code', params: { teamId: sourceParticipants.find(p => p.run_id === sourceRunId)?.team_id }, query: { from_run: sourceRunId, slot: sourceSlot, back: route.fullPath } }">Взять код в работу</RouterLink></footer>
+      </article>
+      <article class="agp-card arena-match-field">
+        <header v-if="!isEmbedded" class="arena-match-pane-head">
+          <strong :class="{ 'text-danger': runStatusTone === 'danger' }">{{ showWinnerBanner ? finalOutcomeLabel : runStatusLabel }}</strong>
+          <button class="agp-panel-toggle" @click="fieldFullscreen = !fieldFullscreen">{{ fieldFullscreen ? 'Вернуть панели' : 'На весь экран' }}</button>
+        </header>
+        <div class="arena-match-view">
+          <div v-if="!rendererReady && safeRendererUrl" class="arena-match-loading"><SnakeLoader label="Загрузка визуализации" /></div>
+          <div v-if="firstReplayLockActive && isEmbedded" class="arena-match-lock">Первый показ</div>
+          <iframe v-if="safeRendererUrl" ref="rendererFrameRef" :key="rendererKey" :src="safeRendererUrl" title="Визуализация игры" sandbox="allow-scripts" @load="onRendererLoad"></iframe>
+          <p v-else class="text-muted m-3">Для этой игры визуализация не настроена.</p>
+        </div>
+        <ReplayControls v-if="!isEmbedded" v-model:frame-index="replayFrameIndex" v-model:delay="replaySpeedMs" class="arena-match-playback" :frame-count="replayFrames.length" :playing="replayIsPlaying" :can-play="canPlayReplay" :can-step-backward="canStepBackward" :can-step-forward="canStepForward" :seek-disabled="firstReplayLockActive" :markers="watchMoments" @toggle="toggleReplayPlay" @step="stepReplay" />
+        <p v-if="replayError && !isEmbedded" class="text-danger small m-2" role="alert">{{ replayError }}</p>
+        <details v-if="!isEmbedded && replayFrames.length" class="arena-match-insights"><summary>Разбор хода</summary><ReplayInsights @pause="stopReplayPlayback()" :frames="replay?.frames ?? []" :events="replay?.events ?? []" :frame-index="replayFrameIndex" :locked="firstReplayLockActive" :actor-names="eventActorNames" @seek="seekMoment" @line="openRunLine" /></details>
+        <BotConsole v-if="showBotConsole" initially-collapsed label="Консоль и события">
+          <div v-if="!currentConsoleLines.length" class="agp-bot-console-empty">Вывод отсутствует</div>
+          <div v-for="line in currentConsoleLines" :key="line.id" class="agp-bot-console-line"><span v-if="line.role" class="agp-bot-console-role">{{ line.role }}</span><span class="mono agp-bot-console-message">{{ line.message }}</span></div>
+        </BotConsole>
+      </article>
+      <aside v-if="!isEmbedded && !sourceOpen" class="agp-card arena-match-standings">
+        <h2>{{ showWinnerBanner ? 'Результаты' : 'Участники' }} · {{ matchPlayerStats.length }}</h2>
+        <LiveMatchScoreboard :players="reviewPlayers" />
+        <details v-if="canSeeTechnicalDetails" class="arena-match-technical"><summary>Технические детали</summary><dl><dt>Визуализация</dt><dd>{{ rendererStatusLabel }}</dd><dt>Тип</dt><dd>{{ runKindLabel }}</dd><dt>Обновления</dt><dd>{{ liveMode }}</dd></dl><RunReasonBadge v-if="run.error_message" :reason="run.error_message" :show-raw="false" /></details>
+      </aside>
+    </div>
+    <Teleport to="body"><div v-if="statsOpen" class="arena-modal-backdrop" @click.self="statsOpen = false"><section class="agp-card arena-match-dialog" role="dialog" aria-modal="true" aria-label="Участники матча" v-dialog-focus="() => statsOpen = false"><header><h2>Участники матча</h2><button class="btn btn-outline-secondary" aria-label="Закрыть участников" @click="statsOpen = false"><AppIcon name="close" /></button></header><LiveMatchScoreboard :players="reviewPlayers" /></section></div></Teleport>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import CodeEditor from '../components/CodeEditor.vue';
+import ActionMenu from '../components/ActionMenu.vue';
+import LiveMatchScoreboard from '../components/LiveMatchScoreboard.vue';
+import { replayParticipant } from '../lib/replayParticipant';
 import { formatTime } from '../lib/attemptPresentation';
 import AppIcon from '../components/AppIcon.vue';
 import BotConsole from '../components/BotConsole.vue';
@@ -291,6 +160,13 @@ const replay = ref<ReplayDto | null>(null);
 const replayError = ref('');
 const sourceOpen = ref(false);
 const statsOpen = ref(false);
+const fieldFullscreen = ref(false);
+const reviewPlayers = computed(() => matchPlayerStats.value.map(player => ({
+  team_id: player.id, display_name: player.name, score: player.scoreLabel, isSelf: player.isSelf,
+  status: player.alive ? (isReplayAtLastFrame.value ? 'финиш' : 'в игре') : 'выбыл',
+  place: player.placeLabel,
+  meta: [player.life === null ? '' : 'Здоровье ' + player.life, player.shield === null ? '' : 'Щит ' + player.shield].filter(Boolean).join(' · '),
+})));
 const sourceCodes = ref<Record<string, string>>({});
 const sourceSlot = ref('');
 const sourceRunId = ref('');
@@ -442,9 +318,9 @@ const matchPlayerStats = computed<MatchPlayerStat[]>(() => {
   collectFramePlayers(players, frame);
   if (players.size === 0 && isReplayAtLastFrame.value) {
     collectSummaryPlayers(players);
-  } else {
-    mergeSummaryPlacements(players);
   }
+  collectContextPlayers(players);
+  mergeSummaryPlacements(players);
   const sorted = [...players.values()].sort((left, right) => {
     const leftPlace = left.place ?? Number.POSITIVE_INFINITY;
     const rightPlace = right.place ?? Number.POSITIVE_INFINITY;
@@ -454,10 +330,32 @@ const matchPlayerStats = computed<MatchPlayerStat[]>(() => {
   let place = 1;
   return sorted.map((player, index) => {
     if (index > 0 && player.score !== sorted[index - 1].score) place = index + 1;
-    return { ...player, place: player.place ?? place, placeLabel: String(player.place ?? place) };
+    const rank = player.place ?? (player.score === null ? null : place);
+    return { ...player, place: rank, placeLabel: rank === null ? '—' : String(rank) };
   });
 });
 const matchLeaderLabel = computed(() => matchPlayerStats.value[0]?.name ?? '—');
+function collectContextPlayers(players: Map<string, MatchPlayerStat>): void {
+  const participants = watchContext.value?.participants ?? [];
+  if (!participants.length) return;
+  const canonical = new Map<string, MatchPlayerStat>();
+  for (const player of players.values()) {
+    const participant = replayParticipant(player, participants);
+    if (!participant) continue;
+    const previous = canonical.get(participant.team_id);
+    canonical.set(participant.team_id, buildPlayerStat({
+      id: participant.team_id, teamId: participant.team_id, name: participant.display_name,
+      score: player.score ?? previous?.score ?? null, life: player.life ?? previous?.life ?? null,
+      shield: player.shield ?? previous?.shield ?? null, alive: player.alive, place: player.place,
+    }));
+  }
+  players.clear();
+  for (const [id, player] of canonical) players.set(id, player);
+  for (const participant of participants) {
+    if (players.has(participant.team_id)) continue;
+    players.set(participant.team_id, buildPlayerStat({ id: participant.team_id, teamId: participant.team_id, name: participant.display_name, score: null, life: null, shield: null, alive: true, place: null }));
+  }
+}
 const botConsoleLines = computed<BotConsoleLine[]>(() => {
   const lines: BotConsoleLine[] = [];
   const replayEvents = replay.value?.events ?? [];
@@ -538,17 +436,16 @@ const isReplayAtLastFrame = computed(
   () => replayFrames.value.length === 0 || replayFrameIndex.value >= replayFrames.value.length - 1,
 );
 const showWinnerBanner = computed(() => replayFrames.value.length > 0 && isReplayAtLastFrame.value && !firstReplayLockActive.value);
-const finalWinnerLabel = computed(() => {
-  const explicitWinner = primaryReplayWinnerTeamId(explicitReplayWinnerTeamIds());
-  if (explicitWinner) return playerDisplayName(explicitWinner, compactTeamLabel(explicitWinner));
+const finalOutcomeLabel = computed(() => {
+  const metrics = replay.value?.summary?.metrics ?? run.value?.result_payload?.metrics;
+  if (isRecord(metrics) && metrics.draw === true) return 'Ничья';
+  const explicitWinners = explicitReplayWinnerTeamIds();
+  if (explicitWinners.length > 1) return 'Совместное 1-е место · ' + explicitWinners.length;
+  if (explicitWinners.length === 1) return 'Победитель: ' + playerDisplayName(explicitWinners[0], compactTeamLabel(explicitWinners[0]));
   const placedWinners = matchPlayerStats.value.filter((player) => player.place === 1);
-  if (placedWinners.length === 1) return placedWinners[0].name;
-  if (placedWinners.length > 1) {
-    const bestScore = Math.max(...placedWinners.map((player) => player.score ?? Number.NEGATIVE_INFINITY));
-    const scoredWinner = placedWinners.find((player) => (player.score ?? Number.NEGATIVE_INFINITY) === bestScore);
-    if (scoredWinner) return scoredWinner.name;
-  }
-  return matchLeaderLabel.value;
+  if (placedWinners.length === 1) return 'Победитель: ' + placedWinners[0].name;
+  if (placedWinners.length > 1) return 'Совместное 1-е место · ' + placedWinners.length;
+  return 'Матч завершён';
 });
 
 function isTerminalStatus(status: RunDto['status']): boolean {
@@ -1230,6 +1127,8 @@ function embeddedPlayerStatsForFrame(frame: unknown): MatchPlayerStat[] {
   if (players.size === 0 && isReplayAtLastFrame.value) {
     collectSummaryPlayers(players);
   }
+  collectContextPlayers(players);
+  mergeSummaryPlacements(players);
   return [...players.values()].sort((left, right) => {
     const rightScore = right.score ?? Number.NEGATIVE_INFINITY;
     const leftScore = left.score ?? Number.NEGATIVE_INFINITY;
@@ -1357,7 +1256,7 @@ function onRendererMessage(event: MessageEvent): void {
   if (!type.startsWith('agp.renderer.')) {
     return;
   }
-  if (type === 'agp.renderer.shortcut' && ['Space', 'ArrowLeft', 'ArrowRight'].includes(data.payload?.code)) {
+  if (type === 'agp.renderer.shortcut' && ['Space', 'ArrowLeft', 'ArrowRight', 'Escape'].includes(data.payload?.code)) {
     handlePlaybackKeydown(new KeyboardEvent('keydown', { key: String(data.payload.key), code: data.payload.code }));
     return;
   }
@@ -1606,6 +1505,7 @@ watch(replaySpeedMs, (delay) => {
 });
 
 function handlePlaybackKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') { fieldFullscreen.value = false; statsOpen.value = false; return; }
   if (isEmbedded.value || event.ctrlKey || event.metaKey || event.altKey || isShortcutInput(event.target)) return;
   if (event.code === 'Space') {
     event.preventDefault();
@@ -1633,600 +1533,51 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-
-
-.arena-playback-loading { min-height: 44px; display: flex; align-items: center; }
-.arena-playback-loading > span { display: block; width: min(100%, 320px); height: 12px; border-radius: 4px; background: var(--agp-surface-soft); }
-.agp-watch-columns {
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
-  gap: 0;
+.arena-match-review { display: flex; flex-direction: column; height: calc(100dvh - 24px); min-height: 0; gap: 8px; }
+.arena-match-bar { display: flex; align-items: center; flex: none; min-width: 0; min-height: 44px; gap: 8px; }
+.arena-match-bar h1 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arena-match-bar time { margin-left: auto; font-size: 11px; color: var(--agp-text-muted); white-space: nowrap; }
+.arena-match-columns { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 8px; flex: 1; min-height: 0; }
+.arena-match-review--source .arena-match-columns { grid-template-columns: minmax(0,52fr) minmax(0,48fr); }
+.arena-match-source, .arena-match-field { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.arena-match-pane-head { display: flex; align-items: center; flex: none; gap: 8px; min-height: 44px; padding: 6px 12px; border-bottom: 1px solid var(--agp-border); font-size: 12px; }
+.arena-match-pane-head > .agp-panel-toggle { margin-left: auto; }
+.arena-match-source-head .form-select { width: auto; max-width: 50%; }
+.arena-match-code-time { color: var(--agp-text-muted); font-size: 11px; margin-left: auto; text-align: right; }
+.arena-match-source > .agp-code-editor { flex: 1; min-height: 0; overflow: hidden; }
+.arena-match-source :deep(.cm-editor) { height: 100%; min-height: 0 !important; border: 0 !important; border-radius: 0 !important; }
+.arena-match-files { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--agp-border); font-size: 12px; }
+.arena-match-files select { width: auto; }
+.arena-match-source-foot { padding: 8px 12px; border-top: 1px solid var(--agp-border); }
+.arena-match-view { position: relative; flex: 1; min-height: 0; background: var(--agp-surface-soft); }
+.arena-match-view > iframe { display: block; width: 100%; height: 100%; border: 0; }
+.arena-match-loading { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; background: var(--agp-surface); }
+.arena-match-lock { position: absolute; top: 8px; right: 8px; z-index: 2; padding: 4px 8px; border-radius: 6px; color: var(--agp-text-muted); background: var(--agp-surface); font-size: 11px; }
+.arena-match-playback { flex: none; padding: 6px 8px; border-top: 1px solid var(--agp-border); }
+.arena-match-insights { flex: none; max-height: 40%; overflow: auto; border-top: 1px solid var(--agp-border); font-size: 12px; }
+.arena-match-insights > summary { padding: 8px 12px; color: var(--agp-text-muted); cursor: pointer; }
+.arena-match-standings { min-height: 0; overflow: auto; padding: 16px; }
+.arena-match-standings h2, .arena-match-dialog h2 { font-size: 16px; line-height: 24px; margin: 0 0 12px; }
+.arena-match-technical { font-size: 12px; margin-top: 16px; color: var(--agp-text-muted); }
+.arena-match-technical dl { display: grid; grid-template-columns: auto 1fr; gap: 8px; margin: 12px 0 0; }
+.arena-match-technical dd { margin: 0; text-align: right; color: var(--agp-text); }
+.arena-match-mobile-players { display: none; }
+.arena-match-review--embedded { height: 100dvh; gap: 0; }
+.arena-match-review--embedded .arena-match-columns { grid-template-columns: minmax(0,1fr); gap: 0; }
+.arena-match-review--embedded .arena-match-field { border: 0; border-radius: 0; }
+.arena-match-review--fullscreen .arena-match-field { position: fixed; inset: 8px; z-index: 150; }
+.arena-match-dialog { width: min(100%, 560px); max-height: 80dvh; overflow: auto; padding: 16px; }
+.arena-modal-backdrop { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px; background: #10182766; }
+.arena-match-dialog > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.arena-match-dialog h2 { margin: 0; }
+@media(max-width:900px) {
+  .arena-match-review:not(.arena-match-review--embedded) { height: calc(100dvh - 16px); }
+  .arena-match-bar { flex-wrap: wrap; }
+  .arena-match-bar h1 { flex: 1; }
+  .arena-match-bar time { order: 3; width: 100%; margin: 0; }
+  .arena-match-mobile-players { display: inline-flex; }
+  .arena-match-columns, .arena-match-review--source .arena-match-columns { grid-template-columns: minmax(0,1fr); }
+  .arena-match-standings, .arena-match-review--source .arena-match-field { display: none; }
+  .arena-match-review--fullscreen .arena-match-field { display: flex; }
 }
-
-.agp-watch-page--embedded {
-  height: 100dvh;
-  background: var(--agp-surface-soft);
-}
-
-.agp-watch-page {
-  min-height: 100dvh;
-  background-color: var(--agp-bg);
-  background-image: none;
-  background-size: 180px 180px, auto, auto, auto;
-  color: var(--agp-text);
-}
-
-.agp-watch-page .agp-task-header {
-  background: var(--agp-surface);
-}
-
-.agp-watch-page--embedded .agp-watch-columns {
-  height: 100dvh;
-  grid-template-columns: 1fr;
-}
-
-.agp-watch-page--embedded .agp-viewer-card {
-  border: 0;
-  border-radius: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0;
-  padding: 0 !important;
-  background: var(--agp-surface-soft);
-  box-shadow: none;
-}
-
-.agp-watch-page--embedded .agp-viewer-card .agp-viewer-frame {
-  height: 100% !important;
-  min-height: 0;
-}
-
-.agp-watch-page .agp-viewer-card .agp-viewer-frame {
-  height: 100%;
-  min-height: 0;
-}
-
-.agp-watch-page .agp-viewer-card {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(34, 211, 238, 0.24);
-  border-radius: 0;
-  background: var(--agp-surface-soft);
-  box-shadow: none;
-  padding: 0 !important;
-}
-
-.agp-watch-page .agp-viewer-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border: 1px solid rgba(34, 211, 238, 0.26);
-  pointer-events: none;
-}
-
-.agp-watch-page .agp-viewer-card::after {
-  content: none;
-}
-
-.agp-watch-renderer-state {
-  inset: 0;
-  display: grid;
-  place-items: center;
-  max-width: none;
-  border: 0;
-  border-radius: 0;
-  background: var(--agp-surface);
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.agp-watch-winner-banner,
-.agp-watch-replay-lock {
-  position: absolute;
-  z-index: 5;
-  left: 50%;
-  bottom: 1rem;
-  width: min(34rem, calc(100% - 2rem));
-  transform: translateX(-50%);
-  border: 1px solid rgba(250, 204, 21, 0.36);
-  border-radius: 0.75rem;
-  background: var(--agp-surface);
-  color: var(--agp-text);
-  padding: 0.8rem 1rem;
-  text-align: center;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(10px);
-}
-
-.agp-watch-winner-banner span,
-.agp-watch-replay-lock span {
-  display: block;
-  color: var(--agp-success);
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.agp-watch-winner-banner strong,
-.agp-watch-replay-lock strong {
-  display: block;
-  color: var(--agp-warning);
-  font-size: clamp(1.3rem, 2vw, 2rem);
-  line-height: 1.1;
-}
-
-.agp-watch-replay-lock {
-  border-color: var(--agp-border);
-}
-
-.agp-watch-replay-lock strong {
-  color: var(--agp-text);
-}
-
-.agp-watch-side-card {
-  position: sticky;
-  top: 0;
-  align-self: stretch;
-  overflow: hidden;
-  border-width: 0 0 0 1px;
-  border-color: var(--agp-border);
-  border-radius: 0;
-  background: var(--agp-surface);
-  color: var(--agp-text);
-  max-height: 100%;
-  overflow-y: auto;
-  box-shadow: none;
-}
-
-.agp-watch-side-card h2,
-.agp-watch-side-card h3,
-.agp-watch-side-card strong,
-.agp-watch-side-card summary {
-  color: var(--agp-text);
-}
-
-.agp-watch-side-card .text-muted {
-  color: var(--agp-text-muted) !important;
-}
-
-.agp-watch-side-card hr {
-  border-color: var(--agp-border);
-  opacity: 1;
-}
-
-.agp-watch-side-winner,
-.agp-watch-side-lock {
-  border: 1px solid rgba(250, 204, 21, 0.28);
-  border-radius: 0.75rem;
-  background: var(--agp-surface);
-  margin: 0.75rem 0;
-  padding: 0.75rem;
-}
-
-.agp-watch-side-winner span {
-  display: block;
-  color: var(--agp-success);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.agp-watch-side-winner strong {
-  display: block;
-  color: var(--agp-warning);
-  font-size: 1.25rem;
-}
-
-.agp-watch-side-lock {
-  border-color: var(--agp-border);
-  color: var(--agp-text-muted);
-  font-size: 0.86rem;
-}
-
-.agp-watch-side-card .btn-outline-secondary {
-  border-color: var(--agp-border);
-  color: var(--agp-text);
-  background: var(--agp-surface);
-}
-
-.agp-watch-side-card .btn-outline-secondary:hover:not(:disabled) {
-  border-color: var(--agp-border);
-  background: var(--agp-primary-soft);
-  color: var(--agp-text);
-}
-
-.agp-watch-side-card .form-select,
-.agp-watch-side-card .form-range {
-  color-scheme: dark;
-}
-
-.agp-watch-side-card .form-select {
-  border-color: var(--agp-border);
-  background-color: var(--agp-surface-soft);
-  color: var(--agp-text);
-}
-
-.agp-watch-side-card .agp-card-soft {
-  border-color: var(--agp-border);
-  background: var(--agp-surface);
-  color: var(--agp-text);
-}
-
-.agp-watch-side-card .table {
-  --bs-table-bg: transparent;
-  --bs-table-color: var(--agp-text);
-  --bs-table-border-color: rgba(148, 163, 184, 0.22);
-  margin-bottom: 0;
-}
-
-.agp-watch-side-card .table th {
-  color: var(--agp-text-muted);
-  font-weight: 700;
-}
-
-.agp-watch-side-card pre {
-  max-height: 18rem;
-  overflow: auto;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 0.35rem;
-  background: var(--agp-surface-soft);
-  color: var(--agp-text);
-  padding: 0.65rem;
-}
-
-.agp-watch-side-card .list-group-item {
-  border-color: var(--agp-border);
-  background: transparent;
-  color: var(--agp-text);
-}
-
-.agp-watch-stat {
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.55rem 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-}
-
-.agp-match-panel-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.agp-match-panel-head h2::before {
-  content: none;
-}
-
-.agp-match-panel-head span {
-  color: var(--agp-text-muted);
-  font-size: 0.78rem;
-}
-
-.agp-run-pill {
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 999px;
-  padding: 0.25rem 0.55rem;
-  color: var(--agp-text);
-  font-size: 0.76rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.agp-run-pill--active {
-  border-color: var(--agp-border);
-  background: var(--arena-warning-soft);
-  color: var(--agp-warning);
-}
-
-.agp-run-pill--success {
-  border-color: var(--agp-border);
-  background: var(--agp-primary-soft);
-  color: var(--agp-success);
-}
-
-.agp-run-pill--danger {
-  border-color: var(--agp-border);
-  background: var(--arena-error-soft);
-  color: var(--agp-danger);
-}
-
-.agp-match-scoreboard {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.agp-match-player {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(3.25rem, auto);
-  gap: 0.6rem;
-  align-items: center;
-  border: 1px solid rgba(34, 211, 238, 0.18);
-  border-radius: 8px;
-  background: var(--agp-surface);
-  padding: 0.6rem 0.55rem 0.6rem 0.7rem;
-}
-
-.agp-match-player::before {
-  content: none;
-}
-
-.agp-match-player--self {
-  border-color: var(--agp-border);
-  background: var(--agp-surface);
-}
-
-.agp-match-player--out {
-  opacity: 0.62;
-}
-
-.agp-match-player-rank {
-  width: 1.85rem;
-  height: 1.85rem;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--agp-surface);
-  color: var(--agp-primary);
-  font-weight: 700;
-  box-shadow: 0 0 18px rgba(34, 211, 238, 0.16);
-}
-
-.agp-match-player-main,
-.agp-match-player-score {
-  display: grid;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.agp-match-player-main strong {
-  overflow: hidden;
-  color: var(--agp-text);
-  font-size: 0.95rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agp-match-player-main span,
-.agp-match-player-score span {
-  color: var(--agp-text-muted);
-  font-size: 0.74rem;
-}
-
-.agp-match-player-score {
-  justify-items: end;
-  text-align: right;
-}
-
-.agp-match-player-score strong {
-  min-width: 2.8rem;
-  border: 1px solid rgba(125, 211, 252, 0.22);
-  border-radius: 999px;
-  background: var(--agp-surface);
-  padding: 0.16rem 0.5rem;
-  color: var(--agp-text);
-  font-size: 0.95rem;
-  text-align: center;
-}
-
-.agp-match-bars {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.25rem;
-  margin-top: 0.15rem;
-}
-
-.agp-match-bars span {
-  height: 0.3rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--agp-border);
-}
-
-.agp-match-bars i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-}
-
-.agp-match-bars span:first-child i {
-  background: #22c55e;
-}
-
-.agp-match-bars span:last-child i {
-  background: #38bdf8;
-}
-
-.agp-match-mini-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.4rem;
-  margin-top: 0.75rem;
-}
-
-.agp-match-mini-stats div,
-.agp-match-empty {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 8px;
-  background: var(--agp-surface);
-  padding: 0.55rem;
-}
-
-.agp-match-mini-stats span {
-  display: block;
-  color: var(--agp-text-muted);
-  font-size: 0.72rem;
-}
-
-.agp-match-empty {
-  color: var(--agp-text-muted);
-  font-size: 0.86rem;
-}
-
-.agp-tech-details {
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
-  padding-top: 0.65rem;
-}
-
-.agp-replay-foot {
-  margin-top: 0.75rem;
-}
-
-.agp-watch-stat strong {
-  font-size: 0.95rem;
-}
-
-.agp-watch-replay-summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 0.45rem;
-  background: var(--agp-surface);
-  padding: 0.55rem 0.65rem;
-}
-
-.agp-watch-move-log {
-  display: grid;
-  gap: 0.45rem;
-  max-height: 20rem;
-  overflow: auto;
-  padding-right: 0.2rem;
-}
-
-.agp-watch-move-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.1rem 0.55rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.45rem;
-  background: var(--agp-surface);
-  padding: 0.5rem 0.6rem;
-}
-
-.agp-watch-move-row > .mono {
-  color: var(--agp-text-muted);
-}
-
-.agp-watch-move-row strong,
-.agp-watch-move-row > .text-muted {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agp-watch-move-action {
-  grid-column: 2;
-  color: var(--agp-text);
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.agp-watch-move-row small {
-  grid-column: 2;
-  color: var(--agp-text-muted);
-  overflow-wrap: anywhere;
-}
-
-.agp-watch-move-row--move {
-  border-color: var(--agp-border);
-}
-
-.agp-watch-move-row--event {
-  border-color: var(--agp-border);
-}
-
-.agp-watch-move-row--error {
-  border-color: var(--agp-border);
-  background: var(--arena-error-soft);
-}
-
-.agp-bot-console {
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  background: var(--agp-surface);
-  color: var(--agp-text);
-}
-
-.agp-bot-console-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-  background: var(--agp-surface);
-  font-size: 0.78rem;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.agp-bot-console-body {
-  max-height: 9.5rem;
-  overflow: auto;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.82rem;
-}
-
-.agp-bot-console-empty {
-  color: var(--agp-text-muted);
-  font-style: italic;
-}
-
-.agp-bot-console-line {
-  display: flex;
-  gap: 0.5rem;
-  align-items: baseline;
-  min-height: 1.35rem;
-}
-
-.agp-bot-console-role {
-  max-width: 8rem;
-  overflow: hidden;
-  padding: 0.08rem 0.35rem;
-  border: 1px solid rgba(45, 212, 191, 0.36);
-  border-radius: 999px;
-  color: var(--agp-success);
-  font-size: 0.72rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agp-bot-console-message {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--agp-text);
-}
-
-
-
-
-@media (max-width: 992px) {
-  .agp-watch-page:not(.agp-watch-page--embedded) { height: auto; overflow: visible; }
-  .agp-watch-page:not(.agp-watch-page--embedded) .agp-watch-columns { display: flex; flex-direction: column; overflow: visible; }
-  .agp-watch-page:not(.agp-watch-page--embedded) .agp-viewer-card { height: calc(100dvh - 10rem); min-height: 26rem; }
-  .agp-watch-side-card { position: static; max-height: none; border-width: 1px 0 0; }
-  .agp-watch-page .agp-task-header-player { display: flex; }
-  .agp-match-mini-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 560px) {
-  .agp-match-mini-stats { grid-template-columns: 1fr; }
-}
-
-
-.arena-watch--source .agp-watch-columns{grid-template-columns:minmax(0,52fr) minmax(0,48fr);gap:8px}.arena-watch--source .agp-watch-side-card{display:none}.arena-watch-source{display:flex;flex-direction:column;min-height:0;overflow:hidden}.arena-watch-source>header{display:flex;align-items:center;gap:8px;min-height:44px;padding:6px 12px;border-bottom:1px solid var(--agp-border);font-size:12px}.arena-watch-source>header span{color:var(--agp-text-muted);margin-left:auto}.arena-watch-source select{background:var(--agp-surface);color:var(--agp-text);border:1px solid var(--agp-border);border-radius:6px;max-width:55%;padding:4px}.arena-watch-source>.agp-code-editor{flex:1;min-height:0;overflow:hidden}.arena-watch-source :deep(.cm-editor){height:100%;min-height:0!important;border:0!important;border-radius:0!important}.agp-watch-page .agp-viewer-card{background:var(--agp-surface);border-color:var(--agp-border)}
-@media(max-width:900px){.arena-watch--source .agp-watch-columns{grid-template-columns:minmax(0,1fr)}.arena-watch--source .agp-viewer-card{display:none}.arena-watch-source{height:calc(100dvh - 140px)}}
-
-
-
-.agp-watch-page:not(.agp-watch-page--embedded){height:calc(100dvh - 24px);min-height:0;display:flex;flex-direction:column;gap:8px;color:var(--agp-text)}.agp-watch-page .agp-task-header{display:flex;align-items:center;gap:12px;padding:0;min-height:44px;flex:none;background:transparent;border:0}.agp-watch-page .agp-task-header-main{flex:0 1 240px;min-width:0}.agp-watch-page .agp-task-header-main h1{font-size:14px;color:var(--agp-text)}.agp-watch-page .agp-task-header-player{flex:1;min-width:0;flex-wrap:nowrap;padding:0;border:0;background:none}.agp-watch-page .agp-task-header-actions{flex:none}.agp-watch-page .agp-watch-columns{flex:1;min-height:0;height:auto;gap:8px}.agp-watch-page .agp-watch-side-card{position:static;min-height:0;height:100%;border:1px solid var(--agp-border);border-radius:10px;background:var(--agp-surface);color:var(--agp-text)}.agp-watch-page .agp-viewer-card{display:flex;flex-direction:column;min-height:0;border:1px solid var(--agp-border);border-radius:10px}.agp-watch-page .agp-viewer-card:before{content:none}.agp-watch-page .agp-viewer-frame{flex:1;min-height:0;height:auto!important;aspect-ratio:auto}.agp-watch-page :deep(.agp-speed-control select),.agp-watch-page :deep(.agp-icon-button),.agp-watch-page .agp-back-link{background:var(--agp-surface);color:var(--agp-text-muted);border-color:var(--agp-border);border-radius:6px}.agp-watch-page :deep(.agp-run-status){background:var(--agp-surface-soft);color:var(--agp-text)}.agp-watch-page :deep(.agp-run-status strong),.agp-watch-page :deep(.agp-replay-position){color:var(--agp-text-muted)}.agp-watch-page .agp-match-player{background:var(--agp-surface);border-color:var(--agp-border);padding:8px}.agp-watch-page .agp-match-player--self{background:var(--agp-primary-soft);border-color:var(--agp-primary)}.agp-watch-page .agp-match-player-rank{box-shadow:none;color:var(--agp-primary);background:var(--agp-primary-soft);border-radius:6px}.agp-watch-page .agp-match-player-main strong{font-size:13px}.agp-watch-page .agp-match-player-score strong{font-size:13px;border-color:var(--agp-border);color:var(--agp-text);border-radius:6px}.agp-watch-page .agp-run-pill--success{background:var(--arena-success-soft);color:var(--agp-success);border-color:var(--agp-border)}.arena-mobile-stats{display:none}.agp-watch-page--embedded .agp-watch-columns{height:100dvh}.agp-watch-page--embedded .agp-viewer-card{border:0;border-radius:0}
-@media(max-width:900px){.agp-watch-page:not(.agp-watch-page--embedded){height:calc(100dvh - 16px)}.agp-watch-page .agp-task-header{flex-wrap:wrap;gap:8px}.agp-watch-page .agp-task-header-main{flex:1}.agp-watch-page .agp-task-header-player{order:3;flex-basis:100%;min-height:44px}.agp-watch-page .agp-watch-columns{grid-template-columns:minmax(0,1fr);height:auto!important}.agp-watch-page .agp-watch-side-card{display:none}.arena-mobile-stats{display:inline-flex}.arena-watch--stats .agp-watch-side-card{display:block;position:fixed;inset:120px 8px 8px;height:auto;z-index:80;box-shadow:0 0 0 100vmax #1118}.arena-watch--source .arena-watch-source{height:100%}.agp-watch-page .agp-match-player{min-height:56px}}
-
 </style>

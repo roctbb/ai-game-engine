@@ -68,7 +68,7 @@
       </div>
     </nav>
 
-    <main class="agp-main" :class="{ 'agp-main--workspace': isWorkspaceRoute }">
+    <main class="agp-main" :class="{ 'agp-main--workspace': isWorkspaceRoute, 'agp-main--embedded': isEmbeddedRoute }">
       <RouterView v-slot="{ Component, route: currentRoute }">
         <Transition name="agp-page">
           <component :is="Component" :key="currentRoute.path" />
@@ -116,7 +116,7 @@ const isChromeHiddenRoute = computed(() =>
   ['login', 'task-run', 'run-watch', 'player-code'].includes(String(route.name ?? '')) || (route.name === 'lobby' && ['code', 'game'].includes(String(route.query.tab))) || isEmbeddedRoute.value
 );
 const isWorkspaceRoute = computed(() =>
-  ['login', 'task-run', 'run-watch', 'competition', 'player-code'].includes(String(route.name ?? '')) || (route.name === 'lobby' && ['code', 'game'].includes(String(route.query.tab)))
+  ['login', 'task-run', 'run-watch', 'player-code'].includes(String(route.name ?? '')) || (route.name === 'lobby' && ['code', 'game'].includes(String(route.query.tab)))
 );
 
 function closeUserMenu(): void {
