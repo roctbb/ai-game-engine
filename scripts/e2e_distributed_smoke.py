@@ -335,7 +335,6 @@ def _patch_catalog_metadata(
     description: str | None,
     difficulty: str | None,
     topics: list[str],
-    status: str,
 ) -> dict:
     code, game = _request(
         "PATCH",
@@ -344,7 +343,6 @@ def _patch_catalog_metadata(
             "description": description,
             "difficulty": difficulty,
             "topics": topics,
-            "catalog_metadata_status": status,
         },
         request_headers=admin_headers,
     )
@@ -355,8 +353,8 @@ def _patch_catalog_metadata(
     return game
 
 
-def _list_public_single_task_catalog(backend_api: str) -> list[dict]:
-    code, payload = _request("GET", f"{backend_api}/catalog/single-tasks")
+def _list_teacher_single_task_catalog(backend_api: str, admin_headers: dict[str, str]) -> list[dict]:
+    code, payload = _request("GET", f"{backend_api}/catalog/single-tasks", request_headers=admin_headers)
     if code != 200:
         raise RuntimeError(f"GET /catalog/single-tasks failed: HTTP {code}, body={payload}")
     if not isinstance(payload, list):
@@ -694,60 +692,32 @@ def main() -> int:
 
     summary: dict[str, object] = {}
 
-    print("[3/19] catalog publication workflow smoke")
+    print("[3/19] teacher catalog metadata workflow smoke")
     catalog_slug = f"smoke_catalog_{uuid4().hex[:8]}"
-    draft_game = _register_single_task_catalog_game(
-        backend_api=args.backend,
-        slug=catalog_slug,
-        title="Smoke Catalog Single Task",
-        admin_headers=admin_headers,
+    game = _register_single_task_catalog_game(
+        backend_api=args.backend, slug=catalog_slug,
+        title="Smoke Catalog Single Task", admin_headers=admin_headers,
     )
-    if draft_game.get("catalog_metadata_status") != "draft":
-        raise RuntimeError(f"Expected draft catalog status, got: {draft_game}")
-    catalog_before = _list_public_single_task_catalog(backend_api=args.backend)
-    if any(item.get("slug") == catalog_slug for item in catalog_before):
-        raise RuntimeError("Draft single_task appeared in public catalog unexpectedly")
-
-    ready_game = _patch_catalog_metadata(
-        backend_api=args.backend,
-        game_id=draft_game["game_id"],
-        admin_headers=admin_headers,
-        description="Smoke description",
-        difficulty="easy",
-        topics=["smoke", "catalog"],
-        status="ready",
+    catalog_before = _list_teacher_single_task_catalog(args.backend, admin_headers)
+    if not any(item.get("slug") == catalog_slug for item in catalog_before):
+        raise RuntimeError("Task without metadata is missing from teacher materials")
+    updated = _patch_catalog_metadata(
+        backend_api=args.backend, game_id=game["game_id"],
+        admin_headers=admin_headers, description="Smoke description",
+        difficulty="easy", topics=["smoke", "catalog"],
     )
-    if ready_game.get("catalog_metadata_status") != "ready":
-        raise RuntimeError(f"Expected ready catalog status after patch, got: {ready_game}")
-    catalog_after_ready = _list_public_single_task_catalog(backend_api=args.backend)
-    if not any(item.get("slug") == catalog_slug for item in catalog_after_ready):
-        raise RuntimeError("Ready single_task did not appear in public catalog")
-
-    archived_game = _patch_catalog_metadata(
-        backend_api=args.backend,
-        game_id=draft_game["game_id"],
-        admin_headers=admin_headers,
-        description=ready_game.get("description"),
-        difficulty=ready_game.get("difficulty"),
-        topics=list(ready_game.get("topics") or []),
-        status="archived",
+    if updated.get("description") != "Smoke description":
+        raise RuntimeError("Task metadata was not saved")
+    cleared = _patch_catalog_metadata(
+        backend_api=args.backend, game_id=game["game_id"],
+        admin_headers=admin_headers, description=None, difficulty=None, topics=[],
     )
-    if archived_game.get("catalog_metadata_status") != "archived":
-        raise RuntimeError(f"Expected archived catalog status after patch, got: {archived_game}")
-    catalog_after_archived = _list_public_single_task_catalog(backend_api=args.backend)
-    if any(item.get("slug") == catalog_slug for item in catalog_after_archived):
-        raise RuntimeError("Archived single_task remained in public catalog")
-
-    summary["catalog_publication"] = {
-        "game_id": draft_game["game_id"],
-        "slug": catalog_slug,
-        "initial_status": draft_game.get("catalog_metadata_status"),
-        "ready_status": ready_game.get("catalog_metadata_status"),
-        "archived_status": archived_game.get("catalog_metadata_status"),
-        "visible_when_draft": False,
-        "visible_when_ready": True,
-        "visible_when_archived": False,
-    }
+    catalog_after = _list_teacher_single_task_catalog(args.backend, admin_headers)
+    if not any(item.get("slug") == catalog_slug for item in catalog_after):
+        raise RuntimeError("Clearing metadata removed a task from teacher materials")
+    if any(key in cleared for key in ("catalog_metadata_status", "is_hidden")):
+        raise RuntimeError("Obsolete publication fields remain in the game API")
+    summary["catalog_metadata"] = {"game_id": game["game_id"], "slug": catalog_slug, "always_listed": True}
 
     print("[4/19] single_task smoke: maze_escape_v1")
     summary["maze_escape_v1"] = _single_task_smoke(

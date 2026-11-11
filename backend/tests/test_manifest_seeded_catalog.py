@@ -20,4 +20,3 @@ def test_catalog_is_seeded_from_game_manifests(client) -> None:
     assert by_slug["tower_defense_v1"]["learning_section"] == "Жадные стратегии"
     assert "симуляция" in by_slug["tower_defense_v1"]["topics"]
     assert by_slug["maze_escape_v1"]["description"] is not None
-    assert by_slug["maze_escape_v1"]["catalog_metadata_status"] == "ready"

@@ -185,10 +185,6 @@ def _ensure_single_task_available(
     game = container.game_catalog.get_game(game_id)
     if game.mode is not GameMode.SINGLE_TASK:
         raise InvariantViolationError("Запуск single_task доступен только для single_task игры")
-    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
-        return
-    if game.is_hidden:
-        raise NotFoundError(f"Игра {game_id} не найдена")
 
 
 def _reconcile_training_lobby_for_terminal_run(container: ServiceContainer, run: Run) -> None:

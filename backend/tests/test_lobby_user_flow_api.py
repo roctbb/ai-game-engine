@@ -73,7 +73,7 @@ def test_lobby_create_rejects_competition_kind(client, teacher_headers) -> None:
     assert response.status_code == 422
 
 
-def test_lobby_create_rejects_task_or_unpublished_game(client, teacher_headers) -> None:
+def test_lobby_create_rejects_tasks_and_accepts_games_without_metadata(client, teacher_headers) -> None:
     task = client.post(
         "/api/v1/games",
         json={
@@ -86,27 +86,25 @@ def test_lobby_create_rejects_task_or_unpublished_game(client, teacher_headers) 
             "difficulty": "easy",
             "learning_section": "Условия и выбор",
             "topics": ["basics"],
-            "catalog_metadata_status": "ready",
         },
         headers=teacher_headers,
     )
     assert task.status_code == 200
 
-    draft_game = client.post(
+    game_without_metadata = client.post(
         "/api/v1/games",
         json={
-            "slug": "lobby_reject_draft_game",
-            "title": "Draft Lobby Game",
+            "slug": "lobby_reject_game_without_metadata",
+            "title": "Lobby Game Without Metadata",
             "mode": "small_match",
             "semver": "1.0.0",
             "required_slots": [{"key": "bot", "title": "Bot", "required": True}],
-            "catalog_metadata_status": "draft",
         },
         headers=teacher_headers,
     )
-    assert draft_game.status_code == 200
+    assert game_without_metadata.status_code == 200
 
-    for game_id in (task.json()["game_id"], draft_game.json()["game_id"]):
+    for game_id, expected_status in ((task.json()["game_id"], 422), (game_without_metadata.json()["game_id"], 200)):
         response = client.post(
             "/api/v1/lobbies",
             json={
@@ -118,7 +116,21 @@ def test_lobby_create_rejects_task_or_unpublished_game(client, teacher_headers) 
             },
             headers=teacher_headers,
         )
-        assert response.status_code == 422
+        assert response.status_code == expected_status
+
+
+def test_retired_game_package_stays_readable_but_cannot_create_lobbies(client, teacher_headers):
+    game = client.post("/api/v1/games", json={
+        "slug": "beacon_duel_v1", "title": "Retired package", "mode": "small_match",
+        "semver": "1.0.0", "required_slots": [{"key": "bot", "title": "Bot"}],
+    }, headers=teacher_headers).json()
+    assert client.get(f"/api/v1/games/{game['game_id']}").status_code == 200
+    assert all(item["game_id"] != game["game_id"] for item in client.get("/api/v1/games").json())
+    lobby = client.post("/api/v1/lobbies", json={
+        "game_id": game["game_id"], "title": "Retired game lobby", "kind": "training",
+        "access": "public", "max_teams": 16,
+    }, headers=teacher_headers)
+    assert lobby.status_code == 422
 
 
 def test_lobby_competition_start_rejects_future_tie_break_policy(client, teacher_headers) -> None:

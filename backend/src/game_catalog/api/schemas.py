@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from game_catalog.domain.model import CatalogMetadataStatus, GameMode
+from game_catalog.domain.model import GameMode
 
 
 class SlotDefinitionPayload(BaseModel):
@@ -24,8 +24,6 @@ class RegisterGameRequest(BaseModel):
     topics: list[str] = Field(default_factory=list, max_length=30)
     min_players_per_match: int | None = Field(default=None, ge=2, le=64)
     max_players_per_match: int | None = Field(default=None, ge=2, le=64)
-    catalog_metadata_status: CatalogMetadataStatus | None = None
-    is_hidden: bool = False
 
 
 class AddVersionRequest(BaseModel):
@@ -43,8 +41,6 @@ class UpdateCatalogMetadataRequest(BaseModel):
     difficulty: str | None = Field(default=None, max_length=32)
     learning_section: str | None = Field(default=None, max_length=80)
     topics: list[str] = Field(default_factory=list, max_length=30)
-    catalog_metadata_status: CatalogMetadataStatus | None = None
-    is_hidden: bool | None = None
 
 
 class PatchGameRequest(BaseModel):
@@ -55,8 +51,6 @@ class PatchGameRequest(BaseModel):
     topics: list[str] | None = Field(default=None, max_length=30)
     min_players_per_match: int | None = Field(default=None, ge=2, le=64)
     max_players_per_match: int | None = Field(default=None, ge=2, le=64)
-    catalog_metadata_status: CatalogMetadataStatus | None = None
-    is_hidden: bool | None = None
 
 
 class GameVersionResponse(BaseModel):
@@ -119,8 +113,6 @@ class GameResponse(BaseModel):
     topics: list[str] = Field(default_factory=list)
     min_players_per_match: int | None = None
     max_players_per_match: int | None = None
-    catalog_metadata_status: CatalogMetadataStatus
-    is_hidden: bool
     active_version_id: str
     versions: list[GameVersionResponse]
 
@@ -133,8 +125,6 @@ class SingleTaskCatalogItemResponse(BaseModel):
     difficulty: str | None = None
     learning_section: str | None = None
     topics: list[str] = Field(default_factory=list)
-    catalog_metadata_status: CatalogMetadataStatus
-    is_hidden: bool
     attempts_finished: int
     solved_users: int
     has_score_model: bool

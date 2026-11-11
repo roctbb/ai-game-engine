@@ -189,7 +189,7 @@ function gameTitle(gameId: string): string {
 }
 
 function isLobbyCatalogGame(game: GameDto): boolean {
-  return game.mode !== 'single_task' && game.catalog_metadata_status === 'ready';
+  return game.mode !== 'single_task';
 }
 
 function canEnterLobby(lobby: LobbyDto): boolean {

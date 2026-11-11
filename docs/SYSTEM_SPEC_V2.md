@@ -806,7 +806,6 @@ backend/src/shared/
 - `slug`
 - `title_ru`
 - `catalog_description_md`
-- `catalog_metadata_status` (`draft|ready|archived`)
 - `single_task_difficulty` (`easy|medium|hard|null`)
 - `status` (`draft|active|archived|disabled`)
 - `game_mode` (`single_task|multiplayer`)
@@ -1757,7 +1756,7 @@ Teacher/admin получает warning.
 ## 20. Single-player задачи
 
 ### 20.1 Метаданные задачи
-Для `single_task` обязательны:
+Каталожные метаданные `single_task`:
 - описание;
 - документация задачи/игры;
 - сложность;
@@ -1769,18 +1768,18 @@ Teacher/admin получает warning.
 Если новая `single_task` игра синхронизирована из репозитория:
 - платформа создает техническую запись игры и версии;
 - README, `player_guide_ru.md`/`docs/player_guide_ru.md` и `sdk_guide_ru.md`/`docs/sdk_guide_ru.md`, если существуют, используются как исходный материал для первичного заполнения формы и документации задачи;
-- игра получает `catalog_metadata_status = draft`, пока teacher/admin не заполнит обязательные поля каталога в UI;
-- до перевода `catalog_metadata_status` в `ready` такая игра не должна отображаться в публичном каталоге задач.
+- игра сразу доступна в материалах teacher/admin, даже если часть метаданных не заполнена;
+- ученик открывает задачу по прямой ссылке; каталог задач и его сводки ему недоступны.
 
 Текущая реализация MVP:
-- `catalog_metadata_status` возвращается в `GameResponse`;
-- для `single_task` регистрация без `description/difficulty/topics` создает игру в `draft`;
-- endpoint `GET /catalog/single-tasks` возвращает только `single_task` игры со статусом `ready`.
+- состояний публикации и видимости в модели и API каталога нет;
+- метаданные можно дополнять и очищать без изменения доступности задачи;
+- endpoint `GET /catalog/single-tasks` возвращает все задачи и доступен только teacher/admin.
 
 ### 20.1.2 Precedence policy для каталожных полей
 При конфликте между репозиторием и UI/БД:
 - описание задачи, сложность и темы берутся из UI/БД;
-- документация задачи, README, SDK guide, шаблоны и технические параметры берутся из игрового пакета, если teacher/admin не отредактировал опубликованную документацию задачи в UI;
+- документация задачи, README, SDK guide, шаблоны и технические параметры берутся из игрового пакета, если teacher/admin не отредактировал документацию задачи в UI;
 - UI/БД может override только каталожные поля, а не технический контракт игры.
 
 ### 20.2 Темы
@@ -2476,7 +2475,6 @@ Worker execution в текущем MVP:
 - `slug TEXT UNIQUE`
 - `title_ru TEXT`
 - `catalog_description_md TEXT NULL`
-- `catalog_metadata_status TEXT` (`draft|ready|archived`)
 - `single_task_difficulty TEXT NULL` (`easy|medium|hard`)
 - `status TEXT` (`draft|active|archived|disabled`)
 - `game_mode TEXT` (`single_task|multiplayer`)

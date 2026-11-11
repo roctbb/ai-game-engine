@@ -46,8 +46,9 @@ def test_alembic_upgrade_creates_all_v2_tables_and_columns(tmp_path: Path, monke
         "learning_section",
         "min_players_per_match",
         "max_players_per_match",
-        "is_hidden",
     }.issubset(catalog_columns)
+
+    assert {"catalog_metadata_status", "is_hidden"}.isdisjoint(catalog_columns)
 
     lobby_columns = {item["name"] for item in inspector.get_columns("training_lobbies")}
     assert "last_scheduled_run_ids_json" in lobby_columns
@@ -155,5 +156,46 @@ def test_reliability_migration_upgrades_existing_attempts_and_can_be_reapplied(
     assert rows["orphan-running"].status == "queued"
     assert rows["orphan-running"].dispatch_pending
     command.downgrade(cfg, "0014_run_execution_options")
+    command.upgrade(cfg, "head")
+    engine.dispose()
+
+
+def test_catalog_visibility_migration_preserves_all_tasks_and_versions(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+    from sqlalchemy import MetaData, Table, select
+
+    backend_root = Path(__file__).resolve().parents[1]
+    url = f"sqlite+pysqlite:///{tmp_path / 'catalog-visibility.sqlite'}"
+    monkeypatch.setenv("DATABASE_URL_OVERRIDE", url)
+    cfg = Config(str(backend_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    command.upgrade(cfg, "0018_competition_presentation")
+    engine = create_engine(url)
+    games = Table("catalog_games", MetaData(), autoload_with=engine)
+    versions = Table("catalog_game_versions", MetaData(), autoload_with=engine)
+    with engine.begin() as connection:
+        for status in ("draft", "ready", "archived"):
+            connection.execute(games.insert(), dict(
+                game_id=status, slug=f"task-{status}", title=status, mode="single_task",
+                topics=[], catalog_metadata_status=status, is_hidden=True,
+            ))
+            connection.execute(versions.insert(), dict(
+                version_id=f"version-{status}", game_id=status, semver="1.0.0",
+                required_slots_json=[], required_worker_labels_json={}, created_at=datetime.now(UTC),
+            ))
+    command.upgrade(cfg, "head")
+    upgraded = Table("catalog_games", MetaData(), autoload_with=engine)
+    assert {"catalog_metadata_status", "is_hidden"}.isdisjoint(upgraded.c.keys())
+    with engine.connect() as connection:
+        assert set(connection.scalars(select(upgraded.c.game_id))) == {"draft", "ready", "archived"}
+        assert set(connection.scalars(select(versions.c.version_id))) == {
+            "version-draft", "version-ready", "version-archived",
+        }
+    command.downgrade(cfg, "0018_competition_presentation")
+    restored = Table("catalog_games", MetaData(), autoload_with=engine)
+    with engine.connect() as connection:
+        rows = connection.execute(select(restored)).all()
+        assert len(rows) == 3
+        assert all(row.catalog_metadata_status == "ready" and not row.is_hidden for row in rows)
     command.upgrade(cfg, "head")
     engine.dispose()

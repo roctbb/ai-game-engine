@@ -8,7 +8,7 @@
       <div class="agp-empty-state agp-empty-state--compact">Создание лобби доступно только преподавателю или администратору.</div>
     </div>
     <div v-else-if="!isLoading && lobbyGames.length === 0" class="agp-card p-3">
-      <div class="agp-empty-state agp-empty-state--compact">Нет опубликованных игр для лобби. Сначала подключите игру и опубликуйте ее в каталоге.</div>
+      <div class="agp-empty-state agp-empty-state--compact">Игры для лобби пока не подключены.</div>
     </div>
     <div v-else-if="isLoading" class="agp-card p-3">
       <div class="agp-loading-state agp-loading-state--compact">Загрузка игр...</div>
@@ -181,7 +181,7 @@ const playerLimitHint = computed(() => {
 });
 
 function isLobbyCatalogGame(game: GameDto): boolean {
-  return game.mode !== 'single_task' && game.catalog_metadata_status === 'ready';
+  return game.mode !== 'single_task';
 }
 
 const canCreate = computed(() => {

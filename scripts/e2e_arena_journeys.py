@@ -91,7 +91,7 @@ def main() -> int:
     outsider = Api(args.backend, prefix + "-viewer", "student")
     games = teacher.call("GET", "/games")
     task = next(game for slug in ("knight_coins_v1", "maze_escape_v1", "gate_keys_v1") for game in games
-                if game["slug"] == slug and not game["is_hidden"] and game["catalog_metadata_status"] == "ready")
+                if game["slug"] == slug)
     multiplayer = next(game for game in games if game["slug"] == "ttt_connect5_v1")
 
     print("[1/8] Roles, direct task link and catalog access", flush=True)

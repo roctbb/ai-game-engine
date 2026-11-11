@@ -21,9 +21,8 @@
   - `GET /api/v1/single-tasks/{gameId}/leaderboard`;
   - `GET /api/v1/catalog/single-tasks`;
   - `GET /api/v1/catalog/single-tasks/solved-summary`.
-- `single_task` поддерживает `catalog_metadata_status` (`draft|ready|archived`);
-- публичный каталог `GET /api/v1/catalog/single-tasks` возвращает только задачи в статусе `ready`;
-- попытка выставить `catalog_metadata_status=ready` без `description/difficulty/topics` отклоняется.
+- материалы `GET /api/v1/catalog/single-tasks` показывают все задачи преподавателю и администратору, включая задачи без заполненных метаданных;
+- ученик открывает задачу по прямой ссылке, без доступа к каталогу; состояний публикации и переключателей видимости нет.
 - mutation-endpoint’ы каталога игр (`POST /games`, `POST /games/{id}/versions`, `POST /games/{id}/activate`, `PATCH /games/{id}/catalog-metadata`) требуют роль `teacher/admin`.
 - при `queue_run` backend вызывает `scheduler-service` (`/internal/runs/{runId}/schedule`);
 - если scheduler недоступен, `run` остается `queued`: намерение отправки сохраняется вместе с запуском и повторяется фоновым обработчиком;

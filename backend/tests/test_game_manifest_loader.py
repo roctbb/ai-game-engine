@@ -39,6 +39,16 @@ def test_loads_repository_game_manifests() -> None:
     assert by_id["tanks_ctf_v1"].demo_strategies[1].slot_key == "support"
 
 
+def test_old_manifest_publication_status_does_not_affect_registration():
+    from game_catalog.infrastructure.manifest_loader import GameManifest
+
+    payload = load_game_manifest(_repo_root() / "games/maze_escape/manifest.yaml").model_dump()
+    payload["catalog_metadata_status"] = "draft"
+    manifest = GameManifest.model_validate(payload)
+    assert "catalog_metadata_status" not in manifest.model_dump()
+    assert manifest.to_register_input().slug == "maze_escape_v1"
+
+
 def test_manifest_rejects_template_with_wrong_entrypoint_signature(tmp_path):
     import shutil
     package = tmp_path / "gate_keys"

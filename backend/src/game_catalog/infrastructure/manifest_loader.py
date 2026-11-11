@@ -9,7 +9,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from game_catalog.application.service import RegisterGameInput
-from game_catalog.domain.model import CatalogMetadataStatus, GameMode, SlotDefinition
+from game_catalog.domain.model import GameMode, SlotDefinition
 from shared.kernel import InvariantViolationError
 
 
@@ -47,8 +47,15 @@ class GameManifest(BaseModel):
     min_players_per_match: int | None = Field(default=None, ge=2, le=64)
     max_players_per_match: int | None = Field(default=None, ge=2, le=64)
     required_worker_labels: dict[str, str] = Field(default_factory=dict)
-    catalog_metadata_status: CatalogMetadataStatus | None = None
     demo_strategies: tuple[ManifestDemoStrategy, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def ignore_legacy_publication_status(cls, value: object) -> object:
+        # Existing game repositories may still include this obsolete field.
+        if isinstance(value, dict):
+            return {key: item for key, item in value.items() if key != "catalog_metadata_status"}
+        return value
 
     @field_validator("slots")
     @classmethod
@@ -136,7 +143,6 @@ class GameManifest(BaseModel):
             min_players_per_match=min_players,
             max_players_per_match=max_players,
             required_worker_labels=self.required_worker_labels,
-            catalog_metadata_status=self.catalog_metadata_status,
             required_slots=tuple(
                 SlotDefinition(key=slot.key, title=slot.title, required=slot.required)
                 for slot in self.slots

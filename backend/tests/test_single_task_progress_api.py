@@ -185,7 +185,6 @@ def test_catalog_single_tasks_includes_attempt_stats(client) -> None:
     assert maze['attempts_finished'] == 3
     assert maze['solved_users'] == 1
     assert maze['has_score_model'] is True
-    assert maze['catalog_metadata_status'] == 'ready'
 
 
 def test_catalog_single_tasks_uses_result_summary_without_loading_payloads(client, container, monkeypatch) -> None:
@@ -211,7 +210,7 @@ def test_catalog_single_tasks_uses_result_summary_without_loading_payloads(clien
     assert maze['has_score_model'] is True
 
 
-def test_catalog_single_tasks_hides_draft_single_task_games(client, teacher_headers) -> None:
+def test_catalog_single_tasks_includes_tasks_without_metadata(client, teacher_headers) -> None:
     created = client.post(
         '/api/v1/games',
         json={
@@ -231,9 +230,8 @@ def test_catalog_single_tasks_hides_draft_single_task_games(client, teacher_head
     )
     assert created.status_code == 200
     game = created.json()
-    assert game['catalog_metadata_status'] == 'draft'
 
     catalog = client.get('/api/v1/catalog/single-tasks')
     assert catalog.status_code == 200
     ids = {item['game_id'] for item in catalog.json()}
-    assert game['game_id'] not in ids
+    assert game['game_id'] in ids

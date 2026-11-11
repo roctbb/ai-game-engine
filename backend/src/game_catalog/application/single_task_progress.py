@@ -7,7 +7,7 @@ from typing import ClassVar, Literal
 from execution.application.service import ExecutionService
 from execution.domain.model import RunKind, RunStatus
 from game_catalog.application.service import GameCatalogService
-from game_catalog.domain.model import CatalogMetadataStatus, Game, GameMode
+from game_catalog.domain.model import Game, GameMode
 
 
 _SCORE_CANDIDATE_KEYS = ("score", "points")
@@ -64,8 +64,6 @@ class SingleTaskCatalogItem:
     difficulty: str | None
     learning_section: str | None
     topics: tuple[str, ...]
-    catalog_metadata_status: CatalogMetadataStatus
-    is_hidden: bool
     attempts_finished: int
     solved_users: int
     has_score_model: bool
@@ -106,18 +104,11 @@ class SingleTaskProgressService:
         self._game_catalog = game_catalog
         self._execution = execution
 
-    def list_single_tasks(self, *, include_non_ready: bool = False) -> list[Game]:
-        games = [game for game in self._game_catalog.list_games() if game.mode is GameMode.SINGLE_TASK]
-        if include_non_ready:
-            return games
-        return [
-            game
-            for game in games
-            if game.catalog_metadata_status is CatalogMetadataStatus.READY and not game.is_hidden
-        ]
+    def list_single_tasks(self) -> list[Game]:
+        return [game for game in self._game_catalog.list_games() if game.mode is GameMode.SINGLE_TASK]
 
     def build_single_task_catalog_items(self) -> tuple[SingleTaskCatalogItem, ...]:
-        games = sorted(self.list_single_tasks(include_non_ready=False), key=lambda game: (game.title.lower(), game.slug))
+        games = sorted(self.list_single_tasks(), key=lambda game: (game.title.lower(), game.slug))
         attempts = self._collect_attempts(game_id=None)
 
         attempts_count_by_game: dict[str, int] = {}
@@ -139,8 +130,6 @@ class SingleTaskProgressService:
                 difficulty=game.difficulty,
                 learning_section=game.learning_section,
                 topics=game.topics,
-                catalog_metadata_status=game.catalog_metadata_status,
-                is_hidden=game.is_hidden,
                 attempts_finished=attempts_count_by_game.get(game.game_id, 0),
                 solved_users=len(solved_users_by_game.get(game.game_id, set())),
                 has_score_model=has_score_model_by_game.get(game.game_id, False),
@@ -199,8 +188,8 @@ class SingleTaskProgressService:
         return SingleTaskLeaderboard(game_id=game_id, leaderboard_kind=leaderboard_kind, entries=tuple(bounded))
 
     def build_solved_summary(self, limit: int = 20) -> SolvedSummary:
-        published_task_ids = {game.game_id for game in self.list_single_tasks(include_non_ready=False)}
-        attempts = [attempt for attempt in self._collect_attempts(game_id=None) if attempt.game_id in published_task_ids]
+        task_ids = {game.game_id for game in self.list_single_tasks()}
+        attempts = [attempt for attempt in self._collect_attempts(game_id=None) if attempt.game_id in task_ids]
         solved_by_user: dict[str, set[str]] = {}
         for attempt in attempts:
             if not attempt.solved:
@@ -223,7 +212,7 @@ class SingleTaskProgressService:
                 )
             )
 
-        total_single_tasks = len(published_task_ids)
+        total_single_tasks = len(task_ids)
         return SolvedSummary(total_single_tasks=total_single_tasks, entries=tuple(entries))
 
     def _collect_attempts(self, game_id: str | None) -> list[SingleTaskAttemptRecord]:

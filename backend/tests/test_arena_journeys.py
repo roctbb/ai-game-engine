@@ -556,7 +556,7 @@ def test_platform_failure_is_retried_with_frozen_source_and_seed(client, contain
 
 
 def test_student_opens_task_by_link_without_catalog_access(client):
-    task = next(game for game in client.get("/api/v1/games").json() if game["mode"] == "single_task" and not game["is_hidden"])
+    task = next(game for game in client.get("/api/v1/games").json() if game["mode"] == "single_task")
     login = client.post("/api/v1/auth/dev-login", json={"nickname": "linked-task-student", "role": "student"}).json()
     headers = {"X-Session-Id": login["session_id"]}
     for path in ("/catalog/single-tasks", "/catalog/single-tasks/grouped", "/catalog/single-tasks/solved-summary"):

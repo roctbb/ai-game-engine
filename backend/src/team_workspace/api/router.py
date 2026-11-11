@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from app.auth import get_current_session
 from app.dependencies import ServiceContainer, get_container
 from identity.domain.model import AppSession, UserRole
-from shared.kernel import ForbiddenError, NotFoundError
+from shared.kernel import ForbiddenError
 from team_workspace.api.schemas import (
     CreateTeamRequest,
     TeamResponse,
@@ -16,12 +16,8 @@ from team_workspace.api.schemas import (
 router = APIRouter(prefix="/teams", tags=["team_workspace"])
 
 
-def _ensure_game_available_to_session(container: ServiceContainer, session: AppSession, game_id: str) -> None:
-    if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
-        return
-    game = container.game_catalog.get_game(game_id)
-    if game.is_hidden:
-        raise NotFoundError(f"Игра {game_id} не найдена")
+def _ensure_game_exists(container: ServiceContainer, game_id: str) -> None:
+    container.game_catalog.get_game(game_id)
 
 
 @router.get("", response_model=list[TeamResponse])
@@ -30,7 +26,7 @@ def list_teams(
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> list[TeamResponse]:
-    _ensure_game_available_to_session(container=container, session=session, game_id=game_id)
+    _ensure_game_exists(container=container, game_id=game_id)
     if session.role in {UserRole.TEACHER, UserRole.ADMIN}:
         teams = container.team_workspace.list_teams_by_game(game_id=game_id)
     else:
@@ -55,7 +51,7 @@ def create_team(
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> TeamResponse:
-    _ensure_game_available_to_session(container=container, session=session, game_id=request.game_id)
+    _ensure_game_exists(container=container, game_id=request.game_id)
     captain_user_id = (
         request.captain_user_id
         if session.role in {UserRole.TEACHER, UserRole.ADMIN}
@@ -83,7 +79,7 @@ def update_slot_code(
     container: ServiceContainer = Depends(get_container),
 ) -> TeamResponse:
     existing = container.team_workspace.get_team(team_id)
-    _ensure_game_available_to_session(container=container, session=session, game_id=existing.game_id)
+    _ensure_game_exists(container=container, game_id=existing.game_id)
     if existing.captain_user_id != session.nickname and session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
         raise ForbiddenError("Редактировать код может только владелец игрока, преподаватель или админ")
     actor_user_id = (
@@ -115,7 +111,7 @@ def get_workspace(
     container: ServiceContainer = Depends(get_container),
 ) -> TeamWorkspaceResponse:
     workspace = container.team_workspace.get_workspace_view(team_id=team_id, version_id=version_id)
-    _ensure_game_available_to_session(container=container, session=session, game_id=workspace.game_id)
+    _ensure_game_exists(container=container, game_id=workspace.game_id)
     if workspace.captain_user_id != session.nickname and session.role not in {UserRole.TEACHER, UserRole.ADMIN}:
         raise ForbiddenError("Просматривать workspace может только капитан, преподаватель или админ")
     return TeamWorkspaceResponse(

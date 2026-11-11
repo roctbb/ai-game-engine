@@ -6,18 +6,20 @@ from enum import StrEnum
 from shared.kernel import ConflictError, InvariantViolationError, NotFoundError, new_id, utc_now
 
 
+# Removed bundled packages can still have historical matches in the database.
+# Their records stay readable, but must not be offered for new games.
+RETIRED_GAME_SLUGS = frozenset({
+    "archer_duel_lite_v1", "beacon_duel_v1", "blinking_gem_duel_v1",
+    "hill_control_v1", "jump_gem_duel_v1", "relic_delivery_duel_v1", "template_v1",
+})
+
+
 class GameMode(StrEnum):
     SINGLE_TASK = "single_task"
     MULTIPLAYER = "multiplayer"
     # Legacy values kept for backward compatibility with existing DB rows and old manifests.
     SMALL_MATCH = "small_match"
     MASSIVE_LOBBY = "massive_lobby"
-
-
-class CatalogMetadataStatus(StrEnum):
-    DRAFT = "draft"
-    READY = "ready"
-    ARCHIVED = "archived"
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,8 +58,6 @@ class Game:
     topics: tuple[str, ...] = ()
     min_players_per_match: int | None = None
     max_players_per_match: int | None = None
-    catalog_metadata_status: CatalogMetadataStatus = CatalogMetadataStatus.READY
-    is_hidden: bool = False
     versions: dict[str, GameVersion] = field(default_factory=dict)
     active_version_id: str | None = None
 
@@ -72,8 +72,6 @@ class Game:
         topics: tuple[str, ...] = (),
         min_players_per_match: int | None = None,
         max_players_per_match: int | None = None,
-        catalog_metadata_status: CatalogMetadataStatus | None = None,
-        is_hidden: bool = False,
     ) -> "Game":
         normalized_topics = tuple(topic.strip() for topic in topics if topic.strip())
         normalized_description = description.strip() if description is not None else None
@@ -85,20 +83,6 @@ class Game:
             min_players_per_match=min_players_per_match,
             max_players_per_match=max_players_per_match,
         )
-        resolved_status = catalog_metadata_status
-        if resolved_status is None:
-            if (
-                resolved_mode is GameMode.SINGLE_TASK
-                and (
-                    not normalized_description
-                    or not normalized_difficulty
-                    or not normalized_learning_section
-                    or len(normalized_topics) == 0
-                )
-            ):
-                resolved_status = CatalogMetadataStatus.DRAFT
-            else:
-                resolved_status = CatalogMetadataStatus.READY
         return Game(
             game_id=new_id("game"),
             slug=slug,
@@ -110,9 +94,11 @@ class Game:
             topics=normalized_topics,
             min_players_per_match=resolved_min_players,
             max_players_per_match=resolved_max_players,
-            catalog_metadata_status=resolved_status,
-            is_hidden=is_hidden,
         )
+
+    @property
+    def is_retired(self) -> bool:
+        return self.slug in RETIRED_GAME_SLUGS
 
     @property
     def is_multiplayer(self) -> bool:
@@ -137,9 +123,6 @@ class Game:
             min_players_per_match=min_players_per_match,
             max_players_per_match=max_players_per_match,
         )
-
-    def has_required_single_task_catalog_metadata(self) -> bool:
-        return bool(self.description and self.difficulty and self.learning_section and self.topics)
 
     def add_version(
         self,

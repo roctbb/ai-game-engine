@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 
 from game_catalog.application.repositories import GameRepository
 from game_catalog.domain.model import (
-    CatalogMetadataStatus,
     Game,
     GameMode,
     GameVersion,
@@ -28,8 +27,6 @@ class RegisterGameInput:
     topics: tuple[str, ...] = ()
     min_players_per_match: int | None = None
     max_players_per_match: int | None = None
-    catalog_metadata_status: CatalogMetadataStatus | None = None
-    is_hidden: bool = False
 
 
 class GameCatalogService:
@@ -50,8 +47,6 @@ class GameCatalogService:
             topics=data.topics,
             min_players_per_match=data.min_players_per_match,
             max_players_per_match=data.max_players_per_match,
-            catalog_metadata_status=data.catalog_metadata_status,
-            is_hidden=data.is_hidden,
         )
         game.add_version(
             semver=data.semver,
@@ -69,26 +64,12 @@ class GameCatalogService:
         difficulty: str | None,
         learning_section: str | None,
         topics: tuple[str, ...],
-        catalog_metadata_status: CatalogMetadataStatus | None = None,
-        is_hidden: bool | None = None,
     ) -> Game:
         game = self._get_game(game_id)
         game.description = description.strip() if description is not None and description.strip() else None
         game.difficulty = difficulty.strip().lower() if difficulty is not None and difficulty.strip() else None
         game.learning_section = learning_section.strip() if learning_section is not None and learning_section.strip() else None
         game.topics = tuple(topic.strip() for topic in topics if topic.strip())
-        if catalog_metadata_status is not None:
-            game.catalog_metadata_status = catalog_metadata_status
-        if is_hidden is not None:
-            game.is_hidden = is_hidden
-        if game.mode is GameMode.SINGLE_TASK:
-            if (
-                game.catalog_metadata_status is CatalogMetadataStatus.READY
-                and not game.has_required_single_task_catalog_metadata()
-            ):
-                raise InvariantViolationError(
-                    "single_task не может иметь catalog_metadata_status=ready без description/difficulty/learning_section/topics"
-                )
         self._repository.save(game)
         return game
 
@@ -103,8 +84,6 @@ class GameCatalogService:
         topics: tuple[str, ...] | None = None,
         min_players_per_match: int | None = None,
         max_players_per_match: int | None = None,
-        catalog_metadata_status: CatalogMetadataStatus | None = None,
-        is_hidden: bool | None = None,
     ) -> Game:
         game = self._get_game(game_id)
         if title is not None:
@@ -134,20 +113,6 @@ class GameCatalogService:
                     else game.max_players_per_match
                 ),
             )
-        if catalog_metadata_status is not None:
-            game.catalog_metadata_status = catalog_metadata_status
-        if is_hidden is not None:
-            game.is_hidden = is_hidden
-
-        if (
-            game.mode is GameMode.SINGLE_TASK
-            and game.catalog_metadata_status is CatalogMetadataStatus.READY
-            and not game.has_required_single_task_catalog_metadata()
-        ):
-            raise InvariantViolationError(
-                "single_task не может иметь catalog_metadata_status=ready без description/difficulty/learning_section/topics"
-            )
-
         self._repository.save(game)
         return game
 
@@ -187,8 +152,6 @@ class GameCatalogService:
         game.learning_section = data.learning_section
         game.topics = data.topics
         game.mode = data.mode
-        if data.catalog_metadata_status is not None:
-            game.catalog_metadata_status = data.catalog_metadata_status
         game.set_match_player_bounds(
             min_players_per_match=data.min_players_per_match,
             max_players_per_match=data.max_players_per_match,
@@ -197,7 +160,7 @@ class GameCatalogService:
         return game
 
     def list_games(self) -> list[Game]:
-        return self._repository.list()
+        return [game for game in self._repository.list() if not game.is_retired]
 
     def get_version(self, game_id: str, version_id: str | None) -> GameVersion:
         game = self._get_game(game_id)
