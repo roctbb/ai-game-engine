@@ -48,7 +48,7 @@
     </article>
 
     <template v-else-if="lobby">
-      <article v-if="activeCompetition && activeTab !== 'code'" class="agp-card p-3 lobby-competition-banner">
+      <article v-if="activeCompetition && activeTab !== 'code'" class="agp-card lobby-competition-banner">
         <div>
           <strong>{{ cleanCompetitionTitle(activeCompetition.title) }}</strong>
           <div class="small text-muted">
@@ -1090,13 +1090,10 @@ const activeCompetitionBoundsLabel = computed(() => {
   return min === max ? `${max} игроков` : `${min}-${max} игроков`;
 });
 const competitionBannerText = computed(() => {
-  if (activeCompetition.value?.status === 'completed') {
-    return 'Лобби заблокировано, сетка доступна до ручного завершения учителем.';
-  }
-  if (!hasPlayerInLobby.value) {
-    return 'Лобби заблокировано для входа и выхода. Матчи доступны из сетки соревнования.';
-  }
-  return 'Лобби заблокировано для входа и выхода. Текущая игра остается во вкладке "Игра".';
+  const competition = activeCompetition.value;
+  if (competition?.status === 'completed') return 'Победитель: ' + (competition.winner_team_ids.map(teamLabel).join(', ') || '—');
+  const round = currentCompetitionRound.value;
+  return round ? `Раунд ${round.round_index} · ${competitionRoundStatusLabel(round.status).toLocaleLowerCase('ru-RU')}` : 'Ожидание первого раунда';
 });
 const codeLockedByCompetition = computed(() => {
   const competition = activeCompetition.value;
@@ -3053,10 +3050,14 @@ function handleLobbyMenu(action: string): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 16px;
+  padding: 12px 16px;
   border-color: var(--agp-border);
-  background: var(--arena-warning-soft);
+  background: var(--agp-primary-soft);
 }
+.lobby-competition-banner > div { min-width: 0; }
+.lobby-competition-banner strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 14px; line-height: 20px; }
+.lobby-competition-banner > a { flex: none; white-space: nowrap; }
 
 .lobby-modal-backdrop {
   position: fixed;
