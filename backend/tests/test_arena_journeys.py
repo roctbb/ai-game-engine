@@ -203,6 +203,40 @@ def test_invalid_roster_does_not_interrupt_training(client, container):
     assert not container.competition.list_competitions(lobby_id=lobby["lobby_id"])
 
 
+@pytest.mark.parametrize("race", ["before_cancel", "after_cancel", "finished"])
+def test_tournament_start_handles_concurrent_training_completion(client, container, monkeypatch, race):
+    from execution.domain.model import RunKind
+    from shared.kernel import ConflictError
+
+    lobby, teams = _setup(client, container)
+    for team in teams:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    container.training_lobby.mark_viewer_online(lobby["lobby_id"], "test-teacher")
+    container.training_lobby.run_matchmaking_cycle(lobby["lobby_id"], "system")
+    cancel = container.execution.cancel_run
+    raced = False
+
+    def racing_cancel(run_id, message=None):
+        nonlocal raced
+        if not raced:
+            raced = True
+            if race == "after_cancel":
+                cancel(run_id, message)
+            elif race == "finished":
+                container.execution.finish_run(run_id, {"status": "finished", "scores": {team["team_id"]: 1 for team in teams}})
+            raise ConflictError("Worker updated the training run")
+        return cancel(run_id, message)
+
+    monkeypatch.setattr(container.execution, "cancel_run", racing_cancel)
+    response = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={
+        "title": "Турнир", "match_size": 2,
+    })
+    assert response.status_code == 200, response.text
+    assert raced
+    runs = container.execution.list_runs(lobby_id=lobby["lobby_id"], run_kind=RunKind.TRAINING_MATCH)
+    assert runs and all(run.status.value in {"finished", "canceled"} for run in runs)
+
+
 def test_student_can_watch_other_tournament_match_but_not_source(client, container):
     lobby, teams = _setup(client, container, builtin=True)
     started = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={"title": "Турнир", "match_size": 2}).json()

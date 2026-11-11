@@ -116,7 +116,7 @@ const isChromeHiddenRoute = computed(() =>
   ['login', 'task-run', 'run-watch', 'player-code'].includes(String(route.name ?? '')) || (route.name === 'lobby' && ['code', 'game'].includes(String(route.query.tab))) || isEmbeddedRoute.value
 );
 const isWorkspaceRoute = computed(() =>
-  ['login', 'task-run', 'run-watch', 'competition', 'player-code', 'lobby'].includes(String(route.name ?? ''))
+  ['login', 'task-run', 'run-watch', 'competition', 'player-code'].includes(String(route.name ?? '')) || (route.name === 'lobby' && ['code', 'game'].includes(String(route.query.tab)))
 );
 
 function closeUserMenu(): void {

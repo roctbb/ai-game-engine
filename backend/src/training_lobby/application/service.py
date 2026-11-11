@@ -14,7 +14,7 @@ from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus, LobbyTeamState
 from shared.config.settings import settings
-from shared.kernel import ExternalServiceError, InvariantViolationError, NotFoundError, utc_now
+from shared.kernel import ConflictError, ExternalServiceError, InvariantViolationError, NotFoundError, utc_now
 
 
 @dataclass(slots=True)
@@ -683,7 +683,20 @@ class TrainingLobbyService:
         )
         for run in runs:
             if run.status in _ACTIVE_RUN_STATUSES:
-                self._execution.cancel_run(run.run_id, message=message)
+                for attempt in range(3):
+                    current = self._execution.get_run(run.run_id, include_result_payload=False)
+                    if current.status not in _ACTIVE_RUN_STATUSES:
+                        break
+                    try:
+                        self._execution.cancel_run(run.run_id, message=message)
+                        break
+                    except ConflictError:
+                        if attempt == 2:
+                            raise
+                    except InvariantViolationError:
+                        if self._execution.get_run(run.run_id, include_result_payload=False).status in _ACTIVE_RUN_STATUSES:
+                            raise
+                        break
 
     def _cancel_active_training_runs_for_team(self, *, lobby: Lobby, team_id: str, message: str) -> set[str]:
         runs = self._execution.list_runs(
