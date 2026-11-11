@@ -44,19 +44,6 @@ button:disabled { cursor: not-allowed; }
 .agp-task-workspace .agp-task-header .agp-run-status > .small { display: none; }
 .agp-task-workspace .agp-task-header .agp-run-status strong { font-size: .75rem; font-weight: 500; }
 .agp-task-header .agp-view-mode-toggle .agp-icon-button { height: 2.25rem; }
-.agp-task-workspace .agp-skeleton-region { --agp-border: #2b394d; --agp-surface-soft: #1a283b; }
-.agp-skeleton-region { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
-.agp-skeleton-card { display: flex; flex-direction: column; gap: .8rem; min-height: 13rem; padding: 1.25rem; border: 1px solid var(--agp-border); border-radius: var(--agp-radius); background: var(--agp-surface); }
-.agp-skeleton { display: block; width: 100%; height: .65rem; border-radius: .25rem; background: var(--agp-surface-soft); animation: agp-skeleton-breathe 1.8s ease-in-out infinite alternate; }
-.agp-skeleton--eyebrow { width: 25%; }
-.agp-skeleton--title { width: 70%; height: 1.1rem; margin: .4rem 0; }
-.agp-skeleton--short { width: 60%; }
-.agp-skeleton--action { height: 2rem; margin-top: auto; }
-.agp-skeleton-region--list { grid-template-columns: 1fr; }
-.agp-skeleton-region--list .agp-skeleton-card { min-height: 12rem; }
-.agp-skeleton-region--workspace { flex: 1; grid-template-columns: 1fr 1fr; padding: 1rem; min-height: 0; }
-.agp-skeleton-region--workspace .agp-skeleton-card { min-height: 24rem; }
-@keyframes agp-skeleton-breathe { to { opacity: .45; } }
 .agp-page-enter-active { transition: opacity 180ms ease, transform 180ms ease; }
 .agp-page-leave-active { position: absolute; top: 0; left: 0; width: 100%; opacity: 0; pointer-events: none; }
 .agp-page-enter-from { opacity: 0; transform: translateY(4px); }

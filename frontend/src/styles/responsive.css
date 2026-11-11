@@ -41,8 +41,6 @@
   .agp-main-columns--mobile-console .agp-bot-console-body { max-height: none; flex: 1; }
   .agp-task-workspace .agp-code-card, .agp-task-workspace .agp-code-card .agp-code-editor :is(.cm-editor) { min-height: 0 !important; }
   .agp-task-workspace .agp-viewer-card .agp-viewer-frame { height: 100%; min-height: 0; aspect-ratio: auto; }
-  .agp-skeleton-region--workspace { grid-template-columns: 1fr; }
-  .agp-skeleton-region--workspace .agp-skeleton-card + .agp-skeleton-card { display: none; }
   :is(.agp-task-workspace--mobile-code, .agp-task-workspace--mobile-console) .agp-replay-player > :not(.agp-player-side-buttons) { display: none; }
   :is(.agp-task-workspace--mobile-code, .agp-task-workspace--mobile-console) .agp-player-side-buttons { width: 100%; }
   :is(.agp-task-workspace--mobile-code, .agp-task-workspace--mobile-console) .agp-player-side-buttons .agp-panel-toggle { flex: 1; }

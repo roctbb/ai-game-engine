@@ -485,6 +485,8 @@ onMounted(async () => {
   border-radius: 8px;
   padding: 0.85rem;
   width: min(620px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   color: var(--agp-text);
 }
 .attempts-log-overlay { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px; background: #10182766; }

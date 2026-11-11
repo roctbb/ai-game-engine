@@ -21,6 +21,7 @@
         @toggle="toggleReplayPlay"
         @step="stepReplay"
       />
+      <div v-else class="agp-task-header-player arena-playback-loading" aria-hidden="true"><span></span></div>
 
       <div class="agp-task-header-actions"><button class="btn btn-outline-secondary arena-mobile-stats" @click="statsOpen = !statsOpen">Игроки</button><button v-if="sourceParticipants.length" class="btn btn-outline-secondary" :aria-pressed="sourceOpen" @click="toggleSource">{{ sourceOpen ? 'К матчу' : 'Код' }}</button>
         <div class="agp-run-status">
@@ -41,7 +42,7 @@
       </div>
     </header>
 
-    <LoadingSkeleton v-if="isLoading" :count="2" layout="workspace" label="Загрузка матча…" />
+    <LoadingSkeleton v-if="isLoading" :count="isEmbedded ? 1 : 2" layout="workspace" :style="{ '--agp-skeleton-workspace-columns': isEmbedded ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(18rem, 23rem)' }" label="Загрузка матча…" />
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="watchContext && run">
@@ -53,7 +54,7 @@
             {{ runStatusLabel }}
           </div>
           <div v-if="!rendererReady && safeRendererUrl" class="agp-viewer-overlay agp-viewer-overlay--message agp-watch-renderer-state">
-            Подготавливаем визуализацию…
+            <SnakeLoader label="Загрузка визуализации" />
           </div>
           <div v-if="showWinnerBanner" class="agp-watch-winner-banner">
             <span>Победитель</span>
@@ -194,6 +195,7 @@ import ReplayControls from '../components/ReplayControls.vue';
 import ReplayInsights from '../components/ReplayInsights.vue';
 import { replayMoments } from '../lib/replayInsights';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
+import SnakeLoader from '../components/SnakeLoader.vue';
 import { createReplayClock, loadReplayDelay, saveReplayDelay } from '../lib/replayPlayback';
 import { isShortcutInput } from '../lib/keyboard';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
@@ -1633,6 +1635,8 @@ onUnmounted(() => {
 <style scoped>
 
 
+.arena-playback-loading { min-height: 44px; display: flex; align-items: center; }
+.arena-playback-loading > span { display: block; width: min(100%, 320px); height: 12px; border-radius: 4px; background: var(--agp-surface-soft); }
 .agp-watch-columns {
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
   gap: 0;
@@ -1705,9 +1709,15 @@ onUnmounted(() => {
 }
 
 .agp-watch-renderer-state {
-  left: auto;
-  right: 0.75rem;
-  max-width: min(26rem, calc(100% - 1.5rem));
+  inset: 0;
+  display: grid;
+  place-items: center;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  background: var(--agp-surface);
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .agp-watch-winner-banner,

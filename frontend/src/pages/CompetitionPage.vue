@@ -18,7 +18,7 @@
       </div>
     </header>
 
-    <LoadingSkeleton v-if="isLoading" :count="4" label="Загрузка соревнования…" />
+    <LoadingSkeleton v-if="isLoading" :count="2" layout="list" label="Загрузка соревнования…" />
     <article v-else-if="errorMessage" class="agp-card p-4 text-danger">{{ errorMessage }}</article>
 
     <template v-else-if="competition">

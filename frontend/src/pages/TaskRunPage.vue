@@ -14,10 +14,11 @@
       /></RouterLink>
       <h1>{{ game?.title || "Задача" }}</h1>
       <span class="arena-save-time" role="status">{{ draftStateLabel }}</span>
-      <SnakeLoader v-if="isRunActive || isLaunching" :label="runStatusLabel" />
+      <SnakeLoader v-if="!isBootstrapping && (isRunActive || isLaunching)" :label="runStatusLabel" />
       <button
         class="btn btn-outline-secondary"
         :aria-pressed="conditionPanelOpen"
+        :disabled="isBootstrapping"
         @click="toggleConditionPanel"
       >
         Условие
@@ -50,12 +51,6 @@
     <p v-if="errorMessage" class="text-danger mb-0" role="alert">
       {{ errorMessage }}
     </p>
-    <LoadingSkeleton
-      v-if="isBootstrapping"
-      :count="2"
-      layout="workspace"
-      label="Готовим рабочее место"
-    />
     <nav v-if="isMobile" class="arena-mobile-panes" aria-label="Рабочая панель">
       <button
         :aria-pressed="mobilePanel === 'code' && !conditionPanelOpen"
@@ -72,6 +67,13 @@
         Поле
       </button>
     </nav>
+    <LoadingSkeleton
+      v-if="isBootstrapping"
+      :count="2"
+      layout="workspace"
+      :style="{ '--agp-skeleton-workspace-columns': `${splitRatio}fr ${100 - splitRatio}fr` }"
+      label="Готовим рабочее место"
+    />
     <div
       v-if="game && !isBootstrapping"
       ref="mainColumnsRef"
@@ -231,12 +233,10 @@
             title="Визуализация задачи"
             sandbox="allow-scripts"
             @load="sendRendererInit"
-          ></iframe
-          ><SnakeLoader
-            v-if="isReplayLoading"
-            class="arena-field-loading"
-            label="Загрузка повтора"
-          />
+          ></iframe>
+          <div v-if="isReplayLoading" class="arena-field-loading">
+            <SnakeLoader label="Загрузка повтора" />
+          </div>
           <p
             v-if="replayError"
             role="alert"
@@ -1835,10 +1835,13 @@ onUnmounted(() => {
 }
 .arena-field-loading {
   position: absolute;
-  left: 12px;
-  bottom: 12px;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 16px;
   background: var(--agp-surface);
-  padding: 8px;
+  text-align: center;
 }
 .arena-field-pane > .arena-diagnostic {
   margin: 8px 8px 0;

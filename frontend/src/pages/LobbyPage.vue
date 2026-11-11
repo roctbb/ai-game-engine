@@ -26,7 +26,7 @@
     <nav v-if="activeTab === 'code'" class="arena-lobby-mobile-tabs" aria-label="Рабочая панель"><button :aria-pressed="lobbyMobilePane === 'code'" @click="lobbyMobilePane = 'code'">Код</button><button :aria-pressed="lobbyMobilePane === 'field'" @click="lobbyMobilePane = 'field'">Поле</button></nav>
     <article v-if="queueExpired" class="agp-card p-3 arena-queue-notice" role="status"><span>Вы вышли из очереди после 10 минут офлайн.</span><button class="btn btn-outline-primary" :disabled="!canPlay || isBusy" @click="play">Снова готов</button></article>
     <article v-if="errorMessage" class="agp-card p-3 text-danger">{{ errorMessage }}</article>
-    <LoadingSkeleton v-if="isLoading" :count="3" label="Загрузка лобби…" />
+    <LoadingSkeleton v-if="isLoading" :count="activeTab === 'code' ? 2 : 3" :layout="activeTab === 'code' ? 'workspace' : 'list'" :style="activeTab === 'code' ? { '--agp-skeleton-workspace-columns': '52fr 48fr' } : undefined" label="Загрузка лобби…" />
 
     <article v-else-if="joinRequired" class="agp-card p-4 lobby-access-card">
       <div>
@@ -3065,9 +3065,9 @@ function handleLobbyMenu(action: string): void {
   z-index: 120;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  place-items: start end;
+  place-items: center;
   overflow-y: auto;
-  padding: 4.2rem 1rem 1rem;
+  padding: 16px;
   background: rgba(15, 23, 42, 0.32);
   backdrop-filter: blur(3px);
 }
@@ -3076,6 +3076,8 @@ function handleLobbyMenu(action: string): void {
 .lobby-settings-dialog,
 .lobby-player-code-dialog {
   width: min(100%, 28rem);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 0.7rem;
   background: var(--agp-surface);
@@ -3089,8 +3091,8 @@ function handleLobbyMenu(action: string): void {
 
 .lobby-player-code-dialog {
   width: min(100%, 78rem);
-  max-height: calc(100dvh - 6rem);
-  overflow: hidden;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
@@ -3665,7 +3667,7 @@ function handleLobbyMenu(action: string): void {
 }
 
 
-.arena-lobby-workbar{display:flex;align-items:center;gap:8px;grid-column:1/-1;min-height:44px}.arena-lobby-workbar h1{font-size:16px;line-height:24px;margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.arena-lobby-workbar>.small{font-size:11px;margin-right:8px}.lobby-page--workspace{height:calc(100dvh - 24px);grid-template-columns:minmax(0,52fr) minmax(0,48fr);grid-template-rows:auto minmax(0,1fr);gap:8px}.lobby-page--workspace>.lobby-code-layout{grid-column:1;grid-row:2;display:flex;min-height:0}.lobby-page--workspace .lobby-roles{display:none}.lobby-page--workspace .lobby-editor{padding:0!important;display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}.arena-lobby-editor-head{min-height:44px;border-bottom:1px solid var(--agp-border);margin:0;padding:6px 12px;display:flex}.arena-lobby-editor-head>strong{font-size:12px;font-weight:500}.arena-lobby-editor-head select{max-width:180px}.arena-lobby-editor-head details{margin-left:auto}.lobby-page--workspace .agp-code-editor{flex:1;min-height:0;overflow:hidden}.lobby-page--workspace :deep(.cm-editor){height:100%;min-height:0!important;border:0!important;border-radius:0!important}.lobby-page--workspace>.lobby-game-layout{grid-column:2;grid-row:2;display:flex;min-height:0}.lobby-page--workspace .lobby-game-stats{display:none}.lobby-page--workspace .lobby-game-view{flex:1;min-height:0;border:1px solid var(--agp-border);border-radius:10px;background:var(--agp-surface);overflow:hidden}.lobby-page--workspace .lobby-game-view>.agp-game-reference{height:100%;overflow:auto}.arena-file-menu{position:relative}.arena-file-menu summary{font-size:22px;padding:0 8px;list-style:none;cursor:pointer}.arena-file-menu>div{position:absolute;right:0;z-index:20;width:210px;background:var(--agp-surface);border:1px solid var(--agp-border);border-radius:8px;padding:8px;display:grid}.arena-file-menu button{background:none;border:0;color:var(--agp-text);text-align:left;padding:8px;font-size:13px}.arena-roster-picker{margin:0 0 16px;padding:0;border:0;display:grid;gap:8px}.arena-roster-picker legend{font-size:14px;font-weight:600}.arena-roster-picker label{display:flex;align-items:center;gap:8px;font-size:13px}.arena-roster-picker>div{max-height:180px;overflow:auto;display:grid;gap:8px;padding:8px;background:var(--agp-surface-soft);border-radius:6px}.lobby-competition-dialog{max-height:calc(100dvh - 6rem);overflow:auto}
+.arena-lobby-workbar{display:flex;align-items:center;gap:8px;grid-column:1/-1;min-height:44px}.arena-lobby-workbar h1{font-size:16px;line-height:24px;margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.arena-lobby-workbar>.small{font-size:11px;margin-right:8px}.lobby-page--workspace{height:calc(100dvh - 24px);grid-template-columns:minmax(0,52fr) minmax(0,48fr);grid-template-rows:auto minmax(0,1fr);gap:8px}.lobby-page--workspace>.lobby-code-layout{grid-column:1;grid-row:2;display:flex;min-height:0}.lobby-page--workspace .lobby-roles{display:none}.lobby-page--workspace .lobby-editor{padding:0!important;display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}.arena-lobby-editor-head{min-height:44px;border-bottom:1px solid var(--agp-border);margin:0;padding:6px 12px;display:flex}.arena-lobby-editor-head>strong{font-size:12px;font-weight:500}.arena-lobby-editor-head select{max-width:180px}.arena-lobby-editor-head details{margin-left:auto}.lobby-page--workspace .agp-code-editor{flex:1;min-height:0;overflow:hidden}.lobby-page--workspace :deep(.cm-editor){height:100%;min-height:0!important;border:0!important;border-radius:0!important}.lobby-page--workspace>.lobby-game-layout{grid-column:2;grid-row:2;display:flex;min-height:0}.lobby-page--workspace .lobby-game-stats{display:none}.lobby-page--workspace .lobby-game-view{flex:1;min-height:0;border:1px solid var(--agp-border);border-radius:10px;background:var(--agp-surface);overflow:hidden}.lobby-page--workspace .lobby-game-view>.agp-game-reference{height:100%;overflow:auto}.arena-file-menu{position:relative}.arena-file-menu summary{font-size:22px;padding:0 8px;list-style:none;cursor:pointer}.arena-file-menu>div{position:absolute;right:0;z-index:20;width:210px;background:var(--agp-surface);border:1px solid var(--agp-border);border-radius:8px;padding:8px;display:grid}.arena-file-menu button{background:none;border:0;color:var(--agp-text);text-align:left;padding:8px;font-size:13px}.arena-roster-picker{margin:0 0 16px;padding:0;border:0;display:grid;gap:8px}.arena-roster-picker legend{font-size:14px;font-weight:600}.arena-roster-picker label{display:flex;align-items:center;gap:8px;font-size:13px}.arena-roster-picker>div{max-height:180px;overflow:auto;display:grid;gap:8px;padding:8px;background:var(--agp-surface-soft);border-radius:6px}.lobby-competition-dialog{max-height:calc(100dvh - 32px);overflow:auto}
 @media(max-width:900px){.lobby-page--workspace{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto}.lobby-page--workspace>.lobby-code-layout{grid-row:2;grid-column:1;height:58dvh}.lobby-page--workspace>.lobby-game-layout{grid-row:3;grid-column:1;height:48dvh}.arena-lobby-workbar{flex-wrap:wrap}.arena-lobby-workbar>.small{display:none}.arena-lobby-workbar .btn{font-size:12px;padding:6px 8px}}
 
 
@@ -3766,4 +3768,7 @@ function handleLobbyMenu(action: string): void {
   .lobby-stat-cell::before { content: attr(data-label); font-family: "Golos Text", sans-serif; font-size: 11px; color: var(--agp-text-muted); }
   .lobby-participant-table .lobby-participant-actions { position: absolute; right: 0; top: 12px; }
 }
+
+.lobby-page--workspace > .agp-skeleton-region { grid-column: 1 / -1; grid-row: 2; }
+@media (max-width: 900px) { .lobby-page--workspace > .agp-skeleton-region { grid-row: 3; } }
 </style>
