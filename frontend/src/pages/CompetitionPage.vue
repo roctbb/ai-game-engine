@@ -149,7 +149,7 @@
                 <article v-for="(match, matchIndex) in round.matches" :key="match.match_id" class="competition-match-card">
                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                     <div>
-                      <div class="fw-semibold">Матч {{ matchIndex + 1 }}</div>
+                      <div class="fw-semibold">Матч {{ matchNumber(match) }}</div>
                       <div class="small text-muted">
                         Проходят дальше: {{ competition.advancement_top_k }} из {{ match.team_ids.length }}
                       </div>
@@ -205,7 +205,7 @@
                   :key="`bnode-${match.match_id}`"
                   class="competition-bracket-node"
                 >
-                  <div class="small fw-semibold mb-1">Матч {{ matchIndex + 1 }}</div>
+                  <div class="small fw-semibold mb-1">Матч {{ matchNumber(match) }}</div>
                   <div class="small" v-for="teamId in match.team_ids" :key="`bnode-team-${match.match_id}-${teamId}`">
                     {{ teamName(teamId) }}
                   </div>
@@ -236,7 +236,7 @@
               >
                 <div class="fw-semibold small mb-1">Раунд {{ round.round_index }}</div>
                 <div v-for="(match, matchIndex) in round.matches" :key="`multi-node-${match.match_id}`" class="competition-bracket-node-inner">
-                  <div class="small fw-semibold">Матч {{ matchIndex + 1 }}</div>
+                  <div class="small fw-semibold">Матч {{ matchNumber(match) }}</div>
                   <div class="small text-muted">Проходят дальше: {{ competition.advancement_top_k }}</div>
                   <MatchRoster :team-ids="match.team_ids" :name-for="teamName" :scores="competitionMatchScores(match, competitionRuns)" :advanced="match.advanced_team_ids" :my-team-id="teamsByGame.find(team => team.captain_user_id === sessionStore.nickname)?.team_id" />
                   <div class="small text-muted">
@@ -640,6 +640,11 @@ function matchStatusLabel(status: CompetitionMatchStatus): string {
   if (status === 'awaiting_tiebreak') return 'ничья';
   if (status === 'auto_advanced') return 'без матча';
   return status;
+}
+
+function matchNumber(match: CompetitionMatchDto): number {
+  const round = competition.value?.rounds.find(round => round.round_index === match.round_index);
+  return (round?.matches.findIndex(item => item.match_id === match.match_id) ?? 0) + 1;
 }
 
 function matchPrimaryRunId(match: CompetitionMatchDto): string {

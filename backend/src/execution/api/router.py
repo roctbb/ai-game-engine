@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.auth import get_current_session, require_internal_token, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
+from competition.domain.model import CompetitionStatus
 from execution.api.schemas import (
     AcceptRunRequest,
     BuildResponse,
@@ -328,6 +329,10 @@ def get_run_code(
     run = container.execution.get_run(run_id)
     if run.run_kind is RunKind.SINGLE_TASK:
         ensure_can_view_run(container=container, session=session, run=run)
+    elif session.role is UserRole.STUDENT:
+        team = container.team_workspace.get_team(run.team_id)
+        if team.captain_user_id != session.nickname:
+            raise ForbiddenError("Можно просматривать только свой код")
     else:
         _ensure_can_manage_run(container=container, session=session, run=run)
     if not run.snapshot_id:
@@ -588,9 +593,12 @@ def _watch_first_show_clock(
 ) -> dict[str, object] | None:
     if current_run.run_kind is RunKind.SINGLE_TASK:
         return None
-    if current_run.run_kind is RunKind.COMPETITION_MATCH:
+    if current_run.run_kind is RunKind.COMPETITION_MATCH and current_run.lobby_id:
         try:
-            sequential_clock = container.competition.first_show_for_run(current_run)
+            competition = container.competition.get_competition(current_run.lobby_id)
+            if competition.status is CompetitionStatus.FINISHED:
+                return None
+            sequential_clock = container.competition.first_show_for_run(current_run, competition=competition)
             if sequential_clock is not None:
                 return sequential_clock
         except NotFoundError:

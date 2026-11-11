@@ -530,10 +530,10 @@ class CompetitionService:
             }
         return None
 
-    def first_show_for_run(self, run: Run) -> dict[str, object] | None:
+    def first_show_for_run(self, run: Run, *, competition: Competition | None = None) -> dict[str, object] | None:
         if not run.lobby_id:
             return None
-        competition = self.get_competition(run.lobby_id)
+        competition = competition or self.get_competition(run.lobby_id)
         if competition.presentation_mode is not CompetitionPresentationMode.SEQUENTIAL:
             return None
         runs = {item.run_id: item for item in self._execution.list_runs(

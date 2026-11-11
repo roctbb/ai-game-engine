@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Iterator, Protocol, TypeVar
+from contextlib import contextmanager
+from functools import wraps
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from threading import Lock
+from threading import RLock, local
 from random import SystemRandom
 
 from execution.application.service import CreateRunInput, ExecutionService
@@ -61,6 +63,17 @@ class LobbyViewerPresence(Protocol):
     def touch(self, lobby_id: str, ttl_seconds: int) -> None: ...
 
     def is_online(self, lobby_id: str) -> bool: ...
+
+
+_MutationResult = TypeVar('_MutationResult')
+
+
+def _serialize_lobby_mutation(method: Callable[..., _MutationResult]) -> Callable[..., _MutationResult]:
+    @wraps(method)
+    def protected(self: TrainingLobbyService, lobby_id: str, *args: object, **kwargs: object) -> _MutationResult:
+        with self._lobby_mutation(lobby_id):
+            return method(self, lobby_id, *args, **kwargs)
+    return protected
 
 
 def _can_change_participation(lobby: Lobby) -> bool:
@@ -274,7 +287,8 @@ class TrainingLobbyService:
         self._viewer_presence = viewer_presence
         self._last_viewer_seen_at: dict[str, datetime] = {}
         self._demo_bot_cache: dict[str, bool] = {}
-        self._matchmaking_locks: dict[str, Lock] = {}
+        self._matchmaking_locks: dict[str, RLock] = {}
+        self._mutation_state = local()
         self._participant_stats_cache: dict[
             str,
             tuple[object, tuple[LobbyParticipantStats, ...]],
@@ -325,6 +339,7 @@ class TrainingLobbyService:
                 return team_id
         return None
 
+    @_serialize_lobby_mutation
     def mark_viewer_online(self, lobby_id: str, user_id: str) -> None:
         now = utc_now()
         lobby = self.get_lobby(lobby_id)
@@ -342,6 +357,7 @@ class TrainingLobbyService:
                     self._repository.save(lobby)
                 break
 
+    @_serialize_lobby_mutation
     def ensure_user_joined(self, lobby_id: str, user_id: str, access_code: str | None, *, bypass_access_code: bool = False) -> tuple[Lobby, str]:
         lobby = self.get_lobby(lobby_id)
         existing_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
@@ -364,6 +380,7 @@ class TrainingLobbyService:
             raise NotFoundError("Пользователь не состоит в лобби")
         return self.set_ready(lobby_id=lobby_id, team_id=team_id, ready=ready)
 
+    @_serialize_lobby_mutation
     def stop_for_user(self, lobby_id: str, user_id: str) -> Lobby:
         team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
         if team_id is None:
@@ -487,6 +504,7 @@ class TrainingLobbyService:
             archived_match_groups=archived_match_groups,
         )
 
+    @_serialize_lobby_mutation
     def join_team(
         self,
         lobby_id: str,
@@ -511,6 +529,7 @@ class TrainingLobbyService:
         self._repository.save(lobby)
         return lobby
 
+    @_serialize_lobby_mutation
     def leave_team(self, lobby_id: str, team_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         self._ensure_team_can_leave(lobby=lobby, team_id=team_id)
@@ -532,6 +551,7 @@ class TrainingLobbyService:
         if lobby.kind == LobbyKind.COMPETITION and lobby.status == LobbyStatus.RUNNING:
             raise InvariantViolationError("Во время соревнования выход запрещен")
 
+    @_serialize_lobby_mutation
     def set_ready(self, lobby_id: str, team_id: str, ready: bool) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         if not _can_change_participation(lobby):
@@ -555,6 +575,7 @@ class TrainingLobbyService:
         self._repository.save(lobby)
         return lobby
 
+    @_serialize_lobby_mutation
     def set_status(self, lobby_id: str, status: LobbyStatus) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         if status == LobbyStatus.PAUSED:
@@ -604,6 +625,7 @@ class TrainingLobbyService:
                 state.ready = True
                 state.blocker_reason = None
 
+    @_serialize_lobby_mutation
     def stop_current_training_games_for_competition(self, lobby_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         if lobby.kind is not LobbyKind.TRAINING:
@@ -614,6 +636,7 @@ class TrainingLobbyService:
         self._repository.save(lobby)
         return lobby
 
+    @_serialize_lobby_mutation
     def update_lobby_settings(
         self,
         lobby_id: str,
@@ -634,6 +657,7 @@ class TrainingLobbyService:
         self.cleanup_training_match_archive(lobby_id=lobby_id)
         return lobby
 
+    @_serialize_lobby_mutation
     def delete_lobby(self, lobby_id: str) -> None:
         lobby = self.get_lobby(lobby_id)
         self._cancel_active_training_runs(lobby_id=lobby_id, message="lobby_deleted")
@@ -641,6 +665,7 @@ class TrainingLobbyService:
         self._clear_lobby_derived_caches(lobby_id)
         self._repository.delete(lobby_id)
 
+    @_serialize_lobby_mutation
     def cleanup_training_match_archive(self, lobby_id: str) -> list[str]:
         try:
             lobby = self.get_lobby(lobby_id)
@@ -742,6 +767,7 @@ class TrainingLobbyService:
         ]
         lobby.set_last_scheduled_match_groups(remaining_groups)
 
+    @_serialize_lobby_mutation
     def reconcile_training_lobby_status(self, lobby_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         if lobby.kind is not LobbyKind.TRAINING:
@@ -775,31 +801,37 @@ class TrainingLobbyService:
         return lobby
 
     def run_matchmaking_cycle(self, lobby_id: str, requested_by: str) -> Lobby:
-        lock = self._matchmaking_locks.setdefault(lobby_id, Lock())
-        with lock:
-            if self._matchmaking_lock_client is not None:
-                return self._run_matchmaking_cycle_with_distributed_lock(
-                    lobby_id=lobby_id,
-                    requested_by=requested_by,
-                )
+        with self._lobby_mutation(lobby_id):
             return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
 
-    def _run_matchmaking_cycle_with_distributed_lock(self, lobby_id: str, requested_by: str) -> Lobby:
-        distributed_lock = self._matchmaking_lock_client.lock(
-            f"ai-game:training-lobby:{lobby_id}:matchmaking",
-            timeout=max(settings.matchmaking_lock_ttl_seconds, 1.0),
-            blocking_timeout=max(settings.matchmaking_lock_blocking_timeout_seconds, 0.1),
-        )
-        acquired = distributed_lock.acquire(blocking=True)
-        if not acquired:
-            raise InvariantViolationError("Matchmaking уже выполняется для этого лобби")
-        try:
-            return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
-        finally:
+    @contextmanager
+    def _lobby_mutation(self, lobby_id: str) -> Iterator[None]:
+        """Use one lock for API changes, presence and the separate matchmaker process."""
+        with self._matchmaking_locks.setdefault(lobby_id, RLock()):
+            active = getattr(self._mutation_state, 'active_lobbies', set())
+            if lobby_id in active:
+                yield
+                return
+            distributed_lock = None
+            if self._matchmaking_lock_client is not None:
+                distributed_lock = self._matchmaking_lock_client.lock(
+                    f"ai-game:training-lobby:{lobby_id}:matchmaking",
+                    timeout=max(settings.matchmaking_lock_ttl_seconds, 1.0),
+                    blocking_timeout=max(settings.matchmaking_lock_blocking_timeout_seconds, 0.1),
+                )
+                if not distributed_lock.acquire(blocking=True):
+                    raise InvariantViolationError("Лобби обновляется. Повторите действие.")
+            active.add(lobby_id)
+            self._mutation_state.active_lobbies = active
             try:
-                distributed_lock.release()
-            except Exception:
-                pass
+                yield
+            finally:
+                active.remove(lobby_id)
+                if distributed_lock is not None:
+                    try:
+                        distributed_lock.release()
+                    except Exception:
+                        pass
 
     def run_due_matchmaking_cycles(self, requested_by: str = "system") -> tuple[Lobby, ...]:
         advanced: list[Lobby] = []
@@ -1161,6 +1193,7 @@ class TrainingLobbyService:
                 except InvariantViolationError:
                     continue
 
+    @_serialize_lobby_mutation
     def switch_game_version(self, lobby_id: str, version_id: str) -> Lobby:
         lobby = self.get_lobby(lobby_id)
         target_version = self._game_catalog.get_version(game_id=lobby.game_id, version_id=version_id)

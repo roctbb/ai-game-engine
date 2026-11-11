@@ -249,6 +249,12 @@ def test_student_can_watch_other_tournament_match_but_not_source(client, contain
     run_id = next(iter(match["run_ids_by_team"].values()))
     assert client.get(f"/api/v1/runs/{run_id}/watch-context", headers=headers).status_code == 200
     assert client.get(f"/api/v1/runs/{run_id}/code", headers=headers).status_code == 403
+    own_match = next(item for item in competition['rounds'][0]['matches'] if observer['team_id'] in item['team_ids'])
+    own_run_id = own_match['run_ids_by_team'][observer['team_id']]
+    own_code = client.get(f'/api/v1/runs/{own_run_id}/code', headers=headers)
+    assert own_code.status_code == 200, own_code.text
+    assert 'def make_choice' in own_code.json()['codes_by_slot']['bot']
+    assert client.post(f'/api/v1/runs/{own_run_id}/cancel', headers=headers).status_code == 403
 
 
 @pytest.mark.parametrize("access,expected", [("public", 200), ("code", 403)])
@@ -495,6 +501,31 @@ def test_tournament_first_show_clock_is_shared_within_match_not_whole_round(clie
     assert contexts[0]["first_show"] == contexts[1]["first_show"]
     pending = client.get(f"/api/v1/runs/{second_id}/watch-context").json()
     assert pending["first_show"]["started_at"] is None
+
+
+def test_just_archived_tournament_opens_as_free_replay(client, container):
+    lobby, _ = _setup(client, container, count=2, builtin=True)
+    started = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={
+        "title": "Быстрый архив", "participant_selection": "all", "presentation_mode": "instant",
+    }).json()
+    competition_id = started['competition_id']
+    match = container.competition.get_competition(competition_id).rounds[0].matches[0]
+    run_ids = list(match.run_ids_by_team.values())
+    response = client.post(f"/api/v1/internal/runs/{run_ids[0]}/finished", json={'payload': {
+        'status': 'ok', 'metrics': {}, 'frames': [{'tick': tick} for tick in range(100)],
+        'scores': {team: 1 - index for index, team in enumerate(match.team_ids)},
+        'placements': {team: index + 1 for index, team in enumerate(match.team_ids)},
+    }})
+    assert response.status_code == 200, response.text
+    assert client.get(f'/api/v1/competitions/{competition_id}').json()['status'] == 'completed'
+    assert client.get(f'/api/v1/runs/{run_ids[0]}/watch-context').json()['first_show'] is not None
+    assert client.post(f'/api/v1/competitions/{competition_id}/finish').status_code == 200
+    login = client.post('/api/v1/auth/dev-login', json={'nickname': 'archived-viewer', 'role': 'student'}).json()
+    for headers in ({}, {'X-Session-Id': login['session_id']}):
+        for run_id in run_ids:
+            context = client.get(f'/api/v1/runs/{run_id}/watch-context', headers=headers)
+            assert context.status_code == 200
+            assert context.json()['first_show'] is None
 
 
 def test_platform_failure_is_retried_with_frozen_source_and_seed(client, container):
