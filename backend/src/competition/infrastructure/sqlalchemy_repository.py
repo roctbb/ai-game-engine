@@ -12,6 +12,7 @@ from competition.domain.model import (
     CompetitionFormat,
     CompetitionMatch,
     CompetitionMatchStatus,
+    CompetitionPresentationMode,
     CompetitionRound,
     CompetitionRoundStatus,
     CompetitionStatus,
@@ -75,6 +76,9 @@ def _map_competition_to_orm(competition: Competition) -> CompetitionOrm:
                         "placements_by_team": dict(match.placements_by_team),
                         "advanced_team_ids": list(match.advanced_team_ids),
                         "tie_break_reason": match.tie_break_reason,
+                        "show_started_at": match.show_started_at.isoformat() if match.show_started_at else None,
+                        "show_reveal_at": match.show_reveal_at.isoformat() if match.show_reveal_at else None,
+                        "show_ends_at": match.show_ends_at.isoformat() if match.show_ends_at else None,
                     }
                     for match in round_item.matches
                 ],
@@ -90,6 +94,7 @@ def _map_competition_to_orm(competition: Competition) -> CompetitionOrm:
         format=competition.format.value,
         tie_break_policy=competition.tie_break_policy.value,
         code_policy=competition.code_policy.value,
+        presentation_mode=competition.presentation_mode.value,
         advancement_top_k=competition.advancement_top_k,
         min_match_size=competition.min_match_size,
         match_size=competition.match_size,
@@ -170,6 +175,9 @@ def _map_competition_from_orm(row: CompetitionOrm) -> Competition:
                     scores_by_team=scores_by_team,
                     placements_by_team=placements_by_team,
                     advanced_team_ids=tuple(str(team_id) for team_id in advanced_raw),
+                    show_started_at=datetime.fromisoformat(raw_match["show_started_at"]) if raw_match.get("show_started_at") else None,
+                    show_reveal_at=datetime.fromisoformat(raw_match["show_reveal_at"]) if raw_match.get("show_reveal_at") else None,
+                    show_ends_at=datetime.fromisoformat(raw_match["show_ends_at"]) if raw_match.get("show_ends_at") else None,
                     tie_break_reason=(
                         str(raw_match.get("tie_break_reason"))
                         if raw_match.get("tie_break_reason")
@@ -206,6 +214,7 @@ def _map_competition_from_orm(row: CompetitionOrm) -> Competition:
         format=CompetitionFormat(row.format),
         tie_break_policy=TieBreakPolicy(row.tie_break_policy),
         code_policy=code_policy,
+        presentation_mode=CompetitionPresentationMode(row.presentation_mode or "instant"),
         advancement_top_k=row.advancement_top_k,
         min_match_size=getattr(row, "min_match_size", 2) or 2,
         match_size=row.match_size,

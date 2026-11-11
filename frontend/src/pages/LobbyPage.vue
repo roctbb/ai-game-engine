@@ -11,6 +11,7 @@
       </div>
       <span v-else class="small text-muted">Ожидание следующего матча</span>
       <button class="btn btn-outline-secondary arena-live-players" @click="liveStatsOpen = true">Участники</button>
+      <button v-if="activeCompetition?.broadcast && selectedCompetitionRunId" class="btn btn-primary" @click="selectedCompetitionRunId = ''; router.replace({ query: { ...route.query, match: undefined } })">К показу</button>
       <RouterLink v-if="displayedGameRunId" class="btn btn-outline-secondary" :to="{ name: 'run-watch', params: { runId: displayedGameRunId }, query: { back: route.fullPath } }">Разобрать</RouterLink>
     </header>
     <header v-else class="lobby-overview-head">
@@ -89,7 +90,7 @@
           <article class="lobby-competition-dialog" v-dialog-focus="() => showCompetitionDialog = false" role="dialog" aria-modal="true" aria-labelledby="competition-dialog-title">
             <header class="lobby-dialog-head">
               <div>
-                <h2 id="competition-dialog-title" class="h5 mb-1">Начать соревнование</h2>
+                <h2 id="competition-dialog-title" class="h5 mb-0">Начать соревнование</h2>
 
               </div>
               <button
@@ -126,6 +127,13 @@
                   min="1"
                   :max="competitionMatchSize"
                 />
+              </label>
+              <label class="lobby-competition-setting lobby-competition-setting--wide">
+                <span>Показ матчей</span>
+                <select v-model="competitionPresentationMode" class="form-select form-select-sm">
+                  <option value="sequential">Матчи по очереди</option>
+                  <option value="instant">Сразу результаты</option>
+                </select>
               </label>
               <label class="lobby-competition-setting lobby-competition-setting--wide">
                 <span>Тай-брейк</span>
@@ -669,6 +677,7 @@ const competitionMatchSize = ref(2);
 const competitionAdvanceTopK = ref(1);
 const competitionTieBreakPolicy = ref<TieBreakPolicy>('manual');
 const competitionCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
+const competitionPresentationMode = ref<'instant' | 'sequential'>('sequential');
 const lastGameRunId = ref('');
 const selectedTrainingRunId = ref('');
 const selectedCompetitionRunId = ref('');
@@ -969,7 +978,7 @@ const managerCycleStatusHint = computed(() => {
 const currentCompetitionRound = computed(() => {
   const competition = activeCompetition.value;
   if (!competition) return null;
-  return competition.rounds.find((round) => round.round_index === competition.current_round_index) ?? null;
+  return competition.rounds.find((round) => round.round_index === (competition.broadcast?.round_index ?? competition.current_round_index)) ?? null;
 });
 const visibleCompetitionMatches = computed(() =>
   currentCompetitionRound.value?.matches.filter(match => competitionMatchHasWatchableRun(match) && Boolean(matchPrimaryRunId(match))) ?? [],
@@ -982,6 +991,8 @@ const currentCompetitionMatch = computed(() => {
     );
     if (selectedMatch) return selectedMatch;
   }
+  const broadcasting = activeCompetition.value?.broadcast?.match_id;
+  if (broadcasting) return visibleCompetitionMatches.value.find(match => match.match_id === broadcasting) ?? null;
   return visibleCompetitionMatches.value[0] ?? null;
 });
 const currentCompetitionRun = computed(() => {
@@ -993,6 +1004,7 @@ const currentCompetitionRun = computed(() => {
   ) {
     return competitionRunsById.value[selectedCompetitionRunId.value] ?? null;
   }
+  if (activeCompetition.value.broadcast) return competitionRunsById.value[activeCompetition.value.broadcast.run_id] ?? null;
   const match = currentCompetitionMatch.value;
   if (match && myTeamId) {
     const runId = match.run_ids_by_team[myTeamId] ?? '';
@@ -1013,6 +1025,7 @@ const currentCompetitionRunId = computed(() => {
   ) {
     return selectedCompetitionRunId.value;
   }
+  if (activeCompetition.value.broadcast) return activeCompetition.value.broadcast.run_id;
   if (currentCompetitionRun.value) return currentCompetitionRun.value.run_id;
   if (currentCompetitionMatch.value && myTeamId) return currentCompetitionMatch.value.run_ids_by_team[myTeamId] ?? '';
   if (currentCompetitionMatch.value) return matchPrimaryRunId(currentCompetitionMatch.value) ?? '';
@@ -1700,6 +1713,11 @@ function stepCurrentMatch(delta: number): void {
   selectReplayChoice(choices[(Math.max(0, index) + delta + choices.length) % choices.length].run_id);
 }
 function openCurrentMatch(runId?: string): void {
+  if (!runId && activeCompetition.value?.broadcast) {
+    selectedCompetitionRunId.value = '';
+    void router.push({ query: { ...route.query, tab: 'game', match: undefined } });
+    return;
+  }
   const choice = runId || currentReplayChoices.value.find(item => item.run_id === displayedGameRunId.value)?.run_id || currentReplayChoices.value[0]?.run_id;
   if (!choice) return;
   if (activeCompetition.value) selectedCompetitionRunId.value = choice; else selectedTrainingRunId.value = choice;
@@ -2190,6 +2208,7 @@ function isResolvedCompetitionMatch(match: CompetitionMatchDto): boolean {
 }
 
 function effectiveCompetitionMatchStatus(match: CompetitionMatchDto): CompetitionMatchStatus {
+  if (activeCompetition.value?.presentation_mode === 'sequential') return match.status;
   if (match.status !== 'running') return match.status;
   const runIds = Object.values(match.run_ids_by_team);
   if (!runIds.length) return match.status;
@@ -2802,6 +2821,7 @@ async function startCompetitionFromLobby(): Promise<void> {
       team_ids: competitionSelectedTeams.value,
       tie_break_policy: competitionTieBreakPolicy.value,
       code_policy: competitionCodePolicy.value,
+      presentation_mode: competitionPresentationMode.value,
       advancement_top_k: Math.max(1, Math.min(competitionAdvanceTopK.value, competitionMatchSize.value)),
       match_size: Math.max(
         competitionMinMatchSize.value,
@@ -3105,7 +3125,8 @@ function handleLobbyMenu(action: string): void {
 }
 
 .lobby-dialog-head {
-  margin-bottom: 0.9rem;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .lobby-dialog-close {
@@ -3286,7 +3307,8 @@ function handleLobbyMenu(action: string): void {
 
 .lobby-competition-setting {
   display: grid;
-  gap: 0.15rem;
+  align-content: start;
+  gap: 4px;
   min-width: 0;
   font-size: 0.78rem;
   color: var(--agp-text-muted);
@@ -3330,7 +3352,8 @@ function handleLobbyMenu(action: string): void {
 .lobby-competition-settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
+  align-items: start;
+  gap: 12px;
 }
 
 .lobby-competition-setting--wide {

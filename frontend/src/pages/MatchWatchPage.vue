@@ -197,6 +197,7 @@ const replayIsPlaying = ref(false);
 const replaySpeedMs = ref(replaySpeedFromQuery());
 const firstShowSample = ref<FirstShowSample | null>(null);
 const followingFirstShow = ref(false);
+const awaitingFirstShowTurn = ref(false);
 let firstShowRefreshHandle: ReturnType<typeof setTimeout> | null = null;
 let refreshingFirstShow = false;
 let disposed = false;
@@ -411,7 +412,7 @@ const visibleMoveLogItems = computed(() => {
     : moveLogItems.value.filter((item) => item.tick <= replayFrameTick.value);
   return items.slice(-14);
 });
-const firstShowWaiting = computed(() => firstShowSample.value?.timeline.started_at === null);
+const firstShowWaiting = computed(() => firstShowSample.value?.timeline.started_at === null || awaitingFirstShowTurn.value);
 const firstReplayLockActive = computed(() => firstShowWaiting.value || followingFirstShow.value);
 const canPlayReplay = computed(() => !firstReplayLockActive.value && replayFrames.value.length > 1);
 const canStepBackward = computed(() => !firstReplayLockActive.value && replayFrames.value.length > 0 && replayFrameIndex.value > 0);
@@ -1200,6 +1201,7 @@ function syncFirstReplayFrame(): void {
   if (!sample) return;
   if (sample.timeline.started_at !== null && !replayFrames.value.length) return;
   const position = firstShowPosition(sample, replayFrames.value.length, performance.now());
+  awaitingFirstShowTurn.value = position.waiting;
   const wasFollowing = followingFirstShow.value;
   followingFirstShow.value = position.following;
   if (position.following || wasFollowing || isEmbedded.value) {
@@ -1210,7 +1212,12 @@ function syncFirstReplayFrame(): void {
 }
 
 function applyWatchClock(context: RunWatchContextDto, requestedAt: number, receivedAt: number): void {
-  firstShowSample.value = sampleFirstShow(context.first_show, context.server_now, requestedAt, receivedAt, context.server_received_at);
+  firstShowSample.value = ['failed', 'timeout', 'canceled'].includes(context.status) ? null
+    : sampleFirstShow(context.first_show, context.server_now, requestedAt, receivedAt, context.server_received_at);
+  if (!firstShowSample.value) {
+    followingFirstShow.value = false;
+    awaitingFirstShowTurn.value = false;
+  }
   syncFirstReplayFrame();
   sendRendererStateAndResult();
   scheduleFirstShowRefresh();
@@ -1303,6 +1310,7 @@ async function loadRunAndContext(runId: string): Promise<void> {
 }
 
 async function ensureReplayLoaded(runId: string): Promise<void> {
+  if (run.value?.run_id !== runId || run.value.status !== 'finished') return;
   if (replay.value?.run_id === runId || isReplayLoading.value) {
     return;
   }

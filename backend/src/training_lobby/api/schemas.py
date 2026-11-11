@@ -49,6 +49,7 @@ class SetLobbyStatusRequest(BaseModel):
 
 
 class StartLobbyCompetitionRequest(BaseModel):
+    presentation_mode: Literal["instant", "sequential"] = "instant"
     participant_selection: Literal["queue", "selected", "all"] = "all"
     team_ids: list[str] = Field(default_factory=list, max_length=512)
     title: str = Field(min_length=2, max_length=160)

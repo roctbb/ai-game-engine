@@ -8,6 +8,7 @@ from competition.domain.model import (
     CompetitionCodePolicy,
     CompetitionFormat,
     CompetitionMatchStatus,
+    CompetitionPresentationMode,
     CompetitionRoundStatus,
     CompetitionStatus,
     TieBreakPolicy,
@@ -23,6 +24,7 @@ class CreateCompetitionRequest(BaseModel):
     code_policy: Literal["locked_on_registration", "locked_on_start", "allowed_between_matches"] = "locked_on_start"
     advancement_top_k: int = Field(ge=1, le=64)
     match_size: int = Field(ge=2, le=64)
+    presentation_mode: CompetitionPresentationMode = CompetitionPresentationMode.INSTANT
 
 
 class PatchCompetitionRequest(BaseModel):
@@ -31,6 +33,7 @@ class PatchCompetitionRequest(BaseModel):
     code_policy: Literal["locked_on_registration", "locked_on_start", "allowed_between_matches"] | None = None
     advancement_top_k: int | None = Field(default=None, ge=1, le=64)
     match_size: int | None = Field(default=None, ge=2, le=64)
+    presentation_mode: CompetitionPresentationMode | None = None
 
 
 class RegisterTeamRequest(BaseModel):
@@ -87,7 +90,18 @@ class CompetitionRoundResponse(BaseModel):
     matches: list[CompetitionMatchResponse]
 
 
+class CompetitionBroadcastResponse(BaseModel):
+    run_id: str
+    match_id: str
+    round_index: int
+    match_number: int
+    match_count: int
+    phase: Literal["preparing", "playing", "result"]
+
+
 class CompetitionResponse(BaseModel):
+    presentation_mode: CompetitionPresentationMode = CompetitionPresentationMode.INSTANT
+    broadcast: CompetitionBroadcastResponse | None = None
     participant_names: dict[str, str] = Field(default_factory=dict)
     competition_id: str
     game_id: str

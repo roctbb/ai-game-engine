@@ -1,4 +1,5 @@
 from datetime import timedelta
+import json
 
 import pytest
 
@@ -304,7 +305,8 @@ def test_round_results_do_not_automatically_launch_next_round(client, container,
     assert len(advanced.json()["rounds"]) == 2
 
 
-def test_public_replay_keeps_game_events_and_only_own_diagnostics(client, container):
+@pytest.mark.parametrize("replay_pending", [False, True])
+def test_public_replay_keeps_game_events_and_only_own_diagnostics(client, container, replay_pending):
     lobby, teams = _setup(client, container, count=2, builtin=True)
     competition = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={"title": "Турнир"}).json()
     model = container.competition.get_competition(competition["competition_id"])
@@ -321,9 +323,11 @@ def test_public_replay_keeps_game_events_and_only_own_diagnostics(client, contai
                           {"type": "debug_snapshot", "role": "blue", "locals": {"secret": "hidden"}}],
                "frames": [{"tick": 0, "frame": {"board": [[0]]}}]}
     client.post(f"/api/v1/internal/runs/{run_ids[0]}/finished", json={"payload": payload})
+    if replay_pending:
+        container.spectator_replay.delete_runs(run_ids)
     login = client.post("/api/v1/auth/dev-login", json={"nickname": own_team.captain_user_id, "role": "student"}).json()
     headers = {"X-Session-Id": login["session_id"]}
-    for url in (f"/api/v1/runs/{run_ids[0]}", f"/api/v1/replays/runs/{run_ids[0]}"):
+    for url in (f"/api/v1/runs/{run_ids[0]}", *(f"/api/v1/replays/runs/{run_id}" for run_id in run_ids)):
         response = client.get(url, headers=headers)
         assert response.status_code == 200, response.text
         assert "own-log" in response.text
@@ -334,6 +338,103 @@ def test_public_replay_keeps_game_events_and_only_own_diagnostics(client, contai
     teacher = client.get(f"/api/v1/replays/runs/{run_ids[0]}")
     assert "other-log" in teacher.text
     assert "hidden" in teacher.text
+
+
+@pytest.mark.parametrize("mode", ["instant", "sequential"])
+def test_tournament_presentation_reveals_results_in_order(client, container, monkeypatch, mode):
+    lobby, _ = _setup(client, container, count=4, builtin=True)
+    started = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={
+        "title": "Показ матчей", "participant_selection": "all", "presentation_mode": mode,
+    })
+    assert started.status_code == 200, started.text
+    competition_id = started.json()["competition_id"]
+    competition = container.competition.get_competition(competition_id)
+    matches = competition.rounds[0].matches
+    assert len(matches) == 2
+    for match in matches:
+        run_id = next(iter(match.run_ids_by_team.values()))
+        finished = client.post(f"/api/v1/internal/runs/{run_id}/finished", json={"payload": {
+            "status": "ok", "metrics": {}, "frames": [{"tick": tick} for tick in range(20)],
+            "scores": {team_id: 10 - index for index, team_id in enumerate(match.team_ids)},
+            "placements": {team_id: index + 1 for index, team_id in enumerate(match.team_ids)},
+        }})
+        assert finished.status_code == 200, finished.text
+    now = max(container.execution.get_run(run_id).finished_at for match in matches for run_id in match.run_ids_by_team.values())
+    monkeypatch.setattr("competition.application.service.utc_now", lambda: now)
+    response = client.get(f"/api/v1/competitions/{competition_id}").json()
+    assert response["presentation_mode"] == mode
+    if mode == "instant":
+        assert response["broadcast"] is None
+        assert all(match["scores_by_team"] for match in response["rounds"][0]["matches"])
+        assert response["rounds"][0]["status"] == "finished"
+        return
+
+    assert response["broadcast"]["match_id"] == matches[0].match_id
+    assert response["broadcast"]["phase"] == "playing"
+    assert all(not match["scores_by_team"] for match in response["rounds"][0]["matches"])
+    assert all(run["result_payload"] is None for run in client.get(f"/api/v1/competitions/{competition_id}/runs").json())
+    scheduled = container.competition.get_competition(competition_id).rounds[0].matches
+    assert scheduled[0].show_ends_at == scheduled[1].show_started_at
+    for match in scheduled:
+        clocks = [client.get(f"/api/v1/runs/{run_id}/watch-context").json()["first_show"]
+                  for run_id in match.run_ids_by_team.values()]
+        assert clocks[0] == clocks[1]
+        assert clocks[0]["started_at"] == match.show_started_at.isoformat().replace("+00:00", "Z")
+
+    now = scheduled[0].show_reveal_at + timedelta(milliseconds=10)
+    stream = client.get(f"/api/v1/competitions/{competition_id}/stream?max_events=1")
+    response = next(json.loads(line.removeprefix("data: "))["payload"]
+                    for line in stream.text.splitlines() if line.startswith("data: "))
+    assert response["broadcast"]["phase"] == "result"
+    assert response["rounds"][0]["matches"][0]["scores_by_team"]
+    assert not response["rounds"][0]["matches"][1]["scores_by_team"]
+    now = scheduled[1].show_started_at + timedelta(milliseconds=10)
+    response = client.get(f"/api/v1/competitions/{competition_id}").json()
+    assert response["broadcast"]["match_id"] == matches[1].match_id
+    assert response["broadcast"]["phase"] == "playing"
+    now = scheduled[1].show_reveal_at + timedelta(milliseconds=10)
+    response = client.post(f"/api/v1/competitions/{competition_id}/advance", json={"requested_by": "test-teacher"}).json()
+    assert len(response["rounds"]) == 1  # The result hold must not be cut short by the next round.
+    assert response["rounds"][0]["status"] == "finished"
+    now = scheduled[1].show_ends_at + timedelta(milliseconds=10)
+    response = client.get(f"/api/v1/competitions/{competition_id}").json()
+    assert response["broadcast"] is None
+    assert len(response["rounds"]) == 1  # New rounds still start on the teacher's command.
+    advanced = client.post(f"/api/v1/competitions/{competition_id}/advance", json={"requested_by": "test-teacher"}).json()
+    assert len(advanced["rounds"]) == 2
+    assert advanced["broadcast"]["phase"] == "preparing"
+
+
+def test_pending_tie_does_not_stop_revealing_later_broadcast_matches(client, container, monkeypatch):
+    lobby, _ = _setup(client, container, count=4, builtin=True)
+    started = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={
+        "title": "Ничьи на показе", "participant_selection": "all", "presentation_mode": "sequential",
+    }).json()
+    competition_id = started["competition_id"]
+    for match in container.competition.get_competition(competition_id).rounds[0].matches:
+        response = client.post(f"/api/v1/internal/runs/{next(iter(match.run_ids_by_team.values()))}/finished", json={"payload": {
+            "status": "ok", "metrics": {}, "frames": [{"tick": 0}, {"tick": 1}],
+            "scores": {team: 0 for team in match.team_ids}, "placements": {team: 1 for team in match.team_ids},
+            "tie_resolution": "explicit_tie",
+        }})
+        assert response.status_code == 200, response.text
+    client.get(f"/api/v1/competitions/{competition_id}")
+    matches = container.competition.get_competition(competition_id).rounds[0].matches
+    now = matches[0].show_reveal_at + timedelta(milliseconds=10)
+    monkeypatch.setattr("competition.application.service.utc_now", lambda: now)
+    assert client.get(f"/api/v1/competitions/{competition_id}").json()["status"] == "paused"
+    now = matches[1].show_ends_at + timedelta(milliseconds=10)
+    response = client.get(f"/api/v1/competitions/{competition_id}").json()
+    assert all(match["status"] == "awaiting_tiebreak" and len(match["scores_by_team"]) == 2
+               for match in response["rounds"][0]["matches"])
+    for match in matches:
+        resolved = client.post(f"/api/v1/competitions/{competition_id}/matches/resolve", json={
+            "round_index": 1, "match_id": match.match_id, "advanced_team_ids": [match.team_ids[0]],
+        })
+        assert resolved.status_code == 200, resolved.text
+    response = client.get(f"/api/v1/competitions/{competition_id}").json()
+    assert response["status"] == "running" and response["rounds"][0]["status"] == "finished"
+    assert len(response["rounds"]) == 1
 
 
 @pytest.mark.parametrize("naive_timestamp", [False, True])

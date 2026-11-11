@@ -331,6 +331,8 @@ export interface CompetitionRoundDto {
 }
 
 export interface CompetitionDto {
+  presentation_mode?: 'instant' | 'sequential';
+  broadcast?: { run_id: string; match_id: string; round_index: number; match_number: number; match_count: number; phase: 'preparing' | 'playing' | 'result' } | null;
   participant_names?: Record<string, string>;
   competition_id: string;
   game_id: string;
@@ -1042,6 +1044,7 @@ export function runLobbyMatchmakingTick(payload: {
 }
 
 export function startLobbyCompetition(payload: {
+  presentation_mode?: 'instant' | 'sequential';
   participant_selection?: 'queue' | 'selected' | 'all';
   team_ids?: string[];
   lobby_id: string;
@@ -1056,6 +1059,7 @@ export function startLobbyCompetition(payload: {
     method: 'POST',
     body: JSON.stringify({
       title: payload.title,
+      presentation_mode: payload.presentation_mode ?? 'instant',
       participant_selection: payload.participant_selection ?? 'queue',
       team_ids: payload.team_ids ?? [],
       format: payload.format ?? 'single_elimination',
@@ -1093,6 +1097,7 @@ export function getCompetition(competitionId: string): Promise<CompetitionDto> {
 }
 
 export function patchCompetition(payload: {
+  presentation_mode?: 'instant' | 'sequential';
   competition_id: string;
   title?: string | null;
   tie_break_policy?: TieBreakPolicy | null;
@@ -1102,6 +1107,7 @@ export function patchCompetition(payload: {
 }): Promise<CompetitionDto> {
   const body: Record<string, unknown> = {};
   if (payload.title !== undefined) body.title = payload.title;
+  if (payload.presentation_mode !== undefined) body.presentation_mode = payload.presentation_mode;
   if (payload.tie_break_policy !== undefined) body.tie_break_policy = payload.tie_break_policy;
   if (payload.code_policy !== undefined) body.code_policy = payload.code_policy;
   if (payload.advancement_top_k !== undefined) body.advancement_top_k = payload.advancement_top_k;

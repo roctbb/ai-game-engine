@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from execution.domain.model import Run, RunKind, RunStatus
 from spectator_replay.application.repositories import ReplayRepository
 from spectator_replay.domain.model import ReplayRecord, ReplayVisibility, require_replay
+from shared.kernel import NotFoundError
 
 @dataclass(slots=True)
 class ListReplaysQuery:
@@ -51,6 +52,22 @@ class SpectatorReplayService:
         return require_replay(
             self._repository.get_by_run_id(run_id, include_content=include_content),
             run_id=run_id,
+        )
+
+    def get_for_run(self, run: Run) -> ReplayRecord:
+        try:
+            return self.get_by_run_id(run.run_id)
+        except NotFoundError:
+            if run.status is not RunStatus.FINISHED or _is_shadow_match_run(run):
+                raise
+        # The finished run is committed before its replay. Serve that same payload
+        # during completion without racing the recorder with another database write.
+        frames, events, summary = _build_replay_payload(run)
+        return ReplayRecord(
+            replay_id=f"replay_{run.run_id}", run_id=run.run_id, game_id=run.game_id,
+            run_kind=run.run_kind, status=run.status, visibility=ReplayVisibility.PUBLIC,
+            frames=frames, events=events, summary=summary,
+            created_at=run.finished_at or run.created_at, updated_at=run.finished_at or run.created_at,
         )
 
     def list_replays(self, query: ListReplaysQuery) -> list[ReplayRecord]:

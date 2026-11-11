@@ -1,3 +1,6 @@
+from spectator_replay.application.service import ListReplaysQuery
+
+
 def _student_headers(client, nickname: str) -> dict[str, str]:
     response = client.post(
         "/api/v1/auth/dev-login",
@@ -110,3 +113,26 @@ def test_replay_not_created_for_failed_run(client) -> None:
 
     replay_response = client.get(f"/api/v1/replays/runs/{run['run_id']}")
     assert replay_response.status_code == 404
+
+
+def test_finished_run_is_watchable_before_replay_record_is_saved(client, container, monkeypatch):
+    _, run = _create_single_task_run(client, requested_by="captain-replay-pending")
+    record_run = container.spectator_replay.record_run
+    observed = []
+    frames = [{"tick": 0, "frame": {"x": 0}}, {"tick": 1, "frame": {"x": 1}}]
+
+    def read_during_completion(finished_run):
+        response = client.get(f"/api/v1/replays/runs/{finished_run.run_id}")
+        observed.append(response.status_code)
+        assert response.status_code == 200, response.text
+        assert response.json()["frames"] == frames
+        # Reading the pending replay must not create a competing database record.
+        assert container.spectator_replay.list_replays(ListReplaysQuery()) == []
+        record_run(finished_run)
+
+    monkeypatch.setattr(container.spectator_replay, "record_run", read_during_completion)
+    response = client.post(f"/api/v1/internal/runs/{run['run_id']}/finished", json={
+        "payload": {"status": "finished", "frames": frames, "metrics": {}},
+    })
+    assert response.status_code == 200, response.text
+    assert observed == [200]

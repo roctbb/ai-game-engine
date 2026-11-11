@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -29,7 +28,7 @@ from competition.api.schemas import (
     SetEntrantReadyRequest,
 )
 from competition.application.service import CreateCompetitionInput, ResolveTieInput
-from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionStatus, TieBreakPolicy
+from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionMatchStatus, CompetitionPresentationMode, CompetitionStatus, TieBreakPolicy
 
 router = APIRouter(prefix="/competitions", tags=["competition"])
 _TERMINAL_COMPETITION_STATUSES = {CompetitionStatus.FINISHED}
@@ -68,6 +67,8 @@ def _to_response(competition: Competition, *, container: ServiceContainer) -> Co
         format=competition.format,
         tie_break_policy=competition.tie_break_policy,
         code_policy=competition.code_policy,
+        presentation_mode=competition.presentation_mode,
+        broadcast=container.competition.broadcast(competition),
         advancement_top_k=competition.advancement_top_k,
         min_match_size=competition.min_match_size,
         match_size=competition.match_size,
@@ -131,7 +132,11 @@ def _reconcile_competition_if_ready(
     container: ServiceContainer,
     competition: Competition,
 ) -> Competition:
-    if competition.status is not CompetitionStatus.RUNNING:
+    waiting_on_tie = competition.status is CompetitionStatus.PAUSED and competition.presentation_mode is CompetitionPresentationMode.SEQUENTIAL and any(
+        match.status is CompetitionMatchStatus.AWAITING_TIEBREAK
+        for round_item in competition.rounds for match in round_item.matches
+    )
+    if competition.status is not CompetitionStatus.RUNNING and not waiting_on_tie:
         return competition
     try:
         return container.competition.advance_competition(
@@ -175,6 +180,7 @@ def create_competition(
             code_policy=CompetitionCodePolicy(request.code_policy),
             advancement_top_k=request.advancement_top_k,
             match_size=request.match_size,
+            presentation_mode=request.presentation_mode,
         )
     )
     return _to_response(competition, container=container)
@@ -206,6 +212,7 @@ def patch_competition(
         code_policy=CompetitionCodePolicy(request.code_policy) if request.code_policy is not None else None,
         advancement_top_k=request.advancement_top_k,
         match_size=request.match_size,
+        presentation_mode=request.presentation_mode,
     )
     return _to_response(competition, container=container)
 
@@ -231,6 +238,7 @@ def stream_competition(
         def _build_payload() -> dict[str, object]:
             competition = container.competition.get_competition(competition_id)
             _ensure_can_view_competition(container=container, session=session, competition=competition)
+            competition = _reconcile_competition_if_ready(container=container, competition=competition)
             return _to_response(competition, container=container).model_dump(mode="json")
 
         while True:

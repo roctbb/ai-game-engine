@@ -18,7 +18,8 @@ export function sampleFirstShow(timeline: FirstShowTimeline | null | undefined, 
 
 export function firstShowPosition(sample: FirstShowSample, frameCount: number, now: number) {
   if (sample.timeline.started_at === null) return { waiting: true, following: true, frame: 0 };
-  const elapsed = Math.max(0, sample.serverAtReceipt + Math.max(0, now - sample.receivedAt) - Date.parse(sample.timeline.started_at));
+  const elapsed = sample.serverAtReceipt + Math.max(0, now - sample.receivedAt) - Date.parse(sample.timeline.started_at);
+  if (elapsed < 0) return { waiting: true, following: true, frame: 0 };
   const interval = Number.isFinite(sample.timeline.frame_ms) && sample.timeline.frame_ms > 0 ? sample.timeline.frame_ms : 500;
   const last = Math.max(0, frameCount - 1);
   const frame = Math.min(last, Math.floor(elapsed / interval));

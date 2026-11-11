@@ -1,10 +1,13 @@
 from shared.kernel import utc_now
+from datetime import timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from execution.domain.model import RunKind, RunStatus
+from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionPresentationMode, TieBreakPolicy
+from competition.infrastructure.sqlalchemy_repository import SqlAlchemyCompetitionRepository
 from game_catalog.domain.model import Game, GameMode, SlotDefinition
 from game_catalog.infrastructure.sqlalchemy_repository import SqlAlchemyGameRepository
 from shared.db.base import Base
@@ -47,6 +50,27 @@ def test_sqlalchemy_game_repository_roundtrip() -> None:
     assert loaded.slug == 'maze_test'
     assert loaded.active_version.semver == '1.0.0'
     assert loaded.active_version.required_slot_keys == ('agent',)
+
+
+def test_competition_broadcast_timeline_survives_repository_reload() -> None:
+    repository = SqlAlchemyCompetitionRepository(_build_session_factory())
+    competition = Competition.create(
+        game_id='game-1', game_version_id='v1', title='Показ', format=CompetitionFormat.SINGLE_ELIMINATION,
+        tie_break_policy=TieBreakPolicy.MANUAL, code_policy=CompetitionCodePolicy.LOCKED_ON_START,
+        advancement_top_k=1, min_match_size=2, match_size=2,
+        presentation_mode=CompetitionPresentationMode.SEQUENTIAL,
+    )
+    match = competition.seed_first_round(['team-a', 'team-b']).matches[0]
+    match.show_started_at = utc_now()
+    match.show_reveal_at = match.show_started_at + timedelta(seconds=10)
+    match.show_ends_at = match.show_reveal_at + timedelta(seconds=2)
+    repository.save(competition)
+    loaded = repository.get(competition.competition_id)
+    assert loaded.presentation_mode is CompetitionPresentationMode.SEQUENTIAL
+    stored = loaded.rounds[0].matches[0]
+    assert (stored.show_started_at, stored.show_reveal_at, stored.show_ends_at) == (
+        match.show_started_at, match.show_reveal_at, match.show_ends_at,
+    )
 
 
 def test_sqlalchemy_replay_repository_preserves_identity_when_writers_overlap() -> None:

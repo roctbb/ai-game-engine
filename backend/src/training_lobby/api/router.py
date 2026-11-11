@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from app.auth import get_current_session, require_roles
 from app.dependencies import ServiceContainer, get_container, get_games_root
 from competition.application.service import CreateCompetitionInput
-from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionStatus, TieBreakPolicy
+from competition.domain.model import Competition, CompetitionCodePolicy, CompetitionFormat, CompetitionPresentationMode, CompetitionStatus, TieBreakPolicy
 from game_catalog.infrastructure.manifest_loader import find_game_manifest_path, load_game_manifest
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
@@ -744,6 +744,7 @@ def start_lobby_competition(
             code_policy=CompetitionCodePolicy(request.code_policy),
             advancement_top_k=request.advancement_top_k,
             match_size=request.match_size,
+            presentation_mode=CompetitionPresentationMode(request.presentation_mode),
         )
     )
     for team_id in ready_team_ids:

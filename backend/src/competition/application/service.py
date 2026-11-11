@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from competition.application.repositories import CompetitionRepository
+from competition.application.presentation import FRAME_MS, as_utc, results_revealed, schedule_round_show
 from competition.domain.model import (
     Competition,
     CompetitionCodePolicy,
     CompetitionFormat,
     CompetitionMatch,
     CompetitionMatchStatus,
+    CompetitionPresentationMode,
     CompetitionRound,
     CompetitionStatus,
     TieBreakPolicy,
@@ -31,6 +33,7 @@ class CreateCompetitionInput:
     advancement_top_k: int
     match_size: int
     lobby_id: str | None = None
+    presentation_mode: CompetitionPresentationMode = CompetitionPresentationMode.INSTANT
 
 
 @dataclass(slots=True)
@@ -117,6 +120,7 @@ class CompetitionService:
             min_match_size=min_players,
             match_size=data.match_size,
             lobby_id=data.lobby_id,
+            presentation_mode=data.presentation_mode,
         )
         self._repository.save(competition)
         return competition
@@ -141,6 +145,7 @@ class CompetitionService:
         code_policy: CompetitionCodePolicy | None = None,
         advancement_top_k: int | None = None,
         match_size: int | None = None,
+        presentation_mode: CompetitionPresentationMode | None = None,
     ) -> Competition:
         competition = self.get_competition(competition_id)
         if competition.status is not CompetitionStatus.DRAFT:
@@ -157,6 +162,8 @@ class CompetitionService:
             competition.tie_break_policy = tie_break_policy
         if code_policy is not None:
             competition.code_policy = code_policy
+        if presentation_mode is not None:
+            competition.presentation_mode = presentation_mode
         if advancement_top_k is not None:
             if advancement_top_k < 1:
                 raise InvariantViolationError("advancement_top_k должен быть >= 1")
@@ -298,14 +305,17 @@ class CompetitionService:
 
     def advance_competition(self, competition_id: str, requested_by: str, *, start_next_round: bool = True) -> Competition:
         competition = self.get_competition(competition_id)
+        showing_with_tiebreak = False
         if competition.status is CompetitionStatus.PAUSED:
             current_round = competition.get_current_round()
             if current_round is not None and any(
                 match.status is CompetitionMatchStatus.AWAITING_TIEBREAK
                 for match in current_round.matches
             ):
-                return competition
-        if competition.status is not CompetitionStatus.RUNNING:
+                if competition.presentation_mode is not CompetitionPresentationMode.SEQUENTIAL:
+                    return competition
+                showing_with_tiebreak = True
+        if competition.status is not CompetitionStatus.RUNNING and not showing_with_tiebreak:
             raise InvariantViolationError("Продвижение раунда доступно только в running")
 
         current_round = competition.get_current_round()
@@ -322,6 +332,10 @@ class CompetitionService:
                 if any(run_id not in runs_by_id or runs_by_id[run_id].status not in _TERMINAL_STATUSES for run_id in match.run_ids_by_team.values()):
                     return competition
 
+        sequential = competition.presentation_mode is CompetitionPresentationMode.SEQUENTIAL
+        changed = schedule_round_show(current_round, runs_by_id) if sequential else False
+        now = utc_now()
+
         next_seed: list[str] = []
         found_tiebreak = False
 
@@ -336,11 +350,15 @@ class CompetitionService:
                 found_tiebreak = True
                 continue
 
+            if sequential and not results_revealed(match, now):
+                continue
+
             match_runs = self._require_terminal_match_runs(match=match, runs_by_id=runs_by_id)
             outcome = self._build_match_outcome(
                 competition=competition, match=match, runs=match_runs
             )
             if outcome.requires_manual_tiebreak:
+                changed = True
                 match.scores_by_team = dict(outcome.scores_by_team)
                 match.placements_by_team = dict(outcome.placements_by_team)
                 competition.mark_match_awaiting_tiebreak(
@@ -358,18 +376,33 @@ class CompetitionService:
                 placements_by_team=outcome.placements_by_team,
                 advanced_team_ids=outcome.advanced_team_ids,
             )
+            changed = True
             next_seed.extend(outcome.advanced_team_ids)
 
         if found_tiebreak:
             if competition.status is CompetitionStatus.RUNNING:
                 competition.pause()
-            competition.set_pending_reason(next((match.tie_break_reason for match in current_round.matches if match.tie_break_reason), "Требуется решение по матчу"))
-            self._repository.save(competition)
+                changed = True
+            reason = next((match.tie_break_reason for match in current_round.matches if match.tie_break_reason), "Требуется решение по матчу")
+            if competition.pending_reason != reason:
+                competition.set_pending_reason(reason)
+                changed = True
+            if changed:
+                self._repository.save(competition)
+            return competition
+
+        if any(match.status in {CompetitionMatchStatus.PENDING, CompetitionMatchStatus.RUNNING}
+               for match in current_round.matches):
+            if changed:
+                self._repository.save(competition)
             return competition
 
         next_seed = [team_id for team_id in next_seed if team_id]
         self._record_round_result(competition, current_round, next_seed)
-        if competition.status is CompetitionStatus.COMPLETED or not start_next_round:
+        show_in_progress = sequential and any(
+            match.show_ends_at and now < as_utc(match.show_ends_at) for match in current_round.matches
+        )
+        if competition.status is CompetitionStatus.COMPLETED or not start_next_round or show_in_progress:
             self._repository.save(competition)
             return competition
         competition.create_next_round(next_seed)
@@ -424,6 +457,7 @@ class CompetitionService:
         match.status = CompetitionMatchStatus.PENDING
         match.run_ids_by_team = {}
         match.tie_break_reason = None
+        match.show_started_at = match.show_reveal_at = match.show_ends_at = None
         if competition.status is CompetitionStatus.PAUSED:
             competition.start()
         competition.set_pending_reason(None)
@@ -456,16 +490,62 @@ class CompetitionService:
             lobby_id=competition.competition_id,
             run_kind=RunKind.COMPETITION_MATCH,
         )
+        hidden = {
+            run_id for round_item in competition.rounds for match in round_item.matches
+            if competition.presentation_mode is CompetitionPresentationMode.SEQUENTIAL
+            and not results_revealed(match, utc_now())
+            for run_id in match.run_ids_by_team.values()
+        }
         return [
             {
                 "run_id": run.run_id,
                 "team_id": run.team_id,
                 "status": run.status.value,
                 "error_message": run.error_message,
-                "result_payload": compact_result_payload(run.result_payload),
+                "result_payload": None if run.run_id in hidden else compact_result_payload(run.result_payload),
             }
             for run in runs
         ]
+
+    def broadcast(self, competition: Competition) -> dict[str, object] | None:
+        if competition.presentation_mode is not CompetitionPresentationMode.SEQUENTIAL or not competition.rounds:
+            return None
+        round_item = competition.get_current_round() or competition.rounds[-1]
+        runs = {run.run_id: run for run in self._execution.list_runs(
+            lobby_id=competition.competition_id, run_kind=RunKind.COMPETITION_MATCH,
+            include_result_payload=False,
+        )}
+        schedule_round_show(round_item, runs)
+        playable = [match for match in round_item.matches if match.run_ids_by_team]
+        now = utc_now()
+        for index, match in enumerate(playable):
+            if match.show_ends_at and now >= as_utc(match.show_ends_at):
+                continue
+            run_id = next(iter(match.run_ids_by_team.values()))
+            return {
+                "run_id": run_id, "match_id": match.match_id, "round_index": round_item.round_index,
+                "match_number": index + 1, "match_count": len(playable),
+                "phase": "preparing" if match.show_started_at is None or now < as_utc(match.show_started_at)
+                else "result" if results_revealed(match, now) else "playing",
+            }
+        return None
+
+    def first_show_for_run(self, run: Run) -> dict[str, object] | None:
+        if not run.lobby_id:
+            return None
+        competition = self.get_competition(run.lobby_id)
+        if competition.presentation_mode is not CompetitionPresentationMode.SEQUENTIAL:
+            return None
+        runs = {item.run_id: item for item in self._execution.list_runs(
+            lobby_id=competition.competition_id, run_kind=RunKind.COMPETITION_MATCH,
+            include_result_payload=False,
+        )}
+        for round_item in competition.rounds:
+            if any(run.run_id in match.run_ids_by_team.values() for match in round_item.matches):
+                schedule_round_show(round_item, runs)
+                match = next(match for match in round_item.matches if run.run_id in match.run_ids_by_team.values())
+                return {"started_at": match.show_started_at, "frame_ms": FRAME_MS}
+        return None
 
     def _seed_team_ids(self, competition: Competition) -> list[str]:
         ready = [

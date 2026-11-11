@@ -42,12 +42,12 @@ def get_replay_by_run_id(
     run = container.execution.get_run(run_id)
     ensure_can_view_run(container=container, session=session, run=run)
     try:
-        replay = container.spectator_replay.get_by_run_id(run_id)
+        replay = container.spectator_replay.get_for_run(run)
     except NotFoundError:
         primary_run_id = _shadow_primary_run_id(run)
         if primary_run_id is None:
             raise
-        replay = container.spectator_replay.get_by_run_id(primary_run_id)
+        replay = container.spectator_replay.get_for_run(container.execution.get_run(primary_run_id))
     response = _to_response(replay, run_id_override=run_id)
     visible = visible_result_payload(container, session, run, {
         "frames": response.frames, "events": response.events, "metrics": response.summary.get("metrics", {}),

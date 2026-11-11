@@ -20,6 +20,7 @@ class CompetitionOrm(Base):
     format: Mapped[str] = mapped_column(String(32), index=True)
     tie_break_policy: Mapped[str] = mapped_column(String(32))
     code_policy: Mapped[str] = mapped_column(String(32), default="locked_on_start")
+    presentation_mode: Mapped[str] = mapped_column(String(32), default="instant", server_default="instant")
     advancement_top_k: Mapped[int]
     min_match_size: Mapped[int] = mapped_column(Integer, default=2)
     match_size: Mapped[int]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import random
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 
 from shared.kernel import InvariantViolationError, NotFoundError, new_id, utc_now
@@ -33,6 +34,11 @@ class CompetitionStatus(StrEnum):
     PAUSED = "paused"
     COMPLETED = "completed"
     FINISHED = "finished"
+
+
+class CompetitionPresentationMode(StrEnum):
+    INSTANT = "instant"
+    SEQUENTIAL = "sequential"
 
 
 class CompetitionRoundStatus(StrEnum):
@@ -68,6 +74,9 @@ class CompetitionMatch:
     placements_by_team: dict[str, int] = field(default_factory=dict)
     advanced_team_ids: tuple[str, ...] = ()
     tie_break_reason: str | None = None
+    show_started_at: datetime | None = None
+    show_reveal_at: datetime | None = None
+    show_ends_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -89,6 +98,7 @@ class Competition:
     advancement_top_k: int
     min_match_size: int
     match_size: int
+    presentation_mode: CompetitionPresentationMode = CompetitionPresentationMode.INSTANT
     lobby_id: str | None = None
     status: CompetitionStatus = CompetitionStatus.DRAFT
     entrants: dict[str, CompetitionEntrant] = field(default_factory=dict)
@@ -112,6 +122,7 @@ class Competition:
         min_match_size: int,
         match_size: int,
         lobby_id: str | None = None,
+        presentation_mode: CompetitionPresentationMode = CompetitionPresentationMode.INSTANT,
     ) -> "Competition":
         if min_match_size < 2:
             raise InvariantViolationError("min_match_size должен быть >= 2")
@@ -134,6 +145,7 @@ class Competition:
             min_match_size=min_match_size,
             match_size=match_size,
             lobby_id=lobby_id,
+            presentation_mode=presentation_mode,
         )
 
     def register_team(self, team_id: str) -> None:

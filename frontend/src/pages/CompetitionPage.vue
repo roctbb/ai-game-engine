@@ -30,6 +30,8 @@
         <ActionMenu v-if="canModerate && competitionMenuItems.length" label="Действия турнира" :items="competitionMenuItems" @select="handleCompetitionMenu" />
       </article>
 
+      <CompetitionBroadcast v-if="competition.broadcast" :competition="competition" />
+
       <nav class="competition-tabs" aria-label="Соревнование">
         <button :class="{ active: view === 'rounds' && detailPane === 'matches' }" @click="view = 'rounds'; detailPane = 'matches'">Матчи</button>
         <button :class="{ active: view === 'bracket' && detailPane === 'matches' }" @click="view = 'bracket'; detailPane = 'matches'">Сетка</button>
@@ -82,6 +84,10 @@
           <div class="col-md-2">
             <label class="form-label small">Проходят</label>
             <input v-model.number="draftAdvancementTopK" class="form-control mono" type="number" min="1" max="64" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small" for="competition-presentation">Показ матчей</label>
+            <select id="competition-presentation" v-model="draftPresentationMode" class="form-select"><option value="sequential">Матчи по очереди</option><option value="instant">Сразу результаты</option></select>
           </div>
         </div>
         <div class="small text-muted mt-2">
@@ -390,6 +396,7 @@
 import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
 import { competitionMatchScores } from '../lib/competitionPresentation';
 import MatchRoster from '../components/MatchRoster.vue';
+import CompetitionBroadcast from '../components/CompetitionBroadcast.vue';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
 import { statusPillClass } from '../lib/statusTone';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -470,6 +477,7 @@ const competitionLiveMode = ref<'idle' | 'sse' | 'polling'>('idle');
 const draftTitle = ref('');
 const draftTieBreakPolicy = ref<TieBreakPolicy>('manual');
 const draftCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
+const draftPresentationMode = ref<'instant' | 'sequential'>('instant');
 const draftMatchSize = ref(2);
 const draftAdvancementTopK = ref(1);
 let competitionEventSource: EventSource | null = null;
@@ -509,11 +517,11 @@ const canStart = computed(() => {
   return ready.length >= 2;
 });
 const canPause = computed(() => canModerate.value && competition.value?.status === 'running' && !isChangingStatus.value);
-const canAdvance = computed(() => canModerate.value && competition.value?.status === 'running' && competition.value.rounds.find(r => r.round_index === competition.value?.current_round_index)?.status === 'finished' && !isAdvancing.value);
+const canAdvance = computed(() => canModerate.value && !competition.value?.broadcast && competition.value?.status === 'running' && competition.value.rounds.find(r => r.round_index === competition.value?.current_round_index)?.status === 'finished' && !isAdvancing.value);
 const canFinish = computed(
   () =>
     canModerate.value &&
-    competition.value?.status === 'completed' &&
+    competition.value?.status === 'completed' && !competition.value.broadcast &&
     !isChangingStatus.value
 );
 const canSaveDraftSettings = computed(() => {
@@ -676,6 +684,7 @@ function syncDraftSettingsFromCompetition(): void {
   draftTitle.value = competition.value.title;
   draftTieBreakPolicy.value = competition.value.tie_break_policy;
   draftCodePolicy.value = competition.value.code_policy;
+  draftPresentationMode.value = competition.value.presentation_mode ?? 'instant';
   draftMatchSize.value = competition.value.match_size;
   draftAdvancementTopK.value = competition.value.advancement_top_k;
 }
@@ -877,6 +886,7 @@ async function saveDraftSettings(): Promise<void> {
       title: draftTitle.value,
       tie_break_policy: draftTieBreakPolicy.value,
       code_policy: draftCodePolicy.value,
+      presentation_mode: draftPresentationMode.value,
       match_size: draftMatchSize.value,
       advancement_top_k: draftAdvancementTopK.value,
     });

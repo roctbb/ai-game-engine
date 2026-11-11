@@ -588,6 +588,13 @@ def _watch_first_show_clock(
 ) -> dict[str, object] | None:
     if current_run.run_kind is RunKind.SINGLE_TASK:
         return None
+    if current_run.run_kind is RunKind.COMPETITION_MATCH:
+        try:
+            sequential_clock = container.competition.first_show_for_run(current_run)
+            if sequential_clock is not None:
+                return sequential_clock
+        except NotFoundError:
+            pass
     clock_run_ids = run_ids
     if current_run.run_kind is RunKind.TRAINING_MATCH and current_run.lobby_id:
         try:
