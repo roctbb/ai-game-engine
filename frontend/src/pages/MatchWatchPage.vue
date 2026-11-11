@@ -28,12 +28,12 @@
           <button class="agp-panel-toggle" @click="fieldFullscreen = !fieldFullscreen">{{ fieldFullscreen ? 'Вернуть панели' : 'На весь экран' }}</button>
         </header>
         <div class="arena-match-view">
-          <div v-if="!rendererReady && safeRendererUrl" class="arena-match-loading"><SnakeLoader label="Загрузка визуализации" /></div>
-          <div v-if="firstReplayLockActive && isEmbedded" class="arena-match-lock">Первый показ</div>
+          <div v-if="(!rendererReady && safeRendererUrl) || firstShowWaiting || (isReplayLoading && !replayFrames.length)" class="arena-match-loading"><SnakeLoader :label="firstShowWaiting ? 'Подготовка матча' : isReplayLoading ? 'Загрузка матча' : 'Загрузка визуализации'" /></div>
+          <div v-if="firstReplayLockActive && !firstShowWaiting && isEmbedded" class="arena-match-lock">Первый показ</div>
           <iframe v-if="safeRendererUrl" ref="rendererFrameRef" :key="rendererKey" :src="safeRendererUrl" title="Визуализация игры" sandbox="allow-scripts" @load="onRendererLoad"></iframe>
           <p v-else class="text-muted m-3">Для этой игры визуализация не настроена.</p>
         </div>
-        <ReplayControls v-if="!isEmbedded" v-model:frame-index="replayFrameIndex" v-model:delay="replaySpeedMs" class="arena-match-playback" :frame-count="replayFrames.length" :playing="replayIsPlaying" :can-play="canPlayReplay" :can-step-backward="canStepBackward" :can-step-forward="canStepForward" :seek-disabled="firstReplayLockActive" :markers="watchMoments" @toggle="toggleReplayPlay" @step="stepReplay" />
+        <ReplayControls v-if="!isEmbedded" v-model:frame-index="replayFrameIndex" v-model:delay="replaySpeedMs" class="arena-match-playback" :frame-count="replayFrames.length" :playing="replayIsPlaying" :can-play="canPlayReplay" :can-step-backward="canStepBackward" :can-step-forward="canStepForward" :seek-disabled="firstReplayLockActive" :live="firstReplayLockActive" :live-label="firstShowWaiting ? 'Подготовка' : 'Первый показ'" :markers="watchMoments" @toggle="toggleReplayPlay" @step="stepReplay" />
         <p v-if="replayError && !isEmbedded" class="text-danger small m-2" role="alert">{{ replayError }}</p>
         <details v-if="!isEmbedded && replayFrames.length" class="arena-match-insights"><summary>Разбор хода</summary><ReplayInsights @pause="stopReplayPlayback()" :frames="replay?.frames ?? []" :events="replay?.events ?? []" :frame-index="replayFrameIndex" :locked="firstReplayLockActive" :actor-names="eventActorNames" @seek="seekMoment" @line="openRunLine" /></details>
         <BotConsole v-if="showBotConsole" initially-collapsed label="Консоль и события">
@@ -57,6 +57,7 @@ import CodeEditor from '../components/CodeEditor.vue';
 import ActionMenu from '../components/ActionMenu.vue';
 import LiveMatchScoreboard from '../components/LiveMatchScoreboard.vue';
 import { replayParticipant } from '../lib/replayParticipant';
+import { firstShowPosition, sampleFirstShow, type FirstShowSample } from '../lib/firstShowClock';
 import { formatTime } from '../lib/attemptPresentation';
 import AppIcon from '../components/AppIcon.vue';
 import BotConsole from '../components/BotConsole.vue';
@@ -133,7 +134,7 @@ interface MatchPlayerStat {
 
 const route = useRoute();
 const router = useRouter();
-const watchMoments = computed(() => replayMoments((replay.value?.events ?? []).filter(e => !firstReplayLockActive.value || Number(e.tick ?? 0) <= replayFrameTick.value), replay.value?.frames ?? []));
+const watchMoments = computed(() => replayMoments((replay.value?.events ?? []).filter(e => !firstReplayLockActive.value || Number(e.tick ?? 0) <= replayFrameTick.value), replay.value?.frames ?? []).filter(moment => !firstReplayLockActive.value || moment.frame <= replayFrameIndex.value));
 function seekMoment(frame: number): void {
   if (firstReplayLockActive.value) return;
   stopReplayPlayback();
@@ -194,13 +195,17 @@ const liveMode = ref<'idle' | 'sse' | 'polling'>('idle');
 const replayFrameIndex = ref(0);
 const replayIsPlaying = ref(false);
 const replaySpeedMs = ref(replaySpeedFromQuery());
-const nowMs = ref(Date.now());
+const firstShowSample = ref<FirstShowSample | null>(null);
+const followingFirstShow = ref(false);
+let firstShowRefreshHandle: ReturnType<typeof setTimeout> | null = null;
+let refreshingFirstShow = false;
+let disposed = false;
 let rendererLogCounter = 0;
 let runPollingHandle: ReturnType<typeof setInterval> | null = null;
 let runEventSource: EventSource | null = null;
 const replayPlaybackClock = createReplayClock(() => {
   if (replayFrameIndex.value >= replayFrames.value.length - 1) { stopReplayPlayback(); return; }
-  if (firstReplayLockActive.value && replayFrameIndex.value >= firstReplayAllowedFrameIndex.value) return;
+  if (firstReplayLockActive.value) return;
   replayFrameIndex.value += 1;
 }, () => replaySpeedMs.value);
 let replayClockHandle: ReturnType<typeof setInterval> | null = null;
@@ -214,6 +219,7 @@ const safeRendererUrl = computed(() => {
 });
 const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(safeRendererUrl.value));
 const runStatusLabel = computed(() => {
+  if (firstShowWaiting.value) return 'Подготовка матча';
   if (firstReplayLockActive.value) return 'Первый показ';
   const status = run.value?.status ?? 'created';
   const labels: Record<RunDto['status'], string> = {
@@ -405,35 +411,16 @@ const visibleMoveLogItems = computed(() => {
     : moveLogItems.value.filter((item) => item.tick <= replayFrameTick.value);
   return items.slice(-14);
 });
-const firstReplayFrameMs = computed(() => replayFrameMsFromQuery());
-const firstReplayStartedAtMs = computed(() => {
-  const rawSyncedStart = route.query.sync_started_at;
-  if (typeof rawSyncedStart === 'string' && rawSyncedStart) {
-    const value = Date.parse(rawSyncedStart);
-    if (Number.isFinite(value)) return value;
-  }
-  const finishedAt = run.value?.finished_at;
-  if (!finishedAt || route.query.unlock_replay === '1') return null;
-  const value = Date.parse(finishedAt);
-  return Number.isFinite(value) ? value : null;
-});
-const firstReplayAllowedFrameIndex = computed(() => {
-  if (firstReplayStartedAtMs.value === null || replayFrames.value.length === 0) return replayFrames.value.length - 1;
-  const elapsedMs = Math.max(0, nowMs.value - firstReplayStartedAtMs.value);
-  return Math.min(replayFrames.value.length - 1, Math.floor(elapsedMs / firstReplayFrameMs.value));
-});
-const firstReplayLockActive = computed(() => {
-  if (firstReplayStartedAtMs.value === null || replayFrames.value.length <= 1) return false;
-  return isEmbedded.value && firstReplayAllowedFrameIndex.value < replayFrames.value.length - 1;
-});
-const canPlayReplay = computed(() => replayFrames.value.length > 1);
+const firstShowWaiting = computed(() => firstShowSample.value?.timeline.started_at === null);
+const firstReplayLockActive = computed(() => firstShowWaiting.value || followingFirstShow.value);
+const canPlayReplay = computed(() => !firstReplayLockActive.value && replayFrames.value.length > 1);
 const canStepBackward = computed(() => !firstReplayLockActive.value && replayFrames.value.length > 0 && replayFrameIndex.value > 0);
 const canStepForward = computed(
   () => !firstReplayLockActive.value && replayFrames.value.length > 0 && replayFrameIndex.value < replayFrames.value.length - 1,
 );
 const shouldAutoplayReplay = computed(() => isEmbedded.value || route.query.autoplay === '1');
 const isReplayAtLastFrame = computed(
-  () => replayFrames.value.length === 0 || replayFrameIndex.value >= replayFrames.value.length - 1,
+  () => !firstShowWaiting.value && replayFrames.value.length > 0 && replayFrameIndex.value >= replayFrames.value.length - 1,
 );
 const showWinnerBanner = computed(() => replayFrames.value.length > 0 && isReplayAtLastFrame.value && !firstReplayLockActive.value);
 const finalOutcomeLabel = computed(() => {
@@ -1052,7 +1039,7 @@ function sendRendererInit(): void {
 function sendRendererStateAndResult(): void {
   if (!run.value) return;
   const activeReplayFrame = currentReplayFrame.value;
-  if (isTerminalStatus(run.value.status) && shouldAutoplayReplay.value && !activeReplayFrame && !replay.value) {
+  if (isTerminalStatus(run.value.status) && !activeReplayFrame && !replay.value) {
     return;
   }
   rendererTick.value = activeReplayFrame?.tick ?? rendererTick.value + 1;
@@ -1064,7 +1051,7 @@ function sendRendererStateAndResult(): void {
   sendToRenderer({
     type: 'agp.renderer.state',
     payload: {
-      motion: { duration_ms: replayIsPlaying.value ? Math.min(180, replaySpeedMs.value / 2) : 0 },
+      motion: { duration_ms: firstReplayLockActive.value ? 180 : replayIsPlaying.value ? Math.min(180, replaySpeedMs.value / 2) : 0 },
       tick: rendererTick.value,
       phase: rendererPhase,
       frame: rendererFrame,
@@ -1076,7 +1063,7 @@ function sendRendererStateAndResult(): void {
     frame: rendererFrame,
   });
   const canSendTerminalResult =
-    replay.value !== null ? isReplayAtLastFrame.value : !shouldAutoplayReplay.value;
+    !firstReplayLockActive.value && (replay.value !== null ? isReplayAtLastFrame.value : !shouldAutoplayReplay.value);
   if (isTerminalStatus(run.value.status) && canSendTerminalResult) {
     sendToRenderer({
       type: 'agp.renderer.result',
@@ -1103,6 +1090,8 @@ function emitEmbeddedFrame(payload: { tick: number; phase: string; frame: unknow
       frame: payload.frame,
       replayFrameIndex: replayFrameIndex.value,
       replayFrameCount: replayFrames.value.length,
+      firstShowActive: firstReplayLockActive.value,
+      firstShowWaiting: firstShowWaiting.value,
       participants: watchContext.value?.participants ?? [],
       players: players.map((player) => ({
         id: player.id,
@@ -1144,38 +1133,8 @@ function replaySpeedFromQuery(): number {
   return Math.max(150, Math.min(3000, value));
 }
 
-function replayFrameMsFromQuery(): number {
-  const raw = route.query.sync_frame_ms;
-  const value = typeof raw === 'string' ? Number(raw) : NaN;
-  if (!Number.isFinite(value)) return replaySpeedMs.value;
-  return Math.max(150, Math.min(3000, value));
-}
-
-function replayFrameIndexFromQuery(): number | null {
-  const raw = route.query.sync_frame_index;
-  const value = typeof raw === 'string' ? Number(raw) : NaN;
-  if (!Number.isInteger(value)) return null;
-  return Math.max(0, value);
-}
-
-function applyReplaySyncFromQuery(): boolean {
-  const raw = route.query.sync_started_at;
-  if (replayFrames.value.length === 0) return false;
-  let frameIndex: number | null = null;
-  if (typeof raw === 'string' && raw) {
-    const startedAtMs = Date.parse(raw);
-    if (Number.isFinite(startedAtMs)) {
-      const elapsedMs = Math.max(0, Date.now() - startedAtMs);
-      frameIndex = Math.floor(elapsedMs / replayFrameMsFromQuery());
-    }
-  }
-  frameIndex ??= replayFrameIndexFromQuery();
-  if (frameIndex === null) return false;
-  replayFrameIndex.value = Math.min(replayFrames.value.length - 1, Math.max(0, frameIndex));
-  return true;
-}
-
 function onRendererLoad(): void {
+  syncFirstReplayFrame();
   appendRendererLog('info', 'iframe loaded');
   sendRendererInit();
   sendRendererStateAndResult();
@@ -1194,6 +1153,7 @@ function stopReplayPlayback(): void {
 }
 
 function startReplayPlayback(): void {
+  if (firstReplayLockActive.value) return;
   if (!canPlayReplay.value) {
     replayIsPlaying.value = false;
     return;
@@ -1232,15 +1192,61 @@ function clampReplayFrameIndex(): void {
     return;
   }
   replayFrameIndex.value = Math.max(0, Math.min(replayFrameIndex.value, replayFrames.value.length - 1));
-  if (firstReplayLockActive.value) {
-    replayFrameIndex.value = Math.min(replayFrameIndex.value, firstReplayAllowedFrameIndex.value);
-  }
 }
 
 function syncFirstReplayFrame(): void {
-  nowMs.value = Date.now();
-  if (!firstReplayLockActive.value) return;
-  replayFrameIndex.value = firstReplayAllowedFrameIndex.value;
+  if (document.hidden) return;
+  const sample = firstShowSample.value;
+  if (!sample) return;
+  if (sample.timeline.started_at !== null && !replayFrames.value.length) return;
+  const position = firstShowPosition(sample, replayFrames.value.length, performance.now());
+  const wasFollowing = followingFirstShow.value;
+  followingFirstShow.value = position.following;
+  if (position.following || wasFollowing || isEmbedded.value) {
+    stopReplayPlayback();
+    replayFrameIndex.value = position.frame;
+  }
+  if (wasFollowing !== position.following) sendRendererStateAndResult();
+}
+
+function applyWatchClock(context: RunWatchContextDto, requestedAt: number, receivedAt: number): void {
+  firstShowSample.value = sampleFirstShow(context.first_show, context.server_now, requestedAt, receivedAt, context.server_received_at);
+  syncFirstReplayFrame();
+  sendRendererStateAndResult();
+  scheduleFirstShowRefresh();
+}
+
+function scheduleFirstShowRefresh(): void {
+  if (firstShowRefreshHandle) clearTimeout(firstShowRefreshHandle);
+  firstShowRefreshHandle = null;
+  if (disposed || !firstShowWaiting.value) return;
+  firstShowRefreshHandle = setTimeout(() => {
+    if (document.hidden) scheduleFirstShowRefresh();
+    else void refreshWatchClock();
+  }, 1000);
+}
+
+async function refreshWatchClock(): Promise<void> {
+  if (refreshingFirstShow || disposed) return;
+  refreshingFirstShow = true;
+  const requestedAt = performance.now();
+  try {
+    const context = await getRunWatchContext(String(route.params.runId));
+    if (disposed) return;
+    watchContext.value = context;
+    applyWatchClock(context, requestedAt, performance.now());
+  } catch {
+    // Keep the latest server anchor through a transient connection failure.
+  } finally {
+    refreshingFirstShow = false;
+    scheduleFirstShowRefresh();
+  }
+}
+
+function onVisibilityChange(): void {
+  if (document.hidden) return;
+  syncFirstReplayFrame();
+  void refreshWatchClock();
 }
 
 function onRendererMessage(event: MessageEvent): void {
@@ -1261,6 +1267,7 @@ function onRendererMessage(event: MessageEvent): void {
     return;
   }
   if (type === 'agp.renderer.ready') {
+    syncFirstReplayFrame();
     rendererReady.value = true;
     const version = (data as { payload?: { version?: string } }).payload?.version;
     appendRendererLog('info', version ? `визуализация готова v${version}` : 'визуализация готова');
@@ -1284,12 +1291,15 @@ function onRendererMessage(event: MessageEvent): void {
 }
 
 async function loadRunAndContext(runId: string): Promise<void> {
-  const [freshContext, freshRun] = await Promise.all([
-    getRunWatchContext(runId),
+  const requestedAt = performance.now();
+  const [contextSample, freshRun] = await Promise.all([
+    getRunWatchContext(runId).then(context => ({ context, receivedAt: performance.now() })),
     getRun(runId, { compactPayload: true }),
   ]);
-  watchContext.value = freshContext;
+  if (disposed) return;
+  watchContext.value = contextSample.context;
   run.value = freshRun;
+  applyWatchClock(contextSample.context, requestedAt, contextSample.receivedAt);
 }
 
 async function ensureReplayLoaded(runId: string): Promise<void> {
@@ -1299,14 +1309,15 @@ async function ensureReplayLoaded(runId: string): Promise<void> {
   isReplayLoading.value = true;
   replayError.value = '';
   try {
-    replay.value = await getRunReplay(runId);
+    const loadedReplay = await getRunReplay(runId);
+    if (disposed) return;
+    replay.value = loadedReplay;
     clampReplayFrameIndex();
     if (replayFrames.value.length > 0) {
-      const synced = applyReplaySyncFromQuery();
-      if (!synced) replayFrameIndex.value = 0;
+      replayFrameIndex.value = 0;
       syncFirstReplayFrame();
       sendRendererStateAndResult();
-      if (shouldAutoplayReplay.value && replayFrames.value.length > 1 && replayFrameIndex.value < replayFrames.value.length - 1) {
+      if (!firstReplayLockActive.value && shouldAutoplayReplay.value && replayFrames.value.length > 1 && replayFrameIndex.value < replayFrames.value.length - 1) {
         startReplayPlayback();
       }
     }
@@ -1370,6 +1381,7 @@ function startRunLiveUpdates(runId: string): void {
       sendRendererStateAndResult();
     }
     if (run.value) {
+      await refreshWatchClock();
       await ensureReplayLoaded(run.value.run_id);
     }
     stopRunLiveUpdates();
@@ -1445,6 +1457,7 @@ function startRunPolling(runId: string): void {
       if (token !== runPollingToken) return;
       if (run.value && isTerminalStatus(run.value.status)) {
         stopRunPolling();
+        await refreshWatchClock();
         await ensureReplayLoaded(runId);
       }
     } catch {
@@ -1493,9 +1506,6 @@ watch(replayFrameIndex, () => {
   sendRendererStateAndResult();
 });
 
-watch(firstReplayAllowedFrameIndex, () => {
-  syncFirstReplayFrame();
-});
 
 watch(replaySpeedMs, (delay) => {
   if (!isEmbedded.value) saveReplayDelay(delay);
@@ -1506,7 +1516,7 @@ watch(replaySpeedMs, (delay) => {
 
 function handlePlaybackKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') { fieldFullscreen.value = false; statsOpen.value = false; return; }
-  if (isEmbedded.value || event.ctrlKey || event.metaKey || event.altKey || isShortcutInput(event.target)) return;
+  if (isEmbedded.value || firstReplayLockActive.value || event.ctrlKey || event.metaKey || event.altKey || isShortcutInput(event.target)) return;
   if (event.code === 'Space') {
     event.preventDefault();
     toggleReplayPlay();
@@ -1519,11 +1529,15 @@ function handlePlaybackKeydown(event: KeyboardEvent): void {
 onMounted(async () => {
   window.addEventListener('keydown', handlePlaybackKeydown);
   window.addEventListener('message', onRendererMessage);
-  replayClockHandle = setInterval(syncFirstReplayFrame, 500);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  replayClockHandle = setInterval(syncFirstReplayFrame, 100);
   await bootstrapPage();
 });
 
 onUnmounted(() => {
+  disposed = true;
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  if (firstShowRefreshHandle) clearTimeout(firstShowRefreshHandle);
   window.removeEventListener('keydown', handlePlaybackKeydown);
   window.removeEventListener('message', onRendererMessage);
   if (replayClockHandle) clearInterval(replayClockHandle);

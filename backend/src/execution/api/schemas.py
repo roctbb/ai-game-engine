@@ -84,6 +84,11 @@ class RunWatchParticipantResponse(BaseModel):
     is_current: bool
 
 
+class FirstShowClockResponse(BaseModel):
+    started_at: datetime | None = None
+    frame_ms: int = 500
+
+
 class RunWatchContextResponse(BaseModel):
     run_id: str
     game_id: str
@@ -95,6 +100,9 @@ class RunWatchContextResponse(BaseModel):
     renderer_url: str | None
     renderer_protocol: str
     participants: list[RunWatchParticipantResponse] = Field(default_factory=list)
+    server_now: datetime
+    server_received_at: datetime
+    first_show: FirstShowClockResponse | None = None
 
 
 class RegisterWorkerRequest(BaseModel):

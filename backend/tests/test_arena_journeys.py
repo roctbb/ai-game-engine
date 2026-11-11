@@ -336,6 +336,66 @@ def test_public_replay_keeps_game_events_and_only_own_diagnostics(client, contai
     assert "hidden" in teacher.text
 
 
+@pytest.mark.parametrize("naive_timestamp", [False, True])
+def test_first_show_uses_common_training_batch_clock(client, container, monkeypatch, naive_timestamp):
+    from datetime import datetime
+
+    lobby, teams = _setup(client, container, builtin=True)
+    for team in teams:
+        container.training_lobby.set_ready(lobby["lobby_id"], team["team_id"], True)
+    container.training_lobby.mark_viewer_online(lobby["lobby_id"], "test-teacher")
+    scheduled = container.training_lobby.run_matchmaking_cycle(lobby["lobby_id"], "system")
+    groups = scheduled.last_scheduled_match_groups
+    assert len(groups) == 2
+    def finish_group(group):
+        team_ids = [container.execution.get_run(run_id).team_id for run_id in group]
+        payload = {"status": "ok", "metrics": {},
+                   "scores": {team_id: 100 - i for i, team_id in enumerate(team_ids)},
+                   "placements": {team_id: i + 1 for i, team_id in enumerate(team_ids)},
+                   "frames": [{"tick": i, "frame": {"board": [[0]]}} for i in range(80)]}
+        response = client.post(f"/api/v1/internal/runs/{group[0]}/finished", json={"payload": payload})
+        assert response.status_code == 200, response.text
+    finish_group(groups[0])
+    waiting = client.get(f"/api/v1/runs/{groups[0][0]}/watch-context").json()
+    assert waiting["first_show"] == {"started_at": None, "frame_ms": 500}
+    earlier = utc_now() - timedelta(seconds=3)
+    if naive_timestamp:
+        earlier = earlier.replace(tzinfo=None)
+    for run_id in groups[0]:
+        run = container.execution._run_repository.get(run_id)
+        run.finished_at = earlier
+        container.execution._run_repository.save(run)
+    finish_group(groups[1])
+    expected = max(container.execution.get_run(run_id).finished_at for run_id in groups[1])
+    clocks = [client.get(f"/api/v1/runs/{group[0]}/watch-context").json()["first_show"] for group in groups]
+    assert clocks[0] == clocks[1]
+    assert datetime.fromisoformat(clocks[0]["started_at"]) == expected
+    later = expected + timedelta(seconds=12)
+    monkeypatch.setattr("execution.api.router.utc_now", lambda: later)
+    joined_late = client.get(f"/api/v1/runs/{groups[0][0]}/watch-context").json()
+    assert joined_late["first_show"] == clocks[0]
+    assert datetime.fromisoformat(joined_late["server_now"]) == later
+
+
+def test_tournament_first_show_clock_is_shared_within_match_not_whole_round(client, container):
+    lobby, _ = _setup(client, container, builtin=True)
+    competition = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={"title": "Турнир"}).json()
+    matches = container.competition.get_competition(competition["competition_id"]).rounds[0].matches
+    first_ids = list(matches[0].run_ids_by_team.values())
+    second_id = next(iter(matches[1].run_ids_by_team.values()))
+    team_ids = list(matches[0].run_ids_by_team)
+    payload = {"status": "ok", "metrics": {},
+               "scores": {team_id: 100 - i for i, team_id in enumerate(team_ids)},
+               "placements": {team_id: i + 1 for i, team_id in enumerate(team_ids)},
+               "frames": [{"tick": i, "frame": {"board": [[0]]}} for i in range(80)]}
+    assert client.post(f"/api/v1/internal/runs/{first_ids[0]}/finished", json={"payload": payload}).status_code == 200
+    contexts = [client.get(f"/api/v1/runs/{run_id}/watch-context").json() for run_id in first_ids]
+    assert contexts[0]["first_show"]["started_at"]
+    assert contexts[0]["first_show"] == contexts[1]["first_show"]
+    pending = client.get(f"/api/v1/runs/{second_id}/watch-context").json()
+    assert pending["first_show"]["started_at"] is None
+
+
 def test_platform_failure_is_retried_with_frozen_source_and_seed(client, container):
     lobby, _ = _setup(client, container, count=2, builtin=True)
     started = client.post(f"/api/v1/lobbies/{lobby['lobby_id']}/competitions/start", json={

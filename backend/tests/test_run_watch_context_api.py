@@ -33,6 +33,8 @@ def test_run_watch_context_returns_renderer_metadata(client, teacher_headers) ->
     assert payload["renderer_entrypoint"] == "renderer/index.html"
     assert payload["renderer_url"].startswith("/api/v1/renderers/maze_escape_v1/renderer/index.html?v=")
     assert payload["renderer_protocol"] == "v1"
+    assert payload["first_show"] is None
+    assert payload["server_now"]
     assert payload["participants"] == [
         {
             "run_id": run["run_id"],

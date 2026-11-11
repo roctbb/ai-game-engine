@@ -1,6 +1,7 @@
 <template>
   <div class="agp-replay-player" role="group" aria-label="Управление повтором">
-    <div class="agp-replay-transport">
+    <span v-if="live" class="small text-muted">{{ liveLabel }}</span>
+    <div v-else class="agp-replay-transport">
       <button type="button" class="agp-icon-button agp-icon-button--replay" :disabled="!canPlay" :title="playing ? 'Пауза (Space)' : 'Воспроизвести повтор (Space)'" :aria-label="playing ? 'Пауза повтора' : 'Воспроизвести повтор'" @click="$emit('toggle')">
         <AppIcon :name="playing ? 'pause' : 'play'" />
       </button>
@@ -12,7 +13,7 @@
       <input class="form-range agp-player-range" type="range" min="0" :max="Math.max(0, frameCount - 1)" :value="frameIndex" :disabled="seekDisabled || frameCount < 2" aria-label="Кадр повтора" :aria-valuetext="frameCount ? `Кадр ${frameIndex + 1} из ${frameCount}` : 'Повтор недоступен'" @input="$emit('update:frameIndex', Number(($event.target as HTMLInputElement).value))" />
       <div v-if="markers.length && frameCount > 1" class="agp-replay-markers" aria-label="События на шкале"><button v-for="marker in visibleMarkers" :key="marker.id" type="button" :disabled="seekDisabled" :class="`agp-replay-marker agp-replay-marker--${marker.tone}`" :style="{ left: `${marker.frame * 100 / (frameCount - 1)}%` }" :title="`Ход ${marker.tick}: ${marker.label}`" :aria-label="`Ход ${marker.tick}: ${marker.label}`" @click="$emit('update:frameIndex', marker.frame)"></button></div>
     </div>
-    <label class="agp-speed-control">
+    <label v-if="!live" class="agp-speed-control">
       <span class="visually-hidden">Скорость повтора</span>
       <select class="form-select agp-speed-select" :value="delay" @change="$emit('update:delay', Number(($event.target as HTMLSelectElement).value))">
         <option v-if="!REPLAY_SPEEDS.some(speed => speed.delay === delay)" :value="delay">{{ (1000 / delay).toLocaleString('ru', { maximumFractionDigits: 2 }) }}×</option>
@@ -38,8 +39,10 @@ const props = withDefaults(defineProps<{
   canStepBackward: boolean;
   canStepForward: boolean;
   seekDisabled?: boolean;
+  live?: boolean;
+  liveLabel?: string;
   markers?: ReplayMoment[];
-}>(), { seekDisabled: false, markers: () => [] });
+}>(), { seekDisabled: false, live: false, liveLabel: 'Первый показ', markers: () => [] });
 
 const visibleMarkers = computed(() => thinReplayMoments(props.markers));
 

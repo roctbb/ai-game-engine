@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from datetime import UTC
 from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, Request
@@ -42,7 +43,7 @@ from game_catalog.infrastructure.manifest_loader import (
 )
 from identity.domain.model import AppSession, UserRole
 from shared.api.sse import sse_envelope, sse_event, sse_payload_hash
-from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
+from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError, utc_now
 
 router = APIRouter(tags=["execution"])
 _TERMINAL_RUN_STATUSES = {
@@ -552,6 +553,7 @@ def get_run_watch_context(
     session: AppSession = Depends(get_current_session),
     container: ServiceContainer = Depends(get_container),
 ) -> RunWatchContextResponse:
+    server_received_at = utc_now()
     run = container.execution.get_run(run_id=run_id)
     ensure_can_view_run(container=container, session=session, run=run)
     game = container.game_catalog.get_game(run.game_id)
@@ -562,6 +564,8 @@ def get_run_watch_context(
     if renderer_entrypoint:
         renderer_url = f"/api/v1/renderers/{game.slug}/{renderer_entrypoint}?v={manifest.semver}"
 
+    run_ids = _watch_context_run_ids(container=container, current_run=run)
+    first_show = _watch_first_show_clock(container=container, current_run=run, run_ids=run_ids)
     return RunWatchContextResponse(
         run_id=run.run_id,
         game_id=run.game_id,
@@ -572,20 +576,55 @@ def get_run_watch_context(
         renderer_entrypoint=renderer_entrypoint,
         renderer_url=renderer_url,
         renderer_protocol="v1",
-        participants=_watch_context_participants(container=container, current_run=run),
+        participants=_watch_context_participants(container=container, current_run=run, run_ids=run_ids),
+        server_now=utc_now(),
+        server_received_at=server_received_at,
+        first_show=first_show,
     )
 
 
+def _watch_first_show_clock(
+    *, container: ServiceContainer, current_run: Run, run_ids: list[str],
+) -> dict[str, object] | None:
+    if current_run.run_kind is RunKind.SINGLE_TASK:
+        return None
+    clock_run_ids = run_ids
+    if current_run.run_kind is RunKind.TRAINING_MATCH and current_run.lobby_id:
+        try:
+            lobby = container.training_lobby.get_lobby(current_run.lobby_id)
+            batch_ids = [run_id for group in lobby.last_scheduled_match_groups for run_id in group]
+            if current_run.run_id in batch_ids:
+                clock_run_ids = batch_ids
+        except NotFoundError:
+            pass
+    clock_runs = []
+    for run_id in clock_run_ids:
+        try:
+            clock_runs.append(container.execution.get_run(run_id, include_result_payload=False))
+        except NotFoundError:
+            continue
+    if any(run.status not in _TERMINAL_RUN_STATUSES for run in clock_runs):
+        return {"started_at": None, "frame_ms": 500}
+    finished_at = [
+        run.finished_at.replace(tzinfo=UTC) if run.finished_at.tzinfo is None else run.finished_at
+        for run in clock_runs if run.finished_at is not None
+    ]
+    if not finished_at:
+        return None
+    return {"started_at": max(finished_at), "frame_ms": 500}
+
+
 def _watch_context_participants(
-    container: ServiceContainer, current_run: Run
+    container: ServiceContainer, current_run: Run, run_ids: list[str] | None = None,
 ) -> list[dict[str, object]]:
-    run_ids = _watch_context_run_ids(container=container, current_run=current_run)
+    if run_ids is None:
+        run_ids = _watch_context_run_ids(container=container, current_run=current_run)
     participants: list[dict[str, object]] = []
     seen_team_ids: set[str] = set()
 
     for participant_run_id in run_ids:
         try:
-            participant_run = container.execution.get_run(participant_run_id)
+            participant_run = container.execution.get_run(participant_run_id, include_result_payload=False)
         except NotFoundError:
             continue
         if participant_run.team_id in seen_team_ids:

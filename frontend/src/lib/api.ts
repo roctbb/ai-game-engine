@@ -405,6 +405,9 @@ export interface RunWatchContextDto {
   renderer_entrypoint: string | null;
   renderer_url: string | null;
   renderer_protocol: string;
+  server_now?: string;
+  server_received_at?: string;
+  first_show?: { started_at: string | null; frame_ms: number } | null;
   participants: Array<{
     run_id: string;
     team_id: string;

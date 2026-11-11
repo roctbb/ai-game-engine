@@ -611,6 +611,8 @@ interface EmbeddedGameFrame {
   frame: unknown;
   replayFrameIndex: number;
   replayFrameCount: number;
+  firstShowActive: boolean;
+  firstShowWaiting: boolean;
   participants: Array<{
     run_id: string;
     team_id: string;
@@ -1039,14 +1041,6 @@ function buildDisplayedGameWatchUrl(runId: string): string {
   if (sessionStore.sessionId) {
     params.set('session_id', sessionStore.sessionId);
   }
-  const replayStartedAt = lobby.value?.replay_started_at;
-  if (replayStartedAt) {
-    params.set('sync_started_at', replayStartedAt);
-    params.set('sync_frame_ms', String(lobby.value?.cycle_frame_ms ?? 500));
-  } else if ((lobby.value?.cycle_replay_frame_count ?? 0) > 0) {
-    params.set('sync_frame_index', String(lobby.value?.cycle_replay_frame_index ?? 0));
-    params.set('sync_frame_ms', String(lobby.value?.cycle_frame_ms ?? 500));
-  }
   return `/runs/${runId}/watch?${params.toString()}`;
 }
 const canShowDisplayedRunPrint = computed(() => {
@@ -1219,7 +1213,7 @@ const frameGameStats = computed<CurrentGameStatRow[]>(() => {
   const players = collectFrameGamePlayers(message);
   const embeddedRows = message.players.map((player, index) => buildCurrentGameStatFromEmbeddedPlayer(message, player, index));
   const frameRows = players.map((player, index) => buildCurrentGameStatFromFrame(message, player, index));
-  return dedupeCurrentGameStats([...embeddedRows, ...frameRows]);
+  return dedupeCurrentGameStats(embeddedRows.length ? embeddedRows : frameRows);
 });
 const fallbackGameStats = computed<CurrentGameStatRow[]>(() =>
   displayedTrainingRunIds.value.flatMap((runId) => {
@@ -1263,9 +1257,13 @@ const fallbackGameStats = computed<CurrentGameStatRow[]>(() =>
     }];
   }),
 );
-const currentGameStats = computed<CurrentGameStatRow[]>(() =>
-  sortCurrentGameStats(dedupeCurrentGameStats([...frameGameStats.value, ...fallbackGameStats.value])),
-);
+const currentGameStats = computed<CurrentGameStatRow[]>(() => {
+  if (frameGameStats.value.length) return sortCurrentGameStats(frameGameStats.value);
+  const rows = replayFinishedInViewer.value ? fallbackGameStats.value : fallbackGameStats.value.map(row => ({
+    ...row, score: '—', scoreValue: null, status: lobby.value?.cycle_phase === 'simulation' ? 'подготовка' : 'в игре',
+  }));
+  return sortCurrentGameStats(dedupeCurrentGameStats(rows));
+});
 const currentGameFrameLabel = computed(() => {
   const message = embeddedGameFrame.value;
   if (!isDisplayedEmbeddedGameFrame(message)) {
@@ -1281,6 +1279,7 @@ const currentGameFrameLabel = computed(() => {
 });
 const currentGamePhaseLabel = computed(() => {
   const message = embeddedGameFrame.value;
+  if (isDisplayedEmbeddedGameFrame(message) && message.firstShowActive) return message.firstShowWaiting ? 'Подготовка матча' : 'Первый показ';
   if (!isDisplayedEmbeddedGameFrame(message)) {
     return lobby.value?.cycle_phase_label || (displayedGameRunId.value ? 'ожидаем кадры' : 'нет активной игры');
   }
@@ -1304,8 +1303,9 @@ const isWaitingForReplay = computed(() => {
   return lobby.value?.cycle_phase === 'replay' || lobby.value?.cycle_phase === 'result';
 });
 const replayFinishedInViewer = computed(() => {
-  if (lobby.value?.cycle_phase === 'result') return true;
   const message = embeddedGameFrame.value;
+  if (isDisplayedEmbeddedGameFrame(message) && message.firstShowActive) return false;
+  if (lobby.value?.cycle_phase === 'result') return true;
   if (!isDisplayedEmbeddedGameFrame(message)) return false;
   if (message.replayFrameCount > 1) return message.replayFrameIndex >= message.replayFrameCount - 1;
   return message.phase === 'finished';
@@ -2147,6 +2147,8 @@ function handleEmbeddedGameFrameMessage(event: MessageEvent): void {
     frame: payload.frame ?? {},
     replayFrameIndex: typeof payload.replayFrameIndex === 'number' ? payload.replayFrameIndex : 0,
     replayFrameCount: typeof payload.replayFrameCount === 'number' ? payload.replayFrameCount : 0,
+    firstShowActive: payload.firstShowActive === true,
+    firstShowWaiting: payload.firstShowWaiting === true,
     participants: Array.isArray(payload.participants)
       ? payload.participants.filter(isEmbeddedParticipant)
       : [],
