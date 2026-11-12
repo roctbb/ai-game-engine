@@ -20,6 +20,7 @@ describe('connect-five match draws', () => {
   });
   it('preserves fractional points in scoreboards', () => {
     expect(matchScoreLabel(.5)).toBe('0,5');
+    expect(matchScoreLabel(6 / 40)).toBe('0,15');
     expect(matchScoreLabel(0)).toBe('0');
     expect(matchScoreLabel(1)).toBe('1');
     expect(matchScoreLabel(null)).toBe('—');

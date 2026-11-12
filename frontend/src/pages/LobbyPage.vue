@@ -1437,7 +1437,7 @@ function scoreLabel(value: number | null): string {
 }
 
 function averageScoreLabel(value: number | null | undefined): string {
-  return value === null || value === undefined ? 'нет данных' : value.toFixed(1);
+  return value === null || value === undefined ? 'нет данных' : matchScoreLabel(value);
 }
 
 function winRate(stat: LobbyParticipantStatsDto): number {
