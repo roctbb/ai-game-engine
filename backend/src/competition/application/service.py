@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import contextmanager
+from threading import RLock, local
+from typing import Any
 
 from competition.application.repositories import CompetitionRepository
 from competition.application.presentation import FRAME_MS, as_utc, results_revealed, schedule_round_show
@@ -19,7 +22,7 @@ from execution.application.service import CreateRunInput, ExecutionService
 from execution.domain.model import Run, RunKind, RunStatus
 from execution.domain.result_payload import compact_result_payload
 from game_catalog.application.service import GameCatalogService
-from shared.kernel import InvariantViolationError, NotFoundError, utc_now
+from shared.kernel import InvariantViolationError, NotFoundError, new_id, utc_now
 from team_workspace.application.service import TeamWorkspaceService
 
 
@@ -89,11 +92,15 @@ class CompetitionService:
         game_catalog: GameCatalogService,
         team_workspace: TeamWorkspaceService,
         execution: ExecutionService,
+        mutation_lock_client: Any = None,
     ) -> None:
         self._repository = repository
         self._game_catalog = game_catalog
         self._team_workspace = team_workspace
         self._execution = execution
+        self._mutation_locks: dict[str, RLock] = {}
+        self._mutation_local = local()
+        self._mutation_lock_client = mutation_lock_client
 
     def create_competition(self, data: CreateCompetitionInput) -> Competition:
         if data.format is not CompetitionFormat.SINGLE_ELIMINATION:
@@ -101,6 +108,8 @@ class CompetitionService:
                 "В текущей версии поддерживается только single_elimination"
             )
         game = self._game_catalog.get_game(data.game_id)
+        if data.tie_break_policy is TieBreakPolicy.REPLAY_THEN_SHARED and game.slug != "ttt_connect5_v1":
+            raise InvariantViolationError("Серия до трёх ничьих доступна для крестиков-ноликов")
         if not game.is_multiplayer:
             raise InvariantViolationError("Соревнование можно создать только для multiplayer игры")
         min_players, max_players = game.match_player_bounds
@@ -159,6 +168,8 @@ class CompetitionService:
                 raise InvariantViolationError("title не может быть пустым")
             competition.title = normalized_title
         if tie_break_policy is not None:
+            if tie_break_policy is TieBreakPolicy.REPLAY_THEN_SHARED and self._game_catalog.get_game(competition.game_id).slug != "ttt_connect5_v1":
+                raise InvariantViolationError("Серия до трёх ничьих доступна для крестиков-ноликов")
             competition.tie_break_policy = tie_break_policy
         if code_policy is not None:
             competition.code_policy = code_policy
@@ -303,7 +314,28 @@ class CompetitionService:
         self._repository.save(competition)
         return competition
 
+    @contextmanager
+    def _mutation(self, competition_id: str):
+        with self._mutation_locks.setdefault(competition_id, RLock()):
+            held = getattr(self._mutation_local, "held", set())
+            if competition_id in held or self._mutation_lock_client is None:
+                yield
+                return
+            lock = self._mutation_lock_client.lock(f"competition:mutation:{competition_id}", timeout=60, blocking_timeout=10)
+            if not lock.acquire(blocking=True):
+                raise InvariantViolationError("Соревнование обновляется, повторите запрос")
+            self._mutation_local.held = held | {competition_id}
+            try:
+                yield
+            finally:
+                self._mutation_local.held = held
+                lock.release()
+
     def advance_competition(self, competition_id: str, requested_by: str, *, start_next_round: bool = True) -> Competition:
+        with self._mutation(competition_id):
+            return self._advance_competition(competition_id, requested_by, start_next_round=start_next_round)
+
+    def _advance_competition(self, competition_id: str, requested_by: str, *, start_next_round: bool = True) -> Competition:
         competition = self.get_competition(competition_id)
         showing_with_tiebreak = False
         if competition.status is CompetitionStatus.PAUSED:
@@ -339,7 +371,7 @@ class CompetitionService:
         next_seed: list[str] = []
         found_tiebreak = False
 
-        for match in current_round.matches:
+        for match in list(current_round.matches):
             if match.status in {
                 CompetitionMatchStatus.FINISHED,
                 CompetitionMatchStatus.AUTO_ADVANCED,
@@ -357,6 +389,37 @@ class CompetitionService:
             outcome = self._build_match_outcome(
                 competition=competition, match=match, runs=match_runs
             )
+            if competition.tie_break_policy is TieBreakPolicy.REPLAY_THEN_SHARED:
+                series_id = match.replay_of_match_id or match.match_id
+                previous = [item for item in current_round.matches
+                            if (item.replay_of_match_id or item.match_id) == series_id
+                            and item.attempt_number < match.attempt_number]
+                match.series_scores_by_team = {
+                    team: score + sum(item.scores_by_team.get(team, 0) for item in previous)
+                    for team, score in outcome.scores_by_team.items()
+                }
+            if (outcome.requires_manual_tiebreak
+                    and competition.tie_break_policy is TieBreakPolicy.REPLAY_THEN_SHARED
+                    and match.attempt_number < 3
+                    and not (outcome.tiebreak_reason or "").startswith("Сбой")):
+                if sequential and match.show_ends_at and now < as_utc(match.show_ends_at):
+                    continue
+                competition.mark_match_finished(current_round.round_index, match.match_id,
+                    outcome.scores_by_team, outcome.placements_by_team, [])
+                replay = CompetitionMatch(
+                    match_id=new_id("cmp_match"), round_index=current_round.round_index,
+                    team_ids=tuple(reversed(match.team_ids)), status=CompetitionMatchStatus.PENDING,
+                    replay_of_match_id=match.replay_of_match_id or match.match_id,
+                    attempt_number=match.attempt_number + 1,
+                )
+                match.replay_match_id = replay.match_id
+                match.tie_break_reason = "Ничья. Назначена переигровка"
+                current_round.matches.append(replay)
+                run_ids = self._schedule_current_round(competition, requested_by,
+                    retry_runs_by_team=match_runs, only_match_id=replay.match_id, preserve_seed=False)
+                competition.set_last_scheduled_runs(run_ids)
+                changed = True
+                continue
             if outcome.requires_manual_tiebreak:
                 changed = True
                 match.scores_by_team = dict(outcome.scores_by_team)
@@ -415,8 +478,9 @@ class CompetitionService:
     def _record_round_result(competition: Competition, current_round: CompetitionRound, next_seed: list[str]) -> None:
         competition.mark_round_finished(round_index=current_round.round_index)
         competition.set_pending_reason(None)
-        if len(next_seed) < competition.min_match_size:
-            competition.complete_with_winners(next_seed)
+        round_teams = {team_id for match in current_round.matches for team_id in match.team_ids}
+        if len(next_seed) < competition.min_match_size or set(next_seed) == round_teams:
+            competition.complete_with_winners(list(dict.fromkeys(next_seed)))
 
     def resolve_match_tiebreak(self, competition_id: str, data: ResolveTieInput) -> Competition:
         competition = self.get_competition(competition_id)
@@ -556,13 +620,13 @@ class CompetitionService:
         ready.sort(key=lambda entrant: (entrant.registered_at, entrant.team_id))
         return [entrant.team_id for entrant in ready]
 
-    def _schedule_current_round(self, competition: Competition, requested_by: str, *, retry_runs_by_team: dict[str, Run] | None = None) -> list[str]:
+    def _schedule_current_round(self, competition: Competition, requested_by: str, *, retry_runs_by_team: dict[str, Run] | None = None, only_match_id: str | None = None, preserve_seed: bool = True) -> list[str]:
         current_round = competition.get_current_round()
         if current_round is None:
             return []
         run_ids: list[str] = []
         for match in current_round.matches:
-            if match.status is not CompetitionMatchStatus.PENDING:
+            if match.status is not CompetitionMatchStatus.PENDING or (only_match_id and match.match_id != only_match_id):
                 continue
             group = []
             for team_id in match.team_ids:
@@ -574,7 +638,7 @@ class CompetitionService:
                         run_kind=RunKind.COMPETITION_MATCH,
                         lobby_id=competition.competition_id,
                         version_id=competition.game_version_id,
-                        execution_options=({"seed": retry_runs_by_team[team_id].execution_options.get("seed") or retry_runs_by_team[team_id].run_id} if retry_runs_by_team and team_id in retry_runs_by_team else {}),
+                        execution_options=({"seed": retry_runs_by_team[team_id].execution_options.get("seed") or retry_runs_by_team[team_id].run_id} if preserve_seed and retry_runs_by_team and team_id in retry_runs_by_team else {}),
                     )
                 )
                 group.append(run.run_id)
@@ -646,7 +710,8 @@ class CompetitionService:
             boundary_signature = (boundary[1], boundary[2])
             next_signature = (next_item[1], next_item[2])
             if boundary_signature == next_signature:
-                if competition.tie_break_policy is TieBreakPolicy.SHARED_ADVANCEMENT:
+                if (competition.tie_break_policy is TieBreakPolicy.SHARED_ADVANCEMENT
+                        or (competition.tie_break_policy is TieBreakPolicy.REPLAY_THEN_SHARED and match.attempt_number >= 3)):
                     index = top_k
                     while index < len(scored):
                         candidate = scored[index]

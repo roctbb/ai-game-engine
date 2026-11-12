@@ -4,7 +4,7 @@ export const record = (value: unknown): ReplayRecord => value && typeof value ==
 const labels: Record<string, string> = {
   key: 'Подобран ключ', gate_opened: 'Открыты ворота', locked_gate: 'Нужен ключ', escaped: 'Выход достигнут',
   blocked_move: 'Путь заблокирован', invalid_action: 'Недопустимая команда', invalid_move: 'Недопустимый ход',
-  bot_error: 'Ошибка Python', compile_error: 'Ошибка Python', runtime_error: 'Ошибка Python',
+  bot_error: 'Ошибка Python', compile_error: 'Ошибка Python', runtime_error: 'Ошибка Python', turn_skipped: 'Ход пропущен',
   respawn: 'Возрождение', crash: 'Змейка погибла', reverse_blocked: 'Разворот заблокирован', death: 'Игрок выбыл', eliminated: 'Игрок выбыл', collision: 'Столкновение', food: 'Подобрана еда',
   apple: 'Подобрано яблоко', coin: 'Подобрана монета', collected: 'Подобран предмет', goal: 'Цель достигнута',
   win: 'Победа', winner: 'Победа', finish: 'Завершение', shot: 'Выстрел', hit: 'Попадание',
@@ -15,13 +15,17 @@ export function frameForTick(frames: ReplayRecord[], tick: number): number {
   return index < 0 ? Math.max(0, frames.length - 1) : index;
 }
 export function replayMoments(events: ReplayRecord[], frames: ReplayRecord[]): ReplayMoment[] {
+  let previousTick = 0;
   const moments = events.flatMap((event, i) => {
     const type = String(event.type ?? event.kind ?? '');
     if (['bot_print', 'print', 'stdout', 'debug_snapshot', 'log'].includes(type)) return [];
+    const explicitTick = event.tick ?? event.turn;
+    const tick = explicitTick !== undefined && Number.isFinite(Number(explicitTick))
+      ? Number(explicitTick) : type === 'compile_error' ? 0 : previousTick;
+    previousTick = Math.max(previousTick, tick);
     const message = typeof event.message === 'string' ? event.message : '';
     const label = labels[type] ?? (message ? 'Событие игры' : '');
     if (!label) return [];
-    const tick = Number.isFinite(Number(event.tick)) ? Number(event.tick) : 0;
     const actor = event.role ?? event.slot ?? event.actor ?? event.team_id;
     const action = typeof event.action === 'string' ? event.action : '';
     const coords = typeof event.x === 'number' && typeof event.y === 'number' ? `Клетка (${event.x}, ${event.y})` : '';

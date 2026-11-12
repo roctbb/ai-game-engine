@@ -354,6 +354,7 @@ class TrainingLobbyService:
             if not acquired:
                 return
             lobby = self.get_lobby(lobby_id)
+            self._expire_offline_queue(lobby, now)
             own_teams = self._team_workspace.list_teams_by_game_and_captain(lobby.game_id, user_id)
             for team in own_teams:
                 state = lobby.teams.get(team.team_id)
@@ -1789,12 +1790,12 @@ class TrainingLobbyService:
         if scored_candidates:
             best = max(scored_candidates.values())
             scored_winners = [team_id for team_id, score in scored_candidates.items() if score == best]
-            return sorted(scored_winners, key=self._team_sort_key)[0]
+            return scored_winners[0] if len(scored_winners) == 1 else None
 
         if placements_by_team:
             best_place = min(placements_by_team.values())
             placed_winners = [team_id for team_id, place in placements_by_team.items() if place == best_place]
-            return sorted(placed_winners, key=self._team_sort_key)[0]
+            return placed_winners[0] if len(placed_winners) == 1 else None
         return None
 
     def _team_sort_key(self, team_id: str) -> tuple[str, str]:

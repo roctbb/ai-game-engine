@@ -286,7 +286,7 @@ export interface LobbyCompetitionArchiveDto {
 }
 
 export type CompetitionFormat = 'single_elimination';
-export type TieBreakPolicy = 'manual' | 'shared_advancement';
+export type TieBreakPolicy = 'manual' | 'shared_advancement' | 'replay_then_shared';
 export type CompetitionCodePolicy =
   | 'locked_on_registration'
   | 'locked_on_start'
@@ -308,6 +308,10 @@ export interface CompetitionEntrantDto {
 }
 
 export interface CompetitionMatchDto {
+  replay_of_match_id?: string | null;
+  replay_match_id?: string | null;
+  attempt_number?: number;
+  series_scores_by_team?: Record<string, number>;
   match_id: string;
   round_index: number;
   team_ids: string[];

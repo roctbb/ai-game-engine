@@ -372,7 +372,7 @@ def test_lobby_stats_read_root_scores_and_placements(client, teacher_headers) ->
     assert stats_by_team[team_ids[1]]["average_score"] == 10
 
 
-def test_lobby_stats_count_one_winner_per_match(client, teacher_headers) -> None:
+def test_lobby_stats_do_not_invent_a_winner_for_equal_results(client, teacher_headers) -> None:
     game = _create_game(client, teacher_headers)
     lobby_id = _create_lobby(client, game_id=game["game_id"], headers=teacher_headers)
     player_headers = [
@@ -419,7 +419,7 @@ def test_lobby_stats_count_one_winner_per_match(client, teacher_headers) -> None
     refreshed = client.get(f"/api/v1/lobbies/{lobby_id}", headers=player_headers[0])
     assert refreshed.status_code == 200
     stats_by_team = {item["team_id"]: item for item in refreshed.json()["participant_stats"]}
-    assert sum(stats_by_team[team_id]["wins"] for team_id in team_ids) == 1
+    assert sum(stats_by_team[team_id]["wins"] for team_id in team_ids) == 0
     assert {stats_by_team[team_id]["matches_total"] for team_id in team_ids} == {1}
 
 

@@ -8,7 +8,7 @@
       >
         <span>{{ nameFor(id) }}<small v-if="id === myTeamId"> · вы</small></span
         ><strong
-          >{{ scores?.[id] ?? "—"
+          >{{ scoreLabel(scores?.[id])
           }}<span v-if="advanced?.includes(id)" class="text-success">
             ✓</span
           ></strong
@@ -20,7 +20,7 @@
         v-if="myTeamId && teamIds.includes(myTeamId)"
         class="arena-roster-personal"
       >
-        Ваш результат <strong>{{ scores?.[myTeamId] ?? "—" }}</strong>
+        Ваш результат <strong>{{ scoreLabel(scores?.[myTeamId]) }}</strong>
       </div>
       <details>
         <summary>{{ teamIds.length }} игроков · состав и результаты</summary>
@@ -31,7 +31,7 @@
                 >{{ nameFor(id)
                 }}<small v-if="id === myTeamId"> · вы</small></span
               ><strong
-                >{{ scores?.[id] ?? "—"
+                >{{ scoreLabel(scores?.[id])
                 }}<span v-if="advanced?.includes(id)" class="text-success">
                   ✓</span
                 ></strong
@@ -51,6 +51,9 @@ defineProps<{
   advanced?: string[];
   myTeamId?: string | null;
 }>();
+function scoreLabel(value: number | undefined): string {
+  return value == null ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+}
 </script>
 <style scoped>
 .arena-roster-list {

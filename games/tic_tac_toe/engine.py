@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import builtins
+import inspect
 import json
 import os
+import random
+from types import ModuleType
 from typing import Any, Callable
 
 
@@ -9,7 +13,7 @@ _BOARD_SIZE = 5
 _CONNECT = 5
 _PLAYER_ROLE = 1
 _ENEMY_ROLE = -1
-_MAX_TURNS = _BOARD_SIZE * _BOARD_SIZE
+_MAX_TURNS = _BOARD_SIZE * _BOARD_SIZE * 2
 
 
 def run(context: dict[str, Any] | None = None) -> dict[str, object]:
@@ -21,22 +25,25 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     events: list[dict[str, object]] = []
     print_context = {"tick": 0}
     labels = _resolve_labels(ctx)
-    player_fn, compile_error = _build_player_fn(
-        ctx=ctx,
-        slot_key="bot",
-        events=events,
-        print_context=print_context,
-    )
-
     participants = ctx.get("participants")
     opponent = participants[1] if isinstance(participants, list) and len(participants) >= 2 else None
-    enemy_fn = None
+    team_player_id = _resolve_team_player_id(ctx)
+    team_enemy_id = str(opponent["team_id"]) if isinstance(opponent, dict) and opponent.get("team_id") else "team-bot"
+    team_by_role = {1: team_player_id, -1: team_enemy_id}
+    player_fn, compile_error = _build_player_fn(
+        {**ctx, "actor_role": 1, "actor_team_id": team_player_id}, "bot", events, print_context,
+    )
     enemy_compile_error = None
     if isinstance(opponent, dict):
         enemy_fn, enemy_compile_error = _build_player_fn(
-            ctx={"codes_by_slot": opponent.get("codes_by_slot", {})}, slot_key="bot",
-            events=events, print_context=print_context,
+            {**ctx, "codes_by_slot": opponent.get("codes_by_slot", {}), "actor_role": -1,
+             "actor_team_id": team_enemy_id}, "bot", events, print_context,
         )
+    else:
+        def enemy_fn(field, role):
+            return _enemy_move(field)
+    bots = {1: player_fn, -1: enemy_fn}
+    bot_errors_by_team = {team_player_id: int(bool(compile_error)), team_enemy_id: int(bool(enemy_compile_error))}
 
     board = _create_board()
     invalid_moves_player = 0
@@ -59,28 +66,37 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
     ]
 
     for _ in range(_MAX_TURNS):
-        if current_role == _PLAYER_ROLE:
-            print_context["tick"] = turns_played
-            move = _call_player(player_fn=player_fn, board=board, role=current_role)
-            if not _is_valid_move(board=board, move=move):
-                invalid_moves_player += 1
-                events.append({"type": "invalid_move", "role": "player"})
-                move = _first_free_cell(board)
-        else:
-            print_context["tick"] = turns_played
-            move = _call_player(enemy_fn, board, current_role) if enemy_fn is not None else _enemy_move(board)
-            if not _is_valid_move(board=board, move=move):
-                invalid_moves_enemy += 1
-                events.append({"type": "invalid_move", "role": "enemy"})
-                move = _first_free_cell(board)
-
+        print_context["tick"] = turns_played
+        fn = bots[current_role]
+        move = None
+        if fn is not None:
+            try:
+                move = _call_player(fn, board, current_role)
+                if not _is_valid_move(board, move):
+                    raise ValueError("Верните координаты свободной клетки: два целых числа от 0 до 4")
+            except Exception as exc:
+                bot_errors_by_team[team_by_role[current_role]] += 1
+                events.append(_error_event(exc, "bot_error", turns_played, current_role,
+                                           team_by_role[current_role]))
+                move = None
+        turns_played += 1
         if move is None:
-            break
+            if current_role == 1:
+                invalid_moves_player += 1
+            else:
+                invalid_moves_enemy += 1
+            events.append({"type": "turn_skipped", "tick": turns_played, "role": current_role,
+                           "team_id": team_by_role[current_role], "message": "Ход пропущен из-за ошибки кода"})
+            current_role = -current_role
+            frames.append({"tick": turns_played, "phase": "running", "frame": {
+                "board": _copy_board(board), "turns_played": turns_played,
+                "winner_role": winner_role, "next_role": current_role, "labels": labels,
+            }})
+            continue
 
         x, y = move
         board[x][y] = current_role
-        turns_played += 1
-        events.append({"type": "move", "turn": turns_played, "role": current_role, "x": x, "y": y})
+        events.append({"type": "move", "tick": turns_played, "turn": turns_played, "role": current_role, "x": x, "y": y})
 
         winner_role = _check_winner(board)
         next_role = _ENEMY_ROLE if current_role == _PLAYER_ROLE else _PLAYER_ROLE
@@ -98,7 +114,7 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
             }
         )
         if winner_role != 0:
-            events.append({"type": "winner", "role": winner_role})
+            events.append({"type": "winner", "tick": turns_played, "role": winner_role})
             break
 
         if _first_free_cell(board) is None:
@@ -106,8 +122,6 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
 
         current_role = next_role
 
-    team_player_id = _resolve_team_player_id(ctx)
-    team_enemy_id = str(opponent["team_id"]) if isinstance(opponent, dict) and opponent.get("team_id") else "team-bot"
     scores = _build_scores(team_player_id=team_player_id, team_enemy_id=team_enemy_id, winner_role=winner_role)
     placements = _build_placements(team_player_id=team_player_id, team_enemy_id=team_enemy_id, winner_role=winner_role)
 
@@ -118,13 +132,13 @@ def run(context: dict[str, Any] | None = None) -> dict[str, object]:
         "invalid_moves_player": invalid_moves_player,
         "invalid_moves_enemy": invalid_moves_enemy,
     }
-    if compile_error:
-        metrics["compile_error"] = compile_error
-        events.append({"type": "compile_error", "message": compile_error})
-
-    if enemy_compile_error:
-        metrics["opponent_compile_error"] = enemy_compile_error
-        events.append({"type": "compile_error", "team_id": team_enemy_id, "message": enemy_compile_error})
+    metrics["bot_errors_by_team"] = bot_errors_by_team
+    metrics["bot_errors"] = sum(bot_errors_by_team.values())
+    compile_errors = {team: error for team, error in (
+        (team_player_id, compile_error), (team_enemy_id, enemy_compile_error),
+    ) if error}
+    if compile_errors:
+        metrics["compile_errors"] = compile_errors
 
     payload: dict[str, object] = {
         "status": "finished",
@@ -193,40 +207,63 @@ def _build_player_fn(
     slot_key: str,
     events: list[dict[str, object]],
     print_context: dict[str, int],
-) -> tuple[Callable[..., object], str | None]:
+) -> tuple[Callable[..., object] | None, str | None]:
     code = _code_for_slot(ctx=ctx, slot_key=slot_key)
     namespace: dict[str, Any] = {
         "__builtins__": _safe_builtins(
-            print_fn=_make_bot_print(events=events, role=slot_key, print_context=print_context),
+            print_fn=_make_bot_print(events=events, role=str(ctx.get("actor_role", 1)), print_context=print_context),
+            seed=f"{ctx.get('seed') or ctx.get('run_id') or 'connect5'}:{ctx.get('actor_team_id') or ctx.get('team_id')}",
         )
     }
-    compile_error: str | None = None
-
-    if code.strip():
-        try:
-            exec(code, namespace, namespace)
-        except Exception as exc:  # pragma: no cover - runtime path
-            compile_error = str(exc)
-
-    fn = namespace.get("make_choice") or namespace.get("make_move")
-    if callable(fn):
-        return fn, compile_error
-
-    bot_cls = namespace.get("Bot")
-    if isinstance(bot_cls, type):
-        try:
-            instance = bot_cls()
-            method = getattr(instance, "make_move", None) or getattr(instance, "make_choice", None)
-            if callable(method):
-                return method, compile_error
-        except Exception as exc:  # pragma: no cover - runtime path
-            compile_error = str(exc)
-
-    return _fallback_player_move, compile_error
+    namespace["__name__"] = "bot"
+    role = int(ctx.get("actor_role", 1))
+    team_id = str(ctx.get("actor_team_id") or ctx.get("team_id") or "team-player")
+    try:
+        if not code.strip():
+            raise ValueError("Напишите функцию make_choice(field, role)")
+        exec(compile(code, f"<bot:{team_id}>", "exec"), namespace, namespace)
+        fn = namespace.get("make_choice") or namespace.get("make_move")
+        if not callable(fn):
+            bot_cls = namespace.get("Bot")
+            instance = bot_cls() if isinstance(bot_cls, type) else None
+            fn = getattr(instance, "make_move", None) or getattr(instance, "make_choice", None)
+        if not callable(fn):
+            raise ValueError("Не найдена функция make_choice(field, role) или make_move(observation)")
+        return fn, None
+    except Exception as exc:
+        event = _error_event(exc, "compile_error", 0, role, team_id)
+        events.append(event)
+        return None, str(event["message"])
 
 
-def _safe_builtins(print_fn: Callable[..., None] | None = None) -> dict[str, object]:
+def _error_event(exc: Exception, kind: str, tick: int, role: int, team_id: str) -> dict[str, object]:
+    line = getattr(exc, "lineno", None)
+    trace = exc.__traceback__
+    while trace is not None:
+        if trace.tb_frame.f_code.co_filename.startswith("<bot:"):
+            line = trace.tb_lineno
+        trace = trace.tb_next
+    return {"type": kind, "tick": tick, "role": role, "team_id": team_id,
+            "line": line, "message": f"{type(exc).__name__}: {str(exc)[:800]}"}
+
+
+def _safe_builtins(print_fn: Callable[..., None] | None = None, seed: str = "connect5") -> dict[str, object]:
+    rng = random.Random(seed)
+    module = ModuleType("random")
+    for name in random.__all__:
+        if hasattr(rng, name):
+            setattr(module, name, getattr(rng, name))
+    module.Random = random.Random
+
+    def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name != "random" or level:
+            raise ImportError(f"Модуль «{name}» недоступен в этой игре")
+        return module
+
     return {
+        "__import__": safe_import, "__build_class__": builtins.__build_class__, "object": object,
+        "Exception": Exception, "ValueError": ValueError, "TypeError": TypeError,
+
         "abs": abs,
         "all": all,
         "any": any,
@@ -286,16 +323,15 @@ def _code_for_slot(ctx: dict[str, Any], slot_key: str) -> str:
 
 
 def _call_player(player_fn: Callable[..., object], board: list[list[int]], role: int) -> tuple[int, int] | None:
+    field = _copy_board(board)
+    signature = inspect.signature(player_fn)
     try:
-        candidate = player_fn(_copy_board(board), role)
+        signature.bind(field, role)
     except TypeError:
-        # Совместимость с сигнатурой `make_move(observation)`.
-        try:
-            candidate = player_fn({"field": _copy_board(board), "role": role})
-        except Exception:  # pragma: no cover - runtime path
-            return None
-    except Exception:  # pragma: no cover - runtime path
-        return None
+        signature.bind({"field": field, "role": role})
+        candidate = player_fn({"field": field, "role": role})
+    else:
+        candidate = player_fn(field, role)
     return _normalize_move(candidate)
 
 
@@ -367,12 +403,12 @@ def _has_line(board: list[list[int]], x: int, y: int, dx: int, dy: int, role: in
     return True
 
 
-def _build_scores(team_player_id: str, team_enemy_id: str, winner_role: int) -> dict[str, int]:
+def _build_scores(team_player_id: str, team_enemy_id: str, winner_role: int) -> dict[str, float]:
     if winner_role == _PLAYER_ROLE:
         return {team_player_id: 1, team_enemy_id: 0}
     if winner_role == _ENEMY_ROLE:
         return {team_player_id: 0, team_enemy_id: 1}
-    return {team_player_id: 0, team_enemy_id: 0}
+    return {team_player_id: 0.5, team_enemy_id: 0.5}
 
 
 def _build_placements(team_player_id: str, team_enemy_id: str, winner_role: int) -> dict[str, int]:

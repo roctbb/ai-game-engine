@@ -69,7 +69,7 @@ function ensureEditor(): void {
   }
 
   const updateListener = EditorView.updateListener.of((update) => {
-    if (!update.docChanged) {
+    if (!update.docChanged || props.readonly) {
       return;
     }
     emit('update:modelValue', update.state.doc.toString());
@@ -104,7 +104,7 @@ function ensureEditor(): void {
       lineNumbers(),
       drawSelection(),
       highlightActiveLine(),
-      keymap.of([{ key: 'Mod-Enter', run: () => { emit('run'); return true; } }, ...defaultKeymap, ...historyKeymap, indentWithTab]),
+      keymap.of([{ key: 'Mod-Enter', run: () => { if (!props.readonly) emit('run'); return true; } }, ...defaultKeymap, ...historyKeymap, indentWithTab]),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ 'aria-label': props.language === 'python' ? 'Редактор кода Python' : 'Редактор кода' }),
       themeCompartment.of(darkMedia.matches ? oneDark : []),
@@ -160,6 +160,7 @@ watch(
       changes: { from: 0, to: currentValue.length, insert: normalized },
     });
     updateError();
+    if (props.readonly && props.focusLine) focusLine(props.focusLine);
   }
 );
 

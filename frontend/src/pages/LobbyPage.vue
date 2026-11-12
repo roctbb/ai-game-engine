@@ -136,10 +136,11 @@
                 </select>
               </label>
               <label class="lobby-competition-setting lobby-competition-setting--wide">
-                <span>Тай-брейк</span>
+                <span>При ничьей</span>
                 <select v-model="competitionTieBreakPolicy" class="form-select form-select-sm">
                   <option value="manual">Ручное решение</option>
-                  <option value="shared_advancement">Пропустить всех на границе</option>
+                  <option value="shared_advancement">Пропустить всех с равным результатом</option>
+                  <option v-if="game?.slug === 'ttt_connect5_v1'" value="replay_then_shared">До 3 партий, затем проходят оба</option>
                 </select>
               </label>
               <label class="lobby-competition-setting lobby-competition-setting--wide">
@@ -294,19 +295,9 @@
                     <h3 class="h6 mb-1">{{ activeSlotKey || 'Код' }}</h3>
                     <p class="small mb-0">{{ codeStateLabel }}</p>
                   </div>
-                  <div class="d-flex gap-2 flex-wrap">
-                    <button v-if="replacementUndo !== null" class="btn btn-sm btn-outline-secondary" @click="undoCodeReplacement">Отменить замену</button><button class="btn btn-sm btn-outline-secondary" :disabled="!activeTemplate || !canEditSelectedCode" @click="applyTemplate">
-                      Шаблон
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary" :disabled="!activeDemoStrategy || !canEditSelectedCode" @click="applyDemoStrategy">
-                      Пример
-                    </button>
-                    <button class="btn btn-sm btn-dark" :disabled="!canSaveCode" @click="saveCode">
-                      {{ isSavingCode ? 'Сохранение...' : 'Сохранить' }}
-                    </button>
-                  </div>
+                  <span class="small text-muted">Только чтение</span>
                 </div>
-                <CodeEditor v-model="editorCode" :readonly="!activeSlotKey || !canEditSelectedCode" @run="play" />
+                <CodeEditor :model-value="editorCode" readonly />
               </article>
             </div>
             <div v-else class="agp-loading-state agp-loading-state--compact">Загрузка кода...</div>
@@ -355,7 +346,7 @@
 
         <article class="agp-card p-3 lobby-editor">
           <div class="lobby-editor-toolbar arena-lobby-editor-head"><select v-if="slotStates.length > 1" :value="activeSlotKey" class="form-select form-select-sm" aria-label="Файл бота" @change="selectSlot(($event.target as HTMLSelectElement).value)"><option v-for="slot in slotStates" :key="slot.slot_key" :value="slot.slot_key">{{ slot.slot_key }}</option></select><strong v-else>strategy.py</strong><details class="arena-file-menu"><summary aria-label="Меню файла">⋯</summary><div><button :disabled="!activeTemplate || !canEditSelectedCode" @click="applyTemplate">Вставить шаблон</button><button v-if="replacementUndo !== null" @click="undoCodeReplacement">Отменить замену</button><button v-if="canUseDemoStrategy" :disabled="!activeDemoStrategy || !canEditSelectedCode" @click="applyDemoStrategy">Пример стратегии</button><button :disabled="!canSaveCode" @click="saveCode">Сохранить</button></div></details></div>
-          <CodeEditor v-model="editorCode" :readonly="!activeSlotKey || !canEditSelectedCode" @run="play" />
+          <CodeEditor v-model="editorCode" :readonly="activeTab !== 'code' || !activeSlotKey || !canEditSelectedCode" @run="play" />
         </article>
       </section>
       <section v-if="canSeeCodeTab && !workspace" v-show="activeTab === 'code'" class="agp-card p-4 lobby-code-empty">
@@ -469,7 +460,7 @@
           <div v-if="replayFinishedInViewer" class="lobby-game-finished-overlay">
             <div class="lobby-game-finished-card">
               <strong>Игра завершена</strong>
-              <span>Победитель: {{ currentGameWinnerLabel }}</span>
+              <span>{{ currentGameIsDraw ? 'Ничья' : 'Победитель: ' + currentGameWinnerLabel }}</span>
               <small>Ожидайте следующей игры</small>
             </div>
           </div>
@@ -498,7 +489,7 @@
             <span>
               <strong>{{ cleanCompetitionTitle(item.title) }}</strong><small class="text-muted">{{ formatTime(item.created_at) }} · {{ item.participant_count }} игроков</small>
               <small class="text-muted">
-                Победитель: {{ archiveCompetitionWinnerLabel(item) }}
+                {{ item.winner_team_ids.length > 1 ? 'Победители' : 'Победитель' }}: {{ archiveCompetitionWinnerLabel(item) }}
               </small>
             </span>
             <strong>{{ competitionStatusLabel(item.status) }}</strong>
@@ -682,6 +673,7 @@ const lobbySettingsTouched = ref(false);
 const competitionMatchSize = ref(2);
 const competitionAdvanceTopK = ref(1);
 const competitionTieBreakPolicy = ref<TieBreakPolicy>('manual');
+watch(() => game.value?.slug, slug => { competitionTieBreakPolicy.value = slug === 'ttt_connect5_v1' ? 'replay_then_shared' : 'manual'; });
 const competitionCodePolicy = ref<CompetitionCodePolicy>('locked_on_start');
 const competitionPresentationMode = ref<'instant' | 'sequential'>('sequential');
 const lastGameRunId = ref('');
@@ -1082,7 +1074,7 @@ const activeCompetitionBoundsLabel = computed(() => {
 });
 const competitionBannerText = computed(() => {
   const competition = activeCompetition.value;
-  if (competition?.status === 'completed') return 'Победитель: ' + (competition.winner_team_ids.map(teamLabel).join(', ') || '—');
+  if (competition?.status === 'completed') return (competition.winner_team_ids.length > 1 ? 'Победители: ' : 'Победитель: ') + (competition.winner_team_ids.map(teamLabel).join(', ') || '—');
   const round = currentCompetitionRound.value;
   return round ? `Раунд ${round.round_index} · ${competitionRoundStatusLabel(round.status).toLocaleLowerCase('ru-RU')}` : 'Ожидание первого раунда';
 });
@@ -1100,8 +1092,8 @@ const codeLockedByCompetition = computed(() => {
 });
 const canEditSelectedCode = computed(() =>
   Boolean(
-    codeWorkspaceTeamId.value &&
-      activeSlotKey.value &&
+    !showPlayerCodeDialog.value &&
+      codeWorkspaceTeamId.value && activeSlotKey.value &&
       (codeWorkspaceTeamId.value === lobby.value?.my_team_id) &&
       (!codeLockedByCompetition.value || canManage.value),
   ),
@@ -1137,7 +1129,7 @@ const competitionReplayChoices = computed(() =>
     const viewerRunId = (myTeamId ? match.run_ids_by_team[myTeamId] : '') || matchPrimaryRunId(match);
     return {
       run_id: viewerRunId,
-      label: `Матч ${matchIndex + 1}`,
+      label: `Матч ${matchIndex + 1}` + ((match.attempt_number ?? 1) > 1 ? ` · переигровка ${match.attempt_number}/3` : ''),
       player_count: match.team_ids.length,
       meta: match.team_ids.map(teamLabel).join(' · '),
     };
@@ -1341,6 +1333,10 @@ const currentGameLeader = computed(() => {
   })[0] ?? null;
 });
 const currentGameLeaderLabel = computed(() => currentGameLeader.value?.display_name ?? '—');
+const currentGameIsDraw = computed(() => {
+  const scores = currentGameStats.value.map(player => player.scoreValue).filter((score): score is number => score !== null);
+  return scores.length > 1 && new Set(scores).size === 1;
+});
 const currentGameWinnerLabel = computed(() => {
   const groupWinners = displayedGameMatchGroup.value?.winner_team_ids ?? [];
   const groupWinner = primaryWinnerTeamId(groupWinners, currentGameScoreMap.value);
@@ -1650,13 +1646,16 @@ function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
     const placementWinners = [...placements.entries()]
       .filter(([, placement]) => placement === bestPlacement)
       .map(([teamId]) => teamId);
-    if (placementWinners.length === 1 || !scores.size) return placementWinners;
+    if (placementWinners.length === 1) return placementWinners;
+    if (!scores.size) return [];
     const bestScore = Math.max(...placementWinners.map((teamId) => scores.get(teamId) ?? Number.NEGATIVE_INFINITY));
-    return placementWinners.filter((teamId) => (scores.get(teamId) ?? Number.NEGATIVE_INFINITY) === bestScore);
+    const winners = placementWinners.filter((teamId) => (scores.get(teamId) ?? Number.NEGATIVE_INFINITY) === bestScore);
+    return winners.length === 1 ? winners : [];
   }
   if (scores.size) {
     const bestScore = Math.max(...scores.values());
-    return [...scores.entries()].filter(([, score]) => score === bestScore).map(([teamId]) => teamId);
+    const winners = [...scores.entries()].filter(([, score]) => score === bestScore).map(([teamId]) => teamId);
+    return winners.length === 1 ? winners : [];
   }
   return [];
 }

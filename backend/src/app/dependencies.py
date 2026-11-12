@@ -257,6 +257,7 @@ def _build_container() -> ServiceContainer:
         game_catalog=game_catalog,
         team_workspace=team_workspace,
         execution=execution,
+        mutation_lock_client=matchmaking_lock_client,
     )
     antiplagiarism = AntiplagiarismService(
         competition=competition,

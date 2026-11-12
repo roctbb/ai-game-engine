@@ -54,7 +54,7 @@ class StartLobbyCompetitionRequest(BaseModel):
     team_ids: list[str] = Field(default_factory=list, max_length=512)
     title: str = Field(min_length=2, max_length=160)
     format: Literal["single_elimination"] = "single_elimination"
-    tie_break_policy: Literal["manual", "shared_advancement"] = "manual"
+    tie_break_policy: Literal["manual", "shared_advancement", "replay_then_shared"] = "manual"
     code_policy: Literal["locked_on_registration", "locked_on_start", "allowed_between_matches"] = "locked_on_start"
     advancement_top_k: int = Field(default=1, ge=1, le=64)
     match_size: int = Field(default=2, ge=2, le=64)

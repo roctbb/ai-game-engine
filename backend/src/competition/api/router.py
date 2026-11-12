@@ -45,6 +45,10 @@ def _match_response(match) -> CompetitionMatchResponse:
         placements_by_team=dict(match.placements_by_team),
         advanced_team_ids=list(match.advanced_team_ids),
         tie_break_reason=match.tie_break_reason,
+        series_scores_by_team=dict(match.series_scores_by_team),
+        replay_of_match_id=match.replay_of_match_id,
+        replay_match_id=match.replay_match_id,
+        attempt_number=match.attempt_number,
     )
 
 

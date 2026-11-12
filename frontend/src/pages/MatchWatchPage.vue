@@ -19,7 +19,7 @@
         </header>
         <div v-if="Object.keys(sourceCodes).length > 1" class="arena-match-files"><label for="review-source-slot">Файл</label><select id="review-source-slot" v-model="sourceSlot" class="form-select form-select-sm"><option v-for="slot in Object.keys(sourceCodes)" :key="slot">{{ slot }}</option></select></div>
         <p v-if="sourceError" role="alert" class="text-danger p-3">{{ sourceError }}</p>
-        <CodeEditor v-else :model-value="sourceCodes[sourceSlot] || ''" readonly :focus-line="sourceLine" />
+        <CodeEditor v-else :model-value="sourceCodes[sourceSlot] || ''" readonly :focus-line="sourceLine" :error-line="sourceRunId === errorSourceRunId ? currentBotError?.line : undefined" />
         <footer v-if="sourceParticipants.find(p => p.run_id === sourceRunId)?.captain_user_id === sessionStore.nickname" class="arena-match-source-foot"><RouterLink class="btn btn-primary" :to="{ name: 'player-code', params: { teamId: sourceParticipants.find(p => p.run_id === sourceRunId)?.team_id }, query: { from_run: sourceRunId, slot: sourceSlot, back: route.fullPath } }">Взять код в работу</RouterLink></footer>
       </article>
       <article class="agp-card arena-match-field">
@@ -27,6 +27,11 @@
           <strong :class="{ 'text-danger': runStatusTone === 'danger' }">{{ showWinnerBanner ? finalOutcomeLabel : runStatusLabel }}</strong>
           <button class="agp-panel-toggle" @click="fieldFullscreen = !fieldFullscreen">{{ fieldFullscreen ? 'Вернуть панели' : 'На весь экран' }}</button>
         </header>
+        <div v-if="currentBotError && !firstShowWaiting" class="arena-match-code-error" role="alert">
+          <strong>Ошибка кода · ход пропущен</strong>
+          <span>{{ currentBotError.detail }}</span>
+          <button v-if="!isEmbedded && sourceParticipants.length" class="btn btn-sm btn-outline-danger" @click="openRunLine({ line: currentBotError.line ?? 1, role: currentBotError.role })">К строке {{ currentBotError.line ?? 1 }}</button>
+        </div>
         <div class="arena-match-view">
           <div v-if="(!rendererReady && safeRendererUrl) || firstShowWaiting || (isReplayLoading && !replayFrames.length)" class="arena-match-loading"><SnakeLoader :label="firstShowWaiting ? 'Подготовка матча' : isReplayLoading ? 'Загрузка матча' : 'Загрузка визуализации'" /></div>
           <div v-if="firstReplayLockActive && !firstShowWaiting && isEmbedded" class="arena-match-lock">Первый показ</div>
@@ -135,6 +140,12 @@ interface MatchPlayerStat {
 const route = useRoute();
 const router = useRouter();
 const watchMoments = computed(() => replayMoments((replay.value?.events ?? []).filter(e => !firstReplayLockActive.value || Number(e.tick ?? 0) <= replayFrameTick.value), replay.value?.frames ?? []).filter(moment => !firstReplayLockActive.value || moment.frame <= replayFrameIndex.value));
+const currentBotError = computed(() => watchMoments.value.filter(moment => moment.label === 'Ошибка Python' && moment.tick <= replayFrameTick.value).slice(-1)[0] ?? null);
+const errorSourceRunId = computed(() => {
+  const role = currentBotError.value?.role;
+  return (watchContext.value?.participants.find(p => p.team_id === role)
+    ?? (role === '1' ? watchContext.value?.participants[0] : role === '-1' ? watchContext.value?.participants[1] : undefined))?.run_id;
+});
 function seekMoment(frame: number): void {
   if (firstReplayLockActive.value) return;
   stopReplayPlayback();
@@ -147,7 +158,10 @@ function openRunLine(location: { line: number; role?: string }): void {
   } else if (sourceParticipants.value.length) {
     sourceLine.value = location.line;
     sourceOpen.value = true;
-    void loadSource(sourceRunId.value || sourceParticipants.value[0].run_id);
+    const participant = watchContext.value?.participants.find(p => p.team_id === location.role)
+      ?? (location.role === '1' ? watchContext.value?.participants[0] : location.role === '-1' ? watchContext.value?.participants[1] : undefined);
+    const target = sourceParticipants.value.find(p => p.run_id === participant?.run_id);
+    void loadSource(target?.run_id || sourceRunId.value || sourceParticipants.value[0].run_id);
   }
 }
 const sessionStore = useSessionStore();
@@ -1555,6 +1569,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.arena-match-code-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; color: var(--agp-danger); background: var(--arena-error-soft); border-bottom: 1px solid var(--agp-border); font-size: 13px; }
+.arena-match-code-error span { flex: 1 1 240px; overflow-wrap: anywhere; }
 .arena-match-review { display: flex; flex-direction: column; height: calc(100dvh - 24px); min-height: 0; gap: 8px; }
 .arena-match-bar { display: flex; align-items: center; flex: none; min-width: 0; min-height: 44px; gap: 8px; }
 .arena-match-bar h1 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

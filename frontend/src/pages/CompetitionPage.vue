@@ -1,7 +1,7 @@
 <template>
   <section class="agp-grid competition-page">
     <header class="competition-page-heading">
-      <div><RouterLink v-if="competition?.lobby_id" :to="`/lobbies/${competition.lobby_id}`" class="small">← К лобби</RouterLink><h1>{{ competition?.title || 'Турнир' }}</h1><p v-if="competition" class="text-muted mb-0">{{ competition.entrants.length }} участников · {{ competitionMatchBoundsLabel }} в матче · проходят {{ competition.advancement_top_k }}</p></div>
+      <div><RouterLink v-if="competition?.lobby_id" :to="`/lobbies/${competition.lobby_id}`" class="small">← К лобби</RouterLink><h1>{{ competition?.title || 'Турнир' }}</h1><p v-if="competition" class="text-muted mb-0">{{ competition.entrants.length }} {{ countWord(competition.entrants.length, 'участник', 'участника', 'участников') }} · {{ competitionMatchBoundsLabel }} в матче · {{ competition.tie_break_policy === 'replay_then_shared' ? 'до 3 партий' : `проходят ${competition.advancement_top_k}` }}</p></div>
     </header>
 
     <LoadingSkeleton v-if="isLoading" :count="2" layout="list" label="Загрузка соревнования…" />
@@ -60,7 +60,8 @@
             <label class="form-label small">Разрешение ничьей</label>
             <select v-model="draftTieBreakPolicy" class="form-select mono">
               <option value="manual">Ручное решение</option>
-              <option value="shared_advancement">Пропустить всех на границе</option>
+              <option value="shared_advancement">Пропустить всех с равным результатом</option>
+              <option v-if="gameSlug === 'ttt_connect5_v1'" value="replay_then_shared">До 3 партий, затем проходят оба</option>
             </select>
           </div>
           <div class="col-md-3">
@@ -123,15 +124,15 @@
         </article>
 
         <article v-if="competitionLeaderboard.length" v-show="detailPane === 'table'" class="agp-card competition-leaderboard competition-results-table">
-          <table class="table align-middle mb-0"><thead><tr><th>#</th><th>Участник</th><th class="text-end">Победы</th><th class="text-end">Поражения</th><th class="text-end">Очки</th><th v-if="canModerate"></th></tr></thead><tbody>
-            <tr v-for="(stat, index) in competitionLeaderboard" :key="stat.team_id" :class="{ 'competition-result-winner': competition.winner_team_ids.includes(stat.team_id) }"><td>{{ index + 1 }}</td><td>{{ stat.name }}<span v-if="competition.winner_team_ids.includes(stat.team_id)" class="small text-muted"> · победитель</span></td><td class="text-end">{{ stat.wins }}</td><td class="text-end">{{ stat.losses }}</td><td class="text-end font-monospace">{{ scoreLabel(stat.points) }}</td><td v-if="canModerate"><ActionMenu v-for="entrant in competition.entrants.filter(e => e.team_id === stat.team_id)" :key="entrant.team_id" compact :label="`Действия участника ${stat.name}`" :items="entrantMenu(entrant)" @select="handleEntrantMenu(entrant, $event)" /></td></tr>
+          <table class="table align-middle mb-0"><thead><tr><th>#</th><th>Участник</th><th class="text-end">Победы</th><th class="text-end">Поражения</th><th class="text-end">Ничьи</th><th class="text-end">Очки</th><th v-if="canModerate"></th></tr></thead><tbody>
+            <tr v-for="(stat, index) in competitionLeaderboard" :key="stat.team_id" :class="{ 'competition-result-winner': competition.winner_team_ids.includes(stat.team_id) }"><td>{{ leaderboardPlace(index) }}</td><td>{{ stat.name }}<span v-if="competition.winner_team_ids.includes(stat.team_id)" class="small text-muted"> · победитель</span></td><td class="text-end">{{ stat.wins }}</td><td class="text-end">{{ stat.losses }}</td><td class="text-end">{{ stat.draws }}</td><td class="text-end font-monospace">{{ scoreLabel(stat.points) }}</td><td v-if="canModerate"><ActionMenu v-for="entrant in competition.entrants.filter(e => e.team_id === stat.team_id)" :key="entrant.team_id" compact :label="`Действия участника ${stat.name}`" :items="entrantMenu(entrant)" @select="handleEntrantMenu(entrant, $event)" /></td></tr>
           </tbody></table>
         </article>
 
         <article class="agp-card p-3 competition-section-card competition-rounds-card" v-if="view === 'rounds'" v-show="detailPane === 'matches'">
           <div class="competition-section-title">
             <h2 class="h6 mb-0">Раунды и матчи</h2>
-            <span class="small text-muted">{{ competition.rounds.length }} раундов</span>
+            <span class="small text-muted">{{ competition.rounds.length }} {{ countWord(competition.rounds.length, 'раунд', 'раунда', 'раундов') }}</span>
           </div>
           <div class="d-flex flex-column gap-3">
             <article
@@ -149,9 +150,9 @@
                 <article v-for="(match, matchIndex) in round.matches" :key="match.match_id" class="competition-match-card">
                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                     <div>
-                      <div class="fw-semibold">Матч {{ matchNumber(match) }}</div>
+                      <div class="fw-semibold">Матч {{ matchNumber(match) }}<span v-if="(match.attempt_number ?? 1) > 1"> · переигровка {{ match.attempt_number }}/3</span></div>
                       <div class="small text-muted">
-                        Проходят дальше: {{ competition.advancement_top_k }} из {{ match.team_ids.length }}
+                        {{ match.replay_match_id ? 'Ничья · назначена переигровка' : `Проходят дальше: ${match.advanced_team_ids.length || competition.advancement_top_k} из ${match.team_ids.length}` }}
                       </div>
                     </div>
                     <div class="d-flex gap-2 align-items-center">
@@ -175,8 +176,9 @@
                     </div>
                   </div>
                   <MatchRoster :team-ids="match.team_ids" :name-for="teamName" :scores="competitionMatchScores(match, competitionRuns)" :advanced="match.advanced_team_ids" :my-team-id="teamsByGame.find(team => team.captain_user_id === sessionStore.nickname)?.team_id" />
-                  <div class="small text-muted mt-2" v-if="match.tie_break_reason">
-                    Требуется решение: <span>{{ match.tie_break_reason }}</span>
+                  <div v-if="Object.keys(match.series_scores_by_team ?? {}).length && (match.attempt_number ?? 1) > 1" class="small text-muted mt-2">Счёт серии: {{ Object.entries(match.series_scores_by_team ?? {}).map(([team, score]) => `${teamName(team)} — ${score.toLocaleString('ru-RU')}`).join(' · ') }}</div>
+                  <div class="small text-muted mt-2" v-if="match.tie_break_reason && match.status === 'awaiting_tiebreak'">
+                    <span>{{ match.status === 'awaiting_tiebreak' ? 'Требуется решение: ' : '' }}{{ match.tie_break_reason }}</span>
                   </div>
                 </article>
               </div>
@@ -190,7 +192,7 @@
         <article class="agp-card p-3 competition-section-card competition-rounds-card" v-else v-show="detailPane === 'matches'">
           <div class="competition-section-title">
             <h2 class="h6 mb-0">Сетка</h2>
-            <span class="small text-muted">{{ competition.rounds.length }} раундов</span>
+            <span class="small text-muted">{{ competition.rounds.length }} {{ countWord(competition.rounds.length, 'раунд', 'раунда', 'раундов') }}</span>
           </div>
           <div v-if="isBracketPrimaryCompatible" class="d-flex gap-3 flex-wrap">
             <article
@@ -205,7 +207,7 @@
                   :key="`bnode-${match.match_id}`"
                   class="competition-bracket-node"
                 >
-                  <div class="small fw-semibold mb-1">Матч {{ matchNumber(match) }}</div>
+                  <div class="small fw-semibold mb-1">Матч {{ matchNumber(match) }}<span v-if="(match.attempt_number ?? 1) > 1"> · переигровка {{ match.attempt_number }}/3</span></div>
                   <div class="small" v-for="teamId in match.team_ids" :key="`bnode-team-${match.match_id}-${teamId}`">
                     {{ teamName(teamId) }}
                   </div>
@@ -236,7 +238,7 @@
               >
                 <div class="fw-semibold small mb-1">Раунд {{ round.round_index }}</div>
                 <div v-for="(match, matchIndex) in round.matches" :key="`multi-node-${match.match_id}`" class="competition-bracket-node-inner">
-                  <div class="small fw-semibold">Матч {{ matchNumber(match) }}</div>
+                  <div class="small fw-semibold">Матч {{ matchNumber(match) }}<span v-if="(match.attempt_number ?? 1) > 1"> · переигровка {{ match.attempt_number }}/3</span></div>
                   <div class="small text-muted">Проходят дальше: {{ competition.advancement_top_k }}</div>
                   <MatchRoster :team-ids="match.team_ids" :name-for="teamName" :scores="competitionMatchScores(match, competitionRuns)" :advanced="match.advanced_team_ids" :my-team-id="teamsByGame.find(team => team.captain_user_id === sessionStore.nickname)?.team_id" />
                   <div class="small text-muted">
@@ -413,6 +415,7 @@ import {
   setCompetitionEntrantBan,
   setCompetitionEntrantNotReady,
   getCompetition,
+  getGame,
   getRunReplay,
   listCompetitionRuns,
   listTeamsByGame,
@@ -442,9 +445,11 @@ interface CompetitionTeamStatRow {
   name: string;
   wins: number;
   losses: number;
+  draws: number;
   points: number;
 }
 
+const gameSlug = ref('');
 const route = useRoute();
 const sessionStore = useSessionStore();
 const view = ref<'rounds' | 'bracket'>('rounds');
@@ -500,7 +505,7 @@ const competitionMatchBoundsLabel = computed(() => {
   if (!competition.value) return 'матч';
   const min = competition.value.min_match_size;
   const max = competition.value.match_size;
-  return min === max ? `${max} игроков` : `${min}-${max} игроков`;
+  return min === max ? `${max} ${countWord(max, 'игрок', 'игрока', 'игроков')}` : `${min}–${max} игроков`;
 });
 
 const canRegister = computed(() => {
@@ -557,6 +562,7 @@ const competitionLeaderboard = computed<CompetitionTeamStatRow[]>(() => {
       name: teamName(teamId),
       wins: 0,
       losses: 0,
+      draws: 0,
       points: 0,
     };
     return rows[teamId];
@@ -569,7 +575,9 @@ const competitionLeaderboard = computed<CompetitionTeamStatRow[]>(() => {
         const row = ensureRow(teamId);
         row.points += match.scores_by_team[teamId] ?? 0;
         if (!isResolvedCompetitionMatch(match)) continue;
-        if (match.advanced_team_ids.includes(teamId)) row.wins += 1;
+        const tied = match.team_ids.length > 1 && new Set(match.team_ids.map(id => `${match.placements_by_team[id]}:${match.scores_by_team[id]}`)).size === 1;
+        if (tied) row.draws += 1;
+        else if (match.advanced_team_ids.includes(teamId)) row.wins += 1;
         else row.losses += 1;
       }
     }
@@ -607,8 +615,26 @@ function teamName(teamId: string): string {
   return competition.value?.participant_names?.[teamId] ?? found?.name ?? teamId;
 }
 
+function countWord(count: number, one: string, few: string, many: string): string {
+  const last = count % 10;
+  const lastTwo = count % 100;
+  if (lastTwo >= 11 && lastTwo <= 14) return many;
+  return last === 1 ? one : last >= 2 && last <= 4 ? few : many;
+}
+
+function leaderboardPlace(index: number): number {
+  const rows = competitionLeaderboard.value;
+  const row = rows[index];
+  if (!row) return index + 1;
+  const winners = competition.value?.winner_team_ids ?? [];
+  return rows.findIndex(other =>
+    winners.includes(other.team_id) === winners.includes(row.team_id) &&
+    other.wins === row.wins && other.points === row.points && other.losses === row.losses
+  ) + 1;
+}
+
 function scoreLabel(value: number): string {
-  return value.toFixed(1);
+  return value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
 }
 
 function isResolvedCompetitionMatch(match: CompetitionMatchDto): boolean {
@@ -709,6 +735,7 @@ async function ensureCompetitionLoaded(): Promise<void> {
       return;
     }
     competition.value = await getCompetition(competitionIdFromRoute);
+    gameSlug.value = (await getGame(competition.value.game_id)).slug;
     syncDraftSettingsFromCompetition();
     await refreshCompetitionRelatedData({ reloadCompetition: false });
   } catch (error) {

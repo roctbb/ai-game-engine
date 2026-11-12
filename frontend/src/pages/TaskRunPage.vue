@@ -64,9 +64,9 @@
     >
       <article class="arena-code-pane agp-card">
         <header class="arena-pane-head">
-          <strong>strategy.py<span v-if="reviewingRunCode && diagnostic" class="arena-review-file-error" role="img" :aria-label="'Ошибка кода' + (diagnostic.line ? ', строка ' + diagnostic.line : '')">×</span></strong>
-          <span v-if="reviewingRunCode" class="arena-review-code-meta"><time>Код {{ formatTime(reviewCapturedAt) }}</time><span>только чтение</span></span>
-          <details v-if="!reviewingRunCode" class="arena-file-menu">
+          <strong>strategy.py<span v-if="isReviewMode && diagnostic" class="arena-review-file-error" role="img" :aria-label="'Ошибка кода' + (diagnostic.line ? ', строка ' + diagnostic.line : '')">×</span></strong>
+          <span v-if="isReviewMode" class="arena-review-code-meta"><time>Код {{ formatTime(reviewCapturedAt) }}</time><span>только чтение</span></span>
+          <details v-if="!isReviewMode" class="arena-file-menu">
             <summary aria-label="Меню файла">⋯</summary>
             <div>
               <button :disabled="!selectedSlotKey" @click="applyTemplate">
@@ -94,7 +94,7 @@
           </details>
         </header>
         <CodeEditor
-          v-if="reviewingRunCode"
+          v-if="isReviewMode"
           :model-value="reviewCode"
           readonly
           :focus-line="reviewLine"
@@ -102,10 +102,10 @@
           language="python"
         />
         <CodeEditor
-          v-show="!reviewingRunCode"
+          v-show="!isReviewMode"
           ref="codeEditorRef"
           v-model="editorCode"
-          :readonly="!selectedSlotKey"
+          :readonly="!selectedSlotKey || isReviewMode"
           language="python"
           @run="launchRun()"
         />
@@ -140,23 +140,23 @@
           @close="closeConditionPanel"
         />
         <template v-if="!conditionPanelOpen">
-          <header v-if="!reviewingRunCode || !diagnostic" class="arena-pane-head">
-            <strong v-if="reviewingRunCode && currentRun" :class="'arena-review-outcome--' + attemptPresentation(currentRun).tone">{{ attemptPresentation(currentRun).icon }} {{ attemptPresentation(currentRun).label }} · {{ attemptPresentation(currentRun).score }}</strong>
+          <header v-if="!isReviewMode || !diagnostic" class="arena-pane-head">
+            <strong v-if="isReviewMode && currentRun" :class="'arena-review-outcome--' + attemptPresentation(currentRun).tone">{{ attemptPresentation(currentRun).icon }} {{ attemptPresentation(currentRun).label }} · {{ attemptPresentation(currentRun).score }}</strong>
             <strong v-else>{{
               isRunActive ? runStatusLabel : currentRun ? "Результат" : "Поле"
             }}</strong
-            ><span v-if="currentRun && !reviewingRunCode" class="small text-muted">{{
+            ><span v-if="currentRun && !isReviewMode" class="small text-muted">{{
               formatTime(currentRun.created_at)
             }}</span
             ><button
-              v-if="currentRun && !isRunActive && !reviewingRunCode"
+              v-if="currentRun && !isRunActive && !isReviewMode"
               class="agp-panel-toggle"
               :disabled="!canLaunch"
               @click="launchRun(currentRun.run_id)"
             >
               Повторить поле
             </button>
-            <button v-if="reviewingRunCode" class="agp-panel-toggle" @click="isViewerFullscreen ? closeViewerFullscreen() : openViewerFullscreen()">{{ isViewerFullscreen ? 'Вернуть код' : 'На весь экран' }}</button>
+            <button v-if="isReviewMode" class="agp-panel-toggle" @click="isViewerFullscreen ? closeViewerFullscreen() : openViewerFullscreen()">{{ isViewerFullscreen ? 'Вернуть код' : 'На весь экран' }}</button>
           </header>
           <div v-if="diagnostic" class="arena-diagnostic" role="alert">
             <strong>× {{ diagnostic.title }}</strong
@@ -168,7 +168,7 @@
             >
               Строка {{ diagnostic.line }}
             </button>
-            <details v-if="!reviewingRunCode">
+            <details v-if="!isReviewMode">
               <summary>Подробности</summary>
               <pre>{{ diagnostic.message }}</pre>
             </details>
@@ -225,10 +225,10 @@
               @line="inspectRunLine"
             />
           </details>
-          <BotConsole initially-collapsed :label="reviewingRunCode ? (diagnostic ? 'Подробности ошибки' : 'Консоль и события') : 'Вывод запуска'">
-            <pre v-if="reviewingRunCode && diagnostic" class="arena-review-error-details">{{ diagnostic.message }}</pre>
+          <BotConsole initially-collapsed :label="isReviewMode ? (diagnostic ? 'Подробности ошибки' : 'Консоль и события') : 'Вывод запуска'">
+            <pre v-if="isReviewMode && diagnostic" class="arena-review-error-details">{{ diagnostic.message }}</pre>
             <div
-              v-for="line in (reviewingRunCode && diagnostic ? [] : currentConsoleLines)"
+              v-for="line in (isReviewMode && diagnostic ? [] : currentConsoleLines)"
               :key="line.id"
               class="agp-bot-console-line"
               :class="{ 'agp-bot-console-line--error': line.tone === 'error' }"
@@ -1309,7 +1309,7 @@ function applyDemo(): void {
 }
 
 async function saveCode(): Promise<void> {
-  if (!teamId.value || !selectedSlotKey.value || !editorCode.value.trim())
+  if (isReviewMode.value || !teamId.value || !selectedSlotKey.value || !editorCode.value.trim())
     return;
   const code = editorCode.value;
   isSaving.value = true;
@@ -1673,7 +1673,7 @@ function attemptStatusLabel(status: RunDto["status"]): string {
 }
 
 watch([editorCode, savedCode], () => {
-  if (isBootstrapping.value || !selectedSlotKey.value) return;
+  if (isReviewMode.value || isBootstrapping.value || !selectedSlotKey.value) return;
   try {
     if (editorCode.value === savedCode.value)
       localStorage.removeItem(taskDraftKey());

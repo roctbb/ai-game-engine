@@ -18,6 +18,7 @@ class CompetitionFormat(StrEnum):
 class TieBreakPolicy(StrEnum):
     MANUAL = "manual"
     SHARED_ADVANCEMENT = "shared_advancement"
+    REPLAY_THEN_SHARED = "replay_then_shared"
     TIEBREAK_MATCH = "tiebreak_match"
     GAME_DEFINED = "game_defined"
 
@@ -74,6 +75,10 @@ class CompetitionMatch:
     placements_by_team: dict[str, int] = field(default_factory=dict)
     advanced_team_ids: tuple[str, ...] = ()
     tie_break_reason: str | None = None
+    series_scores_by_team: dict[str, float] = field(default_factory=dict)
+    replay_of_match_id: str | None = None
+    replay_match_id: str | None = None
+    attempt_number: int = 1
     show_started_at: datetime | None = None
     show_reveal_at: datetime | None = None
     show_ends_at: datetime | None = None

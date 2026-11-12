@@ -29,11 +29,17 @@ def visible_result_payload(
     if isinstance(slots, list) and len(slots) == len(ordered_teams):
         aliases.update(str(slot) for slot, team_id in zip(slots, ordered_teams) if team_id in own_teams)
     # Connect-five predates team-scoped diagnostics and uses two fixed source slots.
-    if ordered_teams and container.game_catalog.get_game(run.game_id).slug == "ttt_connect5_v1":
+    is_connect5 = bool(ordered_teams) and container.game_catalog.get_game(run.game_id).slug == "ttt_connect5_v1"
+    legacy_errors = set()
+    if is_connect5:
         if ordered_teams[0] in own_teams:
             aliases.update({"bot", "player", "1"})
+            if isinstance(metrics, dict) and metrics.get("compile_error"):
+                legacy_errors.add(str(metrics["compile_error"]))
         if len(ordered_teams) > 1 and ordered_teams[1] in own_teams:
             aliases.update({"_enemy_bot", "enemy", "-1"})
+            if isinstance(metrics, dict) and metrics.get("opponent_compile_error"):
+                legacy_errors.add(str(metrics["opponent_compile_error"]))
     for team_id in own_teams:
         aliases.update({f"{team_id}:driver", f"{team_id}:support"})
     players = metrics.get("players") if isinstance(metrics, dict) else None
@@ -44,7 +50,7 @@ def visible_result_payload(
 
     def owned(item: dict[str, object]) -> bool:
         actor = item.get("team_id") or item.get("role") or item.get("slot") or item.get("slot_key")
-        return str(actor) in aliases
+        return str(actor) in aliases or (not actor and item.get("type") == "compile_error" and str(item.get("message")) in legacy_errors)
 
     def clean(value: object) -> object:
         if isinstance(value, list):
@@ -54,8 +60,10 @@ def visible_result_payload(
         if not isinstance(value, dict):
             return value
         result = {}
+        if value.get("type") == "compile_error" and not (value.get("team_id") or value.get("role") or value.get("slot")) and str(value.get("message")) in legacy_errors:
+            result["team_id"] = next((team for team in ordered_teams if team in own_teams), run.team_id)
         for key, item in value.items():
-            if key in {"codes_by_slot", "source_code", "compile_error", "traceback"}:
+            if key in {"codes_by_slot", "source_code", "compile_error", "opponent_compile_error", "traceback"}:
                 continue
             if key == "compile_errors" and isinstance(item, dict):
                 result[key] = {role: message for role, message in item.items() if str(role) in aliases}
@@ -67,6 +75,15 @@ def visible_result_payload(
 
     result = clean(payload)
     assert isinstance(result, dict)
+    cleaned_metrics = result.get("metrics")
+    if isinstance(cleaned_metrics, dict):
+        if legacy_errors:
+            cleaned_metrics["compile_error"] = next(iter(legacy_errors))
+        errors = cleaned_metrics.get("bot_errors_by_team")
+        if isinstance(errors, dict):
+            own_errors = {team: count for team, count in errors.items() if team in own_teams}
+            cleaned_metrics["bot_errors_by_team"] = own_errors
+            cleaned_metrics["bot_errors"] = sum(count for count in own_errors.values() if isinstance(count, int))
     return result
 
 

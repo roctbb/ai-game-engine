@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { boundedPreview, frameForTick, readableMetrics, replayMoments, thinReplayMoments } from './replayInsights';
 describe('replay analysis', () => {
+  it('places legacy winner events after their moves and compile errors at startup', () => {
+    const moments = replayMoments([{ type: 'move', turn: 1 }, { type: 'move', turn: 12 }, { type: 'winner', role: 1 }, { type: 'compile_error', message: 'error' }], [{ tick: 0 }, { tick: 12 }]);
+    expect(moments.find(m => m.label === 'Победа')?.tick).toBe(12);
+    expect(moments.find(m => m.label === 'Ошибка Python')?.tick).toBe(0);
+  });
   it('maps event ticks to frames, including sparse and terminal frames', () => {
     const frames = [{ tick: 0 }, { tick: 5 }, { tick: 12 }];
     expect([0, 3, 5, 100].map(t => frameForTick(frames, t))).toEqual([0, 1, 1, 2]);
