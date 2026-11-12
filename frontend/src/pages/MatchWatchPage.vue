@@ -28,7 +28,7 @@
           <button class="agp-panel-toggle" @click="fieldFullscreen = !fieldFullscreen">{{ fieldFullscreen ? 'Вернуть панели' : 'На весь экран' }}</button>
         </header>
         <div v-if="currentBotError && !firstShowWaiting" class="arena-match-code-error" role="alert">
-          <strong>Ошибка кода · ход пропущен</strong>
+          <strong>Ошибка кода<span v-if="currentBotErrorSkipped"> · ход пропущен</span></strong>
           <span>{{ currentBotError.detail }}</span>
           <button v-if="!isEmbedded && sourceParticipants.length" class="btn btn-sm btn-outline-danger" @click="openRunLine({ line: currentBotError.line ?? 1, role: currentBotError.role })">К строке {{ currentBotError.line ?? 1 }}</button>
         </div>
@@ -141,6 +141,13 @@ const route = useRoute();
 const router = useRouter();
 const watchMoments = computed(() => replayMoments((replay.value?.events ?? []).filter(e => !firstReplayLockActive.value || Number(e.tick ?? 0) <= replayFrameTick.value), replay.value?.frames ?? []).filter(moment => !firstReplayLockActive.value || moment.frame <= replayFrameIndex.value));
 const currentBotError = computed(() => watchMoments.value.filter(moment => moment.label === 'Ошибка Python' && moment.tick <= replayFrameTick.value).slice(-1)[0] ?? null);
+const currentBotErrorSkipped = computed(() => {
+  const error = currentBotError.value;
+  return Boolean(error && watchMoments.value.some(moment =>
+    moment.label === 'Ход пропущен' && moment.role === error.role &&
+    moment.tick >= error.tick && moment.tick <= error.tick + 2 && moment.tick <= replayFrameTick.value
+  ));
+});
 const errorSourceRunId = computed(() => {
   const role = currentBotError.value?.role;
   return (watchContext.value?.participants.find(p => p.team_id === role)
