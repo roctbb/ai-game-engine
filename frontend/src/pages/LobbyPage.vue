@@ -365,7 +365,13 @@
         </p>
       </section>
 
-      <section v-if="activeTab === 'rules'" class="agp-card p-4"><h2>{{ game?.title }}</h2><MarkdownContent :source="docs?.player_instruction || game?.description || ''" /><MarkdownContent v-for="link in docs?.links.filter(l => l.content)" :key="link.path" :source="link.content!" /></section>
+      <section v-if="activeTab === 'rules'" class="agp-card p-4">
+        <h2>{{ game?.title }}</h2>
+        <template v-if="docs?.links.some(link => link.content)">
+          <MarkdownContent v-for="(link, index) in docs.links.filter(link => link.content)" :key="link.path" :source="index === 0 ? link.content!.replace(/^# [^\n]+\n+/, '') : link.content!" />
+        </template>
+        <MarkdownContent v-else :source="docs?.player_instruction || game?.description || ''" />
+      </section>
       <section v-show="activeTab === 'lobby'" class="lobby-games">
         <section class="lobby-current-games" aria-labelledby="lobby-current-title">
           <header class="lobby-list-heading">

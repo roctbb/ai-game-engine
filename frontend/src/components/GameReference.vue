@@ -3,7 +3,7 @@
     <header><strong>Условие и справка</strong><button type="button" class="agp-panel-toggle" @click="$emit('close')">Вернуться к полю</button></header>
     <div class="agp-insight-tabs" role="tablist" aria-label="Справка по игре"><button v-for="tab in tabs" :key="tab.id" type="button" role="tab" :aria-selected="active === tab.id" :class="{ active: active === tab.id }" @click="active = tab.id">{{ tab.label }}</button></div>
     <div class="agp-reference-content">
-      <template v-if="active === 'task'"><h2>{{ title }}</h2><p>{{ description }}</p><p class="agp-reference-callout">{{ instruction }}</p><pre v-if="signature">{{ signature }}</pre></template>
+      <template v-if="active === 'task'"><h2>{{ title }}</h2><p>{{ description }}</p><MarkdownContent v-if="instruction" class="agp-reference-callout" :source="instruction" /><pre v-if="signature">{{ signature }}</pre></template>
       <template v-else-if="active === 'api'"><pre v-if="signature">{{ signature }}</pre><MarkdownContent v-for="link in docs?.links.filter(l => l.content)" :key="link.path" :source="link.content!" /><p v-if="!docs?.links.some(l => l.content)">{{ instruction || 'Дополнительная справка пока не добавлена.' }}</p></template>
       <template v-else><p>Фрагмент входных данных {{ isActual ? 'на выбранном ходу' : 'из примера поля' }}. Большие массивы сокращены.</p><pre>{{ JSON.stringify(boundedPreview(argumentsPreview), null, 2) }}</pre></template>
     </div>

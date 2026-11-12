@@ -44,7 +44,9 @@
 .agp-reference-content { overflow: auto; padding: 1rem; font-size: .88rem; line-height: 1.7; }
 .agp-reference-content h2 { font-size: 1.15rem; margin: 0 0 .7rem; }
 .agp-reference-content .agp-markdown, .agp-reference-content .agp-markdown :is(h1,h2,h3,h4) { color: inherit; }
-.agp-reference-callout { border-left: 3px solid var(--agp-primary); padding: .6rem .75rem; background: var(--agp-primary-soft); border-radius: .3rem; }
+.agp-reference-callout { margin: 12px 0; border-left: 3px solid var(--agp-primary); padding: 12px; background: var(--agp-primary-soft); border-radius: .3rem; }
+.agp-markdown.agp-reference-callout > :first-child { margin-top: 0; }
+.agp-markdown.agp-reference-callout > :last-child { margin-bottom: 0; }
 .agp-outcome { padding: .55rem 1rem; background: var(--agp-surface); border-bottom: 1px solid var(--agp-border); }
 .agp-outcome-main { display: flex; align-items: center; gap: .55rem 1rem; flex-wrap: wrap; font-size: .78rem; }
 .agp-outcome-main > span { color: var(--agp-text-muted); font-size: .73rem; }

@@ -455,7 +455,8 @@ def _build_slot_template_code(
     if game_slug == "ttt_connect5_v1" and slot_key == "bot":
         return (
             "def make_choice(field, role):\n"
-            f"    \"\"\"Starter template for slot '{slot_key}'.\"\"\"\n"
+            "    # field[x][y]: 0 — свободно, 1 — крестик, -1 — нолик.\n"
+            "    # role — ваш знак (1 или -1), знак соперника — -role.\n"
             "    # Верните координаты свободной клетки: x, y\n"
             "    return 0, 0\n"
         )
