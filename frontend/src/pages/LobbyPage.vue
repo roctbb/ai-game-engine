@@ -502,6 +502,7 @@
 </template>
 
 <script setup lang="ts">
+import { isMatchDraw, matchScoreLabel } from '../lib/matchOutcome';
 import { matchesHistoryQuery, splitTrainingMatches } from '../lib/lobbyHistory';
 import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
 import AppIcon from '../components/AppIcon.vue';
@@ -1334,8 +1335,14 @@ const currentGameLeader = computed(() => {
 });
 const currentGameLeaderLabel = computed(() => currentGameLeader.value?.display_name ?? '—');
 const currentGameIsDraw = computed(() => {
-  const scores = currentGameStats.value.map(player => player.scoreValue).filter((score): score is number => score !== null);
-  return scores.length > 1 && new Set(scores).size === 1;
+  const group = displayedGameMatchGroup.value;
+  if (group && matchGroupIsDraw(group)) return true;
+  const match = currentCompetitionMatch.value;
+  const teamIds = match?.team_ids ?? (group ? matchGroupTeamIds(group) : currentGameStats.value.map(player => player.team_id));
+  const scores = { ...match?.scores_by_team, ...Object.fromEntries(currentGameScoreMap.value) };
+  if (isMatchDraw(game.value?.slug, teamIds, scores)) return true;
+  const visibleScores = currentGameStats.value.map(player => player.scoreValue);
+  return visibleScores.length > 1 && visibleScores.every(score => score !== null && score === visibleScores[0]);
 });
 const currentGameWinnerLabel = computed(() => {
   const groupWinners = displayedGameMatchGroup.value?.winner_team_ids ?? [];
@@ -1426,7 +1433,7 @@ function lobbyId(): string {
 
 function scoreLabel(value: number | null): string {
   if (value === null) return 'нет данных';
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return matchScoreLabel(value);
 }
 
 function averageScoreLabel(value: number | null | undefined): string {
@@ -1545,12 +1552,14 @@ function trainingMatchTone(group: TrainingMatchGroup): string {
 }
 function trainingMatchSummary(group: TrainingMatchGroup): string {
   if (shouldHideMatchWinner(group)) return matchGroupTeamIds(group).length <= 5 ? matchGroupTeamIds(group).map(teamLabel).join(', ') : 'Матч идёт';
+  if (matchGroupIsDraw(group)) return 'Ничья';
   const winner = matchWinnerLabel(group);
   return winner === 'не определен' ? 'Без победителя' : 'Победитель: ' + winner;
 }
 function trainingOwnResult(group: TrainingMatchGroup): string {
   if (shouldHideMatchWinner(group)) return 'Вы в игре';
   const score = matchPlayerScoreLabel(group, lobby.value?.my_team_id ?? '');
+  if (matchGroupIsDraw(group)) return 'Вы: ничья' + (score ? ' · ' + score + ' очк.' : '');
   const winner = matchPlayerIsVisibleWinner(group, lobby.value?.my_team_id ?? '');
   return winner ? 'Вы: победа' + (score ? ' · ' + score + ' очк.' : '') : 'Вы: ' + (score ? score + ' очк.' : '—');
 }
@@ -1602,7 +1611,14 @@ function matchPlayerScoreLabel(group: TrainingMatchGroup, teamId: string): strin
   return score === undefined ? '' : scoreLabel(score);
 }
 
+function matchGroupIsDraw(group: TrainingMatchGroup): boolean {
+  const metrics = group.runs.map(link => trainingRunsById.value[link.run_id]?.result_payload?.metrics);
+  return isMatchDraw(game.value?.slug, matchGroupTeamIds(group), Object.fromEntries(matchGroupScoreMap(group)),
+    metrics.some(value => isRecord(value) && value.draw === true) ? { draw: true } : undefined);
+}
+
 function matchGroupWinnerIds(group: TrainingMatchGroup): string[] {
+  if (matchGroupIsDraw(group)) return [];
   if (group.winner_team_ids.length) return group.winner_team_ids;
   const explicitWinners = new Set<string>();
   const placements = new Map<string, number>();

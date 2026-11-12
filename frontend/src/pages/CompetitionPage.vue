@@ -152,7 +152,7 @@
                     <div>
                       <div class="fw-semibold">Матч {{ matchNumber(match) }}<span v-if="(match.attempt_number ?? 1) > 1"> · переигровка {{ match.attempt_number }}/3</span></div>
                       <div class="small text-muted">
-                        {{ match.replay_match_id ? 'Ничья · назначена переигровка' : `Проходят дальше: ${match.advanced_team_ids.length || competition.advancement_top_k} из ${match.team_ids.length}` }}
+                        {{ match.replay_match_id ? 'Ничья · назначена переигровка' : `${competitionMatchIsDraw(match) ? 'Ничья · ' : ''}Проходят дальше: ${match.advanced_team_ids.length || competition.advancement_top_k} из ${match.team_ids.length}` }}
                       </div>
                     </div>
                     <div class="d-flex gap-2 align-items-center">
@@ -212,7 +212,7 @@
                     {{ teamName(teamId) }}
                   </div>
                   <div class="small text-muted mt-1">
-                    победитель: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
+                    <span v-if="competitionMatchIsDraw(match)">Ничья · </span>Прошли дальше: {{ match.advanced_team_ids.map((teamId) => teamName(teamId)).join(', ') || '—' }}
                   </div>
                   <RouterLink
                     v-if="matchPrimaryRunId(match)"
@@ -396,6 +396,7 @@
 
 <script setup lang="ts">
 import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
+import { isMatchDraw } from '../lib/matchOutcome';
 import { competitionMatchScores } from '../lib/competitionPresentation';
 import MatchRoster from '../components/MatchRoster.vue';
 import CompetitionBroadcast from '../components/CompetitionBroadcast.vue';
@@ -610,6 +611,10 @@ const competitionLiveLabel = computed(() => {
   if (competitionLiveMode.value === 'polling') return 'обновляется периодически';
   return 'ожидает обновления';
 });
+function competitionMatchIsDraw(match: CompetitionMatchDto): boolean {
+  return isMatchDraw(gameSlug.value, match.team_ids, competitionMatchScores(match, competitionRuns.value));
+}
+
 function teamName(teamId: string): string {
   const found = teamsByGame.value.find((item) => item.team_id === teamId);
   return competition.value?.participant_names?.[teamId] ?? found?.name ?? teamId;

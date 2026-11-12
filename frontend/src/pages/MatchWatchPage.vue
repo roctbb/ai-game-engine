@@ -61,6 +61,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import ActionMenu from '../components/ActionMenu.vue';
 import LiveMatchScoreboard from '../components/LiveMatchScoreboard.vue';
+import { isMatchDraw, matchScoreLabel } from '../lib/matchOutcome';
 import { replayParticipant } from '../lib/replayParticipant';
 import { firstShowPosition, sampleFirstShow, type FirstShowSample } from '../lib/firstShowClock';
 import { formatTime } from '../lib/attemptPresentation';
@@ -445,9 +446,14 @@ const isReplayAtLastFrame = computed(
   () => !firstShowWaiting.value && replayFrames.value.length > 0 && replayFrameIndex.value >= replayFrames.value.length - 1,
 );
 const showWinnerBanner = computed(() => replayFrames.value.length > 0 && isReplayAtLastFrame.value && !firstReplayLockActive.value);
-const finalOutcomeLabel = computed(() => {
+const replayIsDraw = computed(() => {
   const metrics = replay.value?.summary?.metrics ?? run.value?.result_payload?.metrics;
-  if (isRecord(metrics) && metrics.draw === true) return 'Ничья';
+  const scores = replayScoresByTeam();
+  const teamIds = watchContext.value?.participants.map(player => player.team_id) ?? Object.keys(scores);
+  return isMatchDraw(watchContext.value?.game_slug, teamIds, scores, isRecord(metrics) ? metrics : undefined);
+});
+const finalOutcomeLabel = computed(() => {
+  if (replayIsDraw.value) return 'Ничья';
   const explicitWinners = explicitReplayWinnerTeamIds();
   if (explicitWinners.length > 1) return 'Совместное 1-е место · ' + explicitWinners.length;
   if (explicitWinners.length === 1) return 'Победитель: ' + playerDisplayName(explicitWinners[0], compactTeamLabel(explicitWinners[0]));
@@ -700,11 +706,12 @@ function mergeSummaryPlacements(players: Map<string, MatchPlayerStat>): void {
   const placements = isRecord(replay.value?.summary?.placements) ? replay.value.summary.placements : {};
   for (const [id, player] of players.entries()) {
     const score = player.score ?? numericOrNull(scores[id]);
-    const place = player.place ?? numericOrNull(placements[id]);
+    const place = watchContext.value?.game_slug === 'ttt_connect5_v1' && replayIsDraw.value
+      ? 1 : player.place ?? numericOrNull(placements[id]);
     players.set(id, {
       ...player,
       score,
-      scoreLabel: score === null ? '—' : Math.round(score).toLocaleString('ru-RU'),
+      scoreLabel: matchScoreLabel(score),
       place,
       placeLabel: place === null ? '•' : String(place),
     });
@@ -783,7 +790,7 @@ function buildPlayerStat(input: {
     place: input.place,
     placeLabel: input.place === null ? '•' : String(input.place),
     score: input.score,
-    scoreLabel: input.score === null ? '—' : Math.round(input.score).toLocaleString('ru-RU'),
+    scoreLabel: matchScoreLabel(input.score),
     life: input.life,
     shield: input.shield,
     lifePercent: percentFromValue(input.life, 50),
