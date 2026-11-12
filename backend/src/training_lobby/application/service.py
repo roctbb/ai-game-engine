@@ -287,6 +287,7 @@ class TrainingLobbyService:
         self._last_viewer_seen_at: dict[str, datetime] = {}
         self._demo_bot_cache: dict[str, bool] = {}
         self._matchmaking_locks: dict[str, RLock] = {}
+        self._last_viewer_marked: dict[tuple[str, str], datetime] = {}
         self._mutation_state = local()
         self._participant_stats_cache: dict[
             str,
@@ -338,23 +339,33 @@ class TrainingLobbyService:
                 return team_id
         return None
 
-    @_serialize_lobby_mutation
     def mark_viewer_online(self, lobby_id: str, user_id: str) -> None:
         now = utc_now()
-        lobby = self.get_lobby(lobby_id)
-        self._expire_offline_queue(lobby, now)
         if self._viewer_presence is not None:
             self._viewer_presence.touch(lobby_id, _LOBBY_ONLINE_VIEWER_TTL_SECONDS)
         else:
             self._last_viewer_seen_at[lobby_id] = now
-        own_teams = self._team_workspace.list_teams_by_game_and_captain(lobby.game_id, user_id)
-        for team in own_teams:
-            state = lobby.teams.get(team.team_id)
-            if state is not None:
-                if state.last_seen_at is None or (now - state.last_seen_at).total_seconds() >= 10:
-                    state.last_seen_at = now
-                    self._repository.save(lobby)
-                break
+        key = (lobby_id, user_id)
+        previous = self._last_viewer_marked.get(key)
+        if previous is not None and (now - previous).total_seconds() < 10:
+            return
+        # Presence must never queue a read/SSE request behind matchmaking.
+        with self._lobby_mutation(lobby_id, wait=False) as acquired:
+            if not acquired:
+                return
+            lobby = self.get_lobby(lobby_id)
+            own_teams = self._team_workspace.list_teams_by_game_and_captain(lobby.game_id, user_id)
+            for team in own_teams:
+                state = lobby.teams.get(team.team_id)
+                if state is not None:
+                    if state.last_seen_at is None or (now - state.last_seen_at).total_seconds() >= 10:
+                        state.last_seen_at = now
+                        self._repository.save(lobby)
+                    break
+            self._last_viewer_marked[key] = now
+            if len(self._last_viewer_marked) > 10000:
+                self._last_viewer_marked = {entry: at for entry, at in self._last_viewer_marked.items()
+                                            if (now - at).total_seconds() < 60}
 
     @_serialize_lobby_mutation
     def ensure_user_joined(self, lobby_id: str, user_id: str, access_code: str | None, *, bypass_access_code: bool = False) -> tuple[Lobby, str]:
@@ -804,12 +815,16 @@ class TrainingLobbyService:
             return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
 
     @contextmanager
-    def _lobby_mutation(self, lobby_id: str) -> Iterator[None]:
-        """Use one lock for API changes, presence and the separate matchmaker process."""
-        with self._matchmaking_locks.setdefault(lobby_id, RLock()):
+    def _lobby_mutation(self, lobby_id: str, *, wait: bool = True) -> Iterator[bool]:
+        """Serialize changes; presence can skip a busy lock and retry next tick."""
+        local_lock = self._matchmaking_locks.setdefault(lobby_id, RLock())
+        if not local_lock.acquire(blocking=wait):
+            yield False
+            return
+        try:
             active = getattr(self._mutation_state, 'active_lobbies', set())
             if lobby_id in active:
-                yield
+                yield True
                 return
             distributed_lock = None
             if self._matchmaking_lock_client is not None:
@@ -818,12 +833,15 @@ class TrainingLobbyService:
                     timeout=max(settings.matchmaking_lock_ttl_seconds, 1.0),
                     blocking_timeout=max(settings.matchmaking_lock_blocking_timeout_seconds, 0.1),
                 )
-                if not distributed_lock.acquire(blocking=True):
-                    raise InvariantViolationError("Лобби обновляется. Повторите действие.")
+                if not distributed_lock.acquire(blocking=wait):
+                    if wait:
+                        raise InvariantViolationError("Лобби обновляется. Повторите действие.")
+                    yield False
+                    return
             active.add(lobby_id)
             self._mutation_state.active_lobbies = active
             try:
-                yield
+                yield True
             finally:
                 active.remove(lobby_id)
                 if distributed_lock is not None:
@@ -831,6 +849,8 @@ class TrainingLobbyService:
                         distributed_lock.release()
                     except Exception:
                         pass
+        finally:
+            local_lock.release()
 
     def run_due_matchmaking_cycles(self, requested_by: str = "system") -> tuple[Lobby, ...]:
         advanced: list[Lobby] = []

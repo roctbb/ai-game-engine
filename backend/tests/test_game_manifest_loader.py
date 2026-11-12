@@ -16,6 +16,51 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def test_manifest_lookup_reuses_validation_and_tracks_package_changes(tmp_path, monkeypatch):
+    import shutil
+    from game_catalog.infrastructure import manifest_loader as loader
+
+    package = tmp_path / "maze_escape"
+    shutil.copytree(_repo_root() / "games/maze_escape", package)
+    path = package / "manifest.yaml"
+    calls = []
+    original = loader._ensure_package_file
+
+    def counted(*args):
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(loader, "_ensure_package_file", counted)
+    assert loader.find_game_manifest_path(tmp_path, "maze_escape_v1") == path
+    cold = len(calls)
+    assert cold > 0
+    for _ in range(20):
+        loader.load_game_manifest(loader.find_game_manifest_path(tmp_path, "maze_escape_v1"))
+    assert len(calls) == cold
+    engine = package / "engine.py"
+    engine.write_text(engine.read_text() + "\n# changed package\n")
+    loader.load_game_manifest(path)
+    assert len(calls) > cold
+    path.write_text(path.read_text().replace("maze_escape_v1", "maze_escape_v2"))
+    assert loader.find_game_manifest_path(tmp_path, "maze_escape_v2") == path
+    with pytest.raises(InvariantViolationError):
+        loader.find_game_manifest_path(tmp_path, "maze_escape_v1")
+    engine.unlink()
+    with pytest.raises(InvariantViolationError, match="отсутствующий файл"):
+        loader.load_game_manifest(path)
+
+
+def test_cached_manifest_is_not_mutated_by_its_callers(tmp_path):
+    import shutil
+
+    package = tmp_path / "maze_escape"
+    shutil.copytree(_repo_root() / "games/maze_escape", package)
+    path = package / "manifest.yaml"
+    manifest = load_game_manifest(path)
+    manifest.id = "changed-by-caller"
+    assert load_game_manifest(path).id == "maze_escape_v1"
+
+
 def test_loads_repository_game_manifests() -> None:
     manifests = load_game_manifests(_repo_root() / "games")
     by_id = {manifest.id: manifest for manifest in manifests}

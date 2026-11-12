@@ -30,6 +30,27 @@ class SharedLocks:
             return self.locks.setdefault(name, Lock())
 
 
+def test_viewer_heartbeat_does_not_wait_for_matchmaker(client, container):
+    game = next(g for g in client.get('/api/v1/games').json() if g['slug'] == 'ttt_connect5_v1')
+    lobby = client.post('/api/v1/lobbies', json={
+        'game_id': game['game_id'], 'title': 'Nonblocking viewer', 'kind': 'training', 'access': 'public',
+    }).json()
+    api = container.training_lobby
+    locks = SharedLocks()
+    api._matchmaking_lock_client = locks
+    busy = locks.lock(f"ai-game:training-lobby:{lobby['lobby_id']}:matchmaking")
+    busy.acquire()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(api.mark_viewer_online, lobby['lobby_id'], 'spectator')
+        try:
+            future.result(timeout=1)
+            assert lobby['lobby_id'] in api._last_viewer_seen_at
+        finally:
+            busy.release()
+    api.mark_viewer_online(lobby['lobby_id'], 'spectator')
+    assert (lobby['lobby_id'], 'spectator') in api._last_viewer_marked
+
+
 @pytest.mark.parametrize('mutation', ['join', 'ready', 'presence'])
 def test_api_mutation_is_not_overwritten_by_separate_matchmaker(client, container, monkeypatch, mutation):
     game = next(g for g in client.get('/api/v1/games').json() if g['slug'] == 'ttt_connect5_v1')
@@ -93,4 +114,8 @@ def test_api_mutation_is_not_overwritten_by_separate_matchmaker(client, containe
     elif mutation == 'ready':
         assert saved.teams[teams[0]['team_id']].ready
     else:
+        assert saved.teams[teams[0]['team_id']].last_seen_at is None
+        api.mark_viewer_online(lobby['lobby_id'], teams[0]['captain_user_id'])
+        saved = repository.get(lobby['lobby_id'])
+        assert saved.status is LobbyStatus.RUNNING
         assert saved.teams[teams[0]['team_id']].last_seen_at is not None

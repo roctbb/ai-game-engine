@@ -165,18 +165,53 @@ def load_game_manifests(games_root: Path, *, strict: bool = False) -> list[GameM
     return manifests
 
 
-def find_game_manifest_path(games_root: Path, game_id: str) -> Path:
-    for manifest_path in sorted(games_root.glob("*/manifest.yaml")):
+def _file_revision(path: Path) -> tuple[int, int]:
+    try:
+        stat = path.stat()
+        return stat.st_mtime_ns, stat.st_size
+    except FileNotFoundError:
+        return -1, -1
+
+
+@lru_cache(maxsize=16)
+def _manifest_index(revisions: tuple[tuple[str, int, int], ...]) -> dict[str, tuple[Path, ...]]:
+    index: dict[str, list[Path]] = {}
+    for name, mtime, size in revisions:
         try:
-            manifest = load_game_manifest(manifest_path)
+            manifest = _read_manifest(name, mtime, size)
         except InvariantViolationError:
             continue
-        if manifest.id == game_id:
-            return manifest_path
+        index.setdefault(manifest.id, []).append(Path(name))
+    return {key: tuple(paths) for key, paths in index.items()}
+
+
+def find_game_manifest_path(games_root: Path, game_id: str) -> Path:
+    revisions = tuple((str(path.resolve()), *_file_revision(path))
+                      for path in sorted(games_root.glob("*/manifest.yaml")))
+    for path in _manifest_index(revisions).get(game_id, ()):
+        try:
+            load_game_manifest(path)
+        except InvariantViolationError:
+            continue
+        return path
     raise InvariantViolationError(f"Manifest для игры {game_id} не найден")
 
 
 def load_game_manifest(manifest_path: Path) -> GameManifest:
+    path = manifest_path.resolve()
+    mtime, size = _file_revision(path)
+    manifest = _read_manifest(str(path), mtime, size)
+    files = [manifest.engine_entrypoint, *([manifest.renderer_entrypoint] if manifest.renderer_entrypoint else []),
+             *(strategy.path for strategy in manifest.demo_strategies),
+             *(f"templates/{slot.key}.py" for slot in manifest.slots)]
+    dependencies = tuple((str((path.parent / name).resolve()), *_file_revision(path.parent / name))
+                         for name in files)
+    return _validated_manifest(str(path), mtime, size, dependencies).model_copy(deep=True)
+
+
+@lru_cache(maxsize=512)
+def _read_manifest(name: str, mtime: int, size: int) -> GameManifest:
+    manifest_path = Path(name)
     try:
         raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
@@ -190,6 +225,14 @@ def load_game_manifest(manifest_path: Path) -> GameManifest:
     except ValidationError as exc:
         raise InvariantViolationError(f"Некорректный manifest {manifest_path}: {exc}") from exc
 
+    return manifest
+
+
+@lru_cache(maxsize=512)
+def _validated_manifest(name: str, mtime: int, size: int,
+                        dependencies: tuple[tuple[str, int, int], ...]) -> GameManifest:
+    manifest_path = Path(name)
+    manifest = _read_manifest(name, mtime, size)
     _ensure_package_file(manifest_path.parent, manifest.engine_entrypoint, manifest_path)
     if manifest.renderer_entrypoint:
         _ensure_package_file(manifest_path.parent, manifest.renderer_entrypoint, manifest_path)
