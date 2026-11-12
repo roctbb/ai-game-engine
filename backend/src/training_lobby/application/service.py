@@ -810,8 +810,10 @@ class TrainingLobbyService:
         self._clear_lobby_derived_caches(lobby_id)
         return lobby
 
-    def run_matchmaking_cycle(self, lobby_id: str, requested_by: str) -> Lobby:
-        with self._lobby_mutation(lobby_id):
+    def run_matchmaking_cycle(self, lobby_id: str, requested_by: str, *, wait: bool = True) -> Lobby:
+        with self._lobby_mutation(lobby_id, wait=wait) as acquired:
+            if not acquired:
+                return self.get_lobby(lobby_id)
             return self._run_matchmaking_cycle_locked(lobby_id=lobby_id, requested_by=requested_by)
 
     @contextmanager

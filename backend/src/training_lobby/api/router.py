@@ -322,6 +322,7 @@ def _kick_training_matchmaking_from_live_view_if_needed(
         lobby = container.training_lobby.run_matchmaking_cycle(
             lobby_id=lobby.lobby_id,
             requested_by=requested_by,
+            wait=False,
         )
     except InvariantViolationError:
         return live_view
