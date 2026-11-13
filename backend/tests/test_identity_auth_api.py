@@ -69,3 +69,43 @@ def test_auth_callback_redirect_includes_session_id(client) -> None:
     parsed = urlparse(location)
     params = parse_qs(parsed.query)
     assert "session_id" in params
+
+
+def test_failed_geekclass_callback_stops_automatic_login_loop_and_preserves_next(client):
+    for params in [
+        {"next": "/lobbies/example?tab=participants"},
+        {"token": "invalid", "next": "/lobbies/example?tab=participants"},
+    ]:
+        response = client.get("/api/v1/auth/callback", params=params, follow_redirects=False)
+        assert response.status_code == 307
+        location = urlparse(response.headers["location"])
+        assert location.path == "/login"
+        assert parse_qs(location.query) == {
+            "auth_error": ["geekclass"],
+            "next": ["/lobbies/example?tab=participants"],
+        }
+
+
+def test_failed_geekclass_callback_does_not_preserve_an_external_redirect(client):
+    response = client.get(
+        "/api/v1/auth/callback",
+        params={"next": "https://elsewhere.example"},
+        follow_redirects=False,
+    )
+    assert parse_qs(urlparse(response.headers["location"]).query)["next"] == ["/"]
+
+
+def test_geekclass_callback_keeps_query_and_fragment_and_replaces_stale_session(client):
+    response = client.get(
+        "/api/v1/auth/callback",
+        params={
+            "token": _build_geekclass_token(),
+            "next": "/lobbies?all=1&session_id=stale#results",
+        },
+        follow_redirects=False,
+    )
+    target = urlparse(response.headers["location"])
+    query = parse_qs(target.query)
+    assert target.path == "/lobbies" and target.fragment == "results"
+    assert query["all"] == ["1"]
+    assert len(query["session_id"]) == 1 and query["session_id"] != ["stale"]

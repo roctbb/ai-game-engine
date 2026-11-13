@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import RedirectResponse
 
 from app.dependencies import ServiceContainer, get_container
-from identity.api.schemas import AuthOptionsResponse, DevLoginRequest, LogoutResponse, SessionResponse
+from identity.api.schemas import (
+    AuthOptionsResponse,
+    DevLoginRequest,
+    LogoutResponse,
+    SessionResponse,
+)
 from shared.config.settings import settings
 from shared.kernel import InvariantViolationError
 
@@ -56,8 +61,14 @@ def _frontend_redirect(next_path: str, session_id: str | None = None) -> Redirec
     frontend_base = settings.frontend_url.rstrip("/")
     target = next_path or "/"
     if session_id:
-        separator = "&" if "?" in target else "?"
-        target = f"{target}{separator}{urlencode({'session_id': session_id})}"
+        parsed = urlparse(target)
+        query = [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if key != "session_id"
+        ]
+        query.append(("session_id", session_id))
+        target = parsed._replace(query=urlencode(query)).geturl()
     if target == "/":
         return RedirectResponse(frontend_base)
     return RedirectResponse(frontend_base + target)
@@ -121,8 +132,9 @@ def login_callback(
     container: ServiceContainer = Depends(get_container),
 ) -> RedirectResponse:
     next_path = _sanitize_next_url(next_url)
+    failed_path = "/login?" + urlencode({"next": next_path, "auth_error": "geekclass"})
     if not token:
-        return _frontend_redirect(next_path)
+        return _frontend_redirect(failed_path)
     try:
         session = container.identity.geekclass_login_by_token(
             token=token,
@@ -130,7 +142,7 @@ def login_callback(
             max_age_seconds=settings.jwt_max_age_seconds,
         )
     except Exception:
-        return _frontend_redirect(next_path)
+        return _frontend_redirect(failed_path)
     return _frontend_redirect(next_path, session_id=session.session_id)
 
 

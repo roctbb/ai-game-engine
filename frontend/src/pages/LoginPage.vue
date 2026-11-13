@@ -1,5 +1,6 @@
 <template>
-  <section class="agp-login-page">
+  <section v-if="isRedirecting" class="agp-login-redirect" role="status"><SnakeLoader label="Переходим в GeekClass…" /></section>
+  <section v-else class="agp-login-page">
     <div class="agp-login-shell">
       <aside class="agp-login-hero" aria-hidden="true">
         <ArenaBot class="arena-login-bot" />
@@ -83,11 +84,12 @@
 <script setup lang="ts">
 import ArenaBot from '../components/ArenaBot.vue';
 import SnakeLoader from '../components/SnakeLoader.vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { UserRole } from '../lib/api';
 import { internalNextPath } from '../lib/roleNavigation';
+import { shouldRedirectToGeekclass } from '../lib/automaticLogin';
 import { useSessionStore } from '../stores/session';
 
 const route = useRoute();
@@ -97,7 +99,8 @@ const sessionStore = useSessionStore();
 const nickname = ref('student');
 const role = ref<UserRole>('student');
 const isSubmitting = ref(false);
-const errorMessage = ref('');
+const errorMessage = ref(route.query.auth_error === 'geekclass' ? 'Не удалось войти через GeekClass. Попробуйте ещё раз.' : '');
+const isRedirecting = ref(false);
 const roleOptions: Array<{ value: UserRole; label: string; badge: string; hint: string }> = [
   {
     value: 'student',
@@ -126,6 +129,19 @@ const nextPath = computed(() => {
 const geekClassLoginUrl = computed(
   () => `/api/v1/auth/login?next=${encodeURIComponent(nextPath.value)}`
 );
+watch(() => shouldRedirectToGeekclass({
+  options: sessionStore.options,
+  ready: sessionStore.isBootstrapped,
+  authenticated: sessionStore.isAuthenticated,
+  loadError: sessionStore.optionsLoadError,
+  callbackFailed: route.query.auth_error === 'geekclass',
+}), shouldRedirect => {
+  if (shouldRedirect && !isRedirecting.value) {
+    isRedirecting.value = true;
+    window.location.replace(geekClassLoginUrl.value);
+  }
+}, { immediate: true });
+
 const roleHint = computed(() => {
   return roleOptions.find((option) => option.value === role.value)?.hint ?? '';
 });
@@ -153,6 +169,7 @@ async function reloadAuthOptions(): Promise<void> {
 </script>
 
 <style scoped>
+.agp-login-redirect { min-height: 100dvh; display: grid; place-items: center; background: var(--agp-bg); }
 .agp-login-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--agp-bg); color: var(--agp-text); }
 .agp-login-shell { width: min(100%, 960px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .agp-login-hero, .agp-login-panel { display: grid; align-content: center; gap: 24px; min-width: 0; padding: 32px; border: 1px solid var(--agp-border); border-radius: 10px; }

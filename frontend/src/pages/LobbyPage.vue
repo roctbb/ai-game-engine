@@ -1,6 +1,6 @@
 <template>
   <section class="agp-grid lobby-page" :class="{ 'lobby-page--game': activeTab === 'game', 'lobby-page--workspace': activeTab === 'code', 'lobby-page--field': lobbyMobilePane === 'field' }">
-    <header v-if="activeTab === 'code'" class="arena-lobby-workbar"><button class="agp-back-link" aria-label="К лобби" @click="activeTab = 'lobby'"><AppIcon name="back" /></button><h1>{{ lobby?.title }}</h1><span class="small text-muted">{{ isSavingCode ? 'Сохраняем…' : isDirty ? 'Черновик' : formatTime(activeSlot?.updated_at) }}</span><button class="btn btn-outline-secondary" :aria-pressed="rulesOpen" @click="rulesOpen = !rulesOpen; lobbyMobilePane = 'field'">Условие</button><button v-if="showStopAction" class="btn btn-outline-danger" :disabled="!canStop || isBusy" @click="stop">Выйти из очереди</button><button v-else class="btn btn-primary" :disabled="!canPlay || isBusy" @click="play">В очередь</button></header>
+    <header v-if="activeTab === 'code'" class="arena-lobby-workbar"><button class="agp-back-link" aria-label="К лобби" @click="activeTab = 'lobby'"><AppIcon name="back" /></button><h1>{{ lobby?.title }}</h1><span class="small text-muted">{{ isSavingCode ? 'Сохраняем…' : isDirty ? 'Черновик' : formatTime(activeSlot?.updated_at) }}</span><button class="btn btn-outline-secondary" :aria-pressed="rulesOpen" @click="toggleEditorReference">Условие</button><button v-if="showStopAction" class="btn btn-outline-danger" :disabled="!canStop || isBusy" @click="stop">Выйти из очереди</button><button v-else class="btn btn-primary" :disabled="!canPlay || isBusy" @click="play">В очередь</button></header>
     <header v-else-if="activeTab === 'game'" class="arena-live-workbar">
       <button class="agp-back-link" aria-label="К лобби" @click="activeTab = 'lobby'"><AppIcon name="back" /></button>
       <h1>{{ lobby?.title || 'Трансляция' }}</h1>
@@ -458,21 +458,21 @@
       </section>
 
       <section v-if="activeTab === 'game' || activeTab === 'code'" class="lobby-game-layout">
-        <article class="lobby-game-view"><GameReference v-if="rulesOpen && activeTab === 'code'" :title="game?.title || ''" :description="game?.description" :instruction="docs?.player_instruction" :template="activeTemplate" :docs="docs" :frame="{}" :is-actual="false" @close="rulesOpen = false" />
+        <article class="lobby-game-view"><GameReference v-if="editorReferenceVisible" :title="game?.title || ''" :description="game?.description" :instruction="docs?.player_instruction" :template="activeTemplate" :docs="docs" :frame="{}" :is-actual="false" @close="closeEditorReference" />
           <iframe
-            v-if="displayedGameRunId" v-show="!rulesOpen || !['code', 'game'].includes(activeTab)"
+            v-if="displayedGameRunId" v-show="!editorReferenceVisible"
             :key="displayedGameWatchUrl"
             :src="displayedGameWatchUrl"
             title="Текущая игра"
           ></iframe>
-          <div v-if="replayFinishedInViewer" class="lobby-game-finished-overlay">
+          <div v-if="!editorReferenceVisible && replayFinishedInViewer" class="lobby-game-finished-overlay">
             <div class="lobby-game-finished-card">
               <strong>Игра завершена</strong>
               <span>{{ currentGameIsDraw ? 'Ничья' : 'Победитель: ' + currentGameWinnerLabel }}</span>
               <small>Ожидайте следующей игры</small>
             </div>
           </div>
-          <div v-if="!displayedGameRunId && !rulesOpen" class="lobby-empty">
+          <div v-if="!displayedGameRunId && !editorReferenceVisible" class="lobby-empty">
             <SnakeLoader v-if="lobby.my_status === 'queued'" label="Подбираем матч" /><h2 v-else class="h6">Ⅱ {{ activeCompetition ? 'Ожидаем раунд' : 'Матч ещё не начался' }}</h2>
           </div>
         </article>
@@ -521,6 +521,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 import { formatTime } from '../lib/attemptPresentation';
+import { ownTrainingEditorRun, ownCompetitionEditorRun } from '../lib/lobbyEditorRun';
 import SnakeLoader from '../components/SnakeLoader.vue';
 import LiveMatchScoreboard from '../components/LiveMatchScoreboard.vue';
 import GameReference from '../components/GameReference.vue';
@@ -659,6 +660,18 @@ watch(() => route.query.tab, () => { activeTab.value = routeTab(); });
 const activeSlotKey = ref('');
 const queueExpired = computed(() => lobby.value?.teams.find(team => team.team_id === lobby.value?.my_team_id)?.blocker_reason?.includes('10 минут') ?? false);
 const rulesOpen = ref(false);
+const editorReferenceOpenedAutomatically = ref(false);
+const editorReferenceVisible = computed(() => activeTab.value === 'code' && rulesOpen.value);
+function toggleEditorReference(): void {
+  editorReferenceOpenedAutomatically.value = false;
+  const mobileCodePane = window.matchMedia('(max-width: 900px)').matches && lobbyMobilePane.value === 'code';
+  rulesOpen.value = mobileCodePane || !rulesOpen.value;
+  lobbyMobilePane.value = 'field';
+}
+function closeEditorReference(): void {
+  editorReferenceOpenedAutomatically.value = false;
+  rulesOpen.value = false;
+}
 const lobbyMobilePane = ref<'code' | 'field'>('code');
 const liveStatsOpen = ref(false);
 const competitionRosterMode = ref<'queue' | 'selected'>('queue');
@@ -1075,7 +1088,20 @@ const currentGameRunId = computed(() => {
   if (selected && currentTrainingRunIdSet.value.has(selected)) return selected;
   return lobby.value?.current_run_id || currentTrainingMatchGroups.value[0]?.runs[0]?.run_id || '';
 });
-const displayedGameRunId = computed(() => currentGameRunId.value || (activeCompetition.value ? '' : lastGameRunId.value));
+const editorGameRunId = computed(() => {
+  const own = lobby.value?.my_team_id;
+  if (activeCompetition.value) {
+    const broadcast = activeCompetition.value.broadcast;
+    return ownCompetitionEditorRun(own, visibleCompetitionMatches.value, broadcast ? broadcast.match_id || null : undefined);
+  }
+  return ownTrainingEditorRun(own, currentTrainingMatchGroups.value, archivedTrainingMatchGroups.value);
+});
+const displayedGameRunId = computed(() => activeTab.value === 'code'
+  ? editorGameRunId.value
+  : currentGameRunId.value || (activeCompetition.value ? '' : lastGameRunId.value));
+const displayedCompetitionMatch = computed(() => visibleCompetitionMatches.value.find(
+  match => Object.values(match.run_ids_by_team).includes(displayedGameRunId.value),
+) ?? null);
 const displayedGameWatchKeySource = computed(() => [
   displayedGameRunId.value,
   sessionStore.sessionId,
@@ -1242,7 +1268,7 @@ const displayedTrainingRunIds = computed(() => {
   const group = allTrainingMatchGroups.value
     .find((item) => item.runs.some((run) => run.run_id === displayedGameRunId.value));
   if (group) return group.runs.map((run) => run.run_id);
-  const competitionMatch = currentCompetitionMatch.value;
+  const competitionMatch = displayedCompetitionMatch.value;
   if (competitionMatch && Object.values(competitionMatch.run_ids_by_team).includes(displayedGameRunId.value)) {
     return competitionMatch.team_ids
       .map((teamId) => competitionMatch.run_ids_by_team[teamId] ?? '')
@@ -1292,7 +1318,7 @@ const fallbackGameStats = computed<CurrentGameStatRow[]>(() =>
       isRecord(competitionRun.result_payload) ? competitionRun.result_payload : {},
       competitionRun.team_id,
     );
-    const competitionScore = currentCompetitionMatch.value?.scores_by_team[competitionRun.team_id];
+    const competitionScore = displayedCompetitionMatch.value?.scores_by_team[competitionRun.team_id];
     const scoreValue = payloadScore ?? (typeof competitionScore === 'number' && Number.isFinite(competitionScore) ? competitionScore : null);
     return [{
       run_id: competitionRun.run_id,
@@ -1354,9 +1380,10 @@ const isWaitingForReplay = computed(() => {
   return lobby.value?.cycle_phase === 'replay' || lobby.value?.cycle_phase === 'result';
 });
 const replayFinishedInViewer = computed(() => {
+  if (!displayedGameRunId.value) return false;
   const message = embeddedGameFrame.value;
   if (isDisplayedEmbeddedGameFrame(message) && message.firstShowActive) return false;
-  if (lobby.value?.cycle_phase === 'result') return true;
+  if (activeTab.value !== 'code' && lobby.value?.cycle_phase === 'result') return true;
   if (!isDisplayedEmbeddedGameFrame(message)) return false;
   if (message.replayFrameCount > 1) return message.replayFrameIndex >= message.replayFrameCount - 1;
   return message.phase === 'finished';
@@ -1376,7 +1403,7 @@ const currentGameLeaderLabel = computed(() => currentGameLeader.value?.display_n
 const currentGameIsDraw = computed(() => {
   const group = displayedGameMatchGroup.value;
   if (group && matchGroupIsDraw(group)) return true;
-  const match = currentCompetitionMatch.value;
+  const match = displayedCompetitionMatch.value;
   const teamIds = match?.team_ids ?? (group ? matchGroupTeamIds(group) : currentGameStats.value.map(player => player.team_id));
   const scores = { ...match?.scores_by_team, ...Object.fromEntries(currentGameScoreMap.value) };
   if (isMatchDraw(game.value?.slug, teamIds, scores)) return true;
@@ -1388,7 +1415,7 @@ const currentGameWinnerLabel = computed(() => {
   const groupWinner = primaryWinnerTeamId(groupWinners, currentGameScoreMap.value);
   if (groupWinner) return teamLabel(groupWinner);
 
-  const competitionMatch = currentCompetitionMatch.value;
+  const competitionMatch = displayedCompetitionMatch.value;
   if (competitionMatch?.advanced_team_ids.length) {
     const competitionWinner = primaryWinnerTeamId(
       competitionMatch.advanced_team_ids,
@@ -2709,6 +2736,11 @@ async function joinAsPlayer(): Promise<void> {
   errorMessage.value = '';
   try {
     lobby.value = await joinLobbyAsUser({ lobby_id: lobby.value.lobby_id, access_code: null });
+    selectedCodeTeamId.value = '';
+    activeSlotKey.value = '';
+    editorCode.value = '';
+    savedCode.value = '';
+    workspace.value = null;
     await refreshWorkspace();
     activeTab.value = 'code';
   } catch (error) {
@@ -2982,8 +3014,21 @@ watch(editorCode, () => {
 
 watch(activeTab, (nextTab, previousTab) => {
   const tab = nextTab === 'lobby' ? undefined : nextTab;
-  if (route.query.tab !== tab) void router.replace({ query: { ...route.query, tab } });
+  const clearMatch = nextTab === 'code' && route.query.match !== undefined;
+  if (route.query.tab !== tab || clearMatch) void router.replace({ query: { ...route.query, tab, ...(nextTab === 'code' ? { match: undefined } : {}) } });
+  if (nextTab === 'code' && previousTab !== 'code') {
+    editorReferenceOpenedAutomatically.value = !editorGameRunId.value;
+    rulesOpen.value = editorReferenceOpenedAutomatically.value;
+    lobbyMobilePane.value = 'code';
+  }
   if (previousTab === 'code') void flushCodeAutosave();
+}, { immediate: true });
+
+watch(editorGameRunId, runId => {
+  if (runId && editorReferenceOpenedAutomatically.value) {
+    editorReferenceOpenedAutomatically.value = false;
+    rulesOpen.value = false;
+  }
 });
 
 watch(
