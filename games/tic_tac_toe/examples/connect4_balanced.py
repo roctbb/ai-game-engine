@@ -33,21 +33,21 @@ def find_winning_move(field, role):
             if field[x][y] != 0:
                 continue
             field[x][y] = role
-            is_win = has_five(field, role)
+            is_win = has_four(field, role)
             field[x][y] = 0
             if is_win:
                 return x, y
     return None
 
 
-def has_five(field, role):
+def has_four(field, role):
     directions = ((1, 0), (0, 1), (1, 1), (1, -1))
     for x in range(len(field)):
         for y in range(len(field[x])):
             if field[x][y] != role:
                 continue
             for dx, dy in directions:
-                if count_line(field, x, y, dx, dy, role) >= 5:
+                if count_line(field, x, y, dx, dy, role) >= 4:
                     return True
     return False
 

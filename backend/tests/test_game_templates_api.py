@@ -72,8 +72,23 @@ def test_get_game_templates_for_turn_based_game(client) -> None:
     bot_template = next(item for item in payload["templates"] if item["slot_key"] == "bot")
     assert "def make_choice(field, role):" in bot_template["code"]
     demo = next(item for item in payload["demo_strategies"] if item["slot_key"] == "bot")
-    assert demo["strategy_id"] == "balanced_connect5"
+    assert demo["strategy_id"] == "balanced_connect4"
     assert "find_winning_move" in demo["code"]
+
+
+def test_student_reads_connect4_rules_without_access_to_demo_source(client) -> None:
+    game_id = _find_game_id(client, "ttt_connect5_v1")
+    session = client.post("/api/v1/auth/dev-login", json={
+        "nickname": "connect4-docs-student", "role": "student",
+    }).json()
+    headers = {"X-Session-Id": session["session_id"]}
+    response = client.get(f"/api/v1/games/{game_id}/docs", headers=headers)
+    assert response.status_code == 200
+    guide = next(link["content"] for link in response.json()["links"]
+                 if link["title"] == "Руководство игрока")
+    assert "поле 5×5" in guide and "четыре своих знака подряд" in guide
+    assert "диагонали со смещением" in guide
+    assert client.get(f"/api/v1/games/{game_id}/templates", headers=headers).json()["demo_strategies"] == []
 
 
 def test_get_game_templates_fallbacks_for_api_created_game_without_manifest(client, teacher_headers) -> None:

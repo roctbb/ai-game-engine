@@ -6,6 +6,11 @@ def test_catalog_is_seeded_from_game_manifests(client) -> None:
     assert "coins_right_down_v1" in by_slug
     assert "tower_defense_v1" in by_slug
     assert "ttt_connect5_v1" in by_slug
+    ttt = by_slug["ttt_connect5_v1"]
+    assert ttt["title"] == "Крестики-нолики — четыре в ряд"
+    assert "четыре своих знака подряд" in ttt["description"]
+    assert next(version for version in ttt["versions"]
+                if version["version_id"] == ttt["active_version_id"])["semver"] == "2.0.0"
     assert "tanks_ctf_v1" in by_slug
     assert "tanks_ai_legacy_v1" in by_slug
     assert "tanks_lobby_v1" not in by_slug

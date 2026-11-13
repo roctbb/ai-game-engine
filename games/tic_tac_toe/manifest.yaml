@@ -1,9 +1,9 @@
 id: ttt_connect5_v1
-title: Крестики-нолики до 5
+title: Крестики-нолики — четыре в ряд
 game_mode: multiplayer
 min_players_per_match: 2
 max_players_per_match: 2
-semver: 1.0.0
+semver: 2.0.0
 code_api_mode: turn_based
 engine_entrypoint: engine.py
 renderer_entrypoint: renderer/index.html
@@ -13,7 +13,7 @@ player_instruction: |
   `field[x][y]` — клетка поля: `0` — свободно, `1` — крестик, `-1` — нолик.
 
   `role` — ваш знак: `1` или `-1`. Знак соперника — `-role`.
-description: Напишите бота, который играет в крестики-нолики на поле 5×5. Выстройте пять своих знаков по горизонтали, вертикали или диагонали раньше соперника.
+description: Напишите бота, который играет в крестики-нолики на поле 5×5. Выстройте четыре своих знака подряд по горизонтали, вертикали или диагонали раньше соперника.
 difficulty: easy
 learning_section: Логические головоломки
 topics:
@@ -23,9 +23,9 @@ slots:
     title: Игровой бот
     required: true
 demo_strategies:
-  - id: balanced_connect5
+  - id: balanced_connect4
     slot_key: bot
     title: "Демо: атака и блокировка"
     language: python
-    path: examples/connect5_balanced.py
+    path: examples/connect4_balanced.py
     description: Ищет победный ход, затем блокирует победный ход соперника.

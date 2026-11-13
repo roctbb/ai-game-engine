@@ -30,7 +30,7 @@
 
 ### 3.2 Мультиплеерные матчи (`multiplayer`)
 Примеры:
-- крестики-нолики до 5 на большой доске;
+- крестики-нолики: четыре в ряд на поле 5×5;
 - дуэльные игры;
 - танки или free-for-all арены.
 
@@ -136,8 +136,8 @@ Control plane распределяет матчи по доступным вор
 ### 7.1 Минимальный `manifest`
 ```yaml
 id: ttt_connect5_v1
-name: Tic-Tac-Toe Connect 5
-version: 1.0.0
+name: Tic-Tac-Toe Connect 4
+version: 2.0.0
 protocol_version: 1
 mode: multiplayer
 min_players_per_match: 2

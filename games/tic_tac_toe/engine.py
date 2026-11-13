@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 
 _BOARD_SIZE = 5
-_CONNECT = 5
+_CONNECT = 4
 _PLAYER_ROLE = 1
 _ENEMY_ROLE = -1
 _MAX_TURNS = _BOARD_SIZE * _BOARD_SIZE * 2

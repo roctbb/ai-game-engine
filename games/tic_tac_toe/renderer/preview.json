@@ -39,7 +39,7 @@
     ],
     "kind": "tic_tac_toe",
     "next_role": 1,
-    "title": "Крестики-нолики до 5",
+    "title": "Крестики-нолики — четыре в ряд",
     "turns_played": 0,
     "winner_role": 0
   },
