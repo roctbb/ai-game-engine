@@ -430,6 +430,10 @@
           <div><h2>Участники тренировки</h2><p>{{ lobby.teams.filter(team => team.online).length }} онлайн · {{ lobby.teams.filter(team => team.ready).length }} в очереди</p></div>
           <div class="lobby-list-filters">
             <input v-model="playerSearch" class="form-control form-control-sm" type="search" aria-label="Найти участника" placeholder="Найти участника" />
+            <select v-model="participantSort" class="form-select form-select-sm" aria-label="Сортировка участников">
+              <option value="score">По среднему счёту</option>
+              <option value="name">По имени</option>
+            </select>
             <label class="lobby-check"><input v-model="onlyQueuedPlayers" type="checkbox" /> В очереди</label>
             <ActionMenu v-if="canUseAdminBots" compact label="Действия с участниками" :items="[{ id: 'add-bot', label: 'Добавить бота', disabled: isBusy || !canAddBot }]" @select="addDemoBot" />
           </div>
@@ -503,6 +507,7 @@
 
 <script setup lang="ts">
 import { isMatchDraw, matchScoreLabel } from '../lib/matchOutcome';
+import { sortLobbyParticipants, type LobbyParticipantSort } from '../lib/lobbyLeaderboard';
 import { matchesHistoryQuery, splitTrainingMatches } from '../lib/lobbyHistory';
 import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
 import AppIcon from '../components/AppIcon.vue';
@@ -703,6 +708,10 @@ const inviteUrl = computed(() => new URL(router.resolve({ name: 'lobby', params:
 const onlyProblemMatches = computed({ get: () => route.query.errors === '1', set: (value: boolean) => updateHistoryQuery({ errors: value ? '1' : undefined }) });
 const playerSearch = ref('');
 const onlyQueuedPlayers = ref(false);
+const participantSort = computed<LobbyParticipantSort>({
+  get: () => route.query.sort === 'name' ? 'name' : 'score',
+  set: sort => { void router.replace({ query: { ...route.query, sort: sort === 'name' ? 'name' : undefined } }); },
+});
 const filteredLeaderboard = computed(() => lobbyLeaderboard.value.filter(stat =>
   (!onlyQueuedPlayers.value || lobby.value?.queued_team_ids.includes(stat.team_id)) &&
   teamLabel(stat.team_id).toLocaleLowerCase('ru-RU').includes(playerSearch.value.trim().toLocaleLowerCase('ru-RU'))));
@@ -1376,16 +1385,7 @@ const statsByTeam = computed(() => {
   return result;
 });
 const lobbyLeaderboard = computed(() =>
-  [...(lobby.value?.participant_stats ?? [])].sort((left, right) => {
-    const rightWinRate = winRate(right);
-    const leftWinRate = winRate(left);
-    if (rightWinRate !== leftWinRate) return rightWinRate - leftWinRate;
-    if (right.wins !== left.wins) return right.wins - left.wins;
-    const rightAverage = right.average_score ?? Number.NEGATIVE_INFINITY;
-    const leftAverage = left.average_score ?? Number.NEGATIVE_INFINITY;
-    if (rightAverage !== leftAverage) return rightAverage - leftAverage;
-    return right.matches_total - left.matches_total;
-  }),
+  sortLobbyParticipants(lobby.value?.participant_stats ?? [], participantSort.value, teamLabel),
 );
 
 const preparingTeamIds = computed(() => {
@@ -1438,16 +1438,6 @@ function scoreLabel(value: number | null): string {
 
 function averageScoreLabel(value: number | null | undefined): string {
   return value === null || value === undefined ? 'нет данных' : matchScoreLabel(value);
-}
-
-function winRate(stat: LobbyParticipantStatsDto): number {
-  if (stat.matches_total <= 0) return Number.NEGATIVE_INFINITY;
-  return stat.wins / stat.matches_total;
-}
-
-function winRateLabel(stat: LobbyParticipantStatsDto): string {
-  if (stat.matches_total <= 0) return 'нет данных';
-  return `${(winRate(stat) * 100).toFixed(1)}%`;
 }
 
 function sortCurrentGameStats(rows: CurrentGameStatRow[]): CurrentGameStatRow[] {
