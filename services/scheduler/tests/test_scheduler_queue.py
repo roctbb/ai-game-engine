@@ -79,3 +79,19 @@ def test_labels_and_cancel(redis_client):
     assert queue.stats()["known_count"] == 0
     assert queue.stats()["queue_depth"] == 0
     assert queue.pull_next("worker", 140, {"pool": "cpu"}) is None
+
+
+def test_external_slots_are_atomic_and_keep_longer_lease_on_renewal(redis_client):
+    queue = SchedulerQueue(redis_client)
+    for index in range(8):
+        queue.enqueue(f"external-{index}")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        leases = list(pool.map(lambda _: SchedulerQueue(redis_client).pull_next(
+            "external", 100, max_slots=2, lease_ttl_seconds=90), range(8)))
+    assigned = [lease for lease in leases if lease]
+    assert len(assigned) == 2
+    assert queue.renew("external", assigned[0].run_id, assigned[0].lease_id, 150)
+    # The original 90-second lease survives renewal despite the 30-second internal default.
+    later = SchedulerQueue(redis_client).pull_next("other", 200)
+    assert later.run_id != assigned[0].run_id
+    assert queue.renew("external", assigned[0].run_id, assigned[0].lease_id, 230)

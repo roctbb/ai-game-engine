@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from execution.infrastructure.game_packages import GamePackageStore
+from execution.application.remote_workers import RemoteWorkerService
+from execution.infrastructure.remote_workers import InMemoryRemoteWorkerRepository, SqlAlchemyRemoteWorkerRepository
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,6 +102,8 @@ class ServiceContainer:
     spectator_replay: SpectatorReplayService
     execution: ExecutionService
     identity: IdentityService
+    remote_workers: RemoteWorkerService
+    scheduler: SchedulerGateway
 
     @staticmethod
     def execution_create_run_input(
@@ -192,11 +196,13 @@ def _build_container() -> ServiceContainer:
         run_repo = SqlAlchemyRunRepository(sql_session_factory)
         match_execution_repo = SqlAlchemyMatchExecutionRepository(sql_session_factory)
         worker_repo = SqlAlchemyWorkerRepository(sql_session_factory)
+        remote_worker_repo = SqlAlchemyRemoteWorkerRepository(sql_session_factory)
         build_repo = SqlAlchemyBuildRepository(sql_session_factory)
     else:
         run_repo = InMemoryRunRepository()
         match_execution_repo = InMemoryMatchExecutionRepository()
         worker_repo = InMemoryWorkerRepository()
+        remote_worker_repo = InMemoryRemoteWorkerRepository()
         build_repo = InMemoryBuildRepository()
 
     if use_session_sqlalchemy:
@@ -278,6 +284,8 @@ def _build_container() -> ServiceContainer:
         spectator_replay=spectator_replay,
         execution=execution,
         identity=identity,
+        remote_workers=RemoteWorkerService(remote_worker_repo, execution),
+        scheduler=scheduler_gateway,
     )
 
 

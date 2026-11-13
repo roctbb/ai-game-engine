@@ -6,6 +6,7 @@ from execution.infrastructure.sqlalchemy_models import BuildOrm, MatchExecutionO
 from game_catalog.infrastructure.sqlalchemy_models import CatalogGameOrm, CatalogGameVersionOrm
 from identity.infrastructure.sqlalchemy_models import IdentitySessionOrm
 from spectator_replay.infrastructure.sqlalchemy_models import ReplayOrm
+from execution.infrastructure.remote_workers import RemoteWorkerCredentialOrm
 from shared.db.base import Base
 from team_workspace.infrastructure.sqlalchemy_models import WorkspaceTeamOrm, WorkspaceTeamSnapshotOrm
 from training_lobby.infrastructure.sqlalchemy_models import LobbyOrm
@@ -17,6 +18,7 @@ __all__ = [
     "RunOrm",
     "MatchExecutionOrm",
     "WorkerOrm",
+    "RemoteWorkerCredentialOrm",
     "BuildOrm",
     "ReplayOrm",
     "CompetitionOrm",

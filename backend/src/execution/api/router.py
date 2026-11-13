@@ -1056,7 +1056,7 @@ def list_workers(
     _: object = Depends(require_internal_token),
     container: ServiceContainer = Depends(get_container),
 ) -> list[WorkerResponse]:
-    return [_worker_response(worker) for worker in container.execution.list_workers()]
+    return [_worker_response(worker).model_copy(update=container.remote_workers.metadata(worker.worker_id)) for worker in container.execution.list_workers()]
 
 
 @router.get("/workers", response_model=list[WorkerResponse])
@@ -1064,7 +1064,8 @@ def list_workers_public(
     _: object = Depends(require_roles(UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> list[WorkerResponse]:
-    return [_worker_response(worker) for worker in container.execution.list_workers()]
+    from execution.api.remote_workers import _worker_response as remote_response
+    return [remote_response(container, worker) for worker in container.execution.list_workers()]
 
 
 @router.get("/workers/{worker_id}", response_model=WorkerResponse)
@@ -1073,7 +1074,7 @@ def get_worker_public(
     _: object = Depends(require_roles(UserRole.ADMIN)),
     container: ServiceContainer = Depends(get_container),
 ) -> WorkerResponse:
-    return _worker_response(container.execution.get_worker(worker_id=worker_id))
+    return _worker_response(container.execution.get_worker(worker_id=worker_id)).model_copy(update=container.remote_workers.metadata(worker_id))
 
 
 @router.patch("/workers/{worker_id}/status", response_model=WorkerResponse)

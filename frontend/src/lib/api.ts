@@ -185,6 +185,9 @@ export interface GameSourceSyncResultDto {
 export type WorkerStatus = 'online' | 'offline' | 'draining' | 'disabled';
 
 export interface WorkerDto {
+  connection_type?: "internal" | "external";
+  token_status?: "pending" | "active" | "revoked" | "expired" | null;
+  enrollment_expires_at?: string | null;
   worker_id: string;
   hostname: string;
   capacity_total: number;
@@ -1260,4 +1263,19 @@ export function heartbeatLobby(lobbyId: string): Promise<void> {
 
 export function retryCompetitionMatch(competitionId: string, matchId: string): Promise<CompetitionDto> {
   return request<CompetitionDto>(`/competitions/${encodeURIComponent(competitionId)}/matches/${encodeURIComponent(matchId)}/retry`, { method: 'POST' });
+}
+
+export interface WorkerInstallationDto {
+  worker: WorkerDto;
+  expires_at: string;
+  command: string;
+}
+export function addExternalWorker(payload: { name: string; slots: number; labels: Record<string, string> }): Promise<WorkerInstallationDto> {
+  return request('/workers/external', { method: 'POST', body: JSON.stringify(payload) });
+}
+export function reconnectExternalWorker(workerId: string): Promise<WorkerInstallationDto> {
+  return request(`/workers/${encodeURIComponent(workerId)}/connection`, { method: 'POST' });
+}
+export function revokeExternalWorker(workerId: string): Promise<WorkerDto> {
+  return request(`/workers/${encodeURIComponent(workerId)}/revoke`, { method: 'POST' });
 }

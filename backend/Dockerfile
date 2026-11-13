@@ -19,6 +19,9 @@ COPY backend/entrypoint.sh /app/entrypoint.sh
 RUN --mount=type=cache,target=/root/.cache/pip pip install .
 
 COPY games /app/games
+COPY services/worker/Dockerfile /app/worker-distribution/Dockerfile
+COPY services/worker/pyproject.toml /app/worker-distribution/pyproject.toml
+COPY services/worker/src /app/worker-distribution/src
 
 EXPOSE 8000
 CMD ["/app/entrypoint.sh"]

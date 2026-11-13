@@ -63,6 +63,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         with suppress(asyncio.CancelledError):
             await maintenance
         await stop_training_lobby_matchmaking_loop()
+        close_scheduler = getattr(get_container().scheduler, "close", None)
+        if close_scheduler is not None:
+            close_scheduler()
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)

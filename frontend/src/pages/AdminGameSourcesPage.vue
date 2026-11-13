@@ -227,8 +227,10 @@
       <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
         <div>
           <h2 class="h6 mb-1">Исполнители запусков</h2>
-          <div class="small text-muted">Управление исполнителями запусков.</div>
+
         </div>
+        <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-primary" @click="openMachineDialog()">Добавить машину</button>
         <button
           class="btn btn-sm btn-outline-secondary"
           :disabled="workersLoading || !canManageWorkers"
@@ -236,6 +238,7 @@
         >
           Обновить
         </button>
+        </div>
       </div>
 
       <div v-if="workerErrorMessage" class="text-danger small mb-2">{{ workerErrorMessage }}</div>
@@ -246,7 +249,7 @@
             <tr>
               <th>Исполнитель</th>
               <th>Статус</th>
-              <th>Емкость</th>
+              <th>Слоты</th>
               <th>Метки</th>
               <th>Действия</th>
             </tr>
@@ -255,6 +258,7 @@
             <tr v-for="worker in workers" :key="worker.worker_id">
               <td>
                 <div class="fw-semibold">{{ worker.hostname || 'Без имени' }}</div>
+                <div v-if="worker.connection_type === 'external'" class="small text-muted">{{ workerTokenLabel(worker) }}</div>
                 <details class="small">
                   <summary class="text-muted">Технический ID</summary>
                   <span class="mono small">{{ worker.worker_id }}</span>
@@ -289,7 +293,7 @@
                 <span v-else class="text-muted small">без меток</span>
               </td>
               <td>
-                <ActionMenu compact :label="`Статус исполнителя ${worker.hostname}`" :items="workerStatusOptions.filter(status => status !== worker.status).map(status => ({ id: status, label: workerStatusLabel(status), disabled: !canManageWorkers || workerStatusChangingId === worker.worker_id, danger: status === 'disabled' }))" @select="updateWorkerStatus(worker.worker_id, $event as WorkerStatus)" />
+                <ActionMenu compact :label="`Статус исполнителя ${worker.hostname}`" :items="workerActions(worker)" @select="handleWorkerAction(worker, $event)" />
               </td>
             </tr>
             <tr v-if="workers.length === 0">
@@ -299,6 +303,27 @@
         </table>
       </div>
     </article>
+    <Teleport to="body">
+      <div v-if="machineDialogOpen" class="worker-dialog-backdrop" @click.self="closeMachineDialog" @keydown.esc="closeMachineDialog">
+        <section ref="machineDialog" class="worker-dialog agp-card" role="dialog" aria-modal="true" aria-labelledby="worker-dialog-title" tabindex="-1" @keydown.tab="trapMachineFocus">
+          <header class="worker-dialog-head"><h2 id="worker-dialog-title">{{ machineInstallation ? 'Подключение машины' : 'Добавить машину' }}</h2><button class="btn btn-outline-secondary worker-dialog-close" aria-label="Закрыть" :disabled="machineSaving" @click="closeMachineDialog">×</button></header>
+          <form v-if="!machineInstallation" class="worker-dialog-form" @submit.prevent="addMachine">
+            <label>Название<input ref="machineNameInput" v-model="machineName" class="form-control" maxlength="120" required :disabled="machineSaving" /></label>
+            <label>Параллельных матчей<input v-model.number="machineSlots" class="form-control" type="number" min="1" max="64" required :disabled="machineSaving" /></label>
+            <label>Метки<textarea v-model="machineLabels" class="form-control" rows="2" placeholder="pool=external" :disabled="machineSaving"></textarea></label>
+            <div v-if="machineError" class="small text-danger" role="alert">{{ machineError }}</div>
+            <footer class="worker-dialog-actions"><button type="button" class="btn btn-outline-secondary" :disabled="machineSaving" @click="closeMachineDialog">Отмена</button><button class="btn btn-primary" :disabled="machineSaving">{{ machineSaving ? 'Создание…' : 'Получить команду' }}</button></footer>
+          </form>
+          <div v-else class="worker-dialog-form">
+            <p class="mb-0 small">Выполните на машине с Docker. Ключ действует до {{ formatDate(machineInstallation.expires_at) }} и подключает одну машину.</p>
+            <textarea :value="machineInstallation.command" readonly class="form-control worker-install-command" aria-label="Команда запуска Docker" spellcheck="false" @focus="($event.target as HTMLTextAreaElement).select()"></textarea>
+            <p class="mb-0 small text-muted">Контейнер управляет Docker на этой машине. Код учеников запускается в отдельных контейнерах.</p>
+            <div v-if="machineError" class="small text-danger" role="alert">{{ machineError }}</div>
+            <footer class="worker-dialog-actions"><button class="btn btn-outline-secondary" @click="closeMachineDialog">Закрыть</button><button class="btn btn-primary" @click="copyMachineCommand">{{ machineCommandCopied ? 'Скопировано' : 'Копировать команду' }}</button></footer>
+          </div>
+        </section>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -306,13 +331,17 @@
 import ActionMenu, { type ActionMenuItem } from "../components/ActionMenu.vue";
 import SnakeLoader from '../components/SnakeLoader.vue';
 import LoadingSkeleton from '../components/LoadingSkeleton.vue';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import {
   createGameSource,
   listGameSourceSyncHistory,
   listGameSources,
   listWorkers,
+  addExternalWorker,
+  reconnectExternalWorker,
+  revokeExternalWorker,
+  type WorkerInstallationDto,
   setGameSourceStatus,
   setWorkerStatus,
   triggerGameSourceSync,
@@ -342,6 +371,86 @@ const errorMessage = ref('');
 const workerErrorMessage = ref('');
 const workersLoading = ref(false);
 const pollTimer = ref<number | null>(null);
+
+const machineDialogOpen = ref(false);
+const machineDialog = ref<HTMLElement | null>(null);
+const machineNameInput = ref<HTMLInputElement | null>(null);
+const machineName = ref('');
+const machineSlots = ref(1);
+const machineLabels = ref('');
+const machineSaving = ref(false);
+const machineError = ref('');
+const machineInstallation = ref<WorkerInstallationDto | null>(null);
+const machineCommandCopied = ref(false);
+let machinePreviousFocus: HTMLElement | null = null;
+function openMachineDialog(): void {
+  machinePreviousFocus = document.activeElement as HTMLElement;
+  machineName.value = ''; machineSlots.value = 1; machineLabels.value = '';
+  machineError.value = ''; machineInstallation.value = null; machineCommandCopied.value = false;
+  machineDialogOpen.value = true;
+  void nextTick(() => machineNameInput.value?.focus());
+}
+function closeMachineDialog(): void {
+  if (machineSaving.value) return;
+  machineDialogOpen.value = false;
+  machineInstallation.value = null;
+  machinePreviousFocus?.focus();
+}
+function trapMachineFocus(event: KeyboardEvent): void {
+  const targets = [...(machineDialog.value?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled)') ?? [])];
+  const first = targets[0], last = targets[targets.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+  if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+}
+async function addMachine(): Promise<void> {
+  machineSaving.value = true; machineError.value = '';
+  try {
+    const labels: Record<string, string> = {};
+    for (const line of machineLabels.value.split('\n').map(value => value.trim()).filter(Boolean)) {
+      const equal = line.indexOf('=');
+      if (equal <= 0 || equal === line.length - 1) throw new Error('Укажите каждую метку в виде имя=значение.');
+      labels[line.slice(0, equal).trim()] = line.slice(equal + 1).trim();
+    }
+    machineInstallation.value = await addExternalWorker({ name: machineName.value.trim(), slots: machineSlots.value, labels });
+    await nextTick(); machineDialog.value?.focus();
+    await loadWorkers();
+  } catch (error) { machineError.value = error instanceof Error ? error.message : 'Не удалось добавить машину'; }
+  finally { machineSaving.value = false; }
+}
+async function copyMachineCommand(): Promise<void> {
+  try { await navigator.clipboard.writeText(machineInstallation.value?.command ?? ''); machineCommandCopied.value = true; }
+  catch { machineError.value = 'Выделите и скопируйте команду из поля.'; }
+}
+function workerTokenLabel(worker: WorkerDto): string {
+  return ({ pending: 'Ожидает подключения', active: 'Внешняя машина', expired: 'Ключ подключения истёк', revoked: 'Токен отозван' })[worker.token_status ?? 'active'];
+}
+function workerActions(worker: WorkerDto): ActionMenuItem[] {
+  const busy = workerStatusChangingId.value === worker.worker_id;
+  const options = worker.connection_type === 'external' ? (worker.token_status === 'active' ? ['online', 'draining', 'disabled'] as WorkerStatus[] : []) : workerStatusOptions;
+  const items: ActionMenuItem[] = options.filter(status => status !== worker.status).map(status => ({ id: status, label: workerStatusLabel(status), disabled: busy, danger: status === 'disabled' }));
+  if (worker.connection_type === 'external') {
+    items.unshift({ id: 'connect', label: 'Переподключить машину', disabled: busy });
+    if (worker.token_status !== 'revoked') items.push({ id: 'revoke', label: 'Отозвать токен', danger: true, disabled: busy });
+  }
+  return items;
+}
+async function handleWorkerAction(worker: WorkerDto, action: string): Promise<void> {
+  if (action !== 'connect' && action !== 'revoke') { await updateWorkerStatus(worker.worker_id, action as WorkerStatus); return; }
+  workerStatusChangingId.value = worker.worker_id; workerErrorMessage.value = '';
+  try {
+    if (action === 'revoke') await revokeExternalWorker(worker.worker_id);
+    else {
+      openMachineDialog(); machineSaving.value = true;
+      machineInstallation.value = await reconnectExternalWorker(worker.worker_id);
+      await nextTick(); machineDialog.value?.focus();
+    }
+    await loadWorkers();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Не удалось обновить подключение';
+    if (machineDialogOpen.value) machineError.value = message; else workerErrorMessage.value = message;
+  } finally { workerStatusChangingId.value = ''; machineSaving.value = false; }
+}
+
 const pollingIntervalSeconds = 3;
 const workerStatusOptions: WorkerStatus[] = ['online', 'offline', 'draining', 'disabled'];
 
@@ -830,4 +939,17 @@ function handleSourceMenu(source: GameSourceDto, action: string): void {
     grid-template-columns: 1fr;
   }
 }
+</style>
+
+<style scoped>
+.worker-dialog-backdrop { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 24px; background: #11182766; }
+.worker-dialog { width: min(640px,100%); max-height: calc(100dvh - 48px); overflow: auto; padding: 24px; }
+.worker-dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+.worker-dialog-head h2 { margin: 0; font-size: 20px; line-height: 28px; }
+.worker-dialog-close { width: 36px; height: 36px; padding: 0; font-size: 24px; line-height: 1; }
+.worker-dialog-form { display: grid; gap: 16px; }
+.worker-dialog-form label { display: grid; gap: 6px; font-size: 13px; color: var(--agp-text-muted); }
+.worker-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.worker-install-command { min-height: 200px; font-family: monospace; font-size: 12px; line-height: 20px; color: var(--agp-text); background: var(--agp-bg); }
+@media (max-width: 767px) { .worker-dialog-backdrop { padding: 12px; } .worker-dialog { padding: 16px; max-height: calc(100dvh - 24px); } .worker-dialog .btn { min-height: 44px; } .worker-dialog-close { min-width: 44px; } }
 </style>

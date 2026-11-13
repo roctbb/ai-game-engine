@@ -5,6 +5,7 @@ from antiplagiarism.api.router import router as antiplagiarism_router
 from competition.api.router import router as competition_router
 from app.api.health import router as health_router
 from execution.api.router import router as execution_router
+from execution.api.remote_workers import router as remote_worker_router
 from game_catalog.api.router import progress_router as game_catalog_progress_router
 from game_catalog.api.router import router as game_catalog_router
 from identity.api.router import router as identity_router
@@ -24,3 +25,5 @@ api_router.include_router(competition_router)
 api_router.include_router(antiplagiarism_router)
 api_router.include_router(spectator_replay_router)
 api_router.include_router(execution_router)
+
+api_router.include_router(remote_worker_router)

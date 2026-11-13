@@ -25,6 +25,8 @@ if ARGV[6] == '1' then
     end
   end
 end
+local limit = tonumber(ARGV[7]) or 0
+if limit > 0 and redis.call('HLEN', 'agp:worker:' .. worker .. ':leases') >= limit then return false end
 local labels = cjson.decode(ARGV[4])
 local depth = redis.call('LLEN', KEYS[1])
 for i=1,depth do
@@ -41,7 +43,7 @@ for i=1,depth do
       local generation = string.format('%.0f', math.max(wall, previous + 1))
       redis.call('SET', KEYS[6], generation)
       local lease = cjson.encode({run_id=run, worker_id=worker, lease_id=ARGV[5], leased_at=now,
-        expires_at=now+ttl, generation=generation})
+        expires_at=now+ttl, ttl_seconds=ttl, generation=generation})
       redis.call('HSET', KEYS[4], run, lease)
       redis.call('HSET', 'agp:worker:' .. worker .. ':leases', run, lease)
       return lease
@@ -72,7 +74,7 @@ RENEW = """
 local raw = redis.call('HGET', KEYS[4], ARGV[1])
 if not raw then return 0 end
 local lease = cjson.decode(raw)
-local now, ttl = tonumber(ARGV[4]), tonumber(ARGV[5])
+local now, ttl = tonumber(ARGV[4]), tonumber(lease.ttl_seconds or ARGV[5])
 if lease.worker_id ~= ARGV[2] or lease.lease_id ~= ARGV[3] or now >= (lease.expires_at or lease.leased_at+ttl) then return 0 end
 lease.leased_at, lease.expires_at = now, now+ttl
 local value = cjson.encode(lease)

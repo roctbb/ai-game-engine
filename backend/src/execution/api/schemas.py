@@ -121,6 +121,9 @@ class UpdateWorkerStatusRequest(BaseModel):
 
 
 class WorkerResponse(BaseModel):
+    connection_type: str = "internal"
+    token_status: str | None = None
+    enrollment_expires_at: datetime | None = None
     worker_id: str
     hostname: str
     capacity_total: int

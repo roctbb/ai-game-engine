@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Game Worker Service"
+    arena_url: str | None = None
+    enrollment_key: str | None = None
+    worker_state_path: str = "/var/lib/arena-worker/credentials.json"
     scheduler_url: str = "http://localhost:8010"
     backend_api_url: str = "http://localhost:8000/api/v1"
     internal_api_token: str = "dev-internal-token"

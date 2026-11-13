@@ -55,6 +55,8 @@ class SchedulerQueue:
         worker_id: str,
         leased_at_epoch: float,
         worker_labels: dict[str, str] | None = None,
+        max_slots: int = 0,
+        lease_ttl_seconds: int | None = None,
     ) -> Lease | None:
         scan = (
             self._last_requeue_check_epoch is None
@@ -67,10 +69,11 @@ class SchedulerQueue:
             scripts.PULL,
             worker_id,
             leased_at_epoch,
-            settings.lease_ttl_seconds,
+            lease_ttl_seconds or settings.lease_ttl_seconds,
             json.dumps(self._normalize_label_map(worker_labels)),
             f"lease_{uuid4().hex}",
             int(scan),
+            max_slots,
         )
         return self._lease_from_payload("", raw) if raw else None
 

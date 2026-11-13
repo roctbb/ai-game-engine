@@ -24,7 +24,7 @@ from pydantic import BaseModel
 import httpx
 
 from worker_service.settings import settings
-from worker_service import processes
+from worker_service import processes, remote
 from worker_service.processes import run_command as _run_engine_command
 
 app = FastAPI(title=settings.app_name)
@@ -280,6 +280,9 @@ def _pull_and_execute_in_slot() -> dict[str, object]:
                 "status": exc.status,
             }
         except httpx.HTTPError as exc:
+            if remote.enabled() and _is_retryable_http_error(exc):
+                # Infrastructure loss must leave the lease for recovery, not fail pupil code.
+                return {"worker_id": settings.worker_id, "run_id": run_id, "status": "connection_lost"}
             reported_terminal = _best_effort_report_failed(
                 client=client,
                 run_id=run_id,
@@ -313,6 +316,8 @@ def _pull_and_execute_in_slot() -> dict[str, object]:
                 status_code=500, detail=f"Worker execution failed for run {run_id}"
             ) from exc
         finally:
+            if remote.enabled():
+                remote.forget(run_id)
             _best_effort_send_worker_heartbeat(
                 client=client,
                 capacity_available=max(settings.max_slots - _active_slots + 1, 0),
@@ -333,6 +338,8 @@ def _pull_and_execute_in_slot() -> dict[str, object]:
 
 def _ensure_worker_registered(client: httpx.Client) -> str | None:
     global _worker_registration_expires_at, _last_worker_status
+    if remote.enabled():
+        remote.ensure_enrolled(client)
     now = time.monotonic()
     if now < _worker_registration_expires_at:
         return _last_worker_status
@@ -824,15 +831,21 @@ def _request_with_retry(
 
     for attempt in range(attempts):
         try:
-            headers = _headers_for_request(url)
+            request_url, request_payload = url, json_payload
+            if remote.enabled():
+                request_url, request_payload, headers = remote.translate(url, json_payload)
+            else:
+                headers = _headers_for_request(url)
             if method == "GET":
-                response = client.get(url, headers=headers)
+                response = client.get(request_url, headers=headers)
             elif method == "POST":
-                response = client.post(url, json=json_payload, headers=headers)
+                response = client.post(request_url, json=request_payload, headers=headers)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
 
             response.raise_for_status()
+            if remote.enabled():
+                remote.observe(request_url, response)
             return response
         except httpx.HTTPError as exc:
             is_last_attempt = attempt == attempts - 1
@@ -863,9 +876,10 @@ def _is_stale_backend_run_error(exc: httpx.HTTPError) -> bool:
     if not isinstance(exc, httpx.HTTPStatusError):
         return False
     request_url = str(exc.request.url)
-    if not request_url.startswith(
-        f"{settings.backend_api_url.rstrip('/')}/internal/runs/"
-    ):
+    prefix = f"{settings.backend_api_url.rstrip('/')}/internal/runs/"
+    if remote.enabled():
+        prefix = remote.base_url() + "/runs/"
+    if not request_url.startswith(prefix):
         return False
     return exc.response.status_code in {404, 409, 422}
 

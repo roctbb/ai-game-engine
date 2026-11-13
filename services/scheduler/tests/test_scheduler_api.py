@@ -39,6 +39,8 @@ class FakeQueue:
         worker_id: str,
         leased_at_epoch: int,
         worker_labels: dict[str, str] | None = None,
+        max_slots: int = 0,
+        lease_ttl_seconds: int | None = None,
     ) -> Lease | None:
         self.pull_calls.append((worker_id, leased_at_epoch, worker_labels))
         return self.pull_result

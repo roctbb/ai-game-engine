@@ -15,6 +15,8 @@ queue = SchedulerQueue(redis_client=redis_client)
 
 
 class PullRequest(BaseModel):
+    max_slots: int = Field(default=0, ge=0, le=1024)
+    lease_ttl_seconds: int | None = Field(default=None, ge=30, le=300)
     worker_id: str = Field(min_length=1, max_length=120)
     worker_labels: dict[str, str] = Field(default_factory=dict)
 
@@ -56,13 +58,15 @@ def pull_next(request: PullRequest) -> dict[str, object]:
         worker_id=request.worker_id,
         leased_at_epoch=datetime.now(tz=UTC).timestamp(),
         worker_labels=request.worker_labels,
+        max_slots=request.max_slots,
+        lease_ttl_seconds=request.lease_ttl_seconds,
     )
     return {
         "worker_id": request.worker_id,
         "run_id": lease.run_id if lease else None,
         "lease_id": lease.lease_id if lease else None,
         "lease_generation": lease.generation if lease else 0,
-        "lease_ttl_seconds": settings.lease_ttl_seconds,
+        "lease_ttl_seconds": request.lease_ttl_seconds or settings.lease_ttl_seconds,
         "status": "assigned" if lease else "empty",
     }
 
