@@ -213,6 +213,9 @@ export interface LobbyParticipantStatsDto {
   matches_total: number;
   wins: number;
   average_score: number | null;
+  draws?: number;
+  losses?: number;
+  outcomes_unknown?: number;
 }
 
 export interface LobbyMatchGroupDto {
@@ -928,6 +931,12 @@ export function playLobby(payload: {
   return request<LobbyDto>(`/lobbies/${encodeURIComponent(payload.lobby_id)}/play`, {
     method: 'POST',
     body: JSON.stringify({ access_code: payload.access_code ?? null }),
+  });
+}
+
+export function createLobbyDuel(lobbyId: string, opponentTeamId: string): Promise<{ run_id: string; run_ids: string[] }> {
+  return request(`/lobbies/${encodeURIComponent(lobbyId)}/duels`, {
+    method: 'POST', body: JSON.stringify({ opponent_team_id: opponentTeamId }),
   });
 }
 

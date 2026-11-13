@@ -439,15 +439,18 @@
           </div>
         </header>
         <table class="table align-middle mb-0 lobby-participant-table">
-          <thead><tr><th scope="col" class="lobby-participant-place">Место</th><th>Участник</th><th>Присутствие</th><th>Очередь</th><th class="text-end">Победы</th><th class="text-end">Игры</th><th class="text-end">Средний счёт</th><th v-if="canManage"></th></tr></thead>
+          <thead><tr><th scope="col" class="lobby-participant-place">Место</th><th>Участник</th><th>Присутствие</th><th>Очередь</th><th class="text-end">Победы</th><th class="text-end">Ничьи</th><th class="text-end">Поражения</th><th class="text-end">Игры</th><th class="text-end">Средний счёт</th><th v-if="canManage || canDuel"></th></tr></thead>
           <tbody>
-            <tr v-for="stat in filteredLeaderboard" :key="stat.team_id" :class="{ 'lobby-table-self': stat.team_id === lobby.my_team_id }">
+            <tr v-for="stat in filteredLeaderboard" :key="stat.team_id" :class="{ 'lobby-table-self': stat.team_id === lobby.my_team_id, 'lobby-participant-row--duel': canDuel && stat.team_id !== lobby.my_team_id }">
               <td class="lobby-participant-place" :aria-label="stat.place === null ? 'Место не определено' : 'Место ' + stat.place">{{ stat.place ?? '—' }}</td>
               <td class="lobby-participant-identity"><button v-if="canManage" class="lobby-text-action lobby-participant-name" @click="showPlayerMatches(stat.team_id)">{{ teamLabel(stat.team_id) }}</button><span v-else>{{ teamLabel(stat.team_id) }}</span><span v-if="stat.team_id === lobby.my_team_id" class="small text-muted"> · вы</span></td>
               <td class="lobby-participant-presence">{{ participantPresence(stat.team_id) }}</td>
               <td class="lobby-participant-queue"><span class="agp-pill" :class="participantQueueTone(stat.team_id)">{{ participantQueueLabel(stat.team_id) }}</span></td>
-              <td class="text-end lobby-stat-cell" data-label="Победы">{{ stat.wins }}</td><td class="text-end lobby-stat-cell" data-label="Игры">{{ stat.matches_total }}</td><td class="text-end lobby-stat-cell" data-label="Средний счёт">{{ stat.matches_total ? averageScoreLabel(stat.average_score) : '—' }}</td>
-              <td v-if="canManage" class="lobby-participant-actions"><ActionMenu compact :label="'Действия участника ' + teamLabel(stat.team_id)" :items="participantActions(stat)" @select="handleParticipantAction($event, stat)" /></td>
+              <td class="text-end lobby-stat-cell" data-label="Победы">{{ stat.wins }}</td>
+              <td class="text-end lobby-stat-cell" data-label="Ничьи" :title="outcomeCountHint(stat)">{{ outcomeCountLabel(stat, 'draws') }}</td>
+              <td class="text-end lobby-stat-cell" data-label="Поражения" :title="outcomeCountHint(stat)">{{ outcomeCountLabel(stat, 'losses') }}</td>
+              <td class="text-end lobby-stat-cell" data-label="Игры">{{ stat.matches_total }}</td><td class="text-end lobby-stat-cell" data-label="Средний счёт">{{ stat.matches_total ? averageScoreLabel(stat.average_score) : '—' }}</td>
+              <td v-if="canManage || canDuel" class="lobby-participant-actions" :class="{ 'lobby-participant-actions--duel': canDuel && stat.team_id !== lobby.my_team_id }"><div class="d-flex gap-2 justify-content-end"><button v-if="canDuel && stat.team_id !== lobby.my_team_id" class="btn btn-sm btn-outline-secondary" :disabled="isBusy || duelTeamBusy(stat.team_id)" @click="startDuel(stat.team_id)">{{ duelOpponent === stat.team_id ? 'Запуск…' : 'Дуэль' }}</button><ActionMenu v-if="canManage" compact :label="'Действия участника ' + teamLabel(stat.team_id)" :items="participantActions(stat)" @select="handleParticipantAction($event, stat)" /></div></td>
             </tr>
           </tbody>
         </table>
@@ -539,6 +542,7 @@ import {
   listLobbyCompetitionArchive,
   listRuns,
   playLobby,
+  createLobbyDuel,
   setLobbyReady,
   setLobbyStatus,
   startLobbyCompetition,
@@ -746,6 +750,31 @@ const competitionMatchSizeHint = computed(() => {
 const canUseDemoStrategy = computed(() => canManage.value);
 const hasPlayerInLobby = computed(() => Boolean(lobby.value?.my_team_id));
 const canSeeCodeTab = computed(() => hasPlayerInLobby.value);
+const duelOpponent = ref('');
+const canDuel = computed(() => Boolean(hasPlayerInLobby.value && game.value && game.value.mode !== 'single_task' &&
+  (game.value.min_players_per_match ?? 2) <= 2 && (game.value.max_players_per_match ?? 64) >= 2 &&
+  !activeCompetition.value && lobby.value && ['open', 'running'].includes(lobby.value.status)));
+function duelTeamBusy(teamId: string): boolean {
+  return Boolean(lobby.value?.playing_team_ids.includes(teamId) ||
+    (lobby.value?.my_team_id && lobby.value.playing_team_ids.includes(lobby.value.my_team_id)));
+}
+async function startDuel(opponent: string): Promise<void> {
+  if (!lobby.value || isBusy.value) return;
+  isBusy.value = true; duelOpponent.value = opponent; errorMessage.value = '';
+  try {
+    await flushCodeAutosave();
+    const duel = await createLobbyDuel(lobby.value.lobby_id, opponent);
+    await router.push({ name: 'run-watch', params: { runId: duel.run_id }, query: { back: route.fullPath } });
+  } catch (error) { errorMessage.value = error instanceof Error ? error.message : 'Не удалось начать дуэль'; }
+  finally { isBusy.value = false; duelOpponent.value = ''; }
+}
+function outcomeCountLabel(stat: LobbyParticipantStatsDto, key: 'draws' | 'losses'): string {
+  const count = stat[key] ?? 0;
+  return stat.outcomes_unknown ? (count ? `≥ ${count}` : '—') : String(count);
+}
+function outcomeCountHint(stat: LobbyParticipantStatsDto): string | undefined {
+  return stat.outcomes_unknown ? `У ${stat.outcomes_unknown} старых матчей исход не сохранился. Показано известное число.` : undefined;
+}
 
 const codeWorkspaceTeamId = computed(() => {
   if (canManage.value && selectedCodeTeamId.value) return selectedCodeTeamId.value;
@@ -3761,7 +3790,7 @@ function handleLobbyMenu(action: string): void {
 .lobby-table-self > td { background: var(--agp-primary-soft); }
 .lobby-participant-identity { overflow-wrap: anywhere; }
 .lobby-participant-place { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
-.lobby-participant-actions { width: 44px; text-align: right; }
+.lobby-participant-actions { width: 1%; text-align: right; white-space: nowrap; }
 .lobby-stat-cell { font-variant-numeric: tabular-nums; }
 @media (max-width: 1000px) {
   .lobby-overview-head { flex-wrap: wrap; }
@@ -3792,6 +3821,10 @@ function handleLobbyMenu(action: string): void {
   .lobby-invite > span { flex: 1; }
   .lobby-invite > .form-control { order: 2; flex-basis: 100%; }
   .lobby-invite > .lobby-dialog-close { margin-left: auto; }
+
+}
+
+@media (max-width: 1000px) {
   .lobby-participant-table thead { display: none; }
   .lobby-participant-table tr { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 12px 0; border-bottom: 1px solid var(--agp-border); gap: 8px 12px; position: relative; }
   .lobby-participant-table tr:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -3803,6 +3836,11 @@ function handleLobbyMenu(action: string): void {
   .lobby-participant-table .lobby-stat-cell { text-align: left !important; display: grid; font-size: 13px; gap: 2px; }
   .lobby-stat-cell::before { content: attr(data-label); font-family: "Golos Text", sans-serif; font-size: 11px; color: var(--agp-text-muted); }
   .lobby-participant-table .lobby-participant-actions { position: absolute; right: 0; top: 12px; }
+  .lobby-participant-table .lobby-participant-actions--duel { position: static; grid-column: 3; grid-row: 2; width: auto; align-self: center; }
+  .lobby-participant-row--duel .lobby-participant-queue { grid-column: 2; align-self: center; }
+  .lobby-participant-row--duel .lobby-participant-presence { align-self: center; }
+  .lobby-participant-row--duel .lobby-participant-queue .agp-pill { white-space: normal; }
+  .lobby-participant-actions--duel :deep(.arena-menu-trigger) { position: absolute; right: 0; top: 12px; }
 }
 
 .lobby-page--workspace > .agp-skeleton-region { grid-column: 1 / -1; grid-row: 2; }

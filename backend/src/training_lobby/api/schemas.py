@@ -76,6 +76,18 @@ class LobbyParticipantStatsResponse(BaseModel):
     matches_total: int
     wins: int
     average_score: float | None
+    draws: int = 0
+    losses: int = 0
+    outcomes_unknown: int = 0
+
+
+class DuelRequest(BaseModel):
+    opponent_team_id: str
+
+
+class DuelResponse(BaseModel):
+    run_id: str
+    run_ids: list[str]
 
 
 class LobbyMatchGroupResponse(BaseModel):

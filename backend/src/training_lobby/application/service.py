@@ -15,7 +15,7 @@ from team_workspace.application.service import TeamWorkspaceService
 from training_lobby.application.repositories import LobbyRepository
 from training_lobby.domain.model import Lobby, LobbyAccess, LobbyKind, LobbyStatus, LobbyTeamState
 from shared.config.settings import settings
-from shared.kernel import ConflictError, ExternalServiceError, InvariantViolationError, NotFoundError, utc_now
+from shared.kernel import ConflictError, ExternalServiceError, InvariantViolationError, NotFoundError, new_id, utc_now
 
 
 @dataclass(slots=True)
@@ -200,6 +200,9 @@ class LobbyParticipantStats:
     matches_total: int
     wins: int
     average_score: float | None
+    draws: int = 0
+    losses: int = 0
+    outcomes_unknown: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -418,6 +421,14 @@ class TrainingLobbyService:
     def get_live_view(self, lobby_id: str, user_id: str) -> LobbyLiveView:
         lobby = self.get_lobby(lobby_id)
         runs, active_runs, cycle = self._get_cached_lobby_live_state(lobby)
+        duels = self._current_duel_groups(list(runs))
+        if duels:
+            cycle = replace(cycle, current_match_groups=cycle.current_match_groups + tuple(duels))
+            if cycle.phase not in {"simulation", "replay", "result"}:
+                first = duels[0]
+                cycle = replace(cycle, phase=first.status,
+                    phase_label={"simulation": "Дуэль выполняется", "replay": "Показ дуэли", "result": "Результат дуэли"}.get(first.status, "Дуэль"),
+                    message="Дуэль", replay_frame_count=first.replay_frame_count)
         my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
         current_group_run_ids = {
             run_id
@@ -677,6 +688,76 @@ class TrainingLobbyService:
         self._repository.delete(lobby_id)
 
     @_serialize_lobby_mutation
+    def create_duel(self, lobby_id: str, user_id: str, opponent_team_id: str) -> list[str]:
+        lobby = self.get_lobby(lobby_id)
+        if lobby.kind is not LobbyKind.TRAINING or lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
+            raise InvariantViolationError("Дуэль доступна в открытом тренировочном лобби")
+        own = self.find_user_team_in_lobby(lobby_id, user_id)
+        if own is None:
+            raise InvariantViolationError("Для дуэли нужно участвовать в лобби")
+        if opponent_team_id not in lobby.teams:
+            raise NotFoundError("Соперник не состоит в лобби")
+        if opponent_team_id == own:
+            raise InvariantViolationError("Нельзя вызвать на дуэль самого себя")
+        game = self._game_catalog.get_game(lobby.game_id)
+        minimum, maximum = game.match_player_bounds
+        if not game.is_multiplayer or not minimum <= 2 <= maximum:
+            raise InvariantViolationError("Эта игра не поддерживает матч двух игроков")
+        pair = {own, opponent_team_id}
+        for team_id in pair:
+            compatible = self._team_workspace.evaluate_compatibility(team_id=team_id, game_id=lobby.game_id, version_id=lobby.game_version_id)
+            if not compatible.compatible:
+                raise InvariantViolationError("Для дуэли нужно заполнить код обоих игроков")
+        runs = self._execution.list_runs(lobby_id=lobby_id, run_kind=RunKind.TRAINING_MATCH, include_result_payload=False)
+        active = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
+        existing = next((run for run in active if run.team_id == own and run.execution_options.get("duel_opponent") == opponent_team_id), None)
+        if existing:
+            match = self._execution.get_match_execution_for_run(existing, include_result_payload=False)
+            if match:
+                return [existing.run_id, *(run_id for run_id in match.run_ids if run_id != existing.run_id)]
+        if any(run.team_id in pair for run in active):
+            raise InvariantViolationError("Один из игроков уже участвует в матче; дождитесь его окончания")
+        duel_id = new_id("duel")
+        created: list[str] = []
+        try:
+            for team_id in (own, opponent_team_id):
+                run = self._execution.create_run(CreateRunInput(team_id=team_id, game_id=lobby.game_id,
+                    requested_by=user_id, run_kind=RunKind.TRAINING_MATCH, lobby_id=lobby_id,
+                    version_id=lobby.game_version_id, execution_options={"duel_id": duel_id,
+                    "duel_opponent": opponent_team_id if team_id == own else own}))
+                created.append(run.run_id)
+            self._execution.queue_match_group(created)
+        except Exception:
+            self._cancel_unqueued_batch_runs(run_ids=created, message="duel_queue_failed")
+            raise
+        self._clear_lobby_derived_caches(lobby_id)
+        return created
+
+    def _current_duel_groups(self, runs: list[Run]) -> list[LobbyMatchGroupView]:
+        grouped: dict[str, list[Run]] = {}
+        for run in runs:
+            if duel_id := run.execution_options.get("duel_id"):
+                grouped.setdefault(str(duel_id), []).append(run)
+        views = []
+        now = utc_now()
+        for duel_id, items in grouped.items():
+            items.sort(key=lambda run: run.created_at)
+            active = any(run.status in _ACTIVE_RUN_STATUSES for run in items)
+            if not active and not all(run.status is RunStatus.FINISHED for run in items):
+                continue
+            start = max((_datetime_or_none(run.finished_at) for run in items if run.finished_at), default=None)
+            count = max((self._replay_frames_count(self._ensure_payload(run)) for run in items), default=1)
+            elapsed = (now - start).total_seconds() if start else 0
+            duration = max(1, count * _LOBBY_REPLAY_FRAME_MS / 1000)
+            if not active and elapsed >= duration + _LOBBY_RESULT_SECONDS:
+                continue
+            views.append(self._build_match_group_view(group_id=duel_id, batch_id=duel_id,
+                run_ids=[run.run_id for run in items], runs_by_id={run.run_id: run for run in items},
+                archived=False, replay_started_at=start if elapsed < duration else None,
+                replay_frame_index=int(elapsed * 1000 / _LOBBY_REPLAY_FRAME_MS)))
+        return views
+
+    @_serialize_lobby_mutation
     def cleanup_training_match_archive(self, lobby_id: str) -> list[str]:
         try:
             lobby = self.get_lobby(lobby_id)
@@ -688,6 +769,7 @@ class TrainingLobbyService:
             include_result_payload=False,
         )
         current_run_ids = {run_id for group in self._current_match_groups(lobby) for run_id in group}
+        current_run_ids.update(run_id for group in self._current_duel_groups(runs) for run_id in group.run_ids)
         finished_runs = [
             run
             for run in runs
@@ -894,6 +976,8 @@ class TrainingLobbyService:
                 run_kind=RunKind.TRAINING_MATCH,
                 include_result_payload=False,
             )
+        duel_busy = {run.team_id for run in runs if run.execution_options.get("duel_id") and run.status in _ACTIVE_RUN_STATUSES}
+        runs = [run for run in runs if not run.execution_options.get("duel_id")]
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         if active_runs and self._recover_stale_active_batch_runs(lobby=lobby, active_runs=active_runs):
             runs = self._execution.list_runs(
@@ -901,9 +985,10 @@ class TrainingLobbyService:
                 run_kind=RunKind.TRAINING_MATCH,
                 include_result_payload=False,
             )
+            runs = [run for run in runs if not run.execution_options.get("duel_id")]
             active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         cycle = self._compute_cycle_state(lobby=lobby, runs=runs)
-        busy_team_ids = {run.team_id for run in active_runs}
+        busy_team_ids = {run.team_id for run in active_runs} | duel_busy
         if active_runs or cycle.phase in {"replay", "result"}:
             if active_runs:
                 self._queue_recoverable_created_runs(lobby=lobby, active_runs=active_runs)
@@ -1456,6 +1541,15 @@ class TrainingLobbyService:
     def _archived_match_run_id_groups(self, *, lobby: Lobby, runs: list[Run]) -> list[list[str]]:
         if not runs:
             return []
+        duels: dict[str, list[str]] = {}
+        for run in runs:
+            if duel_id := run.execution_options.get("duel_id"):
+                duels.setdefault(str(duel_id), []).append(run.run_id)
+        if duels:
+            normal = [run for run in runs if not run.execution_options.get("duel_id")]
+            groups = list(duels.values()) + self._archived_match_run_id_groups(lobby=lobby, runs=normal)
+            by_id = {run.run_id: run for run in runs}
+            return sorted(groups, key=lambda group: max(by_id[rid].created_at for rid in group), reverse=True)
         game = self._game_catalog.get_game(lobby.game_id)
         max_players = game.match_player_bounds[1] if game.is_multiplayer else 2
         min_datetime = datetime.min.replace(tzinfo=utc_now().tzinfo)
@@ -1759,6 +1853,8 @@ class TrainingLobbyService:
         return tuple(dict.fromkeys(winners))
 
     def _single_winner_team_id(self, runs: list[Run]) -> str | None:
+        if any(isinstance((metrics := _run_result_metadata(run).get("metrics")), dict) and metrics.get("draw") is True for run in runs):
+            return None
         group_team_ids = {run.team_id for run in runs}
         placements_by_team: dict[str, int] = {}
         scored: dict[str, float] = {}
@@ -1925,6 +2021,7 @@ class TrainingLobbyService:
 
     def _collect_participant_stats(self, lobby: Lobby, runs: list[Run]) -> tuple[LobbyParticipantStats, ...]:
         wins_by_team, matches_by_team, score_sum_by_team, score_count_by_team = self._cumulative_stats_maps(lobby)
+        outcomes = {team: self._saved_outcomes(stats) for team, stats in lobby.cumulative_stats_by_team.items()}
 
         runs_by_id = {run.run_id: run for run in runs if run.team_id in lobby.teams}
         for group in self._archived_match_run_id_groups(lobby=lobby, runs=list(runs_by_id.values())):
@@ -1936,7 +2033,13 @@ class TrainingLobbyService:
                 wins_by_team[winner_team_id] = wins_by_team.get(winner_team_id, 0) + 1
 
             group_scores = self._scores_by_team(group_runs)
+            group_outcomes = self._match_outcomes(group_runs)
             for run in group_runs:
+                counts = outcomes.setdefault(run.team_id, {"draws": 0, "losses": 0, "outcomes_unknown": 0})
+                outcome = group_outcomes.get(run.team_id)
+                if outcome != "win":
+                    key = {"draw": "draws", "loss": "losses"}.get(outcome, "outcomes_unknown")
+                    counts[key] += 1
                 matches_by_team[run.team_id] = matches_by_team.get(run.team_id, 0) + 1
                 score = group_scores.get(run.team_id)
                 if score is not None:
@@ -1957,6 +2060,7 @@ class TrainingLobbyService:
                     matches_total=matches_total,
                     wins=wins_by_team.get(team_id, 0),
                     average_score=average_score,
+                    **outcomes.get(team_id, {"draws": 0, "losses": 0, "outcomes_unknown": 0}),
                 )
             )
         return tuple(items)
@@ -1993,18 +2097,52 @@ class TrainingLobbyService:
                 continue
             winner_team_id = self._single_winner_team_id(group_runs)
             group_scores = self._scores_by_team(group_runs)
+            group_outcomes = self._match_outcomes(group_runs)
             for run in group_runs:
                 stats = lobby.cumulative_stats_by_team.setdefault(
                     run.team_id,
                     {"matches_total": 0, "wins": 0, "score_sum": 0.0, "score_count": 0},
                 )
+                stats.update(self._saved_outcomes(stats))
                 stats["matches_total"] = int(stats.get("matches_total", 0) or 0) + 1
                 if winner_team_id == run.team_id:
                     stats["wins"] = int(stats.get("wins", 0) or 0) + 1
+                outcome = group_outcomes.get(run.team_id)
+                if outcome != "win":
+                    key = {"draw": "draws", "loss": "losses"}.get(outcome, "outcomes_unknown")
+                    stats[key] += 1
                 score = group_scores.get(run.team_id)
                 if score is not None:
                     stats["score_sum"] = float(stats.get("score_sum", 0.0) or 0.0) + score
                     stats["score_count"] = int(stats.get("score_count", 0) or 0) + 1
+
+    @staticmethod
+    def _saved_outcomes(stats: dict[str, object]) -> dict[str, int]:
+        draws = int(stats.get("draws", 0) or 0)
+        losses = int(stats.get("losses", 0) or 0)
+        unknown = max(0, int(stats.get("matches_total", 0) or 0) - int(stats.get("wins", 0) or 0) - draws - losses)
+        return {"draws": draws, "losses": losses, "outcomes_unknown": int(stats.get("outcomes_unknown", unknown) or 0)}
+
+    def _match_outcomes(self, runs: list[Run]) -> dict[str, str]:
+        teams = {run.team_id for run in runs}
+        if any(isinstance((metrics := _run_result_metadata(run).get("metrics")), dict) and metrics.get("draw") is True for run in runs):
+            return {team: "draw" for team in teams}
+        winner = self._single_winner_team_id(runs)
+        if winner:
+            return {team: "win" if team == winner else "loss" for team in teams}
+        places: dict[str, int] = {}
+        for run in runs:
+            raw = _run_result_metadata(run).get("placements")
+            if isinstance(raw, dict):
+                places.update({team: place for team, place in raw.items() if team in teams and isinstance(place, int)})
+        scores = self._scores_by_team(runs)
+        if places and set(places) == teams:
+            top = {team for team, place in places.items() if place == min(places.values())}
+        elif scores and set(scores) == teams:
+            top = {team for team, score in scores.items() if score == max(scores.values())}
+        else:
+            return {}
+        return {team: "draw" if team in top else "loss" for team in teams} if len(top) > 1 else {}
 
     @staticmethod
     def _extract_score(

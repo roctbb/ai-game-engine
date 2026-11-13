@@ -113,5 +113,8 @@ def _normalize_cumulative_stats(raw: dict[str, dict[str, object]]) -> dict[str, 
             "wins": int(stats.get("wins", 0) or 0),
             "score_sum": float(stats.get("score_sum", 0.0) or 0.0),
             "score_count": int(stats.get("score_count", 0) or 0),
+            "draws": int(stats.get("draws", 0) or 0),
+            "losses": int(stats.get("losses", 0) or 0),
+            "outcomes_unknown": int(stats.get("outcomes_unknown", max(0, int(stats.get("matches_total", 0) or 0) - int(stats.get("wins", 0) or 0) - int(stats.get("draws", 0) or 0) - int(stats.get("losses", 0) or 0))) or 0),
         }
     return result

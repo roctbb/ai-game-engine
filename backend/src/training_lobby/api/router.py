@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,6 +19,8 @@ from shared.config.settings import settings
 from shared.kernel import ForbiddenError, InvariantViolationError, NotFoundError
 from training_lobby.api.schemas import (
     CreateLobbyRequest,
+    DuelRequest,
+    DuelResponse,
     JoinLobbyRequest,
     LobbyCompetitionArchiveResponse,
     LobbyCompetitionResponse,
@@ -112,6 +113,9 @@ def _to_response(live_view: LobbyLiveView, *, redact_private: bool = False) -> L
                 matches_total=item.matches_total,
                 wins=item.wins,
                 average_score=item.average_score,
+                draws=item.draws,
+                losses=item.losses,
+                outcomes_unknown=item.outcomes_unknown,
             )
             for item in ([] if redact_private else live_view.participant_stats)
         ],
@@ -658,6 +662,14 @@ def play_lobby_as_user(
         except InvariantViolationError:
             pass
     return _to_response(container.training_lobby.get_live_view(lobby_id=lobby.lobby_id, user_id=session.nickname))
+
+
+@router.post("/{lobby_id}/duels", response_model=DuelResponse)
+def create_duel(lobby_id: str, request: DuelRequest, session: AppSession = Depends(get_current_session), container: ServiceContainer = Depends(get_container)) -> DuelResponse:
+    if _has_lobby_locking_competition(container, lobby_id):
+        raise InvariantViolationError("Дуэль недоступна до завершения соревнования")
+    runs = container.training_lobby.create_duel(lobby_id, session.nickname, request.opponent_team_id)
+    return DuelResponse(run_id=runs[0], run_ids=runs)
 
 
 @router.post("/{lobby_id}/stop", response_model=LobbyResponse)
