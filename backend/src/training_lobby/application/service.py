@@ -184,6 +184,11 @@ def _team_pair_key(left: str, right: str) -> tuple[str, str]:
     return (left, right) if left <= right else (right, left)
 
 
+def _is_waiting_duel(run: Run) -> bool:
+    return bool(run.execution_options.get("duel_id") and run.status is RunStatus.CREATED
+                and run.match_execution_id is None)
+
+
 def _datetime_or_none(value: object | None) -> datetime | None:
     if not isinstance(value, datetime):
         return None
@@ -425,9 +430,9 @@ class TrainingLobbyService:
         if duels:
             cycle = replace(cycle, current_match_groups=cycle.current_match_groups + tuple(duels))
             if cycle.phase not in {"simulation", "replay", "result"}:
-                first = duels[0]
+                first = next((group for group in duels if group.status != "queued"), duels[0])
                 cycle = replace(cycle, phase=first.status,
-                    phase_label={"simulation": "Дуэль выполняется", "replay": "Показ дуэли", "result": "Результат дуэли"}.get(first.status, "Дуэль"),
+                    phase_label={"queued": "Дуэль в очереди", "simulation": "Дуэль выполняется", "replay": "Показ дуэли", "result": "Результат дуэли"}.get(first.status, "Дуэль"),
                     message="Дуэль", replay_frame_count=first.replay_frame_count)
         my_team_id = self.find_user_team_in_lobby(lobby_id=lobby_id, user_id=user_id)
         current_group_run_ids = {
@@ -438,6 +443,7 @@ class TrainingLobbyService:
         current_group_team_ids = {
             team_id
             for group in cycle.current_match_groups
+            if group.status != "queued"
             for team_id in group.team_ids
         }
         playing_team_ids_set = {run.team_id for run in active_runs if run.status is RunStatus.RUNNING}
@@ -712,26 +718,71 @@ class TrainingLobbyService:
         active = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
         existing = next((run for run in active if run.team_id == own and run.execution_options.get("duel_opponent") == opponent_team_id), None)
         if existing:
-            match = self._execution.get_match_execution_for_run(existing, include_result_payload=False)
-            if match:
-                return [existing.run_id, *(run_id for run_id in match.run_ids if run_id != existing.run_id)]
-        if any(run.team_id in pair for run in active):
-            raise InvariantViolationError("Один из игроков уже участвует в матче; дождитесь его окончания")
+            peers = [run.run_id for run in active
+                     if run.execution_options.get("duel_id") == existing.execution_options["duel_id"]]
+            return [existing.run_id, *(run_id for run_id in peers if run_id != existing.run_id)]
         duel_id = new_id("duel")
+        # A requested duel uses the code saved at the moment of the request,
+        # even if its participants are finishing another match first.
+        snapshots = {team_id: self._team_workspace.create_snapshot(
+            team_id=team_id, game_id=lobby.game_id, version_id=lobby.game_version_id,
+        ).snapshot_id for team_id in (own, opponent_team_id)}
         created: list[str] = []
         try:
             for team_id in (own, opponent_team_id):
                 run = self._execution.create_run(CreateRunInput(team_id=team_id, game_id=lobby.game_id,
                     requested_by=user_id, run_kind=RunKind.TRAINING_MATCH, lobby_id=lobby_id,
                     version_id=lobby.game_version_id, execution_options={"duel_id": duel_id,
+                    "duel_team_ids": [own, opponent_team_id], "duel_snapshot_ids": snapshots,
                     "duel_opponent": opponent_team_id if team_id == own else own}))
                 created.append(run.run_id)
-            self._execution.queue_match_group(created)
+            self._dispatch_waiting_duels(lobby, runs + [self._execution.get_run(rid) for rid in created])
         except Exception:
             self._cancel_unqueued_batch_runs(run_ids=created, message="duel_queue_failed")
             raise
         self._clear_lobby_derived_caches(lobby_id)
         return created
+
+    def _dispatch_waiting_duels(self, lobby: Lobby, runs: list[Run]) -> bool:
+        groups: dict[str, list[Run]] = {}
+        for run in runs:
+            if duel_id := run.execution_options.get("duel_id"):
+                groups.setdefault(str(duel_id), []).append(run)
+        busy = {run.team_id for run in runs
+                if run.status in _ACTIVE_RUN_STATUSES and not _is_waiting_duel(run)}
+        reserved: set[str] = set()
+        changed = False
+        ordered = sorted(groups.values(), key=lambda group: min(run.created_at for run in group))
+        for group in ordered:
+            waiting = [run for run in group if _is_waiting_duel(run)]
+            if not waiting:
+                continue
+            teams = {run.team_id for run in group}
+            expected = set(group[0].execution_options.get("duel_team_ids") or teams)
+            if (len(group) != 2 or teams != expected or not teams <= lobby.teams.keys()
+                    or any(run.status not in _ACTIVE_RUN_STATUSES for run in group)):
+                self._cancel_unqueued_batch_runs(run_ids=[run.run_id for run in waiting], message="duel_request_canceled")
+                changed = True
+                continue
+            if len(waiting) != len(group):
+                continue  # A persisted MatchExecution is already being delivered.
+            if teams & (busy | reserved):
+                reserved.update(teams)
+                continue
+            order = list(group[0].execution_options.get("duel_team_ids") or [])
+            group.sort(key=lambda run: order.index(run.team_id) if run.team_id in order else 0)
+            try:
+                self._execution.queue_match_group(
+                    [run.run_id for run in group],
+                    snapshot_ids_by_team=group[0].execution_options.get("duel_snapshot_ids"),
+                )
+            except (InvariantViolationError, NotFoundError):
+                self._cancel_unqueued_batch_runs(run_ids=[run.run_id for run in group], message="duel_queue_failed")
+            busy.update(teams)
+            changed = True
+        if changed:
+            self._clear_lobby_derived_caches(lobby.lobby_id)
+        return changed
 
     def _current_duel_groups(self, runs: list[Run]) -> list[LobbyMatchGroupView]:
         grouped: dict[str, list[Run]] = {}
@@ -834,7 +885,10 @@ class TrainingLobbyService:
             if target_run_ids.intersection(group)
             for run_id in group
         }
-        run_ids_to_cancel = group_run_ids or target_run_ids
+        duel_ids = {active_by_id[rid].execution_options.get("duel_id") for rid in target_run_ids}
+        duel_run_ids = {run.run_id for run in active_by_id.values()
+                        if run.execution_options.get("duel_id") in duel_ids - {None}}
+        run_ids_to_cancel = group_run_ids | target_run_ids | duel_run_ids
         canceled: set[str] = set()
         for run_id in run_ids_to_cancel:
             run = active_by_id.get(run_id)
@@ -939,14 +993,18 @@ class TrainingLobbyService:
 
     def run_due_matchmaking_cycles(self, requested_by: str = "system") -> tuple[Lobby, ...]:
         advanced: list[Lobby] = []
+        pending_duel_lobbies = {run.lobby_id for run in self._execution.list_runs(
+            run_kind=RunKind.TRAINING_MATCH, status=RunStatus.CREATED, include_result_payload=False,
+        ) if _is_waiting_duel(run)}
         for lobby in self._repository.list():
             if lobby.kind is not LobbyKind.TRAINING:
                 continue
             if lobby.status not in {LobbyStatus.OPEN, LobbyStatus.RUNNING}:
                 continue
-            if not lobby.last_scheduled_run_ids and not any(state.ready for state in lobby.teams.values()):
+            has_pending_duel = lobby.lobby_id in pending_duel_lobbies
+            if not has_pending_duel and not lobby.last_scheduled_run_ids and not any(state.ready for state in lobby.teams.values()):
                 continue
-            if not lobby.last_scheduled_run_ids and not self._has_active_viewer(lobby):
+            if not has_pending_duel and not lobby.last_scheduled_run_ids and not self._has_active_viewer(lobby):
                 continue
             try:
                 advanced.append(self.run_matchmaking_cycle(lobby_id=lobby.lobby_id, requested_by=requested_by))
@@ -976,6 +1034,8 @@ class TrainingLobbyService:
                 run_kind=RunKind.TRAINING_MATCH,
                 include_result_payload=False,
             )
+        if self._dispatch_waiting_duels(lobby, runs):
+            runs = self._execution.list_runs(lobby_id=lobby.lobby_id, run_kind=RunKind.TRAINING_MATCH, include_result_payload=False)
         duel_busy = {run.team_id for run in runs if run.execution_options.get("duel_id") and run.status in _ACTIVE_RUN_STATUSES}
         runs = [run for run in runs if not run.execution_options.get("duel_id")]
         active_runs = [run for run in runs if run.status in _ACTIVE_RUN_STATUSES]
@@ -1205,12 +1265,17 @@ class TrainingLobbyService:
     def cancel_shadow_match_runs(self, primary_run: Run, message: str) -> list[Run]:
         if primary_run.run_kind is not RunKind.TRAINING_MATCH or primary_run.lobby_id is None:
             return []
-        shadow_runs = self._shadow_match_runs(primary_run)
+        waiting_duel = bool(primary_run.execution_options.get("duel_id") and primary_run.match_execution_id is None)
+        shadow_runs = ([run for run in self._execution.list_runs(
+            lobby_id=primary_run.lobby_id, run_kind=RunKind.TRAINING_MATCH, include_result_payload=False,
+        ) if run.run_id != primary_run.run_id
+            and run.execution_options.get("duel_id") == primary_run.execution_options["duel_id"]]
+            if waiting_duel else self._shadow_match_runs(primary_run))
         canceled: list[Run] = []
         for shadow_run in shadow_runs:
             if shadow_run.status not in _ACTIVE_RUN_STATUSES:
                 continue
-            if not self._execution.is_shadow_of(shadow_run, primary_run.run_id):
+            if not waiting_duel and not self._execution.is_shadow_of(shadow_run, primary_run.run_id):
                 continue
             try:
                 canceled.append(self._execution.cancel_run(shadow_run.run_id, message=message))
@@ -1725,7 +1790,9 @@ class TrainingLobbyService:
         runs = [runs_by_id[run_id] for run_id in run_ids if run_id in runs_by_id]
         payload_runs = [self._ensure_payload(run) if run.status in _REPLAYABLE_RUN_STATUSES else run for run in runs]
         statuses = {run.status for run in runs}
-        if statuses & _ACTIVE_RUN_STATUSES:
+        if runs and all(_is_waiting_duel(run) for run in runs):
+            status = "queued"
+        elif statuses & _ACTIVE_RUN_STATUSES:
             status = "simulation"
         elif archived:
             status = "finished"

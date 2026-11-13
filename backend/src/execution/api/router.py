@@ -708,6 +708,10 @@ def _competition_watch_peer_run_ids(container: ServiceContainer, current_run: Ru
 def _training_watch_peer_run_ids(container: ServiceContainer, current_run: Run) -> list[str]:
     if not current_run.lobby_id:
         return []
+    if duel_id := current_run.execution_options.get("duel_id"):
+        return [run.run_id for run in container.execution.list_runs(
+            lobby_id=current_run.lobby_id, run_kind=RunKind.TRAINING_MATCH, include_result_payload=False,
+        ) if run.run_id != current_run.run_id and run.execution_options.get("duel_id") == duel_id]
     try:
         lobby = container.training_lobby.get_lobby(current_run.lobby_id)
     except NotFoundError:

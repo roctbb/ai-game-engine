@@ -33,12 +33,12 @@
           <button v-if="!isEmbedded && sourceParticipants.length" class="btn btn-sm btn-outline-danger" @click="openRunLine({ line: currentBotError.line ?? 1, role: currentBotError.role })">К строке {{ currentBotError.line ?? 1 }}</button>
         </div>
         <div class="arena-match-view">
-          <div v-if="(!rendererReady && safeRendererUrl) || firstShowWaiting || (isReplayLoading && !replayFrames.length)" class="arena-match-loading"><SnakeLoader :label="firstShowWaiting ? 'Подготовка матча' : isReplayLoading ? 'Загрузка матча' : 'Загрузка визуализации'" /></div>
+          <div v-if="(!rendererReady && safeRendererUrl) || firstShowWaiting || (isReplayLoading && !replayFrames.length)" class="arena-match-loading"><SnakeLoader :label="isQueuedDuel ? 'Дуэль в очереди' : firstShowWaiting ? 'Подготовка матча' : isReplayLoading ? 'Загрузка матча' : 'Загрузка визуализации'" /></div>
           <div v-if="firstReplayLockActive && !firstShowWaiting && isEmbedded" class="arena-match-lock">Первый показ</div>
           <iframe v-if="safeRendererUrl" ref="rendererFrameRef" :key="rendererKey" :src="safeRendererUrl" title="Визуализация игры" sandbox="allow-scripts" @load="onRendererLoad"></iframe>
           <p v-else class="text-muted m-3">Для этой игры визуализация не настроена.</p>
         </div>
-        <ReplayControls v-if="!isEmbedded" v-model:frame-index="replayFrameIndex" v-model:delay="replaySpeedMs" class="arena-match-playback" :frame-count="replayFrames.length" :playing="replayIsPlaying" :can-play="canPlayReplay" :can-step-backward="canStepBackward" :can-step-forward="canStepForward" :seek-disabled="firstReplayLockActive" :live="firstReplayLockActive" :live-label="firstShowWaiting ? 'Подготовка' : 'Первый показ'" :markers="watchMoments" @toggle="toggleReplayPlay" @step="stepReplay" />
+        <ReplayControls v-if="!isEmbedded && !isQueuedDuel" v-model:frame-index="replayFrameIndex" v-model:delay="replaySpeedMs" class="arena-match-playback" :frame-count="replayFrames.length" :playing="replayIsPlaying" :can-play="canPlayReplay" :can-step-backward="canStepBackward" :can-step-forward="canStepForward" :seek-disabled="firstReplayLockActive" :live="firstReplayLockActive" :live-label="firstShowWaiting ? 'Подготовка' : 'Первый показ'" :markers="watchMoments" @toggle="toggleReplayPlay" @step="stepReplay" />
         <p v-if="replayError && !isEmbedded" class="text-danger small m-2" role="alert">{{ replayError }}</p>
         <details v-if="!isEmbedded && replayFrames.length" class="arena-match-insights"><summary>Разбор хода</summary><ReplayInsights @pause="stopReplayPlayback()" :frames="replay?.frames ?? []" :events="replay?.events ?? []" :frame-index="replayFrameIndex" :locked="firstReplayLockActive" :actor-names="eventActorNames" @seek="seekMoment" @line="openRunLine" /></details>
         <BotConsole v-if="showBotConsole" initially-collapsed label="Консоль и события">
@@ -186,7 +186,7 @@ const statsOpen = ref(false);
 const fieldFullscreen = ref(false);
 const reviewPlayers = computed(() => matchPlayerStats.value.map(player => ({
   team_id: player.id, display_name: player.name, score: player.scoreLabel, isSelf: player.isSelf,
-  status: player.alive ? (isReplayAtLastFrame.value ? 'финиш' : 'в игре') : 'выбыл',
+  status: isQueuedDuel.value ? 'в очереди' : player.alive ? (isReplayAtLastFrame.value ? 'финиш' : 'в игре') : 'выбыл',
   place: player.placeLabel,
   meta: [player.life === null ? '' : 'Здоровье ' + player.life, player.shield === null ? '' : 'Щит ' + player.shield].filter(Boolean).join(' · '),
 })));
@@ -196,7 +196,8 @@ const sourceRunId = ref('');
 const sourceCapturedAt = ref('');
 const sourceLine = ref(1);
 const sourceError = ref('');
-const sourceParticipants = computed(() => (watchContext.value?.participants ?? []).filter(p => sessionStore.role !== 'student' || p.captain_user_id === sessionStore.nickname));
+const isQueuedDuel = computed(() => run.value?.status === 'created' && Boolean(run.value.execution_options?.duel_id));
+const sourceParticipants = computed(() => (isQueuedDuel.value ? [] : watchContext.value?.participants ?? []).filter(p => sessionStore.role !== 'student' || p.captain_user_id === sessionStore.nickname));
 async function loadSource(runId: string): Promise<void> {
   sourceError.value = '';
   try { const snapshot = await getRunCode(runId); sourceRunId.value = runId; sourceCodes.value = snapshot.codes_by_slot; sourceSlot.value = Object.keys(snapshot.codes_by_slot)[0] || ''; sourceCapturedAt.value = snapshot.captured_at; }
@@ -242,6 +243,7 @@ const safeRendererUrl = computed(() => {
 });
 const canRestartRenderer = computed(() => canSeeTechnicalDetails.value && Boolean(safeRendererUrl.value));
 const runStatusLabel = computed(() => {
+  if (isQueuedDuel.value) return 'Дуэль в очереди';
   if (firstShowWaiting.value) return 'Подготовка матча';
   if (firstReplayLockActive.value) return 'Первый показ';
   const status = run.value?.status ?? 'created';

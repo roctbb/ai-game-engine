@@ -12,7 +12,7 @@
       <span v-else class="small text-muted">Ожидание следующего матча</span>
       <button class="btn btn-outline-secondary arena-live-players" @click="liveStatsOpen = true">Участники</button>
       <button v-if="activeCompetition?.broadcast && selectedCompetitionRunId" class="btn btn-primary" @click="selectedCompetitionRunId = ''; router.replace({ query: { ...route.query, match: undefined } })">К показу</button>
-      <RouterLink v-if="displayedGameRunId" class="btn btn-outline-secondary" :to="{ name: 'run-watch', params: { runId: displayedGameRunId }, query: { back: route.fullPath } }">Разобрать</RouterLink>
+      <RouterLink v-if="displayedGameRunId" class="btn btn-sm btn-outline-secondary" :to="{ name: 'run-watch', params: { runId: displayedGameRunId }, query: { back: route.fullPath } }">Разобрать</RouterLink>
     </header>
     <header v-else class="lobby-overview-head">
       <div>
@@ -71,7 +71,7 @@
         <RouterLink class="btn btn-sm btn-primary" :to="`/competitions/${activeCompetition.competition_id}`">Открыть турнир</RouterLink>
       </article>
       <div v-else-if="!['code', 'game'].includes(activeTab) && hasPlayerInLobby && showStopAction" class="lobby-queue-banner" role="status">
-        <SnakeLoader :label="readyStatusLabel" />
+        <SnakeLoader :label="readyStatusLabel" /><button v-if="bannerMatchRunId" class="btn btn-sm btn-outline-secondary" @click="openCurrentMatch(bannerMatchRunId)">Смотреть</button>
       </div>
       <div v-else-if="!['code', 'game'].includes(activeTab) && canManage && canStartLobby" class="lobby-pause-banner">
         <span>Новые матчи на паузе</span>
@@ -369,17 +369,27 @@
             <h2 id="lobby-current-title">{{ activeCompetition ? 'Матчи текущего раунда' : 'Сейчас идут' }} <span class="lobby-section-count">{{ currentReplayChoices.length }}</span></h2>
             <div class="lobby-list-filters">
               <button v-if="canManage && !activeCompetition && canPauseLobby" class="btn btn-sm btn-outline-secondary" :disabled="isBusy" @click="pauseLobbyByTeacher">Пауза подбора</button>
-              <button v-if="currentReplayChoices.length" class="btn btn-sm btn-primary" @click="openCurrentMatch()">Смотреть</button>
+              <button v-if="currentReplayChoices.length" class="btn btn-sm btn-outline-secondary" @click="openCurrentMatch()">Смотреть</button>
             </div>
           </header>
           <div v-if="currentReplayChoices.length" class="agp-card lobby-live-list">
             <article v-for="choice in currentReplayChoices" :key="choice.run_id" class="lobby-live-row">
               <div><strong>{{ choice.label }}</strong><span v-if="choice.player_count <= 5" class="small text-muted">{{ participantCountLabel(choice.player_count) }}</span></div>
               <span class="lobby-live-names">{{ choice.player_count <= 5 ? choice.meta : participantCountLabel(choice.player_count) }}</span>
-              <button class="lobby-text-action" :aria-label="'Смотреть ' + choice.label.toLowerCase()" @click="openCurrentMatch(choice.run_id)">Смотреть</button>
+              <button class="btn btn-sm btn-outline-secondary" :aria-label="'Смотреть ' + choice.label.toLowerCase()" @click="openCurrentMatch(choice.run_id)">Смотреть</button>
             </article>
           </div>
           <div v-else class="agp-card lobby-live-empty">Ⅱ {{ activeCompetition ? 'Ожидание раунда' : 'Сейчас матчей нет' }}</div>
+        </section>
+        <section v-if="queuedDuelGroups.length" class="lobby-queued-duels" aria-label="Дуэли в очереди">
+          <header class="lobby-list-heading"><h2>Дуэли в очереди <span class="lobby-section-count">{{ queuedDuelGroups.length }}</span></h2></header>
+          <div class="agp-card lobby-live-list">
+            <article v-for="group in queuedDuelGroups" :key="group.group_id" class="lobby-live-row">
+              <div><strong>Дуэль</strong><span class="small text-muted">В очереди</span></div>
+              <span class="lobby-live-names">{{ group.runs.map(run => teamLabel(run.team_id)).join(' · ') }}</span>
+              <RouterLink class="btn btn-sm btn-outline-secondary" :to="{ name: 'run-watch', params: { runId: primaryRunId(group) }, query: { back: route.fullPath } }">Смотреть</RouterLink>
+            </article>
+          </div>
         </section>
         <header class="lobby-list-heading lobby-history-heading">
           <h2>{{ canManage ? 'История игр' : 'Мои прошедшие игры' }} <span class="lobby-section-count">{{ filteredTrainingMatchGroups.length }}</span></h2>
@@ -407,7 +417,7 @@
                 <button class="lobby-text-action" :aria-expanded="expandedMatches.has(group.group_id)" @click="toggleMatchRoster(group.group_id)">{{ participantCountLabel(matchGroupTeamIds(group).length) }} <span aria-hidden="true">{{ expandedMatches.has(group.group_id) ? '▴' : '▾' }}</span></button>
               </div>
               <strong v-if="!canManage && lobby.my_team_id" class="lobby-own-result">{{ trainingOwnResult(group) }}</strong>
-              <RouterLink class="lobby-text-action lobby-game-watch" :to="{ name: 'run-watch', params: { runId: primaryRunId(group) }, query: { back: route.fullPath } }">Разобрать</RouterLink>
+              <RouterLink class="btn btn-sm btn-outline-secondary lobby-game-watch" :to="{ name: 'run-watch', params: { runId: primaryRunId(group) }, query: { back: route.fullPath } }">Разобрать</RouterLink>
             </div>
             <div v-if="expandedMatches.has(group.group_id)" class="lobby-game-expanded">
               <table class="table mb-0">
@@ -450,7 +460,7 @@
               <td class="text-end lobby-stat-cell" data-label="Ничьи" :title="outcomeCountHint(stat)">{{ outcomeCountLabel(stat, 'draws') }}</td>
               <td class="text-end lobby-stat-cell" data-label="Поражения" :title="outcomeCountHint(stat)">{{ outcomeCountLabel(stat, 'losses') }}</td>
               <td class="text-end lobby-stat-cell" data-label="Игры">{{ stat.matches_total }}</td><td class="text-end lobby-stat-cell" data-label="Средний счёт">{{ stat.matches_total ? averageScoreLabel(stat.average_score) : '—' }}</td>
-              <td v-if="canManage || canDuel" class="lobby-participant-actions" :class="{ 'lobby-participant-actions--duel': canDuel && stat.team_id !== lobby.my_team_id }"><div class="d-flex gap-2 justify-content-end"><button v-if="canDuel && stat.team_id !== lobby.my_team_id" class="btn btn-sm btn-outline-secondary" :disabled="isBusy || duelTeamBusy(stat.team_id)" @click="startDuel(stat.team_id)">{{ duelOpponent === stat.team_id ? 'Запуск…' : 'Дуэль' }}</button><ActionMenu v-if="canManage" compact :label="'Действия участника ' + teamLabel(stat.team_id)" :items="participantActions(stat)" @select="handleParticipantAction($event, stat)" /></div></td>
+              <td v-if="canManage || canDuel" class="lobby-participant-actions" :class="{ 'lobby-participant-actions--duel': canDuel && stat.team_id !== lobby.my_team_id }"><div class="d-flex gap-2 justify-content-end"><button v-if="canDuel && stat.team_id !== lobby.my_team_id" class="btn btn-sm btn-outline-secondary" :disabled="isBusy" @click="startDuel(stat.team_id)">{{ duelOpponent === stat.team_id ? 'Запуск…' : 'Дуэль' }}</button><ActionMenu v-if="canManage" compact :label="'Действия участника ' + teamLabel(stat.team_id)" :items="participantActions(stat)" @select="handleParticipantAction($event, stat)" /></div></td>
             </tr>
           </tbody>
         </table>
@@ -521,7 +531,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 import { formatTime } from '../lib/attemptPresentation';
-import { ownTrainingEditorRun, ownCompetitionEditorRun } from '../lib/lobbyEditorRun';
+import { ownTrainingEditorRun, ownCompetitionEditorRun, ownCurrentMatchRun } from '../lib/lobbyEditorRun';
 import SnakeLoader from '../components/SnakeLoader.vue';
 import LiveMatchScoreboard from '../components/LiveMatchScoreboard.vue';
 import GameReference from '../components/GameReference.vue';
@@ -767,10 +777,6 @@ const duelOpponent = ref('');
 const canDuel = computed(() => Boolean(hasPlayerInLobby.value && game.value && game.value.mode !== 'single_task' &&
   (game.value.min_players_per_match ?? 2) <= 2 && (game.value.max_players_per_match ?? 64) >= 2 &&
   !activeCompetition.value && lobby.value && ['open', 'running'].includes(lobby.value.status)));
-function duelTeamBusy(teamId: string): boolean {
-  return Boolean(lobby.value?.playing_team_ids.includes(teamId) ||
-    (lobby.value?.my_team_id && lobby.value.playing_team_ids.includes(lobby.value.my_team_id)));
-}
 async function startDuel(opponent: string): Promise<void> {
   if (!lobby.value || isBusy.value) return;
   isBusy.value = true; duelOpponent.value = opponent; errorMessage.value = '';
@@ -918,11 +924,12 @@ function participantPresence(teamId: string): string {
 }
 function participantQueueLabel(teamId: string): string {
   if (lobby.value?.playing_team_ids.includes(teamId)) return 'Играет';
+  if (queuedDuelGroups.value.some(group => group.runs.some(run => run.team_id === teamId))) return 'Дуэль в очереди';
   return lobby.value?.teams.find(team => team.team_id === teamId)?.ready ? 'В очереди' : 'Не в очереди';
 }
 function participantQueueTone(teamId: string): string {
   return lobby.value?.playing_team_ids.includes(teamId) ? 'agp-pill--success'
-    : lobby.value?.teams.find(team => team.team_id === teamId)?.ready ? 'agp-pill--primary' : 'agp-pill--neutral';
+    : (lobby.value?.teams.find(team => team.team_id === teamId)?.ready || queuedDuelGroups.value.some(group => group.runs.some(run => run.team_id === teamId))) ? 'agp-pill--primary' : 'agp-pill--neutral';
 }
 function participantActions(stat: LobbyParticipantStatsDto): ActionMenuItem[] {
   const items: ActionMenuItem[] = [
@@ -992,6 +999,7 @@ watch(
   clampCompetitionSettingsToGame,
 );
 const readyStatusLabel = computed(() => {
+  if (lobby.value?.my_status !== 'playing' && queuedDuelGroups.value.some(group => group.runs.some(run => run.team_id === lobby.value?.my_team_id))) return 'Дуэль в очереди';
   if (isWaitingForReplay.value) return lobby.value?.cycle_phase_label || 'Показ реплея';
   if (lobby.value?.my_status === 'playing') return 'Вы играете';
   if (lobby.value?.my_status === 'queued') return 'Вы в очереди';
@@ -1180,6 +1188,11 @@ const currentTrainingMatchGroups = computed(() => {
     ? groups.map((group) => trainingMatchGroupFromDto(group, false))
     : buildTrainingMatchGroups(lobby.value?.current_run_ids ?? [], false);
 });
+const queuedDuelGroups = computed(() => currentTrainingMatchGroups.value.filter(group => group.status === 'queued')
+  .sort((left, right) => Date.parse(left.started_at || '') - Date.parse(right.started_at || '')));
+const bannerMatchRunId = computed(() => {
+  return ownCurrentMatchRun(lobby.value?.my_team_id, currentTrainingMatchGroups.value);
+});
 const archivedTrainingMatchGroups = computed(() => {
   const groups = lobby.value?.archived_match_groups ?? [];
   return groups.length
@@ -1202,7 +1215,7 @@ const competitionReplayChoices = computed(() =>
   }).filter((choice) => Boolean(choice.run_id)),
 );
 const trainingReplayChoices = computed(() =>
-  trainingMatchSections.value.current.map((group, groupIndex) => {
+  trainingMatchSections.value.current.filter(group => group.status !== 'queued').map((group, groupIndex) => {
     const myTeamId = lobby.value?.my_team_id ?? '';
     const ownRun = group.runs.find((run) => run.team_id === myTeamId);
     const viewerRun = ownRun ?? group.runs[0];
@@ -1589,6 +1602,7 @@ function trainingMatchHasError(group: TrainingMatchGroup): boolean {
 }
 function matchGroupStatusLabel(group: TrainingMatchGroup): string {
   if (trainingMatchHasError(group)) return 'С ошибкой';
+  if (group.status === 'queued') return 'Дуэль в очереди';
   if (group.status === 'simulation') return 'Идёт игра';
   if (group.status === 'replay') return 'Идёт повтор';
   return 'Завершён';
@@ -1642,7 +1656,7 @@ function matchWinnerLabel(group: TrainingMatchGroup): string {
 }
 
 function shouldHideMatchWinner(group: TrainingMatchGroup): boolean {
-  return group.status === 'replay' || group.status === 'simulation';
+  return ['queued', 'replay', 'simulation'].includes(group.status);
 }
 
 function matchGroupPrimaryWinnerId(group: TrainingMatchGroup): string {
@@ -3803,6 +3817,7 @@ function handleLobbyMenu(action: string): void {
 .lobby-invite > button { flex: none; }
 .lobby-queue-banner, .lobby-pause-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid var(--agp-border); border-radius: 8px; background: var(--arena-success-soft); color: var(--agp-success); font-size: 13px; }
 .lobby-queue-banner :deep(.arena-loading) { color: inherit; }
+.lobby-queue-banner > .btn { flex-shrink: 0; }
 .lobby-pause-banner { background: var(--arena-warning-soft); color: var(--agp-warning); }
 .lobby-list-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; }
 .lobby-list-heading h2 { font-size: 16px; line-height: 24px; font-weight: 600; margin: 0; }
@@ -3894,7 +3909,7 @@ function handleLobbyMenu(action: string): void {
 .lobby-games { display: grid; gap: 16px; }
 .lobby-games > .lobby-list-heading { margin: 0; }
 .lobby-section-count { margin-left: 8px; color: var(--agp-text-muted); font-size: 12px; font-weight: 400; }
-.lobby-current-games .lobby-list-heading { margin-bottom: 12px; }
+.lobby-current-games .lobby-list-heading, .lobby-queued-duels .lobby-list-heading { margin-bottom: 12px; }
 .lobby-live-list { padding: 4px 16px; max-height: 360px; overflow: auto; }
 .lobby-live-row { display: grid; grid-template-columns: 160px minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--agp-border); font-size: 13px; }
 .lobby-live-row:last-child { border: 0; }
@@ -3936,7 +3951,7 @@ function handleLobbyMenu(action: string): void {
 }
 @media (max-width: 767px) {
   .lobby-live-row { grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
-  .lobby-live-row .lobby-text-action { grid-column: 2; grid-row: 1; min-height: 44px; display: flex; align-items: center; }
+  .lobby-live-row > .btn { grid-column: 2; grid-row: 1; min-height: 44px; display: flex; align-items: center; }
   .lobby-live-names { grid-column: 1/-1; color: var(--agp-text-muted); font-size: 12px; }
   .lobby-history-toolbar > :is(input,select) { width: 100%; }
   .lobby-history-toolbar > input { flex-basis: 100%; }

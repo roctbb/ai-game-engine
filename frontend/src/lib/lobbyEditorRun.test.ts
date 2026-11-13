@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ownTrainingEditorRun, ownCompetitionEditorRun } from './lobbyEditorRun';
+import { ownTrainingEditorRun, ownCompetitionEditorRun, ownCurrentMatchRun } from './lobbyEditorRun';
 
 const foreign = { runs: [{ run_id: 'foreign-run', team_id: 'other' }], started_at: '2026-11-13T12:00:00Z' };
 const own = { runs: [{ run_id: 'opponent-run', team_id: 'other' }, { run_id: 'own-run', team_id: 'me' }], started_at: '2026-11-13T10:00:00Z' };
@@ -41,5 +41,20 @@ describe('own match beside the lobby code editor', () => {
     ];
     expect(ownCompetitionEditorRun('me', matches, 'broadcast')).toBe('past-own-run');
     expect(ownCompetitionEditorRun('me', matches, null)).toBe('past-own-run');
+  });
+});
+
+
+describe('current match banner', () => {
+  it('opens my run, keeping a showing match ahead of my queued duel', () => {
+    const pending = { status: 'queued', runs: [{ team_id: 'me', run_id: 'waiting' }] };
+    const showing = { status: 'replay', runs: [{ team_id: 'other', run_id: 'foreign' }, { team_id: 'me', run_id: 'mine' }] };
+    expect(ownCurrentMatchRun('me', [pending, showing])).toBe('mine');
+    expect(ownCurrentMatchRun('me', [pending])).toBe('waiting');
+  });
+  it('never opens a foreign match for a participant without a current match', () => {
+    const matches = [{ status: 'result', runs: [{ team_id: 'other', run_id: 'foreign' }] }];
+    expect(ownCurrentMatchRun('me', matches)).toBe('');
+    expect(ownCurrentMatchRun(null, matches)).toBe('');
   });
 });

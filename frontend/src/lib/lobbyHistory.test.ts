@@ -9,9 +9,10 @@ describe('lobby history', () => {
       { id: 3, archived: false, status: 'result' },
       { id: 4, archived: true, status: 'finished' },
       { id: 5, archived: false, status: 'finished' },
+      { id: 6, archived: false, status: 'queued' },
     ];
     const { current, history } = splitTrainingMatches(rows);
-    expect(current.map(row => row.id)).toEqual([1, 2]);
+    expect(current.map(row => row.id)).toEqual([1, 2, 6]);
     expect(history.map(row => row.id)).toEqual([3, 4, 5]);
   });
   it('finds names regardless of case, word order and ё spelling', () => {

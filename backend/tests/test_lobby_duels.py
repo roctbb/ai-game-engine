@@ -1,3 +1,5 @@
+import pytest
+
 from training_lobby.domain.model import LobbyStatus
 
 
@@ -55,7 +57,9 @@ def test_duel_uses_exact_pair_and_is_idempotent_without_changing_queue(client, c
     assert not container.training_lobby.get_lobby(lobby).teams[teams[0]].ready
     assert client.get(f'/api/v1/runs/{ids[0]}/code', headers=headers[0]).status_code == 200
     assert client.get(f'/api/v1/runs/{ids[1]}/code', headers=headers[0]).status_code == 403
-    assert duel(client, lobby, teams[2], headers[0]).status_code == 422
+    waiting = duel(client, lobby, teams[2], headers[0])
+    assert waiting.status_code == 200
+    assert all(container.execution.get_run(rid).status.value == 'created' for rid in waiting.json()['run_ids'])
     finish(client, ids, teams[:2])
     view = client.get(f'/api/v1/lobbies/{lobby}', headers=headers[0]).json()
     assert any(set(item['run_ids']) == set(ids) for item in view['current_match_groups'])
@@ -146,3 +150,122 @@ def test_duel_rejects_games_requiring_more_players(client, container, teacher_he
     response = duel(client, lobby, teams[1], headers[0])
     assert response.status_code == 422
     assert 'двух игроков' in response.json()['error']['message']
+
+
+def test_waiting_duel_is_persisted_idempotent_and_has_exact_watch_participants(client, container, teacher_headers):
+    from execution.infrastructure.sqlalchemy_repository import _map_run_from_orm, _map_run_to_orm
+    lobby, teams, headers = fixture_lobby(client, teacher_headers, count=3)
+    active = duel(client, lobby, teams[1], headers[0]).json()['run_ids']
+    response = duel(client, lobby, teams[2], headers[0])
+    assert response.status_code == 200, response.text
+    pending = response.json()['run_ids']
+    assert duel(client, lobby, teams[2], headers[0]).json()['run_ids'] == pending
+    assert duel(client, lobby, teams[0], headers[2]).json()['run_id'] == pending[1]
+    for rid in pending:
+        run = container.execution.get_run(rid)
+        assert run.status.value == 'created' and run.match_execution_id is None
+        restored = _map_run_from_orm(_map_run_to_orm(run))
+        assert restored.execution_options == run.execution_options
+        container.execution._run_repository.save(restored)
+    view = client.get(f'/api/v1/lobbies/{lobby}', headers=headers[0]).json()
+    assert any(group['status'] == 'queued' and set(group['run_ids']) == set(pending)
+               for group in view['current_match_groups'])
+    context = client.get(f'/api/v1/runs/{pending[0]}/watch-context', headers=headers[0]).json()
+    assert {p['team_id'] for p in context['participants']} == {teams[0], teams[2]}
+    assert context['first_show']['started_at'] is None
+    assert client.post(f'/api/v1/runs/{pending[0]}/queue', headers=headers[0]).status_code == 422
+    finish(client, active, teams[:2])
+    # No ordinary queue, last batch or viewer is needed for an explicit request.
+    assert not container.training_lobby.get_lobby(lobby).last_scheduled_run_ids
+    container.training_lobby.run_due_matchmaking_cycles()
+    assert all(container.execution.get_run(rid).status.value == 'queued' for rid in pending)
+    assert len(container.execution.get_match_execution_for_run(container.execution.get_run(pending[0])).run_ids) == 2
+
+
+def test_waiting_duel_uses_requested_code_even_after_editing(client, container, teacher_headers):
+    lobby, teams, headers = fixture_lobby(client, teacher_headers, count=3)
+    active = duel(client, lobby, teams[1], headers[0]).json()['run_ids']
+    pending = duel(client, lobby, teams[2], headers[0]).json()['run_ids']
+    requested = dict(container.execution.get_run(pending[0]).execution_options['duel_snapshot_ids'])
+    before = container.team_workspace.get_team(teams[0]).slots['bot'].code
+    updated = 'def make_choice(field, role):\n    return 4, 4\n'
+    container.team_workspace.update_slot_code(teams[0], 'duel-0', 'bot', updated)
+    finish(client, active, teams[:2])
+    container.training_lobby.run_due_matchmaking_cycles()
+    run = container.execution.get_run(pending[0])
+    assert run.snapshot_id == requested[teams[0]]
+    assert container.team_workspace.get_snapshot(run.snapshot_id).codes_by_slot['bot'] == before
+    assert container.team_workspace.get_team(teams[0]).slots['bot'].code == updated
+
+
+def test_waiting_duels_follow_fifo_for_shared_players_but_allow_independent_pairs(client, container, teacher_headers):
+    lobby, teams, headers = fixture_lobby(client, teacher_headers, count=6)
+    active = duel(client, lobby, teams[1], headers[0]).json()['run_ids']
+    first = duel(client, lobby, teams[2], headers[0]).json()['run_ids']
+    later = duel(client, lobby, teams[3], headers[2]).json()['run_ids']
+    independent = duel(client, lobby, teams[5], headers[4]).json()['run_ids']
+    assert container.execution.get_run(first[0]).status.value == 'created'
+    assert container.execution.get_run(later[0]).status.value == 'created'
+    assert container.execution.get_run(independent[0]).status.value == 'queued'
+    finish(client, active, teams[:2])
+    container.training_lobby.run_due_matchmaking_cycles()
+    assert container.execution.get_run(first[0]).status.value == 'queued'
+    assert container.execution.get_run(later[0]).status.value == 'created'
+    finish(client, first, [teams[0], teams[2]])
+    container.training_lobby.run_due_matchmaking_cycles()
+    assert container.execution.get_run(later[0]).status.value == 'queued'
+
+
+@pytest.mark.parametrize('paused', [False, True])
+def test_canceling_waiting_duel_cancels_both_runs(client, container, teacher_headers, paused):
+    lobby, teams, headers = fixture_lobby(client, teacher_headers, count=3)
+    duel(client, lobby, teams[1], headers[0])
+    pending = duel(client, lobby, teams[2], headers[0]).json()['run_ids']
+    if paused:
+        container.training_lobby.set_status(lobby, LobbyStatus.PAUSED)
+    result = client.post(f'/api/v1/runs/{pending[0]}/cancel', headers=headers[0])
+    assert result.status_code == 200, result.text
+    assert all(container.execution.get_run(rid).status.value == 'canceled' for rid in pending)
+
+
+def test_pending_duel_takes_priority_over_automatic_matchmaking(client, container, teacher_headers, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+    lobby, teams, headers = fixture_lobby(client, teacher_headers, count=4)
+    for team in teams:
+        container.training_lobby.set_ready(lobby, team, True)
+    container.training_lobby.mark_viewer_online(lobby, 'teacher-test')
+    batch = container.training_lobby.run_matchmaking_cycle(lobby, 'system').last_scheduled_match_groups
+    pending = duel(client, lobby, teams[2], headers[0]).json()['run_ids']
+    assert container.execution.get_run(pending[0]).status.value == 'created'
+    for group in batch:
+        group_teams = [container.execution.get_run(rid).team_id for rid in group]
+        finish(client, list(group), group_teams)
+    container.training_lobby.run_due_matchmaking_cycles()
+    assert container.execution.get_run(pending[0]).status.value == 'queued'
+    monkeypatch.setattr('training_lobby.application.service.utc_now', lambda: datetime.now(UTC) + timedelta(seconds=30))
+    container.training_lobby.mark_viewer_online(lobby, 'teacher-test')
+    next_batch = container.training_lobby.run_matchmaking_cycle(lobby, 'system').last_scheduled_match_groups
+    scheduled = {container.execution.get_run(rid).team_id for group in next_batch for rid in group}
+    assert scheduled == {teams[1], teams[3]}
+    assert all(container.training_lobby.get_lobby(lobby).teams[t].ready for t in teams)
+
+
+def test_free_player_can_schedule_a_duel_against_a_busy_opponent(client, container, teacher_headers):
+    lobby, teams, headers = fixture_lobby(client, teacher_headers, count=3)
+    active = duel(client, lobby, teams[1], headers[0]).json()['run_ids']
+    pending = duel(client, lobby, teams[0], headers[2])
+    assert pending.status_code == 200, pending.text
+    assert all(container.execution.get_run(rid).status.value == 'created' for rid in pending.json()['run_ids'])
+    finish(client, active, teams[:2])
+    container.training_lobby.run_due_matchmaking_cycles()
+    assert all(container.execution.get_run(rid).status.value == 'queued' for rid in pending.json()['run_ids'])
+
+
+def test_leaving_paused_lobby_cancels_all_related_pending_duels(client, container, teacher_headers):
+    lobby, teams, headers = fixture_lobby(client, teacher_headers, count=3)
+    active = duel(client, lobby, teams[1], headers[0]).json()['run_ids']
+    pending = duel(client, lobby, teams[2], headers[0]).json()['run_ids']
+    container.training_lobby.set_status(lobby, LobbyStatus.PAUSED)
+    container.training_lobby.leave_team(lobby, teams[0])
+    assert all(container.execution.get_run(rid).status.value == 'canceled' for rid in active + pending)
+    assert teams[0] not in container.training_lobby.get_lobby(lobby).teams

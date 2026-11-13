@@ -5,6 +5,13 @@ interface EditorMatch {
   finished_at?: string | null;
 }
 
+export function ownCurrentMatchRun(teamId: string | null | undefined, matches: EditorMatch[]): string {
+  if (!teamId) return '';
+  const own = matches.filter(match => match.runs.some(run => run.team_id === teamId));
+  const match = own.find(item => item.status !== 'queued') ?? own[0];
+  return match?.runs.find(run => run.team_id === teamId)?.run_id || '';
+}
+
 // Editing a bot must never inherit the spectator's selected match or fallback.
 export function ownTrainingEditorRun(teamId: string | null | undefined, current: EditorMatch[], history: EditorMatch[]): string {
   if (!teamId) return '';

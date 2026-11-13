@@ -1,7 +1,7 @@
 export function splitTrainingMatches<T extends { archived: boolean; status: string }>(matches: T[]): { current: T[]; history: T[] } {
   const current: T[] = [], history: T[] = [];
   for (const match of matches) {
-    (!match.archived && ['simulation', 'replay'].includes(match.status) ? current : history).push(match);
+    (!match.archived && ['queued', 'simulation', 'replay'].includes(match.status) ? current : history).push(match);
   }
   return { current, history };
 }

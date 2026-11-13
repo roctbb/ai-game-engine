@@ -110,6 +110,8 @@ class ExecutionService:
 
     def queue_run(self, run_id: str) -> Run:
         run = require_run(self._run_repository.get(run_id), run_id)
+        if run.execution_options.get("duel_id") and run.status is RunStatus.CREATED:
+            raise InvariantViolationError("Дуэль запускается автоматически через очередь лобби")
         if run.run_kind is RunKind.SINGLE_TASK:
             self._ensure_single_task_can_be_queued(
                 requested_by=run.requested_by, exclude_run_id=run.run_id
