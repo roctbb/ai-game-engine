@@ -439,12 +439,13 @@
           </div>
         </header>
         <table class="table align-middle mb-0 lobby-participant-table">
-          <thead><tr><th>Участник</th><th>Присутствие</th><th>Очередь</th><th class="text-end">Победы</th><th class="text-end">Игры</th><th class="text-end">Средний счёт</th><th v-if="canManage"></th></tr></thead>
+          <thead><tr><th scope="col" class="lobby-participant-place">Место</th><th>Участник</th><th>Присутствие</th><th>Очередь</th><th class="text-end">Победы</th><th class="text-end">Игры</th><th class="text-end">Средний счёт</th><th v-if="canManage"></th></tr></thead>
           <tbody>
             <tr v-for="stat in filteredLeaderboard" :key="stat.team_id" :class="{ 'lobby-table-self': stat.team_id === lobby.my_team_id }">
-              <td><button v-if="canManage" class="lobby-text-action lobby-participant-name" @click="showPlayerMatches(stat.team_id)">{{ teamLabel(stat.team_id) }}</button><span v-else>{{ teamLabel(stat.team_id) }}</span><span v-if="stat.team_id === lobby.my_team_id" class="small text-muted"> · вы</span></td>
-              <td>{{ participantPresence(stat.team_id) }}</td>
-              <td><span class="agp-pill" :class="participantQueueTone(stat.team_id)">{{ participantQueueLabel(stat.team_id) }}</span></td>
+              <td class="lobby-participant-place" :aria-label="stat.place === null ? 'Место не определено' : 'Место ' + stat.place">{{ stat.place ?? '—' }}</td>
+              <td class="lobby-participant-identity"><button v-if="canManage" class="lobby-text-action lobby-participant-name" @click="showPlayerMatches(stat.team_id)">{{ teamLabel(stat.team_id) }}</button><span v-else>{{ teamLabel(stat.team_id) }}</span><span v-if="stat.team_id === lobby.my_team_id" class="small text-muted"> · вы</span></td>
+              <td class="lobby-participant-presence">{{ participantPresence(stat.team_id) }}</td>
+              <td class="lobby-participant-queue"><span class="agp-pill" :class="participantQueueTone(stat.team_id)">{{ participantQueueLabel(stat.team_id) }}</span></td>
               <td class="text-end lobby-stat-cell" data-label="Победы">{{ stat.wins }}</td><td class="text-end lobby-stat-cell" data-label="Игры">{{ stat.matches_total }}</td><td class="text-end lobby-stat-cell" data-label="Средний счёт">{{ stat.matches_total ? averageScoreLabel(stat.average_score) : '—' }}</td>
               <td v-if="canManage" class="lobby-participant-actions"><ActionMenu compact :label="'Действия участника ' + teamLabel(stat.team_id)" :items="participantActions(stat)" @select="handleParticipantAction($event, stat)" /></td>
             </tr>
@@ -3758,7 +3759,8 @@ function handleLobbyMenu(action: string): void {
 .lobby-game-expanded .table > :not(caption) > * > * { padding: 6px 8px; }
 .lobby-game-list .lobby-match-pagination { border-top: 1px solid var(--agp-border); padding-top: 12px; margin-top: 16px; }
 .lobby-table-self > td { background: var(--agp-primary-soft); }
-.lobby-participant-table td:first-child { overflow-wrap: anywhere; }
+.lobby-participant-identity { overflow-wrap: anywhere; }
+.lobby-participant-place { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
 .lobby-participant-actions { width: 44px; text-align: right; }
 .lobby-stat-cell { font-variant-numeric: tabular-nums; }
 @media (max-width: 1000px) {
@@ -3794,9 +3796,10 @@ function handleLobbyMenu(action: string): void {
   .lobby-participant-table tr { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 12px 0; border-bottom: 1px solid var(--agp-border); gap: 8px 12px; position: relative; }
   .lobby-participant-table tr:last-child { border-bottom: 0; padding-bottom: 0; }
   .lobby-participant-table td { padding: 0; border: 0; }
-  .lobby-participant-table td:first-child { grid-column: 1/-1; padding-right: 48px; }
-  .lobby-participant-table td:nth-child(2) { grid-column: 1; color: var(--agp-text-muted); font-size: 12px; }
-  .lobby-participant-table td:nth-child(3) { grid-column: 2/-1; }
+  .lobby-participant-table .lobby-participant-place { position: absolute; left: 0; top: 12px; width: 24px; text-align: left; color: var(--agp-text-muted); }
+  .lobby-participant-table .lobby-participant-identity { grid-column: 1/-1; padding-left: 32px; padding-right: 48px; }
+  .lobby-participant-table .lobby-participant-presence { grid-column: 1; color: var(--agp-text-muted); font-size: 12px; }
+  .lobby-participant-table .lobby-participant-queue { grid-column: 2/-1; }
   .lobby-participant-table .lobby-stat-cell { text-align: left !important; display: grid; font-size: 13px; gap: 2px; }
   .lobby-stat-cell::before { content: attr(data-label); font-family: "Golos Text", sans-serif; font-size: 11px; color: var(--agp-text-muted); }
   .lobby-participant-table .lobby-participant-actions { position: absolute; right: 0; top: 12px; }

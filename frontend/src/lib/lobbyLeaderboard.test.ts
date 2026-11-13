@@ -28,4 +28,20 @@ describe('lobby participant leaderboard', () => {
     const rows = [row('Борис', 1), row('Вера', .5), row('Анна', null, 0, 0)];
     expect(sortedNames(rows, 'name')).toEqual(['Анна', 'Борис', 'Вера']);
   });
+  it('shares places for equal averages and skips the occupied positions', () => {
+    const rows = [row('Глеб', .5), row('Анна', .75), row('Вера', .75), row('Борис', .5), row('Даша', 0)];
+    expect(sortLobbyParticipants(rows, 'score', name => name).map(item => [item.team_id, item.place]))
+      .toEqual([['Анна', 1], ['Вера', 1], ['Борис', 3], ['Глеб', 3], ['Даша', 5]]);
+  });
+  it('keeps result places when sorting by name or filtering the list', () => {
+    const rows = [row('Анна', 0), row('Борис', .75), row('Вера', .5), row('Глеб', .5)];
+    const byName = sortLobbyParticipants(rows, 'name', name => name);
+    expect(byName.map(item => item.place)).toEqual([4, 1, 2, 2]);
+    expect(byName.filter(item => item.team_id === 'Вера')[0].place).toBe(2);
+  });
+  it('leaves unscored participants unranked while zero and negative results get places', () => {
+    const rows = [row('Анна', null, 0, 0), row('Борис', -1), row('Вера', 0), row('Глеб', 99, 0, 0)];
+    expect(sortLobbyParticipants(rows, 'score', name => name).map(item => [item.team_id, item.place]))
+      .toEqual([['Вера', 1], ['Борис', 2], ['Анна', null], ['Глеб', null]]);
+  });
 });
